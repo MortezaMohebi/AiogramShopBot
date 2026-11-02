@@ -294,7 +294,7 @@
       <script>
         // Refresh only while no manager is editing a form.
         // A running worker updates progress in PostgreSQL independently.
-        window.setTimeout(function () {
+        window.setInterval(function () {
           const focused = document.activeElement;
           const editing = focused && ["INPUT", "TEXTAREA", "SELECT"].includes(
             focused.tagName
