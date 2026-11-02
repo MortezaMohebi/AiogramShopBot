@@ -160,6 +160,23 @@ More Telegram bot GIF demos, admin flow examples, and screenshots are available 
 </a>
 
 
+
+## Optional Cloudflare Worker transport (Telegram)
+
+This fork supports `TELEGRAM_API_MODE=cloudflare_worker` with a configurable
+`TELEGRAM_WORKER_URL` and a separate secret stored in the Worker and VPS
+environments. Unlike an open URL-rewriting proxy, the Worker authenticates
+requests and forwards only Telegram Bot API and file-download paths.
+
+The receiving side can use `TELEGRAM_UPDATE_MODE=webhook` (original behaviour)
+or `TELEGRAM_UPDATE_MODE=polling` to get updates through the Worker without
+a public Telegram-facing callback endpoint. **Bale remains independent**.
+
+- [Cloudflare Worker deployment and security guide (Persian)](docs/CLOUDFLARE_WORKER.fa.md)
+- [Telegram/Bale feature parity and API differences (Persian)](docs/CHANNEL_PARITY.fa.md)
+
+These features are on the **Draft PR branch**, not deployed or live-tested.
+
 ## 📄 License
 
 [MIT License](LICENSE)

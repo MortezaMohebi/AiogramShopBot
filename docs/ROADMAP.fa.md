@@ -9,7 +9,7 @@
 | F2 | محصول مستقل و داینامیک، فایل و رضایت مستقل، CRUD مدیریتی | IN PROGRESS (models, admin and Alembic migration committed; upload/render not wired) |
 | F3 | Media upload امن، Preview و ارسال فایل با Cache تفکیکی هر Bot | PLANNED |
 | F4 | منوی اصلی ثابت با متن فارسی؛ دکمه‌های کاتالوگ و جزئیات محصول از دیتابیس | PLANNED (بدون Menu Builder؛ صرفاً اتصال Catalog به Handlerهای موجود) |
-| F5 | Telegram Adapter و اتصال منوی ثابت به کاتالوگ مشترک | IN PROGRESS (مسیر جدید کاتالوگ و callback کدنویسی شده؛ تست میدانی باقی است) |
+| F5 | Telegram Adapter، اتصال کاتالوگ و حالت Direct/Proxy/Cloudflare Worker؛ Polling اختیاری | IN PROGRESS (پیاده‌سازی ثبت شد؛ تست Cloudflare و Aiogram واقعی باقی است) |
 | F6 | Bale Adapter هم‌زمان با Telegram، Webhook و API | IN PROGRESS (sendMessage و callback و Webhook کدنویسی شده؛ تست میدانی باقی است) |
 | F7 | سفارش‌های مشترک و Inventory transaction-safe، مبالغ Decimal | PLANNED |
 | F8 | Payment method، تأیید امضای Callback، Idempotency و Refund | PLANNED |

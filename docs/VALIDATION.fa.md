@@ -14,6 +14,9 @@
 - [x] دو Transport مستقل Telegram و Bale و قرارداد مشترک در `channels/` ثبت شد.
 - [x] Endpoint بله با Secret و مسیر کاتالوگ تلگرام در کد ثبت شد.
 - [ ] تست واقعی Webhook و Callback و اتصال API هر دو پلتفرم.
+- [x] حالت Cloudflare Worker همراه با Secret Header، پروکسی فایل و Polling اختیاری در کد ثبت شد.
+- [x] پنج Smoke Test محلی Node روی نمونه هم‌منطق Worker PASS شد؛ **Suite اصلی Commit‌شده در Cloudflare اجرا نشده است**.
+- [ ] اجرای تست Python برای `CloudflareWorkerSession`، اجرای Node Suite از مخزن و تست Worker واقعی با Token آزمایشی.
 - [ ] تست امنیت و صحت اجرای هم‌زمان و جلوگیری از آپدیت تکراری.
 - [ ] RBAC، پرداخت و اصلاح Atomic Inventory.
 
