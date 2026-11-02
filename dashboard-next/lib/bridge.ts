@@ -33,13 +33,15 @@ function environment(): { host: URL; secret: string } {
   return { host: origin, secret };
 }
 
-/** HMAC-sign one *server-generated* backend path, body and staff version. */
-export async function bridgeFetch<T>(
+/** Sign the EXACT outgoing bytes; binary and JSON share the same HMAC policy. */
+export async function bridgeResponse(
   path: string,
-  method: "GET" | "POST" | "PATCH",
-  data: unknown,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  body: Uint8Array | string | null,
+  contentType: string | null,
   identity: Identity | null,
-): Promise<T> {
+  timeoutMs = 15_000,
+): Promise<Response> {
   const { host, secret } = environment();
   if (!path.startsWith("/") || path.startsWith("//")) {
     throw new Error("Invalid internal API path.");
@@ -48,33 +50,32 @@ export async function bridgeFetch<T>(
   if (!url.pathname.startsWith("/internal/admin/v1/")) {
     throw new Error("Invalid internal admin route.");
   }
-
-  const body = method === "GET" ? "" : JSON.stringify(data ?? {});
+  const bytes = typeof body === "string"
+    ? Buffer.from(body, "utf8")
+    : body === null ? new Uint8Array() : body;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const target = url.pathname + url.search;
-  const digest = createHash("sha256").update(body).digest("hex");
+  const digest = createHash("sha256").update(bytes).digest("hex");
   const staff = String(identity?.id ?? 0);
   const version = String(identity?.version ?? 0);
-  const canonical = [
-    timestamp, method, target, digest, staff, version,
-  ].join("\n");
   const signature = createHmac("sha256", secret)
-    .update(canonical)
+    .update([timestamp, method, target, digest, staff, version].join("\n"))
     .digest("hex");
 
   const response = await fetch(url, {
     method,
     headers: {
-      "content-type": "application/json",
+      ...(contentType ? { "content-type": contentType } : {}),
       "x-shop-time": timestamp,
       "x-shop-signature": signature,
       "x-shop-staff": staff,
       "x-shop-version": version,
     },
-    body: method === "GET" ? undefined : body,
+    // Request bytes must remain byte-for-byte identical after signing.
+    body: method === "GET" || body === null ? undefined : new Uint8Array(bytes),
     cache: "no-store",
     redirect: "error",
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -88,10 +89,26 @@ export async function bridgeFetch<T>(
         detail = result.detail;
       }
     } catch {
-      // Do not surface HTML responses or backend stack traces to browsers.
+      // No stack traces, HTML bodies, cookies or provider details reach the UI.
     }
     throw new ApiError(response.status, detail);
   }
+  return response;
+}
+
+/** Strictly JSON-only convenience wrapper for ordinary server actions. */
+export async function bridgeFetch<T>(
+  path: string,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  data: unknown,
+  identity: Identity | null,
+): Promise<T> {
+  const raw = method === "GET" || method === "DELETE"
+    ? null
+    : JSON.stringify(data ?? {});
+  const response = await bridgeResponse(
+    path, method, raw, raw === null ? null : "application/json", identity,
+  );
   return (await response.json()) as T;
 }
 
@@ -109,10 +126,10 @@ export async function currentStaff(): Promise<Staff> {
   }
 }
 
-/** Role-sensitive backend call; the Python bridge enforces roles again. */
+/** Role-sensitive backend call; Python rechecks staff against PostgreSQL. */
 export async function adminFetch<T>(
   path: string,
-  method: "GET" | "POST" | "PATCH" = "GET",
+  method: "GET" | "POST" | "PATCH" | "DELETE" = "GET",
   data: unknown = null,
 ): Promise<T> {
   const session = await readSession();
