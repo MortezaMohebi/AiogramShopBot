@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
+from markupsafe import Markup, escape
 
 from models.base import Base
 
@@ -193,6 +194,24 @@ class ProductAdmin(ModelView, model=Product):
     can_delete = False
 
 
+def _media_link(record: ProductMedia, attribute: str) -> Markup:
+    """Link a trusted upload record to its authenticated preview route."""
+    title = escape(record.original_filename)
+    return Markup(
+        f'<a href="/admin/media-preview/product/{record.id}">{title}</a>'
+    )
+
+
+def _testimonial_media_link(record: Testimonial, attribute: str) -> Markup | str:
+    """Show a protected preview only for uploaded testimonial files."""
+    if not record.media_storage_key:
+        return "—"
+    return Markup(
+        f'<a href="/admin/media-preview/testimonial/{record.id}">'
+        "مشاهده فایل</a>"
+    )
+
+
 class ProductMediaAdmin(ModelView, model=ProductMedia):
     """Read-only metadata; upload only through the validated manager form."""
 
@@ -205,6 +224,9 @@ class ProductMediaAdmin(ModelView, model=ProductMedia):
         ProductMedia.original_filename, ProductMedia.position,
         ProductMedia.is_published,
     ]
+    column_formatters = {
+        ProductMedia.original_filename: _media_link,
+    }
     column_labels = {
         ProductMedia.product_id: "محصول",
         ProductMedia.kind: "نوع رسانه",
@@ -233,8 +255,12 @@ class TestimonialAdmin(ModelView, model=Testimonial):
     icon = "fa-solid fa-comment"
     column_list = [
         Testimonial.id, Testimonial.product_id, Testimonial.text,
-        Testimonial.position, Testimonial.is_approved,
+        Testimonial.media_storage_key, Testimonial.position,
+        Testimonial.is_approved,
     ]
+    column_formatters = {
+        Testimonial.media_storage_key: _testimonial_media_link,
+    }
     column_labels = {
         Testimonial.product_id: "محصول",
         Testimonial.text: "متن",

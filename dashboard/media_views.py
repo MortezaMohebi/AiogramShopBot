@@ -148,6 +148,18 @@ class ShopUploadView(BaseView):
                 status_code=400,
             )
 
+class ShopMediaPreviewView(BaseView):
+    """Provide authenticated previews without adding a broken sidebar URL."""
+
+    name = "پیش‌نمایش امن رسانه"
+    icon = "fa-solid fa-eye"
+    category = "محتوا"
+
+    @staticmethod
+    def is_visible(request: Request) -> bool:
+        """Hide this parameterized route from the SQLAdmin sidebar."""
+        return False
+
     @expose("/media-preview/{kind}/{record_id}", methods=["GET"])
     async def media_preview(self, request: Request):
         """Serve only previously validated media to authenticated admins."""
