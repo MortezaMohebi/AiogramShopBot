@@ -18,7 +18,7 @@ from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
-from services.bale_wallet import BaleWalletService
+from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
 import config
 
@@ -50,6 +50,9 @@ async def _shop_reply(
     event: InboundEvent, session: AsyncSession
 ) -> BotReply | None:
     """Select the common cart first, then catalog for non-cart actions."""
+    orders = await ShopOrdersFlow(config.SHOP_DISPLAY_UNIT).reply(event, session)
+    if orders is not None:
+        return orders
     cart = await ShopCartFlow(config.SHOP_DISPLAY_UNIT).reply(event, session)
     if cart is not None:
         return cart
@@ -70,12 +73,17 @@ async def show_shop_orders(message: Message, session: AsyncSession) -> None:
     """Show new shared orders belonging to this Telegram account only."""
     if message.from_user is None or message.chat.type != "private":
         return
-    text = await BaleWalletService.list_orders(
-        session, platform="telegram", platform_user_id=message.from_user.id
+    reply = await _shop_reply(
+        InboundEvent(
+            platform=Platform.TELEGRAM,
+            chat_id=message.chat.id,
+            user_id=message.from_user.id,
+            text="/orders",
+        ),
+        session,
     )
-    await TelegramTransport(message.bot).send(
-        message.chat.id, BotReply(text)
-    )
+    if reply is not None:
+        await TelegramTransport(message.bot).send(message.chat.id, reply)
 
 
 @shop_catalog_router.message(Command("cart"))
@@ -152,12 +160,6 @@ async def shop_catalog_button(
         callback_data=callback.data,
         callback_query_id=callback.id,
     )
-    if callback.data == "shop:orders":
-        text = await BaleWalletService.list_orders(
-            session, platform="telegram", platform_user_id=event.user_id
-        )
-        reply = BotReply(text)
-    else:
-        reply = await _shop_reply(event, session)
+    reply = await _shop_reply(event, session)
     if reply is not None:
         await TelegramTransport(callback.bot).send(event.chat_id, reply)
