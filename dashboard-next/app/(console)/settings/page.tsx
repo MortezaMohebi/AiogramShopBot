@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { saveSettings } from "@/app/(console)/settings/actions";
+import { saveSettings, saveReferralPolicy } from "@/app/(console)/settings/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,9 @@ type Params = Promise<{ saved?: string; error?: string }>;
 export default async function SettingsPage({ searchParams }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
-  const [settings, params] = await Promise.all([
+  const [settings, policy, params] = await Promise.all([
     adminFetch<ShopSettings>("/settings"),
+    adminFetch<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
     searchParams,
   ]);
   return (
@@ -40,6 +41,27 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
               <Input name="support_url" dir="ltr" type="url" className="text-start" maxLength={500} defaultValue={settings.support_url ?? ""} placeholder="https://..." />
             </label>
             <Button type="submit">ذخیره تنظیمات</Button>
+          </form>
+        </CardContent>
+      </Card>
+      <Card className="mt-6 max-w-4xl">
+        <CardHeader><CardTitle>سیاست پاداش معرفی مشتری</CardTitle><CardDescription>پاداش خرید اول از اعتبار داخلی فروشگاه تأمین می‌شود؛ هیچ موجودی بله یا رمز ارز تغییر نمی‌کند.</CardDescription></CardHeader>
+        <CardContent>
+          <form action={saveReferralPolicy} className="grid gap-4 md:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm md:col-span-2">
+              <input type="checkbox" name="is_enabled" defaultChecked={policy.is_enabled} className="size-4 accent-primary" />
+              فعال‌بودن پاداش معرفی
+            </label>
+            <label className="space-y-2 text-sm">درصد پاداش (۰ تا ۳۰)
+              <Input type="number" name="percent" min={0} max={30} defaultValue={policy.percent} required />
+            </label>
+            <label className="space-y-2 text-sm">حداقل مبلغ خرید به ریال
+              <Input type="number" name="min_order_irr" min={0} max={100000000000} defaultValue={policy.min_order_irr} required />
+            </label>
+            <label className="space-y-2 text-sm">سقف پاداش به ریال
+              <Input type="number" name="max_bonus_irr" min={0} max={100000000000} defaultValue={policy.max_bonus_irr} required />
+            </label>
+            <div className="md:col-span-2"><Button type="submit">ذخیره سیاست معرفی</Button></div>
           </form>
         </CardContent>
       </Card>
