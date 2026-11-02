@@ -21,10 +21,12 @@ from models.shop_content import (
 from services.shop_money import format_rials
 
 _PAGE_SIZE = 6
+_CATEGORY_PAGE_SIZE = 6
 _REVIEW_PAGE_SIZE = 3
 _MEDIA_PAGE_SIZE = 4
 _LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,18})\Z")
 _CATEGORY_PATTERN = re.compile(r"shop:category:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
+_CATEGORY_LIST_PATTERN = re.compile(r"shop:categories:(0|[1-9][0-9]{0,18})\Z")
 _PRODUCT_PATTERN = re.compile(r"shop:item:([1-9][0-9]{0,18})\Z")
 _REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _MEDIA_PATTERN = re.compile(r"shop:files:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
@@ -85,6 +87,11 @@ class CatalogFlow:
                 return await self._settings_text(session, key="support")
             if data == "shop:faq":
                 return await self._settings_text(session, key="faq")
+            match = _CATEGORY_LIST_PATTERN.fullmatch(data)
+            if match:
+                return await self._categories_or_products(
+                    session, requested_page=int(match.group(1))
+                )
             if data == "shop:categories":
                 return await self._categories_or_products(session)
             if data.startswith("shop:"):
@@ -138,23 +145,46 @@ class CatalogFlow:
             rows=((_button("🏠 صفحه اول", "shop:home"),),),
         )
 
-    async def _categories_or_products(self, session: AsyncSession) -> BotReply:
-        """Show published categories, or all products if no category exists."""
+    async def _categories_or_products(
+        self, session: AsyncSession, requested_page: int = 0
+    ) -> BotReply:
+        """Paginate an unlimited number of administrator-created categories."""
+        condition = ShopCategory.is_published.is_(True)
+        count = await session.scalar(
+            select(func.count()).select_from(ShopCategory).where(condition)
+        )
+        if not count:
+            return await self._list_products(session, 0)
+        last_page = (count - 1) // _CATEGORY_PAGE_SIZE
+        page = min(requested_page, last_page)
         result = await session.execute(
             select(ShopCategory)
-            .where(ShopCategory.is_published.is_(True))
+            .where(condition)
             .order_by(ShopCategory.position, ShopCategory.id)
+            .offset(page * _CATEGORY_PAGE_SIZE)
+            .limit(_CATEGORY_PAGE_SIZE)
         )
-        categories = result.scalars().all()
-        if not categories:
-            return await self._list_products(session, 0)
         rows = [
             (_button(item.name, f"shop:category:{item.id}:0"),)
-            for item in categories
+            for item in result.scalars().all()
         ]
+        controls = []
+        if page:
+            controls.append(
+                _button("صفحه قبل", f"shop:categories:{page - 1}")
+            )
+        if page < last_page:
+            controls.append(
+                _button("صفحه بعد", f"shop:categories:{page + 1}")
+            )
+        if controls:
+            rows.append(tuple(controls))
         rows.append((_button("همه محصولات", "shop:list:0"),))
         return BotReply(
-            text="🗂️ دسته‌بندی محصولات را انتخاب کنید:",
+            text=(
+                "🗂️ دسته‌بندی محصولات را انتخاب کنید:\n"
+                f"صفحه {page + 1} از {last_page + 1}"
+            ),
             rows=tuple(rows),
         )
 

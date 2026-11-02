@@ -30,13 +30,15 @@ class BaleTransport:
         self._url_prefix = f"{self.BASE_URL}/bot{token}"
         self._session = session
 
-    async def _call(self, method: str, body: dict[str, Any]) -> Any:
+    async def _call(
+        self, method: str, body: dict[str, Any], *, timeout_seconds: int = 15
+    ) -> Any:
         """Validate the Bale response envelope without logging credentials."""
         try:
             async with self._session.post(
                 f"{self._url_prefix}/{method}",
                 json=body,
-                timeout=ClientTimeout(total=15),
+                timeout=ClientTimeout(total=timeout_seconds),
             ) as response:
                 data = await response.json(content_type=None)
                 code = data.get("error_code") if isinstance(data, dict) else None
@@ -172,7 +174,10 @@ class BaleTransport:
             data["error_message"] = (
                 error_message or "سفارش فعلاً قابل پرداخت نیست."
             )[:255]
-        await self._call("answerPreCheckoutQuery", data)
+        # Bale requires a pre-checkout answer within ten seconds.
+        await self._call(
+            "answerPreCheckoutQuery", data, timeout_seconds=8
+        )
 
     async def inquire_transaction(self, transaction_id: str) -> dict[str, Any]:
         """Retrieve verified transaction status from Bale before fulfillment."""
