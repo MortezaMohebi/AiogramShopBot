@@ -109,3 +109,30 @@ export async function deleteCampaignMedia(form: FormData) {
   revalidatePath("/campaigns");
   redirect(`/campaigns/${campaignId}?saved=1`);
 }
+
+
+/** Prepare Bale media file IDs only in a configured private seed chat.
+
+No campaign deliveries, paid Business calls or worker wake-ups occur here.
+The external operation requires explicit operator confirmation.
+*/
+export async function prepareBaleMedia(form: FormData) {
+  const id = text(form, "campaign_id");
+  if (
+    !/^[1-9]\d*$/.test(id) ||
+    text(form, "confirmation") !== "PREPARE_BALE_MEDIA"
+  ) {
+    redirect("/campaigns?error=confirmation");
+  }
+  let failed = false;
+  try {
+    await adminFetch(`/broadcast/prepare/${id}`, "POST", {
+      confirmation: "PREPARE_BALE_MEDIA",
+    });
+  } catch {
+    failed = true;
+  }
+  if (failed) redirect(`/campaigns/${id}?error=prepare`);
+  revalidatePath(`/campaigns/${id}`);
+  redirect(`/campaigns/${id}?saved=prepared`);
+}
