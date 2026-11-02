@@ -333,3 +333,84 @@ async def test_paid_bale_budget_requires_explicit_worst_case_approval(
     )
     assert campaign.max_paid_calls == 1
     assert campaign.paid_calls_reserved == 0
+
+
+@pytest.mark.asyncio
+async def test_opt_out_after_approval_is_rechecked_before_dispatch(context):
+    """A recipient may unsubscribe between approval and actual send."""
+    campaign = make_campaign(context, total=2)
+    await ShopCampaignService.approve(
+        context, campaign_id=campaign.id, approver="staff:1"
+    )
+    await BroadcastControl.start(
+        context, campaign_id=campaign.id, actor="staff:1"
+    )
+    first_identity = context.session.scalar(
+        select(ShopIdentity).where(ShopIdentity.platform_user_id == 1)
+    )
+    first_identity.allow_announcements = False
+    context.session.commit()
+
+    recorder = RecordingTelegram(context)
+    worker = BroadcastWorker(telegram=recorder, bale_session=None)
+    assert await worker.process_next() is True
+    assert await worker.process_next() is True
+    await worker.finalize_campaigns()
+    assert recorder.sent == [2]
+    assert (await delivery_counts(context, campaign.id))["skipped"] == 1
+    assert campaign.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_business_api_reserves_exactly_one_paid_call_per_message(
+    context, monkeypatch
+):
+    """An approved cost ceiling cannot be exceeded by replaying a queue row."""
+    monkeypatch.setattr(
+        config, "BALE_BOT_TOKEN", "123456:BBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    )
+    monkeypatch.setattr(config, "BALE_BROADCAST_MODE", "business")
+    monkeypatch.setattr(config, "BALE_BROADCAST_PAID_ENABLED", True)
+    monkeypatch.setattr(config, "SHOP_BROADCAST_MAX_PAID_CALLS", 1)
+    identity = ShopIdentity(
+        platform="bale", platform_user_id=904,
+        is_blocked=False, allow_announcements=True,
+    )
+    campaign = ShopCampaign(
+        title="خبر", text="یک پیام", audience="bale", status="draft"
+    )
+    context.session.add_all([identity, campaign])
+    context.session.commit()
+    await ShopCampaignService.approve(
+        context, campaign_id=campaign.id, approver="staff:1"
+    )
+    await BroadcastControl.start(
+        context, campaign_id=campaign.id, actor="staff:1",
+        bale_mode="business", approved_paid_calls=1,
+    )
+
+    calls = []
+
+    class FakeBale:
+        """Replace the paid transport with an offline recording object."""
+
+        def __init__(self, _token, _session, *, business_mode):
+            """Record that the paid endpoint has been explicitly selected."""
+            assert business_mode is True
+
+        async def send(self, user_id, reply):
+            """Record a single simulated billable request."""
+            calls.append((user_id, reply.text))
+
+    monkeypatch.setattr(
+        "services.shop_broadcast_worker.BaleTransport", FakeBale
+    )
+    worker = BroadcastWorker(telegram=None, bale_session=object())
+    assert await worker.process_next() is True
+    await worker.finalize_campaigns()
+    assert campaign.status == "completed"
+    assert campaign.paid_calls_reserved == 1
+    assert campaign.max_paid_calls == 1
+    assert calls == [(904, "یک پیام")]
+    assert await worker.process_next() is False
+    assert campaign.paid_calls_reserved == 1
