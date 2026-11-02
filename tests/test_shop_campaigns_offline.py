@@ -1,4 +1,8 @@
-"""Offline campaign tests for consent, platform routing and bounded dispatch."""
+"""Offline campaign approval and consent-snapshot regression tests.
+
+Direct manual dispatch has been retired; actual outbound delivery is covered
+by tests/test_durable_broadcast_worker_offline.py.
+"""
 
 from __future__ import annotations
 
@@ -8,153 +12,121 @@ from sqlalchemy.orm import Session
 
 from models.base import Base
 from models.shop_content import ShopIdentity
-from models.shop_engagement import ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia
+from models.shop_engagement import (
+    ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
+)
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
 
 
 class AsyncDb:
-    """Use a real isolated SQLite database behind an asynchronous interface."""
+    """Run real SQLAlchemy statements against disposable in-memory SQLite."""
 
     def __init__(self, session: Session) -> None:
-        """Save the transaction for test assertions."""
+        """Keep the isolated transaction."""
         self.session = session
 
     async def execute(self, statement):
-        """Execute a SQLAlchemy query without a network connection."""
+        """Execute a SQLAlchemy query."""
         return self.session.execute(statement)
 
     async def scalar(self, statement):
-        """Read one scalar value."""
+        """Return one scalar value."""
         return self.session.scalar(statement)
 
     async def commit(self):
-        """Commit one database transaction."""
+        """Commit the approval and all recipients."""
         self.session.commit()
 
 
 @pytest.fixture
 def db():
-    """Create campaign recipient and opt-in records in disposable memory."""
+    """Create only independent campaign/identity data."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
         tables=[
-            ShopIdentity.__table__,
-            ShopCampaign.__table__,
-            ShopCampaignDelivery.__table__,
-            ShopCampaignMedia.__table__,
+            ShopIdentity.__table__, ShopCampaign.__table__,
+            ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
         ],
     )
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         yield AsyncDb(session)
     engine.dispose()
 
 
-def add_identity(db, platform, user_id, *, consent=True, banned=False):
-    """Provision one platform-scoped and optionally opted-in customer."""
-    identity = ShopIdentity(
-        platform=platform,
-        platform_user_id=user_id,
-        is_blocked=banned,
-        allow_announcements=consent,
+def identity(db, platform, user_id, *, consent=True, blocked=False):
+    """Insert one platform-scoped customer with explicit opt-in."""
+    item = ShopIdentity(
+        platform=platform, platform_user_id=user_id,
+        allow_announcements=consent, is_blocked=blocked,
     )
-    db.session.add(identity)
+    db.session.add(item)
     db.session.flush()
-    return identity
+    return item
 
 
 @pytest.mark.asyncio
-async def test_campaign_requires_approval_and_explicit_optin(db):
-    """Only opted-in, unblocked customers can be added to the send queue."""
-    add_identity(db, "telegram", 101, consent=True)
-    add_identity(db, "telegram", 102, consent=False)
-    add_identity(db, "bale", 201, consent=True)
-    add_identity(db, "bale", 202, banned=True)
+async def test_approval_only_snapshots_current_opted_in_customers(db):
+    """Neither opted-out nor blocked accounts enter the durable outbox."""
+    identity(db, "telegram", 101, consent=True)
+    identity(db, "telegram", 102, consent=False)
+    identity(db, "bale", 201, consent=True)
+    identity(db, "bale", 202, blocked=True)
     campaign = ShopCampaign(
-        title="اطلاعیه", text="متن اطلاعیه قابل مدیریت",
+        title="اطلاعیه", text="متن فارسی فروشگاه",
         audience="all", status="draft",
     )
     db.session.add(campaign)
     db.session.commit()
-
-    async def should_not_send(*args):
-        """Fail if the send path bypasses approval."""
-        raise AssertionError("unapproved campaign was dispatched")
-
-    with pytest.raises(CampaignRejected):
-        await ShopCampaignService.dispatch_batch(
-            db, campaign_id=campaign.id, send=should_not_send,
-        )
-
     count = await ShopCampaignService.approve(
-        db, campaign_id=campaign.id, approver="staff:1",
+        db, campaign_id=campaign.id, approver="staff:1"
     )
     assert count == 2
-    queued = db.session.scalars(select(ShopCampaignDelivery)).all()
-    assert len(queued) == 2
-    recipients = {record.identity_id for record in queued}
+    assert campaign.status == "approved"
+    deliveries = db.session.scalars(select(ShopCampaignDelivery)).all()
+    assert len(deliveries) == 2
+    recipients = {row.identity_id for row in deliveries}
     assert recipients == {1, 3}
 
+    # Reapproval cannot silently rewrite the recipient snapshot.
+    with pytest.raises(CampaignRejected):
+        await ShopCampaignService.approve(
+            db, campaign_id=campaign.id, approver="staff:1"
+        )
+
 
 @pytest.mark.asyncio
-async def test_consent_is_rechecked_after_campaign_approval(db):
-    """Unsubscribing after approval must prevent message transmission."""
-    first = add_identity(db, "telegram", 101)
-    second = add_identity(db, "bale", 201)
+async def test_no_opted_in_recipient_marks_campaign_completed(db):
+    """An empty audience cannot be started or broadcast accidentally."""
+    identity(db, "bale", 201, consent=False)
     campaign = ShopCampaign(
-        title="تخفیف", text="محتوای کمپین", audience="all",
-        status="draft",
+        title="اطلاعیه", text="متن", audience="bale", status="draft"
     )
     db.session.add(campaign)
     db.session.commit()
-    await ShopCampaignService.approve(
-        db, campaign_id=campaign.id, approver="staff:8",
+    count = await ShopCampaignService.approve(
+        db, campaign_id=campaign.id, approver="staff:1"
     )
-    second.allow_announcements = False
-    db.session.commit()
-
-    delivered = []
-
-    async def fake_send(platform, user_id, body):
-        """Record only the intended platform and customer ID."""
-        delivered.append((platform.value, user_id, body))
-
-    sent, skipped = await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=fake_send,
-    )
-    assert (sent, skipped) == (1, 1)
-    assert delivered == [("telegram", 101, "محتوای کمپین")]
+    assert count == 0
     assert campaign.status == "completed"
+    assert db.session.scalars(select(ShopCampaignDelivery)).all() == []
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_delivery_is_not_retried_automatically(db):
-    """Mark an unknown send and preserve the single-attempt outbox."""
-    add_identity(db, "bale", 201)
+async def test_opt_out_after_approval_is_not_overwritten(db):
+    """Worker must recheck consent; snapshot must not force re-subscription."""
+    person = identity(db, "telegram", 101, consent=True)
     campaign = ShopCampaign(
-        title="خبر", text="خبر فروشگاه", audience="bale", status="draft",
+        title="پیام", text="خبر", audience="telegram", status="draft"
     )
     db.session.add(campaign)
     db.session.commit()
     await ShopCampaignService.approve(
-        db, campaign_id=campaign.id, approver="staff:3",
+        db, campaign_id=campaign.id, approver="staff:1"
     )
-    calls = []
-
-    async def uncertain_send(platform, user_id, text):
-        """Simulate an API timeout after a message may have been sent."""
-        calls.append(user_id)
-        raise TimeoutError("network timeout")
-
-    sent, skipped = await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=uncertain_send,
-    )
-    assert (sent, skipped) == (0, 0)
-    delivery = db.session.scalar(select(ShopCampaignDelivery))
-    assert delivery.status == "unknown"
-
-    again, skipped = await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=uncertain_send,
-    )
-    assert (again, skipped) == (0, 0)
-    assert calls == [201]
+    person.allow_announcements = False
+    db.session.commit()
+    assert person.allow_announcements is False
+    assert db.session.scalar(
+        select(ShopCampaignDelivery.status)
+    ) == "queued"
