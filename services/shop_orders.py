@@ -20,6 +20,7 @@ _CANCEL = re.compile(r"shop:cancelorder:([1-9][0-9]{0,18})\Z")
 
 STATUS_NAMES = {
     "pending_review": "در انتظار بررسی فروشنده",
+    "approved_unpaid": "بررسی شد؛ پرداخت نشده",
     "pending_payment": "در انتظار پرداخت",
     "paid": "پرداخت‌شده",
     "paid_unfulfilled": "پرداخت شده؛ نیازمند بررسی",

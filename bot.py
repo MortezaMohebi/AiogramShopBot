@@ -35,7 +35,7 @@ from fastapi.responses import JSONResponse
 from enums.cryptocurrency import Cryptocurrency
 from models.shop_checkout import (
     ShopCartAdmin, ShopCartItemAdmin, ShopShippingMethodAdmin,
-    ShopCouponAdmin, ShopOrderLineAdmin,
+    ShopCouponAdmin, ShopOrderLineAdmin, ShopOrderReviewAuditAdmin,
 )
 from models.shop_content import ProductAdmin, ProductMediaAdmin, ShopCategoryAdmin, ShopIdentityAdmin, ShopOrderAdmin, ShopSettingsAdmin, TestimonialAdmin
 from models.buy import BuyAdmin
@@ -210,6 +210,7 @@ admin.add_model_view(ShopCouponAdmin)
 admin.add_model_view(ShopCartAdmin)
 admin.add_model_view(ShopCartItemAdmin)
 admin.add_model_view(ShopOrderLineAdmin)
+admin.add_model_view(ShopOrderReviewAuditAdmin)
 admin.add_view(ShopUploadView)
 admin.add_view(ShopMediaPreviewView)
 

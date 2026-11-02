@@ -40,7 +40,7 @@ def upgrade() -> None:
     op.drop_constraint("ck_shop_order_status", "shop_orders", type_="check")
     op.create_check_constraint(
         "ck_shop_order_status", "shop_orders",
-        "status IN ('pending_review','pending_payment','paid',"
+        "status IN ('pending_review','approved_unpaid','pending_payment','paid',"
         "'paid_unfulfilled','cancelled')",
     )
 
@@ -153,6 +153,27 @@ def upgrade() -> None:
         ),
     )
     op.create_table(
+        "shop_order_review_audit",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column(
+            "order_id", sa.BigInteger(),
+            sa.ForeignKey("shop_orders.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column("actor", sa.String(120), nullable=False),
+        sa.Column("action", sa.String(16), nullable=False),
+        sa.Column("old_status", sa.String(24), nullable=False),
+        sa.Column("new_status", sa.String(24), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.CheckConstraint(
+            "action IN ('accept','reject')",
+            name="ck_shop_order_review_action",
+        ),
+    )
+    op.create_table(
         "shop_order_lines",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
@@ -184,6 +205,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove only this phase's checkout schema."""
     op.drop_table("shop_order_lines")
+    op.drop_table("shop_order_review_audit")
     op.drop_table("shop_cart_items")
     op.drop_table("shop_carts")
     op.drop_index("uq_shop_coupon_code_casefold", table_name="shop_coupons")

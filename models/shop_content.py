@@ -248,7 +248,7 @@ class ShopOrder(Base):
         CheckConstraint("unit_price_irr >= 0", name="ck_shop_order_price_positive"),
         CheckConstraint("total_irr > 0", name="ck_shop_order_total_positive"),
         CheckConstraint(
-            "status IN ('pending_review','pending_payment','paid','paid_unfulfilled','cancelled')",
+            "status IN ('pending_review','approved_unpaid','pending_payment','paid','paid_unfulfilled','cancelled')",
             name="ck_shop_order_status",
         ),
     )

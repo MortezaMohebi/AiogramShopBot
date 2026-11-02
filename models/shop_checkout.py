@@ -173,6 +173,47 @@ class ShopOrderLine(Base):
     )
 
 
+class ShopOrderReviewAudit(Base):
+    """Append-only administrative decisions on unpaid order requests."""
+
+    __tablename__ = "shop_order_review_audit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_orders.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor: Mapped[str] = mapped_column(String(120), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    old_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('accept','reject')",
+            name="ck_shop_order_review_action",
+        ),
+    )
+
+
+class ShopOrderReviewAuditAdmin(ModelView, model=ShopOrderReviewAudit):
+    """Read-only tracking for every manager decision."""
+
+    name = "رویداد سفارش"
+    name_plural = "سوابق تصمیم مدیر"
+    category = "فروش"
+    column_list = [
+        ShopOrderReviewAudit.order_id, ShopOrderReviewAudit.actor,
+        ShopOrderReviewAudit.action, ShopOrderReviewAudit.old_status,
+        ShopOrderReviewAudit.new_status, ShopOrderReviewAudit.created_at,
+    ]
+    can_create = False
+    can_edit = False
+    can_delete = False
+
+
 class ShopShippingMethodAdmin(ModelView, model=ShopShippingMethod):
     """Manage the delivery methods available to both messaging platforms."""
 
