@@ -304,7 +304,14 @@ async def overview(staff: Staff, session: Db) -> dict:
     return {
         "products": products,
         "published_products": published,
-        "channels": [asdict(ch) for ch in report.channels],
+        "channels": [
+            {
+                **asdict(ch),
+                "gross_paid_irr": str(ch.gross_paid_irr),
+                "store_credit_irr": str(ch.store_credit_irr),
+            }
+            for ch in report.channels
+        ],
         "open_refunds": report.open_refund_cases,
         "campaigns": asdict(report.campaigns),
         "recent_orders": [
