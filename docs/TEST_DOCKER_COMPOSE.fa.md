@@ -29,6 +29,10 @@ python3 scripts/test_lab.py up
 # تست‌های موجود و سپس Smoke Test روی PostgreSQL/Redis/Next.js واقعی.
 python3 scripts/test_lab.py test
 
+# اختیاری: مرورگر Chromium و تست RTL، Dark Mode و نقش‌ها
+# دانلود Image مرورگر در اولین اجرا انجام می‌شود.
+python3 scripts/test_lab.py browser
+
 # گزارش وضعیت و لاگ‌ها
 python3 scripts/test_lab.py status
 python3 scripts/test_lab.py logs
@@ -80,6 +84,12 @@ Idempotent درج می‌شوند و اجرای مجدد Seed تغییرات د�
 | `caddy` | HTTPS داخلی و Reverse Proxy | فقط `127.0.0.1:8443` |
 | `pytest` | اجرای تست‌های Python، در Profile `qa` | ندارد |
 | `smoke` | Login، RBAC، HMAC و چرخهٔ Upload/Preview/Publish/Delete | ندارد |
+| `browser` (Profile اختیاری) | Chromium / Playwright روی HTTPS واقعی، ۳۲۰/۷۶۸/۱۴۴۰، Dark Mode و RBAC | ندارد |
+
+تست‌های Playwright در `.test-artifacts/` گزارش و Screenshot ایجاد می‌کنند؛
+این پوشه در `.gitignore` و `.dockerignore` حذف شده است.
+برای دسترسی به `localhost` واقعیِ Caddy از
+`network_mode: service:caddy` استفاده می‌شود، نه URL عمومی ربات.
 
 فقط سرویس `caddy` روی میزبان Publish می‌شود. API، PostgreSQL و Redis
 صرفاً در شبکهٔ `private` با `internal: true` قابل‌دسترسی‌اند.
@@ -160,9 +170,11 @@ python3 scripts/test_lab.py reset --yes
 - [x] تعریف Compose، Dockerfileها، CA داخلی، Migration و Seed
 - [x] جلوگیری از اجرای واقعی Bot/Webhook/Payment/Worker در Lab
 - [x] افزودن Test Runnerهای Python و Smoke با RBAC و Upload واقعی
+- [x] اضافه‌شدن Runner اختیاری Chromium/Playwright با TLS داخلی
 - [ ] **اجرای Docker Compose روی میزبان دارای Docker**، رفع خطاها و تکرار
 - [ ] بازبینی Migrationهای PostgreSQL 18 و تست Concurrency واقعی
-- [ ] تست مرورگر فارسی RTL، Dark Mode، Keyboard، 320/768/1440
+- [ ] **اجرای** سناریوهای مرورگر فارسی RTL، Dark Mode، Keyboard،
+      ۳۲۰/۷۶۸/۱۴۴۰ (سورس تست Browser موجود است، نتیجهٔ اجرا هنوز نیست)
 - [ ] تست فایل دقیقاً نزدیک سقف‌های ۱۰ و ۵۰ مگابایت و مصرف حافظهٔ Proxy
 - [ ] تولید و Commit کردن `package-lock.json` و تغییر Build به `npm ci`
 - [ ] تأیید یکپارچهٔ API واقعی Telegram/Bale با Test Token مستقل،
