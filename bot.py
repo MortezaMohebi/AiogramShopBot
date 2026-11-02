@@ -10,7 +10,7 @@ import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile
+from aiogram.types import BufferedInputFile, Update
 from redis.asyncio import Redis
 from dashboard.secure_admin import SecureShopAdmin as Admin
 
@@ -514,7 +514,13 @@ async def webhook(request: Request):
         return {"status": "duplicate", "receipt_state": receipt_state}
 
     try:
-        await dp.feed_webhook_update(bot, update_data)
+        # Wait until handlers finish before marking the update processed.
+        # feed_webhook_update may detach long-running handlers into the
+        # background, which would create an inaccurate dedup receipt.
+        parsed_update = Update.model_validate(
+            update_data, context={"bot": bot}
+        )
+        await dp.feed_update(bot, parsed_update)
     except Exception:
         await finish_update(
             platform=Platform.TELEGRAM, token=config.TOKEN,
