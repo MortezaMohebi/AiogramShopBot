@@ -24,3 +24,6 @@ data/
 *.sqlite
 *.sqlite3
 *.log
+
+# Browser test artifacts are never included in images or Git.
+.test-artifacts/
