@@ -33,6 +33,25 @@ services:
     command: [ "python", "-u", "run.py" ]
     restart: always
 
+  # ONE shared durable Worker per installation, not one per recipient/site.
+  # Deployment is explicitly opt-in after the final integration tests:
+  # docker compose --profile broadcast up -d broadcast-worker
+  broadcast-worker:
+    profiles:
+      - broadcast
+    build:
+      context: .
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    networks:
+      - caddy
+    volumes:
+      - ./media_data:/bot/media_data
+    command: ["python", "-m", "workers.shop_broadcast"]
+    restart: unless-stopped
+
   redis:
     image: redis:latest
     container_name: redis
