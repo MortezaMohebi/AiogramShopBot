@@ -13,6 +13,10 @@
       </a></p>
       {% set role = request.state.shop_role %}
       {% if role in ('superadmin', 'marketing') %}
+      <p><a class="btn btn-outline-secondary" href="/admin/campaign-media-upload">
+        <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
+        بارگذاری رسانه Broadcast
+      </a></p>
       <p><a class="btn btn-outline-secondary" href="/admin/campaign-review">
         <i class="fa-solid fa-bullhorn" aria-hidden="true"></i>
         بررسی و ارسال اطلاعیه

@@ -12,7 +12,7 @@ from starlette.responses import RedirectResponse
 
 import config
 from channels.bale import BaleTransport
-from channels.contracts import BotReply, Platform
+from channels.contracts import BotReply, MediaAttachment, Platform
 from channels.telegram import TelegramTransport
 from dashboard.permissions import require_role
 from db import session_maker
@@ -168,8 +168,26 @@ class ShopCampaignReviewView(BaseView):
                                 "The required campaign adapter is unavailable."
                             )
 
+                    async def deliver_attachment(
+                        platform: Platform,
+                        user_id: int,
+                        attachment: MediaAttachment,
+                    ) -> None:
+                        """Send one campaign file from the private media store."""
+                        if platform == Platform.TELEGRAM:
+                            await telegram.send_media(user_id, attachment)
+                        elif platform == Platform.BALE and bale is not None:
+                            await bale.send_media(user_id, attachment)
+                        else:
+                            raise RuntimeError(
+                                "Broadcast media adapter is unavailable."
+                            )
+
                     await ShopCampaignService.dispatch_batch(
-                        session, campaign_id=campaign_id, send=deliver
+                        session,
+                        campaign_id=campaign_id,
+                        send=deliver,
+                        send_attachment=deliver_attachment,
                     )
             except CampaignRejected as error:
                 await session.rollback()
