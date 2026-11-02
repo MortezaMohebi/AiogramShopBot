@@ -84,7 +84,7 @@ class ShopRefundReviewView(BaseView):
                     await ShopRefundService.refund_stars(
                         session,
                         case_id=case_id,
-                        bot=request.app.state.telegram_bot,
+                        bot=self._admin_ref.app.state.telegram_bot,
                         enabled=config.TELEGRAM_STARS_REFUNDS_ENABLED,
                         reviewer=reviewer,
                     )
