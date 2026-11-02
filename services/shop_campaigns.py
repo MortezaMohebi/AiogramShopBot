@@ -1,19 +1,16 @@
-"""One-consent-per-recipient marketing outbox for Telegram and Bale.
+"""Validate campaign media and snapshot explicit marketing consent.
 
-Campaign send is a bounded, manager-triggered action. Dispatch states are
-persisted before sending; a timeout never triggers a blind duplicate retry.
-No background worker or automatic campaign schedule is hidden in this module.
+All actual sends run only through the durable shared BroadcastWorker, which
+enforces global/per-chat pacing and prevents ambiguous retries.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
 
 from sqlalchemy import func, insert, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import MediaAttachment, Platform
+from channels.contracts import MediaAttachment
 from channels.media_policy import MediaLimitError, bale_media_method
 from dashboard.media_storage import safe_media_path
 import config
@@ -23,18 +20,12 @@ from models.shop_engagement import (
 )
 
 
-SendMessage = Callable[[Platform, int, str], Awaitable[None]]
-SendAttachment = Callable[[Platform, int, MediaAttachment], Awaitable[None]]
-MediaPreflight = Callable[[tuple[MediaAttachment, ...]], Awaitable[None]]
-_MAX_PER_BATCH = 10
-
-
 class CampaignRejected(ValueError):
     """Campaign approval or dispatch failed without silently resending."""
 
 
 class ShopCampaignService:
-    """Prepare opted-in recipients and dispatch no more than ten per action."""
+    """Prepare opted-in recipients without sending any Bot API message."""
 
     @staticmethod
     async def _attachments(
@@ -126,117 +117,3 @@ class ShopCampaignService:
         campaign.status = "approved" if count else "completed"
         await session.commit()
         return count
-
-    @staticmethod
-    async def dispatch_batch(
-        session: AsyncSession,
-        *,
-        campaign_id: int,
-        send: SendMessage,
-        send_attachment: SendAttachment | None = None,
-        media_preflight: MediaPreflight | None = None,
-    ) -> tuple[int, int]:
-        """Send a bounded batch of queued notifications at most once.
-
-        Requests in status `sending` or `unknown` require manual
-        reconciliation after a network failure, not automatic retries.
-        """
-        campaign = await session.scalar(
-            select(ShopCampaign).where(
-                ShopCampaign.id == campaign_id
-            )
-        )
-        if campaign is None or campaign.status not in (
-            "approved", "sending"
-        ):
-            raise CampaignRejected("کمپین برای ارسال آماده نیست.")
-        results = await session.execute(
-            select(ShopCampaignDelivery, ShopIdentity)
-            .join(
-                ShopIdentity,
-                ShopIdentity.id == ShopCampaignDelivery.identity_id,
-            )
-            .where(
-                ShopCampaignDelivery.campaign_id == campaign_id,
-                ShopCampaignDelivery.status == "queued",
-            )
-            .order_by(ShopCampaignDelivery.id)
-            .limit(_MAX_PER_BATCH)
-            .with_for_update(of=ShopCampaignDelivery, skip_locked=True)
-        )
-        attachments = await ShopCampaignService._attachments(
-            session, campaign
-        )
-        if attachments and send_attachment is None:
-            raise CampaignRejected(
-                "ارسال فایل‌های کمپین در این اتصال پشتیبانی نمی‌شود."
-            )
-        if media_preflight is not None:
-            # Business API supports media only by a pre-existing file_id.
-            # Check readiness BEFORE claiming even one recipient.
-            await media_preflight(attachments)
-        candidates = results.all()
-        successes, skipped = 0, 0
-
-        # Claim *all* selected rows before the first network call. This
-        # prevents a concurrent manager request from sending them again
-        # after the first message has released the database row locks.
-        for delivery, _ in candidates:
-            delivery.status = "sending"
-        if candidates:
-            campaign.status = "sending"
-            await session.commit()
-
-        for delivery, identity in candidates:
-            # Load the current identity again after claiming each row:
-            # customers can unsubscribe after campaign approval.
-            fresh_identity = await session.scalar(
-                select(ShopIdentity).where(
-                    ShopIdentity.id == identity.id
-                ).execution_options(populate_existing=True)
-            )
-            if (
-                fresh_identity is None
-                or fresh_identity.is_blocked
-                or not fresh_identity.allow_announcements
-            ):
-                delivery.status = "skipped"
-                skipped += 1
-                await session.commit()
-                continue
-
-            try:
-                await send(
-                    Platform(fresh_identity.platform),
-                    fresh_identity.platform_user_id,
-                    campaign.text,
-                )
-                for attachment in attachments:
-                    await send_attachment(
-                        Platform(fresh_identity.platform),
-                        fresh_identity.platform_user_id,
-                        attachment,
-                    )
-            except Exception:
-                # The Bot API may have already delivered the message. Do
-                # NOT retry without consulting an operator and provider.
-                delivery.status = "unknown"
-                await session.commit()
-            else:
-                delivery.status = "sent"
-                delivery.sent_at = datetime.now(timezone.utc)
-                successes += 1
-                await session.commit()
-
-        unresolved = await session.scalar(
-            select(func.count()).select_from(ShopCampaignDelivery).where(
-                ShopCampaignDelivery.campaign_id == campaign_id,
-                ShopCampaignDelivery.status.in_(
-                    ("queued", "sending", "unknown")
-                ),
-            )
-        )
-        if unresolved == 0:
-            campaign.status = "completed"
-            await session.commit()
-        return successes, skipped
