@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
 from models.shop_content import ShopOrder
+from models.shop_payment import ShopPaymentAttempt
 from models.shop_engagement import (
     ShopReferralAttribution,
     ShopReferralPolicy,
@@ -146,6 +147,21 @@ class ShopReferralService:
             or order.payment_currency != "IRR"
         ):
             return 0
+        # A mutable order status is not proof of funds. The immutable
+        # provider intent must have reached a verified, committed state.
+        attempt = await session.scalar(
+            select(ShopPaymentAttempt).where(
+                ShopPaymentAttempt.order_id == order.id
+            )
+        )
+        if (
+            attempt is None or attempt.status != "paid"
+            or attempt.provider != order.provider
+            or attempt.currency != "IRR"
+            or attempt.platform != order.platform
+        ):
+            return 0
+
         policy = await session.get(ShopReferralPolicy, 1)
         if (
             policy is None or not policy.is_enabled
