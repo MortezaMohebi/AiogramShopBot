@@ -275,11 +275,11 @@ class ShopWalletEntryAdmin(ModelView, model=ShopWalletEntry):
 
 
 class ShopReferralPolicyAdmin(ModelView, model=ShopReferralPolicy):
-    """Merchant explicitly enables its own discount/reward policy."""
+    """Only finance staff may enable merchant-funded referral rewards."""
 
     name = "سیاست معرفی"
-    name_plural = "تنظیمات معرفی مشتری"
-    category = "بازاریابی"
+    name_plural = "تنظیمات مالی معرفی مشتری"
+    category = "مالی"
     form_columns = [
         ShopReferralPolicy.is_enabled, ShopReferralPolicy.percent,
         ShopReferralPolicy.min_order_irr, ShopReferralPolicy.max_bonus_irr,
