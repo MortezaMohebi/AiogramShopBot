@@ -28,7 +28,8 @@ def _flow() -> CatalogFlow:
 @shop_catalog_router.message(F.text.in_({"🛍 محصولات", "🏠 صفحه اول"}))
 async def show_shop_catalog(message: Message, session: AsyncSession) -> None:
     """Open the same published catalog shown by the Bale adapter."""
-    if message.from_user is None:
+    # Keep the storefront private, matching Bale's event normalization.
+    if message.from_user is None or message.chat.type != "private":
         return
     event = InboundEvent(
         platform=Platform.TELEGRAM,
@@ -47,7 +48,7 @@ async def shop_catalog_button(
 ) -> None:
     """Handle shop callbacks without sharing Aiogram objects with the core."""
     await callback.answer()
-    if callback.message is None:
+    if callback.message is None or callback.message.chat.type != "private":
         return
     event = InboundEvent(
         platform=Platform.TELEGRAM,
