@@ -47,6 +47,16 @@ WEBHOOK_SECRET_TOKEN = os.environ.get("WEBHOOK_SECRET_TOKEN")
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD")
 TELEGRAM_PROXY_URL = os.environ.get("TELEGRAM_PROXY_URL")
+# Supported: direct, http_proxy, cloudflare_worker. Preserve the legacy
+# proxy setting when TELEGRAM_API_MODE has not been explicitly configured.
+TELEGRAM_API_MODE = (
+    os.environ.get("TELEGRAM_API_MODE")
+    or ("http_proxy" if TELEGRAM_PROXY_URL else "direct")
+).strip().lower()
+# This is a Worker *origin* (custom domain or workers.dev), not Telegram's host.
+TELEGRAM_WORKER_URL = os.environ.get("TELEGRAM_WORKER_URL", "").strip()
+# Independent Worker authentication; never use the bot token as relay key.
+TELEGRAM_WORKER_SECRET = os.environ.get("TELEGRAM_WORKER_SECRET", "")
 # VARIABLES FOR CRYPTO FORWARDING
 CRYPTO_FORWARDING_MODE = os.environ.get("CRYPTO_FORWARDING_MODE", False) == 'true'
 BTC_FORWARDING_ADDRESS = os.environ.get("BTC_FORWARDING_ADDRESS")
