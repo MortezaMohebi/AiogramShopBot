@@ -27,6 +27,7 @@ class BaleTransport:
         """Bind a Bale bot token and a reusable HTTP session."""
         if not token or "/" in token or "?" in token or "#" in token:
             raise ValueError("Bale bot token is invalid.")
+        self._bot_token = token
         self._url_prefix = f"{self.BASE_URL}/bot{token}"
         self._session = session
 
@@ -57,39 +58,61 @@ class BaleTransport:
             raise BaleApiError(f"Bale API {method} request failed.") from None
 
     async def send_media(self, chat_id: int, media: MediaAttachment) -> None:
-        """Upload a private image, video, audio or document to the Bale Bot API."""
+        """Send bounded multipart media, reusing only this Bale bot's own file ID."""
+        import logging
+
         from aiohttp import FormData
+
+        from channels.media_policy import MediaLimitError, bale_media_method
         from config import SHOP_MEDIA_ROOT
         from dashboard.media_storage import safe_media_path
+        from services.shop_media_delivery import (
+            bot_fingerprint, cached_file_id, remember_file_id,
+        )
 
-        method_by_kind = {
-            "photo": ("sendPhoto", "photo"),
-            "video": ("sendVideo", "video"),
-            "audio": ("sendAudio", "audio"),
-            "document": ("sendDocument", "document"),
-        }
-        selected = method_by_kind.get(media.kind)
-        if selected is None:
-            raise BaleApiError("Unsupported Bale media kind.")
-        method, field_name = selected
         path = safe_media_path(SHOP_MEDIA_ROOT, media.storage_key)
+        try:
+            size_bytes = path.stat().st_size
+        except OSError:
+            raise BaleApiError("Bale media original file is unavailable.") from None
+        try:
+            selected = bale_media_method(media.kind, media.mime_type, size_bytes)
+        except MediaLimitError as error:
+            # Message is a safe validation failure with no credential data.
+            raise BaleApiError(str(error)) from None
+
+        bot_key = bot_fingerprint(self._bot_token)
+        cached = await cached_file_id(
+            platform="bale",
+            bot_key=bot_key,
+            storage_key=media.storage_key,
+            kind=selected.kind,
+        )
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "caption": media.caption[:1024],
+        }
+
+        if cached:
+            # Bale file IDs are unique per bot. Never borrow another bot's ID.
+            payload[selected.field] = cached
+            await self._call(selected.name, payload)
+            return
 
         form = FormData()
         form.add_field("chat_id", str(chat_id))
         if media.caption:
             form.add_field("caption", media.caption[:1024])
-        # File content is streamed from the original private store, never
-        # fetched from a Telegram-specific or Bale-specific file_id.
         try:
             with path.open("rb") as source:
                 form.add_field(
-                    field_name,
+                    selected.field,
                     source,
                     filename=path.name,
                     content_type=media.mime_type,
                 )
                 async with self._session.post(
-                    f"{self._url_prefix}/{method}",
+                    f"{self._url_prefix}/{selected.name}",
                     data=form,
                     timeout=ClientTimeout(total=120),
                 ) as response:
@@ -100,10 +123,40 @@ class BaleTransport:
                         or result.get("ok") is not True
                     ):
                         raise BaleApiError(
-                            f"Bale API {method} rejected the media upload."
+                            f"Bale API {selected.name} rejected the media."
                         )
+                    message = result.get("result")
         except (OSError, ClientError, asyncio.TimeoutError, ValueError):
             raise BaleApiError("Bale media delivery failed.") from None
+
+        remote_id = None
+        if isinstance(message, dict):
+            if selected.kind == "photo":
+                sizes = message.get("photo")
+                if isinstance(sizes, list) and sizes:
+                    last = sizes[-1]
+                    remote_id = (
+                        last.get("file_id") if isinstance(last, dict) else None
+                    )
+            else:
+                received = message.get(selected.kind)
+                remote_id = (
+                    received.get("file_id") if isinstance(received, dict)
+                    else None
+                )
+        if isinstance(remote_id, str) and remote_id:
+            try:
+                await remember_file_id(
+                    platform="bale",
+                    bot_key=bot_key,
+                    storage_key=media.storage_key,
+                    kind=selected.kind,
+                    file_id=remote_id,
+                )
+            except Exception:
+                # Delivery succeeded: never resend a user message just because
+                # the optional file-id cache could not be updated.
+                logging.warning("Bale file-id cache write was unsuccessful.")
 
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send UTF-8 text with standard inline callback buttons."""
