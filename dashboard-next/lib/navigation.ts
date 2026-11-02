@@ -8,6 +8,9 @@ import {
   LayoutDashboard,
   Megaphone,
   Settings2,
+  Truck,
+  TicketPercent,
+  MessagesSquare,
   ShieldCheck,
   Image as ImageIcon,
   type LucideIcon,
@@ -41,6 +44,18 @@ export const navigation: NavigationItem[] = [
   {
     title: "مشتریان", href: "/customers", icon: ContactRound,
     roles: ["superadmin", "sales"],
+  },
+  {
+    title: "ارسال کالا", href: "/shipping", icon: Truck,
+    roles: ["superadmin", "sales"],
+  },
+  {
+    title: "کد تخفیف", href: "/coupons", icon: TicketPercent,
+    roles: ["superadmin", "marketing", "sales"],
+  },
+  {
+    title: "رضایت مشتریان", href: "/reviews", icon: MessagesSquare,
+    roles: ["superadmin", "content"],
   },
   {
     title: "رسانه‌ها", href: "/media", icon: ImageIcon,
