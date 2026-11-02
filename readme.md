@@ -193,6 +193,21 @@ templates, and native Bale wallet invoice/verification flow.
 
 [Phase 2 implementation and safety report](docs/PHASE2_STATUS.fa.md)
 
+## Shared checkout foundation (Telegram + Bale)
+
+The draft fork now includes common multi-item baskets, product quantities,
+merchant-defined coupons, address capture, shipping methods, immutable order
+line snapshots, customer order history/cancellation, and a guarded Persian
+order-review dashboard.
+
+**No money is collected by this shared checkout path.** New requests use
+`pending_review` / `approved_unpaid` and must not be interpreted as paid
+orders. The previous single-item Bale Wallet implementation stays disabled
+until multi-item settlement and provider verification are implemented and
+tested. Telegram legacy purchase history remains separate.
+
+[Phase 3 checkout status and safety contract (Persian)](docs/PHASE3_SHARED_CHECKOUT.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)

@@ -11,7 +11,7 @@
 | F4 | منوی اصلی ثابت با متن فارسی؛ دکمه‌های کاتالوگ و جزئیات محصول از دیتابیس | PLANNED (بدون Menu Builder؛ صرفاً اتصال Catalog به Handlerهای موجود) |
 | F5 | Telegram Adapter، اتصال کاتالوگ و حالت Direct/Proxy/Cloudflare Worker؛ Polling اختیاری | IN PROGRESS (پیاده‌سازی ثبت شد؛ تست Cloudflare و Aiogram واقعی باقی است) |
 | F6 | Bale Adapter هم‌زمان با Telegram، Webhook و API | IN PROGRESS (sendMessage و callback و Webhook کدنویسی شده؛ تست میدانی باقی است) |
-| F7 | سفارش‌های مشترک، مبالغ ریال صحیح و موجودی اتمیک | IN PROGRESS (مدل اولیه و Bale checkout کدنویسی شد؛ Cart/Shipping و تست باقی است) |
+| F7 | Cart چندقلمی، Coupon، ارسال، Snapshot و تاریخچه سفارش مشترک | CODED (ثبت درخواست بدون پرداخت؛ settlement مالی و تست باقی است) |
 | F8 | کیف پول رسمی بله، تأیید دریافت، Idempotency و بازپرداخت | IN PROGRESS (SendInvoice/PreCheckout/Inquiry کدنویسی شد؛ Refund و تست باقی است) |
 | F9 | RBAC، Multi-admin، Audit، Backup، مانیتورینگ و تست بار | PLANNED |
 
@@ -36,3 +36,7 @@ F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محص�
 ## گزارش فاز ۲
 
 [گزارش پیاده‌سازی، وضعیت Wallet و فاصله با برابری قابلیت‌ها](PHASE2_STATUS.fa.md)
+
+## گزارش فاز ۳
+
+[سبد خرید و سفارش مشترک؛ محدوده و موارد باز](PHASE3_SHARED_CHECKOUT.fa.md)
