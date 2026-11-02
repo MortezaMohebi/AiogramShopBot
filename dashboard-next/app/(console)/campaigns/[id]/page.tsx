@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { changeCampaign, reconcileDelivery, deleteCampaignMedia } from "@/app/(console)/campaigns/actions";
+import { changeCampaign, reconcileDelivery, deleteCampaignMedia, prepareBaleMedia } from "@/app/(console)/campaigns/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,10 +30,11 @@ export default async function CampaignDetailsPage({ params }: { params: Params }
   if (!/^\d+$/.test(id)) notFound();
   const staff = await currentStaff();
   if (!["superadmin", "marketing"].includes(staff.role)) notFound();
-  const [campaigns, deliveries, media] = await Promise.all([
+  const [campaigns, deliveries, media, capabilities] = await Promise.all([
     adminFetch<Array<{ id: number; title: string; status: string; paid_calls_reserved: number; max_paid_calls: number }>>("/campaigns"),
     adminFetch<Delivery[]>(`/campaigns/${id}/deliveries`),
     adminFetch<{ can_edit: boolean; items: CampaignFile[] }>(`/campaigns/${id}/media`),
+    adminFetch<{bale_prepare_ready: boolean}>("/capabilities"),
   ]);
   const campaign = campaigns.find((item) => item.id === Number(id));
   if (!campaign) notFound();
@@ -87,6 +88,19 @@ export default async function CampaignDetailsPage({ params }: { params: Params }
           </CardContent>
         </Card>
       </div>
+      {capabilities.bale_prepare_ready && ["draft", "approved"].includes(campaign.status) && media.items.length > 0 ? (
+        <Card className="mt-6">
+          <CardHeader><CardTitle>آماده‌سازی رسانه برای بله</CardTitle></CardHeader>
+          <CardContent>
+            <p className="mb-3 text-sm text-muted-foreground">ارسال آزمایشی فایل‌ها فقط به چت خصوصی آماده‌سازی مدیر در بله از API معمولی انجام می‌شود. این کار کمپین را شروع نمی‌کند؛ در خطای نامشخص، وضعیت را بررسی کنید و کورکورانه تکرار نکنید.</p>
+            <form action={prepareBaleMedia} className="flex flex-wrap items-center gap-3">
+              <input name="campaign_id" type="hidden" value={id} />
+              <Input name="confirmation" dir="ltr" placeholder="PREPARE_BALE_MEDIA" required className="max-w-60 text-xs" />
+              <Button type="submit" variant="secondary">آماده‌سازی فایل‌های بله در چت خصوصی</Button>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card className="mt-6">
         <CardHeader><CardTitle>رسانه‌های کمپین</CardTitle></CardHeader>
         <CardContent className="space-y-4">
