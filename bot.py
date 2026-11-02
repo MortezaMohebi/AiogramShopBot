@@ -227,13 +227,86 @@ async def bale_webhook(webhook_secret: str, request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Invalid update")
 
+    transport = BaleTransport(
+        config.BALE_BOT_TOKEN, request.app.state.bale_http_client
+    )
+    # Payment events must be consumed BEFORE generic message normalization.
+    # Bale's successful_payment messages do not necessarily contain text.
+    precheckout = payload.get("pre_checkout_query")
+    if isinstance(precheckout, dict):
+        query_id = precheckout.get("id")
+        if not isinstance(query_id, str) or not query_id:
+            raise HTTPException(status_code=400, detail="Invalid pre-checkout query")
+        async with get_db_session() as session:
+            accepted, reason = await BaleWalletService.validate_pre_checkout(
+                session, precheckout
+            )
+        try:
+            await transport.answer_pre_checkout(
+                query_id,
+                accepted=accepted,
+                error_message=reason,
+            )
+        except BaleApiError:
+            raise HTTPException(
+                status_code=502, detail="Bale pre-checkout response failed"
+            ) from None
+        return {"status": "accepted" if accepted else "declined"}
+
+    payment_message = payload.get("message")
+    if isinstance(payment_message, dict) and isinstance(
+        payment_message.get("successful_payment"), dict
+    ):
+        payer = payment_message.get("from")
+        chat = payment_message.get("chat")
+        if (
+            not isinstance(payer, dict)
+            or type(payer.get("id")) is not int
+            or not isinstance(chat, dict)
+            or chat.get("type") != "private"
+            or type(chat.get("id")) is not int
+        ):
+            raise HTTPException(status_code=400, detail="Invalid payer")
+        try:
+            async with get_db_session() as session:
+                order, changed = await BaleWalletService.confirm_success(
+                    session,
+                    transport,
+                    payer_id=payer["id"],
+                    chat_id=chat["id"],
+                    payment=payment_message["successful_payment"],
+                )
+        except CheckoutRejected:
+            raise HTTPException(
+                status_code=422, detail="Wallet receipt did not match order"
+            ) from None
+        except BaleApiError:
+            raise HTTPException(
+                status_code=502, detail="Bale payment inquiry unavailable"
+            ) from None
+        if changed:
+            note = (
+                f"✅ پرداخت سفارش #{order.id} تأیید شد."
+                if order.status == "paid"
+                else (
+                    f"⚠️ پرداخت سفارش #{order.id} ثبت شد، اما موجودی نیاز به "
+                    "بررسی فروشنده دارد. سفارش برای پیگیری نگه داشته شده است."
+                )
+            )
+            try:
+                await transport.send(chat["id"], BotReply(note))
+            except BaleApiError:
+                # Payment settlement is already durable. Retries are safe:
+                # confirm_success will not deduct inventory twice.
+                raise HTTPException(
+                    status_code=502, detail="Payment notice delivery failed"
+                ) from None
+        return {"status": "processed" if changed else "already_processed"}
+
     event = normalize_update(Platform.BALE, payload)
     if event is None:
         return {"status": "ignored"}
 
-    transport = BaleTransport(
-        config.BALE_BOT_TOKEN, request.app.state.bale_http_client
-    )
     async with get_db_session() as session:
         if event.callback_data and event.callback_data.startswith("shop:checkout:"):
             try:
@@ -254,7 +327,7 @@ async def bale_webhook(webhook_secret: str, request: Request):
                 raise HTTPException(status_code=502, detail="Bale delivery failed") from None
             return {"status": "ok"}
 
-        if event.text and event.text.strip() in ("/orders", "📦 سفارش‌های من"):
+        if (event.text and event.text.strip() in ("/orders", "📦 سفارش‌های من")) or event.callback_data == "shop:orders":
             text = await BaleWalletService.list_orders(
                 session, platform="bale", platform_user_id=event.user_id
             )

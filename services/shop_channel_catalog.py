@@ -155,6 +155,7 @@ class CatalogFlow:
             text=body,
             rows=(
                 (_button("🛒 ثبت سفارش", f"shop:checkout:{product.id}"),),
+                (_button("📦 سفارش‌های من", "shop:orders"),),
                 (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
                 (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
                 (_button("بازگشت به محصولات", "shop:list:0"),),
