@@ -25,9 +25,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from db import session_maker
 from models.shop_content import (
-    Product, ShopCategory, ShopIdentity, ShopOrder, ShopSettings,
+    Product, ProductMedia, Testimonial, ShopCategory, ShopIdentity, ShopOrder, ShopSettings,
 )
-from models.shop_checkout import ShopOrderLine
+from models.shop_checkout import (
+    ShopOrderLine, ShopShippingMethod, ShopCoupon,
+)
+from models.shop_payment import ShopRefundCase, ShopPaymentAttempt
+from models.shop_engagement import (
+    ShopWalletAccount, ShopWalletEntry,
+)
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
@@ -697,3 +703,227 @@ async def reports(staff: Staff, session: Db, days: int = 30) -> dict:
         "top_products": [asdict(item) for item in result.top_products],
         "since": result.since.isoformat() if result.since else None,
     }
+
+
+class ReconciliationPayload(BaseModel):
+    """Recorded external delivery evidence, without any automatic resend."""
+
+    model_config = ConfigDict(extra="forbid")
+    delivery_id: int = Field(ge=1)
+    resolution: Literal["sent", "skipped"]
+    evidence: str = Field(min_length=12, max_length=255)
+
+
+@router.get("/capabilities")
+async def capabilities(staff: Staff) -> dict:
+    """Reveal safe feature flags, never secrets or webhook provider tokens."""
+    require_staff(staff, *ALL_ROLES)
+    return {
+        "broadcast_worker_enabled": (
+            config.SHOP_BROADCAST_WORKER_ENABLED
+            and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+        ),
+        "bale_business_enabled": (
+            config.BALE_BROADCAST_MODE == "business"
+            and config.BALE_BROADCAST_PAID_ENABLED
+        ),
+        "max_paid_calls": config.SHOP_BROADCAST_MAX_PAID_CALLS,
+        "media_photo_max_bytes": 10_000_000,
+        "media_other_max_bytes": 50_000_000,
+    }
+
+
+@router.get("/media")
+async def media(staff: Staff, session: Db, page: int = 1) -> dict:
+    """Read private media metadata only, never expose storage keys or bot IDs."""
+    require_staff(staff, "content")
+    if not 1 <= page <= 100_000:
+        raise HTTPException(status_code=400, detail="Invalid page")
+    total = int(await session.scalar(
+        select(func.count()).select_from(ProductMedia)
+    ) or 0)
+    entries = (await session.execute(
+        select(ProductMedia, Product.name)
+        .join(Product, Product.id == ProductMedia.product_id)
+        .order_by(ProductMedia.id.desc())
+        .offset((page - 1) * 20).limit(20)
+    )).all()
+    return {
+        "items": [
+            {
+                "id": item.id, "product_id": item.product_id,
+                "product_name": name, "kind": item.kind,
+                "filename": item.original_filename,
+                "size_bytes": item.size_bytes,
+                "is_published": item.is_published,
+                "position": item.position,
+            }
+            for item, name in entries
+        ],
+        "total": total, "page": page, "page_size": 20,
+    }
+
+
+@router.get("/testimonials")
+async def testimonials(staff: Staff, session: Db, page: int = 1) -> dict:
+    """Return review moderation state without publicizing file storage paths."""
+    require_staff(staff, "content")
+    if not 1 <= page <= 100_000:
+        raise HTTPException(status_code=400, detail="Invalid page")
+    total = int(await session.scalar(
+        select(func.count()).select_from(Testimonial)
+    ) or 0)
+    entries = (await session.execute(
+        select(Testimonial, Product.name)
+        .join(Product, Product.id == Testimonial.product_id)
+        .order_by(Testimonial.id.desc())
+        .offset((page - 1) * 20).limit(20)
+    )).all()
+    return {
+        "items": [
+            {
+                "id": row.id, "product_id": row.product_id,
+                "product_name": name, "text": row.text,
+                "has_file": row.media_storage_key is not None,
+                "is_approved": row.is_approved,
+            }
+            for row, name in entries
+        ],
+        "total": total, "page": page, "page_size": 20,
+    }
+
+
+@router.get("/shipping")
+async def shipping(staff: Staff, session: Db) -> list[dict]:
+    """Display dynamically configured shipping charges in integral rials."""
+    require_staff(staff, "sales", "viewer")
+    result = await session.execute(
+        select(ShopShippingMethod)
+        .order_by(ShopShippingMethod.position, ShopShippingMethod.id)
+        .limit(1000)
+    )
+    return [
+        {
+            "id": row.id, "name": row.name,
+            "price_irr": str(row.price_irr), "is_active": row.is_active,
+            "position": row.position,
+        }
+        for row in result.scalars()
+    ]
+
+
+@router.get("/coupons")
+async def coupons(staff: Staff, session: Db) -> list[dict]:
+    """Return merchant coupon rules without extending scope to staff wallets."""
+    require_staff(staff, "sales", "marketing", "viewer")
+    result = await session.execute(
+        select(ShopCoupon).order_by(ShopCoupon.id.desc()).limit(1000)
+    )
+    return [
+        {
+            "id": row.id, "code": row.code,
+            "type": row.discount_type, "value": str(row.value),
+            "used": row.used_count, "max_uses": row.max_uses,
+            "is_active": row.is_active,
+        }
+        for row in result.scalars()
+    ]
+
+
+@router.get("/refunds")
+async def refunds(staff: Staff, session: Db) -> list[dict]:
+    """Review financial cases, never expose unverified refund confirmation."""
+    require_staff(staff, "finance")
+    records = (await session.execute(
+        select(ShopRefundCase, ShopOrder.platform, ShopOrder.total_irr)
+        .join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
+        .order_by(ShopRefundCase.id.desc()).limit(200)
+    )).all()
+    return [
+        {
+            "id": row.id, "order_id": row.order_id,
+            "platform": platform, "status": row.status,
+            "reason": row.reason, "amount_irr": str(amount),
+            "created_at": row.created_at.isoformat(),
+        }
+        for row, platform, amount in records
+    ]
+
+
+@router.get("/wallets")
+async def wallets(staff: Staff, session: Db) -> dict:
+    """Show merchant store-credit balances, separate from Bale native wallet."""
+    require_staff(staff, "finance")
+    result = await session.execute(
+        select(
+            ShopWalletAccount.balance_irr,
+            ShopIdentity.platform,
+            ShopIdentity.platform_user_id,
+        )
+        .join(ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id)
+        .order_by(ShopWalletAccount.id.desc()).limit(100)
+    )
+    accounts = [
+        {
+            "balance_irr": str(balance),
+            "platform": platform,
+            "user_id": str(user_id),
+        }
+        for balance, platform, user_id in result.all()
+    ]
+    count = int(await session.scalar(
+        select(func.count()).select_from(ShopWalletAccount)
+    ) or 0)
+    return {"items": accounts, "total": count}
+
+
+@router.get("/campaigns/{campaign_id}/deliveries")
+async def campaign_deliveries(
+    campaign_id: int, staff: Staff, session: Db
+) -> list[dict]:
+    """Give staff bounded, actionable delivery receipts for uncertain messages."""
+    require_staff(staff, "marketing")
+    result = await session.execute(
+        select(
+            ShopCampaignDelivery, ShopIdentity.platform,
+            ShopIdentity.platform_user_id,
+        )
+        .join(ShopIdentity, ShopIdentity.id == ShopCampaignDelivery.identity_id)
+        .where(
+            ShopCampaignDelivery.campaign_id == campaign_id,
+            ShopCampaignDelivery.status == "unknown",
+        )
+        .order_by(ShopCampaignDelivery.id.desc()).limit(100)
+    )
+    return [
+        {
+            "id": row.id, "platform": platform,
+            "user_id": str(user_id),
+            "completed_steps": row.completed_steps,
+            "last_error_code": row.last_error_code,
+        }
+        for row, platform, user_id in result.all()
+    ]
+
+
+@router.post("/campaigns/{campaign_id}/reconcile")
+async def reconcile_campaign(
+    campaign_id: int,
+    payload: ReconciliationPayload,
+    staff: Staff,
+    session: Db,
+) -> dict:
+    """Resolve uncertain sends with explicit staff evidence, without retry."""
+    user = require_staff(staff, "marketing")
+    try:
+        await BroadcastControl.reconcile(
+            session,
+            campaign_id=campaign_id,
+            delivery_id=payload.delivery_id,
+            actor=f"staff:{user.id}",
+            resolution=payload.resolution,
+            evidence=payload.evidence,
+        )
+    except CampaignRejected as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    return {"ok": True}
