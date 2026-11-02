@@ -34,6 +34,7 @@ from services.shop_payments import PaymentRejected
 from channels.shop_payment_dispatch import send_order_invoice
 from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
+from services.shop_updates import claim_update, finish_update
 from dashboard.persian import localize_model_view
 from dashboard.permissions import secure_model_view
 from dashboard.wallet_views import ShopWalletAdjustmentView
@@ -290,6 +291,34 @@ async def bale_webhook(webhook_secret: str, request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Invalid update")
 
+    # A unique update receipt is persisted before any outgoing Bot API send.
+    update_id = payload.get("update_id")
+    if type(update_id) is not int or update_id < 0:
+        raise HTTPException(status_code=400, detail="Invalid update ID")
+    fresh, state = await claim_update(
+        platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
+        update_id=update_id,
+    )
+    if not fresh:
+        return {"status": "duplicate", "receipt_state": state}
+    try:
+        response = await _process_bale_update(request, payload)
+    except Exception:
+        await finish_update(
+            platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
+            update_id=update_id, success=False,
+        )
+        raise
+    await finish_update(
+        platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
+        update_id=update_id, success=True,
+    )
+    return response
+
+
+async def _process_bale_update(request: Request, payload: dict):
+    """Handle an already-claimed Bale update exactly once per bot."""
+
     transport = BaleTransport(
         config.BALE_BOT_TOKEN, request.app.state.bale_http_client
     )
@@ -454,19 +483,53 @@ async def bale_webhook(webhook_secret: str, request: Request):
 
 @app.post(config.WEBHOOK_PATH)
 async def webhook(request: Request):
+    """Deduplicate Telegram webhook receipts independently of Bale."""
     if config.TELEGRAM_UPDATE_MODE != "webhook":
         raise HTTPException(status_code=404, detail="Not found")
     secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret_token != config.WEBHOOK_SECRET_TOKEN:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    expected = config.WEBHOOK_SECRET_TOKEN or ""
+    if not expected or not secret_token or not compare_digest(
+        secret_token, expected
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    raw = await request.body()
+    if len(raw) > 256_000:
+        raise HTTPException(status_code=413, detail="Update too large")
+    try:
+        update_data = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid JSON") from None
+    if not isinstance(update_data, dict):
+        raise HTTPException(status_code=400, detail="Invalid update")
+    update_id = update_data.get("update_id")
+    if type(update_id) is not int or update_id < 0:
+        raise HTTPException(status_code=400, detail="Invalid update ID")
+
+    fresh, receipt_state = await claim_update(
+        platform=Platform.TELEGRAM, token=config.TOKEN,
+        update_id=update_id,
+    )
+    if not fresh:
+        return {"status": "duplicate", "receipt_state": receipt_state}
 
     try:
-        update_data = await request.json()
         await dp.feed_webhook_update(bot, update_data)
-        return {"status": "ok"}
-    except Exception as e:
-        logging.error(f"Error processing webhook: {e}")
-        return {"status": "error"}, status.HTTP_500_INTERNAL_SERVER_ERROR
+    except Exception:
+        await finish_update(
+            platform=Platform.TELEGRAM, token=config.TOKEN,
+            update_id=update_id, success=False,
+        )
+        # Do not embed bot tokens, customer content or exception URLs.
+        raise HTTPException(
+            status_code=502, detail="Telegram webhook processing failed"
+        ) from None
+
+    await finish_update(
+        platform=Platform.TELEGRAM, token=config.TOKEN,
+        update_id=update_id, success=True,
+    )
+    return {"status": "ok"}
 
 
 @app.exception_handler(Exception)
