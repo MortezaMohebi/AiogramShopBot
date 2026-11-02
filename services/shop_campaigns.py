@@ -25,6 +25,7 @@ from models.shop_engagement import (
 
 SendMessage = Callable[[Platform, int, str], Awaitable[None]]
 SendAttachment = Callable[[Platform, int, MediaAttachment], Awaitable[None]]
+MediaPreflight = Callable[[tuple[MediaAttachment, ...]], Awaitable[None]]
 _MAX_PER_BATCH = 10
 
 
@@ -133,6 +134,7 @@ class ShopCampaignService:
         campaign_id: int,
         send: SendMessage,
         send_attachment: SendAttachment | None = None,
+        media_preflight: MediaPreflight | None = None,
     ) -> tuple[int, int]:
         """Send a bounded batch of queued notifications at most once.
 
@@ -169,6 +171,10 @@ class ShopCampaignService:
             raise CampaignRejected(
                 "ارسال فایل‌های کمپین در این اتصال پشتیبانی نمی‌شود."
             )
+        if media_preflight is not None:
+            # Business API supports media only by a pre-existing file_id.
+            # Check readiness BEFORE claiming even one recipient.
+            await media_preflight(attachments)
         candidates = results.all()
         successes, skipped = 0, 0
 
