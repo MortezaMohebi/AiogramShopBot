@@ -1,0 +1,78 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<section class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">کمپین‌ها و ارسال اطلاعیه</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted">
+        کمپین جدید را ابتدا از «ارسال اطلاعیه به مشتریان» بسازید.
+        فقط کاربران دارای رضایت دریافت اطلاعیه و بدون مسدودیت انتخاب می‌شوند.
+        ارسال هر بار حداکثر ۱۰ نفر است. خطای نامشخص، ارسال مجدد خودکار ندارد.
+      </p>
+      {% if result %}
+      <div class="alert alert-info" role="status">
+        درخواست ثبت شد؛ وضعیت تحویل‌ها را در جدول بررسی کنید.
+      </div>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead><tr>
+            <th>کمپین</th><th>هدف</th><th>وضعیت</th>
+            <th>صف ارسال</th><th>ارسال‌شده</th>
+            <th>نیازمند بررسی</th><th>اقدام</th>
+          </tr></thead>
+          <tbody>
+          {% for campaign in campaigns %}
+            {% set counts_row = counts.get(campaign.id, {}) %}
+            <tr>
+              <td>{{ campaign.title }} (#{{ campaign.id }})</td>
+              <td>{{ campaign.audience }}</td>
+              <td>{{ campaign.status }}</td>
+              <td>{{ counts_row.get('queued', 0) }}</td>
+              <td>{{ counts_row.get('sent', 0) }}</td>
+              <td>{{ counts_row.get('unknown', 0) + counts_row.get('sending', 0) }}</td>
+              <td>
+              {% if campaign.status == "draft" or
+                    campaign.status == "approved" or
+                    campaign.status == "sending" %}
+                <form action="/admin/campaign-review" method="post">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id"
+                    value="{{ campaign.id }}">
+                  {% if campaign.status == "draft" %}
+                    <input type="hidden" name="action" value="approve">
+                    <input class="form-control mb-1 ltr"
+                      name="confirmation" required
+                      placeholder="APPROVE_CAMPAIGN">
+                    <button class="btn btn-primary btn-sm" type="submit">
+                      تأیید مخاطبان
+                    </button>
+                  {% elif counts_row.get('queued', 0) > 0 %}
+                    <input type="hidden" name="action" value="dispatch">
+                    <input class="form-control mb-1 ltr"
+                      name="confirmation" required
+                      placeholder="SEND_BATCH">
+                    <button class="btn btn-outline-primary btn-sm" type="submit">
+                      ارسال ۱۰ مورد بعدی
+                    </button>
+                  {% else %}
+                    <span class="text-muted">صف جدیدی برای ارسال وجود ندارد.</span>
+                  {% endif %}
+                </form>
+              {% else %}
+                <span class="text-muted">پایان‌یافته</span>
+              {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7">کمپینی تعریف نشده است.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
