@@ -75,6 +75,7 @@ def file_response(key: str, mime: str) -> FileResponse:
         path,
         media_type=mime or "application/octet-stream",
         content_disposition_type="inline",
+        filename="media" + path.suffix,
         headers={
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
@@ -196,7 +197,10 @@ async def upload_media(
             await session.flush()
             record_id = record.id
             await session.commit()
-            return {"id": record_id, "status": "pending_review" if target != "campaign" else "draft"}
+            response = {"id": record_id, "status": "pending_review" if target != "campaign" else "draft"}
+            if target == "campaign":
+                response["campaign_id"] = campaign_id
+            return response
     except (UnsupportedMediaError, SQLAlchemyError, HTTPException) as exc:
         await session.rollback()
         if saved is not None:
