@@ -38,9 +38,9 @@
 
 ## گزارش‌های RTL و کنترل دسترسی
 
-- `/admin/shop-analytics`: آمار کاربران/سفارش/رسیدهای واقعی، تفکیک Telegram/Bale و بازه ۷/۳۰/۹۰ روز یا کل دوره.
+- `/admin/shop-analytics`: آمار کاربران/سفارش/رسیدهای واقعی، تفکیک Telegram/Bale و بازه ۷/۳۰/۹۰/۳۶۵ روز یا کل دوره.
 - `XTR`، ریال دریافتی Provider و اعتبار داخلی مصرف‌شده از هم **جدا** گزارش می‌شوند. اعداد Legacy قبلی هنوز ادغام نشده‌اند.
-- موجودی اعتبارات و پاداش‌های معرفی و وضعیت ارسال‌ها به‌عنوان مقادیر دوره‌کامل نمایش داده می‌شوند؛ «درآمد خالص» ساختگی گزارش نمی‌شود.
+- افزایش/کاهش اعتبار در بازه انتخابی از Ledger محاسبه می‌شود؛ وضعیت بازپرداخت و صف ارسال‌ها مستقل از بازه و به‌عنوان وضعیت جاری نمایش داده می‌شوند. مبلغ IRR دریافتی درگاه تلگرام از قیمت ریالی ثبت‌شده سفارش محاسبه می‌شود، نه از ریزواحد API. «درآمد خالص» ساختگی گزارش نمی‌شود.
 - حساب ثابت `admin` و Password مشترک حذف شده‌اند؛ حساب مستقل `ShopStaff` دارای Role، Hash رمز Argon2، وضعیت فعال و نسخه نشست است.
 - Roleها: `superadmin`، `sales`، `content`، `finance`، `marketing`، `viewer`. هر درخواست SQLAdmin از دیتابیس اعتبار نشست را دوباره بررسی می‌کند.
 - ModelViewها با دسترسی دسته‌ایِ deny-by-default حفاظت شده‌اند. صفحات اختصاصی Finance/Marketing/Sales/Content نیز Guard داخلی و CSRF دارند.
@@ -87,3 +87,12 @@ python -m scripts.manage_shop_staff disable marketing1
 
 تنظیم درصد و سقف پاداش معرفی به نقش **Finance / Superadmin** محدود شده است؛
 کاربر Marketing فقط می‌تواند کمپین‌های Opt-in و محتوای تبلیغاتی را مدیریت کند.
+
+## بازبینی امنیت و کیفیت کدنویسی
+
+- `tests/test_shop_analytics_offline.py`، `tests/test_shop_campaigns_offline.py` و `tests/test_shop_credit_referrals_offline.py` برای کنترل تفکیک ارز، رضایت مشتری، Idempotency و رسید معتبر به شاخه اضافه شده‌اند. **اجرا نشده‌اند.**
+- `ShopReferralService.award_for_paid_order` اکنون علاوه بر وضعیت سفارش، وجود رکورد `ShopPaymentAttempt` تأییدشده با همان Provider و ارز IRR را الزامی می‌کند.
+- اگر پس از تأیید پرداخت، محاسبه پاداش معرفی ناقص مانده باشد، اسکریپت `scripts/reconcile_shop_referrals.py` ابتدا به‌صورت فقط‌خواندنی و تنها با `--apply` و تأیید Order ID اقدام می‌کند. اجرای خودکار ندارد.
+- `services/shop_analytics.py` واحد ریالی فروش، مصرف اعتبار داخلی و مبلغ XTR را جداگانه نگه می‌دارد. فایل گزارش فارسی SQLAdmin از همین سرویس استفاده می‌کند.
+- Startup برنامه فقط وقتی Alembic Head و جداول DB کامل باشند ادامه می‌یابد؛ مسیر قدیمی `create_all()` که Migration مالی را دور می‌زد غیرفعال شده است.
+- SQL engine به‌صورت پیش‌فرض SQL Parameters را Log نمی‌کند (`DB_SQL_ECHO=false`).
