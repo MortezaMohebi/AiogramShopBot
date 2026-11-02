@@ -28,6 +28,8 @@ _PLACE_ACTION = re.compile(
     r"shop:place:([1-9][0-9]{0,18}):([1-9][0-9]{0,18})\Z"
 )
 _MAX_LINES = 20
+_SHIPPING_PAGE_SIZE = 10
+_SHIPPING_PAGE_ACTION = re.compile(r"shop:shipping:(0|[1-9][0-9]{0,8})\Z")
 
 
 class CartRejected(ValueError):
@@ -110,6 +112,11 @@ class ShopCartFlow:
                 return await self._request_input(event, session, action)
             if action == "shop:checkout":
                 return await self._checkout_preview(event, session)
+            match = _SHIPPING_PAGE_ACTION.fullmatch(action)
+            if match:
+                return await self._shipping_choices(
+                    event, session, int(match.group(1))
+                )
             match = _PRODUCT_ACTION.fullmatch(action)
             if match:
                 return await self._change_item(
@@ -180,7 +187,9 @@ class ShopCartFlow:
             .where(
                 ShopOrder.platform == cart.platform,
                 ShopOrder.platform_user_id == cart.platform_user_id,
-                ShopOrder.status.in_(("pending_review", "pending_payment")),
+                # Unpaid wallet invoices must be reconciled before reordering.
+                # Review-only requests never lock a customer's future baskets.
+                ShopOrder.status == "pending_payment",
             )
             .order_by(ShopOrder.id.desc())
             .limit(1)
@@ -201,6 +210,8 @@ class ShopCartFlow:
             ).with_for_update()
         )
         line = result.scalar_one_or_none()
+        if action in ("remove", "dec") and line is None:
+            raise CartRejected("این محصول در سبد خرید شما وجود ندارد.")
         if action == "remove" and line is not None:
             await session.delete(line)
         elif action == "dec" and line is not None:
@@ -303,7 +314,28 @@ class ShopCartFlow:
                     "سبد خرید خالی است.",
                     ((button("🛍 محصولات", "shop:categories"),),),
                 )
-            raise
+            # Invalid stock or expired coupons must not trap the customer in
+            # a view that cannot remove items or clear the selected coupon.
+            result = await session.execute(
+                select(ShopCartItem, Product)
+                .join(Product, Product.id == ShopCartItem.product_id)
+                .where(ShopCartItem.cart_id == cart.id)
+                .order_by(ShopCartItem.id)
+            )
+            rows = [
+                (button(
+                    f"🗑 حذف {product.name[:36]}",
+                    f"shop:remove:{item.product_id}",
+                ),)
+                for item, product in result.all()
+            ]
+            if cart.coupon_id is not None:
+                rows.append((button("حذف کد تخفیف", "shop:clear_coupon"),))
+            rows.append((button("🛍 محصولات", "shop:categories"),))
+            return BotReply(
+                f"⚠️ {error}\nبرای اصلاح سبد یکی از گزینه‌ها را انتخاب کنید.",
+                tuple(rows),
+            )
         rows = []
         details = ["🛒 سبد خرید"]
         for line in quote.lines:
@@ -393,27 +425,43 @@ class ShopCartFlow:
         )
 
     async def _shipping_choices(
-        self, event: InboundEvent, session: AsyncSession
+        self, event: InboundEvent, session: AsyncSession,
+        requested_page: int = 0
     ) -> BotReply:
-        """Show shipping charges configured through SQLAdmin."""
+        """Paginate arbitrary administrator-defined shipping methods."""
+        clause = ShopShippingMethod.is_active.is_(True)
+        count = await session.scalar(
+            select(func.count()).select_from(ShopShippingMethod).where(clause)
+        )
+        if not count:
+            return BotReply("هیچ روش ارسالی تعریف نشده است.")
+        last_page = (count - 1) // _SHIPPING_PAGE_SIZE
+        page = min(requested_page, last_page)
         result = await session.execute(
             select(ShopShippingMethod)
-            .where(ShopShippingMethod.is_active.is_(True))
+            .where(clause)
             .order_by(ShopShippingMethod.position, ShopShippingMethod.id)
-            .limit(20)
+            .offset(page * _SHIPPING_PAGE_SIZE)
+            .limit(_SHIPPING_PAGE_SIZE)
         )
-        methods = result.scalars().all()
-        if not methods:
-            return BotReply("هیچ روش ارسالی تعریف نشده است.")
+        rows = [
+            (button(
+                f"{m.name[:35]} — {format_rials(m.price_irr, self.display_unit)}",
+                f"shop:ship:{m.id}",
+            ),)
+            for m in result.scalars().all()
+        ]
+        controls = []
+        if page:
+            controls.append(button("قبلی", f"shop:shipping:{page - 1}"))
+        if page < last_page:
+            controls.append(button("بعدی", f"shop:shipping:{page + 1}"))
+        if controls:
+            rows.append(tuple(controls))
+        rows.append((button("🛒 بازگشت به سبد", "shop:cart"),))
         return BotReply(
-            "🚚 روش ارسال را انتخاب کنید:",
-            tuple(
-                (button(
-                    f"{m.name[:35]} — {format_rials(m.price_irr, self.display_unit)}",
-                    f"shop:ship:{m.id}",
-                ),)
-                for m in methods
-            ),
+            f"🚚 انتخاب روش ارسال — صفحه {page + 1} از {last_page + 1}",
+            tuple(rows),
         )
 
     async def _select_shipping(
