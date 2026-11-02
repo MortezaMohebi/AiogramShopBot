@@ -73,3 +73,19 @@
 - [x] ارسال واقعی کمپین با `SHOP_CAMPAIGN_DISPATCH_ENABLED=false` به‌صورت پیش‌فرض بسته شد.
 - [ ] تست‌های `test_shop_engagement.py` و تست SQLite/PostgreSQL هم‌زمان اجرا شوند.
 - [ ] تأیید امنیت و عدم هم‌پوشانی Handlerهای Legacy و مشترک، قبل از Merge.
+
+## فاز ۶ — محدودیت بله، رسانه و Broadcast
+
+- [x] سقف رسمی Bale multipart عکس ۱۰٬۰۰۰٬۰۰۰ و سایر فایل‌ها ۵۰٬۰۰۰٬۰۰۰ بایت در Upload و Transport ثبت شد.
+- [x] مسیر OGG صوتی تا ۱ MB به Voice و بزرگ‌تر به Document تغییر می‌کند.
+- [x] `ShopRemoteFile` شناسه فایل هر Bot/Platform و نوع ارسال را مجزا ذخیره می‌کند.
+- [x] `ShopInboundUpdate` قبل از پردازش، Updateهای تکراری Webhook بله و تلگرام را شناسایی می‌کند.
+- [x] کمپین دارای متن، رسانه‌های متعدد و مخاطب Telegram/Bale/All است؛ فقط Opt-in ارسال می‌شود.
+- [x] Bale Business Mode هزینه‌دار با Flag مستقل و پیش‌بررسی `file_id` همان بازو ایجاد شد.
+- [x] آزمون‌های Offline محدودیت فایل، Media Broadcast، Business API و Dedup در مخزن نوشته شدند.
+- [ ] اجرای `pytest`، Alembic و تست آپلود در مرزهای رسمی ۱۰/۵۰ MB.
+- [ ] آزمون واقعی Telegram/Bale Webhook، API فایل، Business حساب شارژشده و خطای میان ارسال.
+- [ ] بررسی وضعیت‌های `processing` / `needs_review` و `unknown` با شواهد Provider قبل از Retry دستی.
+- [ ] اندازه‌گیری Rate Limit و هزینه واقعی Business API قبل از فعال‌کردن Flagهای Broadcast.
+
+**منبع رسمی:** [Bale Bot API](https://docs.bale.ai/) و [گزارش فاز ۶](PHASE6_MEDIA_BROADCAST.fa.md)

@@ -7,7 +7,7 @@
 | F0 | اهداف، معماری و معیارهای پذیرش مکتوب | DONE (documentation) |
 | F1 | داشبورد SQLAdmin فارسی و RTL، منو/فرم/Modalهای فارسی | CODED (بررسی بصری به مرحله آخر موکول شده) |
 | F2 | محصول/دسته‌بندی مستقل، آپلود امن، رضایت، تنظیمات فروشگاه و CRUD | CODED (Migration، اجرای Bot و آزمون واقعی باقی است) |
-| F3 | Media upload، Preview و ارسال فایل به هر دو Adapter؛ Cache شناسه فایل | IN PROGRESS (Upload/ارسال کدنویسی شد؛ Cache و آزمون باقی است) |
+| F3 | Media upload، Preview و ارسال فایل به هر دو Adapter؛ Cache شناسه فایل | CODED (Cache تفکیک‌شده و سقف فایل اضافه شد؛ تست عملی باقی است) |
 | F4 | منوی اصلی ثابت با متن فارسی؛ دکمه‌های کاتالوگ و جزئیات محصول از دیتابیس | PLANNED (بدون Menu Builder؛ صرفاً اتصال Catalog به Handlerهای موجود) |
 | F5 | Telegram Adapter، اتصال کاتالوگ و حالت Direct/Proxy/Cloudflare Worker؛ Polling اختیاری | IN PROGRESS (پیاده‌سازی ثبت شد؛ تست Cloudflare و Aiogram واقعی باقی است) |
 | F6 | Bale Adapter هم‌زمان با Telegram، Webhook و API | IN PROGRESS (sendMessage و callback و Webhook کدنویسی شده؛ تست میدانی باقی است) |
@@ -55,3 +55,17 @@ F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محص�
 ## مستند برابری قابلیت‌ها — فاز ۵
 
 [اعتبار داخلی، Referral، Broadcast و Analytics](PHASE5_PARITY.fa.md)
+
+## فاز ۶ — فایل‌ها، Webhook و Broadcast
+
+- Bale multipart: عکس ۱۰ MB، سایر فایل‌ها ۵۰ MB؛ قبل از Upload و Send کنترل می‌شود.
+- Cache مستقل `file_id` برای هر Bot و Platform در `shop_remote_files`.
+- ثبت `update_id` جدا برای Webhook تلگرام و بله، با `needs_review` در خطای نامشخص.
+- Broadcast متن و چندرسانه‌ای از SQLAdmin، Batch ده‌نفری و رضایت صریح.
+- Bale Business API به‌عنوان حالت هزینه‌دار اختیاری؛ فقط `file_id`، Flag پولی خاموش.
+- [گزارش، راه‌اندازی و آزمون‌های لازم فاز ۶](PHASE6_MEDIA_BROADCAST.fa.md)
+
+| فاز | خروجی | وضعیت |
+|---|---|---|
+| F13 | محدودیت فایل بله، Cache شناسه‌ها و دریافت Webhook بدون تکرار | CODED (Test/Debug نهایی باقی است) |
+| F14 | Broadcast متن/رسانه به هر دو Bot، Bale Standard/Business | CODED (بسته به Flag، اجرای واقعی غیرفعال) |

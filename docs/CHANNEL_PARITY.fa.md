@@ -149,3 +149,18 @@ Coupon، Quote، ثبت درخواست بدون پرداخت، تاریخچه و
 ## فاز ۵ — توانمندی‌های غیررمزارزی جدید
 
 کدهای Store Credit ریالی، Referral، Consent، Broadcast و Analytics در Core مشترک برای Telegram و Bale ثبت شده‌اند. این موارد تست API واقعی ندارند و Broadcast پیش‌فرض غیرفعال است. [جزئیات فاز ۵](PHASE5_PARITY.fa.md)
+
+## فاز ۶ — فایل، Cache و Broadcast
+
+| موضوع | Telegram | Bale |
+|---|---|---|
+| آپلود عکس | فایل اصلی خصوصی + Cache مخصوص Bot | حداکثر ۱۰ MB برای Multipart |
+| ویدیو/صوت/PDF | رسانه اصلی و `file_id` مخصوص Bot | حداکثر ۵۰ MB برای Multipart |
+| Voice OGG | مسیر صوتی یا Document | Voice تا ۱ MB؛ بزرگ‌تر Document |
+| بازپخش فایل | `file_id` تلگرام همان Bot | `file_id` یکتای همان بازو |
+| Broadcast متنی/فایلی | TelegramTransport | Bale Standard یا Business اختیاری |
+| Broadcast پولی | ندارد | Business API با سهمیه بالاتر و هزینه هر پیام؛ فعال‌سازی جدا |
+| دریافت Webhook تکراری | `ShopInboundUpdate` | همان Core با Bot Fingerprint مجزا |
+
+**وضعیت:** کدنویسی‌شده، بدون اجرای عملی؛ Business پولی با Flag خاموش می‌ماند.
+[جزئیات فاز ۶](PHASE6_MEDIA_BROADCAST.fa.md)

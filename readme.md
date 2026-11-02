@@ -240,6 +240,26 @@ default. No live Bot API or database tests have been run.**
 
 [Phase 5 scope, operational controls and deferred verification (Persian)](docs/PHASE5_ENGAGEMENT.fa.md)
 
+## Media safety and two-platform Broadcast (draft Phase 6)
+
+The shared dashboard accepts media up to the official **Bale multipart** limits:
+10 MB per photo and 50 MB per video/audio/document. File IDs are stored
+separately for each Telegram/Bale bot; original media stays in private storage.
+
+Consent-only marketing campaigns now include ordered image/video/audio/PDF
+attachments and a durable recipient outbox. Broadcast runs in bounded,
+administrator-approved batches. Bale supports optional `standard` or paid
+`business` broadcast mode; paid mode is disabled by default and requires
+pre-uploaded file IDs belonging to the same Bale bot.
+
+Webhook update IDs are recorded per platform and bot before handling. Replayed
+updates are not executed again; uncertain outcomes require manual review.
+
+**The new code is not deployed or live-tested.** Do not enable paid Business
+broadcast or merge this draft before final Test → Debug → Retest.
+
+[Phase 6 Bale media limits, broadcast and deduplication (Persian)](docs/PHASE6_MEDIA_BROADCAST.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)
