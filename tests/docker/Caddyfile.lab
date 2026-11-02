@@ -1,0 +1,23 @@
+{
+    admin off
+}
+
+# Loopback-only mapping is configured in compose.test.yml.
+# An internal CA cert permits real Secure / __Host- cookie testing.
+https://localhost:8443 {
+    tls internal
+
+    request_body {
+        max_size 52MB
+    }
+
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        Strict-Transport-Security "max-age=0"
+    }
+
+    reverse_proxy next-admin:3000 {
+        header_up X-Forwarded-Proto https
+    }
+}
