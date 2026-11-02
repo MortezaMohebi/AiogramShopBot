@@ -5,3 +5,6 @@ media_data/
 *.sqlite3
 __pycache__/
 .pytest_cache/
+
+# Never commit Next.js BFF sessions, bridge credentials or production secrets.
+.env.next-admin

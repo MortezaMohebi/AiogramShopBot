@@ -29,7 +29,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
   const params = await searchParams;
   const page = Math.max(1, Math.min(100000, Number.parseInt(params.page ?? "1", 10) || 1));
   const result = await adminFetch<Paginated<Media>>(`/media?page=${page}`);
-  const legacy = process.env.NEXT_PUBLIC_LEGACY_ADMIN_URL;
+  const legacy = process.env.LEGACY_ADMIN_PUBLIC_URL;
   return (
     <div>
       <PageHeading

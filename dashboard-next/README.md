@@ -69,12 +69,14 @@ imports, Persian translations and existing access controls.
 - /campaigns/[id] — uncertain delivery evidence/reconciliation
 - /reports — separate IRR, store credit and XTR
 - /settings — mutable welcome/FAQ/help/shop name
+- /shipping and /coupons — live merchant CRUD, exact IRR charges
 - /media — read-only metadata, legacy private uploader fallback
+- /reviews — read-only testimonial review queue
 - /finance — read-only wallets and refund case metadata
 
 **Intentional gradual replacement:** heavy 50 MB file upload, media moderation,
 refund confirmation, sensitive merchant credit adjustments, staff provisioning,
-shipping/coupon CRUD and old Telegram Legacy transaction history stay within
+old Telegram Legacy transaction history stay within
 their existing guarded SQLAdmin/CLI pathways. Do not claim those features have
 migrated until complete BFF APIs and tests exist.
 
