@@ -10,6 +10,11 @@
         <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
         افزودن عکس، ویدیو یا فایل به کمپین پیش‌نویس
       </a></p>
+      <div class="alert alert-secondary">
+        حالت ارسال بله: <strong>{{ "Business API (هزینه‌دار)" if business_mode else "API معمولی" }}</strong>.
+        در Business API، فایل‌ها فقط با file_id قبلاً بارگذاری‌شده ارسال می‌شوند.
+        تا فعال‌سازی صریح سهمیه و هزینه، درخواست ارسال پولی مسدود است.
+      </div>
       <p class="text-muted">
         کمپین جدید را ابتدا از «ارسال اطلاعیه به مشتریان» بسازید.
         فقط کاربران دارای رضایت دریافت اطلاعیه و بدون مسدودیت انتخاب می‌شوند.
@@ -67,6 +72,18 @@
                 </form>
               {% else %}
                 <span class="text-muted">پایان‌یافته</span>
+              {% endif %}
+              {% if campaign.status in ("draft", "approved") %}
+                <form action="/admin/campaign-review" method="post" class="mt-2">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="prepare">
+                  <input class="form-control mb-1 ltr" name="confirmation" required
+                    placeholder="PREPARE_BALE_MEDIA">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary">
+                    آماده‌سازی file_id رسانه‌های بله در چت مدیر
+                  </button>
+                </form>
               {% endif %}
               </td>
             </tr>
