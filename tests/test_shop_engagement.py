@@ -342,3 +342,56 @@ def test_role_access_is_default_deny_for_finance_views():
     )
     assert not FinanceView().is_accessible(viewer)
     assert FinanceView().is_accessible(accountant)
+
+
+@pytest.mark.asyncio
+async def test_unknown_campaign_delivery_is_not_retried_blindly(db):
+    """A timeout must never create a second unverified marketing delivery."""
+    identity(db, Platform.TELEGRAM, 701, consent=True)
+    campaign = ShopCampaign(
+        title="آزمون خطای ارتباط", text="متن ارسال تست", audience="telegram"
+    )
+    db.add(campaign)
+    db.session.commit()
+    await ShopCampaignService.approve(
+        db, campaign_id=campaign.id, approver="staff:1"
+    )
+    attempts = []
+
+    async def uncertain_delivery(platform, user_id, text):
+        """Simulate a timeout after a request might have been accepted."""
+        attempts.append((platform, user_id))
+        raise TimeoutError("Ambiguous delivery")
+
+    sent, skipped = await ShopCampaignService.dispatch_batch(
+        db, campaign_id=campaign.id, send=uncertain_delivery
+    )
+    assert sent == 0 and skipped == 0
+    delivery = db.session.scalar(select(ShopCampaignDelivery))
+    assert delivery.status == "unknown"
+    assert campaign.status == "sending"
+    # A second explicit batch only searches for queued deliveries, and
+    # does not replay unknown/sending records.
+    await ShopCampaignService.dispatch_batch(
+        db, campaign_id=campaign.id, send=uncertain_delivery
+    )
+    assert len(attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_referral_policy_off_disables_new_codes(db):
+    """Marketing must not silently promise payouts without finance approval."""
+    identity(db, Platform.BALE, 801)
+    db.add(
+        ShopReferralPolicy(
+            id=1, is_enabled=False, percent=20,
+            min_order_irr=0, max_bonus_irr=1000,
+        )
+    )
+    db.session.commit()
+    _, order = product_and_order(db, Platform.BALE, 801, status="paid")
+    order.provider = "bale_wallet"
+    order.payment_currency = "IRR"
+    db.session.commit()
+    assert await ShopReferralService.award_for_paid_order(db, order.id) == 0
+    assert await ShopWalletService.balance(db, Platform.BALE, 801) == 0
