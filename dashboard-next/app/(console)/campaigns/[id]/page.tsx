@@ -10,6 +10,7 @@ import { adminFetch, currentStaff } from "@/lib/bridge";
 import { statusLabel } from "@/lib/utils";
 
 type Params = Promise<{ id: string }>;
+type Query = Promise<{ saved?: string; error?: string }>;
 
 interface CampaignFile {
   id: number; kind: string; filename: string; size_bytes: number;
@@ -25,8 +26,8 @@ interface Delivery {
 }
 
 /** Explicit operator decisions; uncertain deliveries never auto-retry. */
-export default async function CampaignDetailsPage({ params }: { params: Params }) {
-  const { id } = await params;
+export default async function CampaignDetailsPage({ params, searchParams }: { params: Params; searchParams: Query }) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   if (!/^\d+$/.test(id)) notFound();
   const staff = await currentStaff();
   if (!["superadmin", "marketing"].includes(staff.role)) notFound();
@@ -41,6 +42,8 @@ export default async function CampaignDetailsPage({ params }: { params: Params }
   return (
     <div>
       <PageHeading title={`کمپین «${campaign.title}»`} description="بررسی دستی رسیدهای نامشخص و کنترل توقف؛ تغییر وضعیت پرداخت یا ارسال مجدد خودکار انجام نمی‌شود." />
+      {query.saved ? <p role="status" className="mb-5 rounded-lg bg-accent p-3 text-sm">عملیات مدیریت رسانه ثبت شد. وضعیت پرونده و فایل‌ها را بررسی کنید.</p> : null}
+      {query.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">درخواست انجام نشد. وضعیت Draft، محدودیت فایل و مدارک عملیات را بررسی کنید. در وضعیت نامشخص بله، بدون بررسی دوباره تلاش نکنید.</p> : null}
       <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
         <Card>
           <CardHeader><CardTitle>وضعیت ارسال</CardTitle></CardHeader>
