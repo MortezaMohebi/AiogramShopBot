@@ -62,7 +62,7 @@ class ShopPaymentAttempt(Base):
             name="ck_shop_payment_platform",
         ),
         CheckConstraint(
-            "provider IN ('bale_wallet','telegram_fiat','telegram_stars')",
+            "provider IN ('bale_wallet','telegram_fiat','telegram_stars','store_credit')",
             name="ck_shop_payment_provider",
         ),
         CheckConstraint(

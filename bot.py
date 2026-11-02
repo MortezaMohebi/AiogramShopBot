@@ -35,6 +35,11 @@ from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
 from dashboard.permissions import secure_model_view
 from models.shop_staff import ShopStaffAdmin
+from models.shop_engagement import (
+    ShopWalletAccountAdmin, ShopWalletEntryAdmin, ShopReferralPolicyAdmin,
+    ShopReferralProfileAdmin, ShopReferralRewardAdmin,
+    ShopCampaignAdmin, ShopCampaignDeliveryAdmin,
+)
 from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
 from dashboard.order_views import ShopOrderReviewView
 from dashboard.refund_views import ShopRefundReviewView
@@ -232,6 +237,13 @@ admin.add_view(ShopMediaPreviewView)
 admin.add_view(ShopOrderReviewView)
 admin.add_view(ShopRefundReviewView)
 admin.add_model_view(secure_model_view(ShopStaffAdmin))
+admin.add_model_view(secure_model_view(ShopWalletAccountAdmin))
+admin.add_model_view(secure_model_view(ShopWalletEntryAdmin))
+admin.add_model_view(secure_model_view(ShopReferralPolicyAdmin))
+admin.add_model_view(secure_model_view(ShopReferralProfileAdmin))
+admin.add_model_view(secure_model_view(ShopReferralRewardAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignDeliveryAdmin))
 
 app.include_router(processing_router)
 
