@@ -1,3 +1,8 @@
+> **Isolated Telegram + Bale / Next.js integration lab:**
+> [Docker Compose test stack](compose.test.yml) ·
+> [Persian setup, QA and reset guide](docs/TEST_DOCKER_COMPOSE.fa.md).
+> Starts no real bot, payment, webhook or broadcast; do not use for production.
+
 <h1 align="center">AiogramShopBot</h1>
 
 <p align="center">
