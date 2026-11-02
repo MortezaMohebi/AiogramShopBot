@@ -79,3 +79,8 @@ alembic upgrade head
 تست Migration باید در دیتابیس آزمایشی مستقل اجرا شود؛ دستور بالا روی دیتابیس اصلی بدون Backup مجاز نیست. فایل‌های تست از Network استفاده نمی‌کنند، اما به Dependencies واقعی پروژه نیاز دارند.
 
 در Production، `WEBHOOK_HOST=https://your-domain.example` تنظیم شود تا نیازی به سرویس خارجی تشخیص IP نباشد. به‌دلیل وجود مسیر محرمانه بله، Access Log مربوط به URL باید در Reverse Proxy حذف یا Redact شود. کد فعلی در حالت Bale، Access Log داخلی Uvicorn را غیرفعال می‌کند.
+
+## Telegram Cloudflare Worker mode
+
+برای تنظیم حالت `cloudflare_worker` و روش دریافت `polling` یا `webhook`، راهنمای [Cloudflare Worker](CLOUDFLARE_WORKER.fa.md) را ببینید.
+این Proxy فقط برای Telegram است و هیچ تغییری در مسیر API بله اعمال نمی‌کند.
