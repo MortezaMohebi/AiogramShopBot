@@ -86,7 +86,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("init", "config", "up", "test", "smoke", "logs",
+        choices=("init", "config", "up", "test", "smoke", "browser", "logs",
                  "status", "down", "reset"),
     )
     parser.add_argument(
@@ -109,6 +109,7 @@ def main() -> int:
         "config": ("config", "--quiet"),
         "up": ("up", "--build", "-d"),
         "smoke": ("--profile", "qa", "run", "--rm", "smoke"),
+        "browser": ("--profile", "browser", "run", "--rm", "browser"),
         "logs": ("logs", "--tail=200", "-f"),
         "status": ("ps", "-a"),
         "down": ("down", "--remove-orphans"),
