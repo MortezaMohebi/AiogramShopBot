@@ -208,6 +208,21 @@ tested. Telegram legacy purchase history remains separate.
 
 [Phase 3 checkout status and safety contract (Persian)](docs/PHASE3_SHARED_CHECKOUT.fa.md)
 
+## Shared payment intents (draft, opt-in only)
+
+The Telegram/Bale shared order flow now includes immutable payment intents,
+verified pre-checkout, success-receipt settlement, atomic product/coupon
+allocation, Telegram Stars pricing (XTR), native Bale wallet invoices in IRR,
+and an auditable refund process.
+
+All payment and Stars refund flags default to **false**. The existing
+`pending_review` cart request remains unpaid until an operator reviews it.
+Physical Telegram invoices require a verified provider token and an
+explicitly configured IRR minor-unit factor. Real API, migration and
+concurrency tests are deferred to final integration.
+
+[Phase 4 payment safety and refund contract (Persian)](docs/PHASE4_PAYMENTS.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)

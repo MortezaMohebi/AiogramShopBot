@@ -113,3 +113,19 @@ Coupon، Quote، ثبت درخواست بدون پرداخت، تاریخچه و
 پرداخت Wallet بله و پرداخت Telegram هنوز به Cart چندقلمی جدید وصل نیستند؛
 وضعیت `pending_review` به معنی دریافت وجه یا رزرو موجودی نیست.
 [گزارش فاز ۳](PHASE3_SHARED_CHECKOUT.fa.md)
+
+## فاز ۴: وضعیت کدنویسی پرداخت مشترک
+
+| قابلیت | Telegram | Bale |
+|---|---|---|
+| پرداخت کالای فیزیکی | فاکتور Provider با IRR و ضریب ریزواحدِ تأییدشده | کیف پول رسمی IRR |
+| پرداخت کالای دیجیتال | Stars با قیمت مستقل XTR | کیف پول رسمی IRR |
+| تأیید مبلغ/مالکیت | `pre_checkout_query` | `pre_checkout_query` |
+| سند پرداخت | `successful_payment` | `successful_payment` + `inquireTransaction` |
+| کسر اتمیک چند قلم | `ShopPaymentService.settle` | همان Core |
+| مصرف Coupon بعد از وصول | همان Core | همان Core |
+| دریافت رسید تکراری | Idempotent | Idempotent |
+| بازپرداخت | `refundStarPayment` برای Stars؛ فیات دستی | دستی با مدرک Provider (API رسمی تأیید نشده) |
+
+**تمام موارد جدول صرفاً کدنویسی‌شده‌اند و Live PASS نیستند.**
+[گزارش فاز ۴](PHASE4_PAYMENTS.fa.md)

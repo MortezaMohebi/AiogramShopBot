@@ -26,3 +26,15 @@
 - [ ] اجرای واقعی پرداخت، Shipping/Cart/Coupon و RBAC؛ Wallet به‌صورت پیش‌فرض غیرفعال است.
 
 **هشدار:** این PR برای Merge مستقیم در Production آماده نیست. کد قدیمی سفارش/سبد خرید و منوی اصلی عمداً باقی مانده تا Migration داده و جریان خرید با تست انجام شود. فایل‌ها از فرم مدیریت در حافظه خصوصی ذخیره می‌شوند، ولی صحت اجرا/امنیت و نمایش آن‌ها هنوز عملیاتی تأیید نشده است.
+
+## فاز ۴: کنترل‌های پرداخت
+
+- [x] Intent یکتای فاکتور، تمایز IRR و XTR، قیمت مستقل Stars و Flagهای خاموش ثبت شد.
+- [x] Telegram `pre_checkout_query` و `successful_payment` به تسویه مشترک وصل شدند.
+- [x] Bale `inquireTransaction` پیش از تسویه پرداخت مشترک اجرا می‌شود؛ مسیر Legacy حفظ شد.
+- [x] قفل Order/محصول/Coupon، مصرف یک‌باره تخفیف و Receipt تکراری در سورس طراحی شد.
+- [x] پرونده Refund، مسیر رسمی Stars و تأیید دستی Provider در داشبورد ثبت شد.
+- [x] فایل Unit/Offline `tests/test_shared_payment_settlement.py` در مخزن ثبت شد.
+- [ ] اجرای `pytest`، Migration و تست هم‌زمانی واقعی PostgreSQL.
+- [ ] آزمایش Telegram Stars، Provider IRR تلگرام، کیف پول بله و بازپرداخت واقعی با Sandbox.
+- [ ] تأیید نرخ/ریزواحد IRR در Provider منتخب و تکمیل فرآیند Reconciliation پس از Timeout.
