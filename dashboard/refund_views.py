@@ -17,6 +17,7 @@ from models.shop_content import ShopOrder
 from models.shop_payment import ShopRefundCase
 from services.shop_payments import PaymentRejected
 from services.shop_refunds import ShopRefundService
+from services.shop_wallet import ShopWalletService, StoreCreditRejected
 
 
 class ShopRefundReviewView(BaseView):
@@ -97,6 +98,10 @@ class ShopRefundReviewView(BaseView):
                         enabled=config.TELEGRAM_STARS_REFUNDS_ENABLED,
                         reviewer=reviewer,
                     )
+                elif action == "store_credit":
+                    await ShopWalletService.refund_order(
+                        session, case_id=case_id, actor=reviewer
+                    )
                 elif action == "manual":
                     reference = str(form.get("provider_reference") or "").strip()
                     await ShopRefundService.confirm_manual(
@@ -107,7 +112,7 @@ class ShopRefundReviewView(BaseView):
                     )
                 else:
                     raise PaymentRejected("نوع درخواست بازپرداخت مشخص نیست.")
-            except PaymentRejected as error:
+            except (PaymentRejected, StoreCreditRejected) as error:
                 raise HTTPException(
                     status_code=409, detail=str(error)
                 ) from None

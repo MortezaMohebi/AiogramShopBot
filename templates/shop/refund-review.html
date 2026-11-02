@@ -41,6 +41,9 @@
                       نیازمند استعلام انسانی.
                     </p>
                     {% endif %}
+                  {% elif order.provider == "store_credit" %}
+                    <input type="hidden" name="action" value="store_credit">
+                    <p class="small">بازگشت به اعتبار داخلی، بدون API خارجی</p>
                   {% else %}
                     <input type="hidden" name="action" value="manual">
                     <label class="form-label" for="ref-{{ case.id }}">
