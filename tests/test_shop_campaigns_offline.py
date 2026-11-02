@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from models.base import Base
 from models.shop_content import ShopIdentity
-from models.shop_engagement import ShopCampaign, ShopCampaignDelivery
+from models.shop_engagement import ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
 
 
@@ -42,6 +42,7 @@ def db():
             ShopIdentity.__table__,
             ShopCampaign.__table__,
             ShopCampaignDelivery.__table__,
+            ShopCampaignMedia.__table__,
         ],
     )
     with Session(engine) as session:
