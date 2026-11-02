@@ -89,3 +89,20 @@
 - [ ] اندازه‌گیری Rate Limit و هزینه واقعی Business API قبل از فعال‌کردن Flagهای Broadcast.
 
 **منبع رسمی:** [Bale Bot API](https://docs.bale.ai/) و [گزارش فاز ۶](PHASE6_MEDIA_BROADCAST.fa.md)
+
+## فاز ۷ — Broadcast خودکار تا پایان همه گیرنده‌ها (سورس فقط)
+
+- [x] یک اقدام Start، سرویس مشترک Worker را برای Drain تمام صف فعال می‌کند؛ محدودیت Batch ده‌تایی روی کل کمپین اعمال نمی‌شود.
+- [x] وضعیت‌های `sending/paused/needs_review/completed/cancelled` در جداول جدید اضافه شدند.
+- [x] Resume صرفاً صف باقی‌مانده را ادامه می‌دهد و ردیف‌های `unknown` را دوباره ارسال نمی‌کند.
+- [x] `ShopBroadcastRateSlot` نرخ Bot و هر چت را در PostgreSQL بین Workerها هماهنگ می‌کند.
+- [x] `ShopCampaignAudit` و `ShopBroadcastWorkerHeartbeat` برای گزارش و Audit ثبت شدند.
+- [x] حالت پولی Bale Business با سقف قابل‌محاسبه و تأیید مستقل، قبل از تک‌تک درخواست‌ها بودجه را رزرو می‌کند.
+- [x] GUI فارسی شروع/توقف/ادامه/لغو، درصد پیشرفت و تعیین تکلیف وضعیت `unknown` دارد.
+- [x] تست‌های Offline جدید برای ۲۷ گیرنده، Restart، Opt-out، Rate و سقف هزینه به مخزن اضافه شدند.
+- [ ] اجرای `pytest` و `alembic upgrade head` روی DB آزمایشی؛ **در این فاز اجرا نشده**.
+- [ ] تست PostgreSQL `FOR UPDATE SKIP LOCKED`، Worker هم‌زمان، قطع شبکه، SIGTERM و بازیابی Safe.
+- [ ] تست واقعی Rate Limit API تلگرام/بله و هزینه Business پیش از روشن‌کردن Flagها.
+- [ ] تأیید هیچ Broadcast واقعی با یک Flag ناقص، یا خارج از رضایت کاربر، صادر نشود.
+
+[گزارش فاز ۷](PHASE7_DURABLE_BROADCAST.fa.md)

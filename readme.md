@@ -260,6 +260,25 @@ broadcast or merge this draft before final Test → Debug → Retest.
 
 [Phase 6 Bale media limits, broadcast and deduplication (Persian)](docs/PHASE6_MEDIA_BROADCAST.fa.md)
 
+## Fully automatic opt-in Broadcast worker (draft Phase 7)
+
+After an administrator approves recipients and starts a campaign **once**,
+a separate shared worker drains the entire PostgreSQL outbox. It honors
+per-bot and per-user pacing, opt-out and block state changes, supports
+ordered media, and stores durable progress, manual-reconciliation receipts
+and audit entries. Managers can pause/resume/cancel and view progress in
+Persian SQLAdmin.
+
+Bale Business API remains opt-in and requires a confirmed *exact*
+per-campaign upper bound on billable API messages. Uncertain external
+delivery is never blindly retried after a restart. Docker Compose includes
+an optional `broadcast-worker` service rather than one container per user.
+
+All worker/dispatch flags are **OFF by default**; no live delivery,
+PostgreSQL migration or provider tests have occurred.
+
+[Phase 7 automatic Broadcast and operational safety guide (Persian)](docs/PHASE7_DURABLE_BROADCAST.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)

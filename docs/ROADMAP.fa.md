@@ -69,3 +69,16 @@ F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محص�
 |---|---|---|
 | F13 | محدودیت فایل بله، Cache شناسه‌ها و دریافت Webhook بدون تکرار | CODED (Test/Debug نهایی باقی است) |
 | F14 | Broadcast متن/رسانه به هر دو Bot، Bale Standard/Business | CODED (بسته به Flag، اجرای واقعی غیرفعال) |
+
+## فاز ۷ — تکمیل Broadcast خودکار
+
+- [x] Worker مشترک و پایدار با صف PostgreSQL برای تمام مخاطبان Opt-in.
+- [x] کنترل نرخ مستقل Telegram، Bale Standard و Bale Business، به‌همراه سقف ۱ پیام/ثانیه در هر چت.
+- [x] ذخیره وضعیت ارسال و مراحل متن/رسانه بعد از هر پیام؛ بدون Retry خودکار برای Unknown.
+- [x] Pause، Resume، Cancel و رسیدگی مستند به پیام‌های نامشخص در داشبورد.
+- [x] قفل درخواست‌های پولی Business API با سقف دقیق تأییدشده مدیر و بودجه غیرقابل افزایش در حین اجرا.
+- [x] Heartbeat Worker و نمایش درصد پیشرفت/تعداد گیرنده‌های ارسال‌شده.
+- [x] سرویس `broadcast-worker` اختیاری در Docker Compose؛ بدون ایجاد Container جدا برای هر مخاطب.
+- [ ] اجرای واقعی و تست PostgreSQL / API در مرحله نهایی.
+
+[راهنمای فاز ۷، معماری Durable، تنظیمات و معیارهای پذیرش](PHASE7_DURABLE_BROADCAST.fa.md)
