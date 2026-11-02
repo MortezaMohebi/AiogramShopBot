@@ -6,19 +6,54 @@ Legacy checkout handlers remain unchanged until the order model is migrated.
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import BaseFilter, Command
+from sqlalchemy import select
+
+from db import get_db_session
+from models.shop_checkout import ShopCart
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_cart import ShopCartFlow
 from services.bale_wallet import BaleWalletService
 from services.shop_identity import is_blocked, register_customer
 import config
 
 
 shop_catalog_router = Router(name="shop_catalog")
+
+
+class AwaitingShopInput(BaseFilter):
+    """Match free-form text only while a known shopping form is awaiting it."""
+
+    async def __call__(self, message: Message) -> bool:
+        """Do not intercept unrelated legacy Telegram chat messages."""
+        if (
+            message.from_user is None or message.chat.type != "private"
+            or not message.text or message.text.startswith("/")
+        ):
+            return False
+        async with get_db_session() as session:
+            return bool(await session.scalar(
+                select(ShopCart.id).where(
+                    ShopCart.platform == Platform.TELEGRAM.value,
+                    ShopCart.platform_user_id == message.from_user.id,
+                    ShopCart.awaiting_input.is_not(None),
+                )
+            ))
+
+
+async def _shop_reply(
+    event: InboundEvent, session: AsyncSession
+) -> BotReply | None:
+    """Select the common cart first, then catalog for non-cart actions."""
+    cart = await ShopCartFlow(config.SHOP_DISPLAY_UNIT).reply(event, session)
+    if cart is not None:
+        return cart
+    return await _flow().reply(event, session)
 
 
 def _flow() -> CatalogFlow:
@@ -41,6 +76,30 @@ async def show_shop_orders(message: Message, session: AsyncSession) -> None:
     await TelegramTransport(message.bot).send(
         message.chat.id, BotReply(text)
     )
+
+
+@shop_catalog_router.message(Command("cart"))
+@shop_catalog_router.message(Command("checkout"))
+@shop_catalog_router.message(F.text == "🛒 سبد خرید")
+@shop_catalog_router.message(AwaitingShopInput())
+async def shopping_basket_text(message: Message, session: AsyncSession) -> None:
+    """Process shopping commands and the next address/coupon text message."""
+    if message.from_user is None or message.chat.type != "private":
+        return
+    if await is_blocked(
+        session, platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+    ):
+        return
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        text=message.text,
+    )
+    reply = await _shop_reply(event, session)
+    if reply is not None:
+        await TelegramTransport(message.bot).send(message.chat.id, reply)
 
 
 @shop_catalog_router.message(Command("catalog"))
@@ -68,7 +127,7 @@ async def show_shop_catalog(message: Message, session: AsyncSession) -> None:
         user_id=message.from_user.id,
         text="🛍 محصولات",
     )
-    reply = await _flow().reply(event, session)
+    reply = await _shop_reply(event, session)
     if reply is not None:
         await TelegramTransport(message.bot).send(event.chat_id, reply)
 
@@ -93,19 +152,12 @@ async def shop_catalog_button(
         callback_data=callback.data,
         callback_query_id=callback.id,
     )
-    # Telegram still uses the upstream cart/checkout flow for purchases.
-    # Never claim an unpaid native invoice is available without a configured
-    # and fully verified payment provider.
-    if callback.data and callback.data.startswith("shop:checkout:"):
-        reply = BotReply(
-            "برای خرید در تلگرام از «دسته‌بندی‌ها» و «سبد خرید» استفاده کنید."
-        )
-    elif callback.data == "shop:orders":
+    if callback.data == "shop:orders":
         text = await BaleWalletService.list_orders(
             session, platform="telegram", platform_user_id=event.user_id
         )
         reply = BotReply(text)
     else:
-        reply = await _flow().reply(event, session)
+        reply = await _shop_reply(event, session)
     if reply is not None:
         await TelegramTransport(callback.bot).send(event.chat_id, reply)

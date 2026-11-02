@@ -125,6 +125,7 @@ class CatalogFlow:
             rows=(
                 (_button("🛍 محصولات", "shop:categories"),),
                 (_button("📦 سفارش‌های من", "shop:orders"),),
+                (_button("🛒 سبد خرید", "shop:cart"),),
                 (_button("🆘 پشتیبانی", "shop:help"),),
                 (_button("❓ پرسش‌های متداول", "shop:faq"),),
             ),
@@ -276,7 +277,8 @@ class CatalogFlow:
         return BotReply(
             text=body,
             rows=(
-                (_button("🛒 ثبت سفارش", f"shop:checkout:{product.id}"),),
+                (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),),
+                (_button("🛒 مشاهده سبد", "shop:cart"),),
                 (_button("📦 سفارش‌های من", "shop:orders"),),
                 (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
                 (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
