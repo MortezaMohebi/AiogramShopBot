@@ -13,7 +13,10 @@
 | F6 | Bale Adapter هم‌زمان با Telegram، Webhook و API | IN PROGRESS (sendMessage و callback و Webhook کدنویسی شده؛ تست میدانی باقی است) |
 | F7 | Cart چندقلمی، Coupon، ارسال، Snapshot و تاریخچه سفارش مشترک | CODED (ثبت درخواست بدون پرداخت؛ settlement مالی و تست باقی است) |
 | F8 | پرداخت مشترک Telegram Fiat/Stars/Bale، Receipt، تسویه اتمیک و پرونده Refund | CODED (سورس و آزمون‌های Offline ثبت شدند؛ تست Provider و استقرار باقی است) |
-| F9 | RBAC، Multi-admin، Audit، Backup، مانیتورینگ و تست بار | PLANNED |
+| F9 | RBAC و Multi-admin با حساب مستقل و نشست قابل ابطال | IN PROGRESS (کد نقش‌ها/Bootstrap اضافه شد؛ تست امنیت باقی است) |
+| F10 | اعتبار داخلی ریالی و Referral مستقل از رمزارز | CODED (Ledger/Reward/Refund کدنویسی شد؛ تست عملی باقی است) |
+| F11 | Campaign اختیاری، Broadcast کنترل‌شده و گزارش‌های دوکاناله | CODED (Outbox/داشبورد/آمار ثبت شد؛ تست تحویل باقی است) |
+| F12 | تست عملی، Migration، Recovery، Backup، مانیتورینگ و بار | PLANNED (طبق تصمیم پروژه در مرحله نهایی) |
 
 ## تحویل هر فاز
 
@@ -44,3 +47,7 @@ F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محص�
 ## گزارش فاز ۴
 
 [معماری پرداخت، بازپرداخت و شرایط ایمنی پیش از فعال‌سازی](PHASE4_PAYMENTS.fa.md)
+
+## گزارش فاز ۵
+
+[اعتبار داخلی، Referral، ارسال اختیاری و RBAC](PHASE5_ENGAGEMENT.fa.md)

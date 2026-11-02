@@ -223,6 +223,23 @@ concurrency tests are deferred to final integration.
 
 [Phase 4 payment safety and refund contract (Persian)](docs/PHASE4_PAYMENTS.fa.md)
 
+## Shared non-crypto capabilities (draft Phase 5)
+
+New cross-platform code includes merchant IRR store credit with an immutable
+ledger; approved, confirmed shop-credit purchases/refunds; opt-in referral
+rewards on verified fiat payments; consent-based marketing campaigns; and
+read-only Persian admin analytics that keep Telegram Stars, IRR and issued
+credit separate.
+
+The old shared admin login is replaced with individually provisioned staff
+accounts and deny-by-default roles. No default password or production account
+is installed automatically.
+
+**All financial adjustments and payment providers remain disabled by
+default. No live Bot API or database tests have been run.**
+
+[Phase 5 scope, operational controls and deferred verification (Persian)](docs/PHASE5_ENGAGEMENT.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)
