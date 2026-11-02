@@ -117,6 +117,10 @@ class ShopCampaignReviewView(BaseView):
                         approver=f"staff:{staff_id}",
                     )
                 else:
+                    if not config.SHOP_CAMPAIGN_DISPATCH_ENABLED:
+                        raise CampaignRejected(
+                            "ارسال کمپین تا پایان تست عملیاتی غیرفعال است."
+                        )
                     if not config.BALE_BOT_TOKEN:
                         # Do not claim Bale deliveries if the adapter has not
                         # been configured in the final deployment phase.

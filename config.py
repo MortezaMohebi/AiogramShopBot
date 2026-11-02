@@ -148,3 +148,8 @@ SHOP_ADMIN_SECURE_COOKIES = (
 
 # Keep SQL parameters (addresses/payment metadata) out of production logs.
 DB_SQL_ECHO = os.environ.get("DB_SQL_ECHO", "false").strip().lower() == "true"
+
+# Campaign dispatch is disabled until consent and rate limiting pass live QA.
+SHOP_CAMPAIGN_DISPATCH_ENABLED = (
+    os.environ.get("SHOP_CAMPAIGN_DISPATCH_ENABLED", "false").lower() == "true"
+)
