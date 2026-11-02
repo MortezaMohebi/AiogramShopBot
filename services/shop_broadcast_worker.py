@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
@@ -23,7 +24,7 @@ from channels.contracts import BotReply, MediaAttachment, Platform
 from channels.telegram import TelegramTransport
 from models.shop_content import ShopIdentity
 from models.shop_engagement import (
-    ShopCampaign, ShopCampaignDelivery,
+    ShopCampaign, ShopCampaignDelivery, ShopBroadcastWorkerHeartbeat,
 )
 from services.shop_broadcast_control import (
     _business_media_ready, delivery_counts, record_audit,
@@ -56,6 +57,22 @@ class BroadcastWorker:
         self.telegram = telegram
         self.bale_session = bale_session
         self.worker_id = secrets.token_hex(16)
+
+    async def heartbeat(self) -> None:
+        """Expose a low-cost liveness signal without any external API call."""
+        from db import session_maker
+
+        now = datetime.now(timezone.utc)
+        stmt = insert(ShopBroadcastWorkerHeartbeat).values(
+            worker_id=self.worker_id, started_at=now, last_seen_at=now
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[ShopBroadcastWorkerHeartbeat.worker_id],
+            set_={"last_seen_at": now},
+        )
+        async with session_maker() as session:
+            await session.execute(stmt)
+            await session.commit()
 
     @staticmethod
     async def quarantine_stale() -> int:
@@ -405,6 +422,7 @@ class BroadcastWorker:
             else:
                 await bale.send_media(claim.user_id, step)
             await self._mark_step(claim.delivery_id)
+            await self.heartbeat()
 
         await self._complete(claim.delivery_id, status="sent")
 
@@ -462,6 +480,7 @@ class BroadcastWorker:
     async def run_forever(self) -> None:
         """Drain every active campaign, polling only when no work is queued."""
         while True:
+            await self.heartbeat()
             await self.quarantine_stale()
             did_work = False
             for _ in range(10):
