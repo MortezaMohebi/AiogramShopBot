@@ -124,4 +124,6 @@ db_module.session_flush = _noop_async
 db_module.session_commit = _noop_async
 db_module.get_db_session = _noop_async
 db_module.create_db_and_tables = _noop_async
+# Offline endpoint unit tests import the signed admin bridge without a real DB.
+db_module.session_maker = lambda: None
 sys.modules.setdefault("db", db_module)
