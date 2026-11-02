@@ -12,6 +12,7 @@ import {
   TicketPercent,
   MessagesSquare,
   ShieldCheck,
+  UserCog,
   Image as ImageIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -74,10 +75,12 @@ export const navigation: NavigationItem[] = [
     roles: ["superadmin", "sales", "content", "finance", "marketing", "viewer"],
   },
   {
+    title: "مدیران و دسترسی‌ها", href: "/staff", icon: UserCog,
+    roles: ["superadmin"],
+  },
+  {
     title: "تنظیمات", href: "/settings", icon: Settings2,
     roles: ["superadmin"],
   },
 ];
 
-/** Finance ledger stays behind its existing guarded SQLAdmin interface. */
-export const legacyFinanceIcon = ShieldCheck;
