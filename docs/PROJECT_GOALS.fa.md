@@ -31,7 +31,7 @@
 - Backend: Python 3.12، FastAPI، SQLAlchemy async، PostgreSQL و Alembic.
 - Admin: SQLAdmin با قالب راست‌به‌چپ فارسی؛ مهاجرت Framework مدیریتی فقط پس از بررسی فنی.
 - Core Services: `Catalog`، `Media`، `Testimonials`، `Orders`، `Payments`. ناوبری ثابت با Handlerهای اختصاصی و ترجمه فارسی انجام می‌شود.
-- Channels: `TelegramAdapter` و `BaleAdapter`؛ Core نباید از `aiogram.types` یا `telegram_id` برای مدل هویت مشتری استفاده کند.
+- Channels: `TelegramAdapter` و `BaleAdapter` باید **موازی و هم‌سطح** توسعه و تست شوند؛ Core نباید از `aiogram.types` یا `telegram_id` برای مدل هویت مشتری استفاده کند.
 - Identity: `(platform, platform_user_id)` برای هر هویت پیام‌رسان، با اتصال اختیاری حساب‌های یک مشتری.
 - Storage: فایل اصلی روی دیسک پایدار یا Object Storage؛ شناسه پیام‌رسان صرفاً Cache ارسال باشد.
 - Security: RBAC، محدودسازی آپلود، کنترل نوع و اندازه فایل، محافظت از Webhook، عدم ثبت Token در لاگ، CSRF برای فرم‌های مدیریتی، Backup و Audit Log.

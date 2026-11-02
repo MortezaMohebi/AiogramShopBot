@@ -9,8 +9,8 @@
 | F2 | محصول مستقل و داینامیک، فایل و رضایت مستقل، CRUD مدیریتی | IN PROGRESS (models, admin and Alembic migration committed; upload/render not wired) |
 | F3 | Media upload امن، Preview و ارسال فایل با Cache تفکیکی هر Bot | PLANNED |
 | F4 | منوی اصلی ثابت با متن فارسی؛ دکمه‌های کاتالوگ و جزئیات محصول از دیتابیس | PLANNED (بدون Menu Builder؛ صرفاً اتصال Catalog به Handlerهای موجود) |
-| F5 | Telegram adapter و اتصال واقعی کاتالوگ/رسانه/منو | PLANNED |
-| F6 | Bale adapter، تست میدانی و سازگاری انواع پیام و دکمه | PLANNED |
+| F5 | Telegram Adapter و اتصال منوی ثابت به کاتالوگ مشترک | IN PROGRESS (مسیر جدید کاتالوگ و callback کدنویسی شده؛ تست میدانی باقی است) |
+| F6 | Bale Adapter هم‌زمان با Telegram، Webhook و API | IN PROGRESS (sendMessage و callback و Webhook کدنویسی شده؛ تست میدانی باقی است) |
 | F7 | سفارش‌های مشترک و Inventory transaction-safe، مبالغ Decimal | PLANNED |
 | F8 | Payment method، تأیید امضای Callback، Idempotency و Refund | PLANNED |
 | F9 | RBAC، Multi-admin، Audit، Backup، مانیتورینگ و تست بار | PLANNED |
@@ -25,7 +25,7 @@
 
 ## ترتیب اولویت
 
-F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محصول به منوهای موجود در F4 راه ارائه کاتالوگ پویا را باز می‌کنند. سپس F5 و F6 باید روی یک Core مشترک قابل تست اجرا شوند. F7 و F8 تنها بعد از تعیین نوع محصول و روش واقعی پرداخت تکمیل می‌شوند. F9 از ابتدا به‌صورت افزایشی اعمال می‌شود.
+F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محصول به منوهای موجود در F4 راه ارائه کاتالوگ پویا را باز می‌کنند. F5 و F6 **موازی و روی یک Core مشترک** اجرا می‌شوند؛ هیچ قابلیتِ یک کانال بدون تست هم‌ارز کانال دیگر پذیرفته نمی‌شود. F7 و F8 تنها بعد از تعیین نوع محصول و روش واقعی پرداخت تکمیل می‌شوند. F9 از ابتدا به‌صورت افزایشی اعمال می‌شود.
 
 ## مواردی که نباید ناآگاهانه حذف شوند
 

@@ -17,9 +17,9 @@ from models.shop_content import Product, Testimonial
 
 _PAGE_SIZE = 6
 _REVIEW_PAGE_SIZE = 3
-_LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,8})\Z")
-_PRODUCT_PATTERN = re.compile(r"shop:item:([1-9][0-9]{0,8})\Z")
-_REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,8}):(0|[1-9][0-9]{0,8})\Z")
+_LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,18})\Z")
+_PRODUCT_PATTERN = re.compile(r"shop:item:([1-9][0-9]{0,18})\Z")
+_REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 
 
 def _price(value: Decimal) -> str:
