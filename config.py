@@ -174,3 +174,41 @@ BALE_BROADCAST_PREPARE_CHAT_ID = int(
 )
 if BALE_BROADCAST_PREPARE_CHAT_ID < 0:
     raise ValueError("BALE_BROADCAST_PREPARE_CHAT_ID must not be negative.")
+
+# The one shared durable broadcast worker is opt-in until final live QA.
+# Telegram's free broadcast ceiling is about 30 messages/s; these defaults
+# stay safely below it. Bale limits need field verification; use conservative
+# values unless the provider explicitly approves higher throughput.
+SHOP_BROADCAST_WORKER_ENABLED = (
+    os.environ.get("SHOP_BROADCAST_WORKER_ENABLED", "false").lower() == "true"
+)
+SHOP_BROADCAST_TELEGRAM_MPS = int(
+    os.environ.get("SHOP_BROADCAST_TELEGRAM_MPS", "5")
+)
+SHOP_BROADCAST_BALE_STANDARD_MPS = int(
+    os.environ.get("SHOP_BROADCAST_BALE_STANDARD_MPS", "1")
+)
+SHOP_BROADCAST_BALE_BUSINESS_MPS = int(
+    os.environ.get("SHOP_BROADCAST_BALE_BUSINESS_MPS", "5")
+)
+SHOP_BROADCAST_MAX_PAID_CALLS = int(
+    os.environ.get("SHOP_BROADCAST_MAX_PAID_CALLS", "0")
+)
+SHOP_BROADCAST_POLL_SECONDS = int(
+    os.environ.get("SHOP_BROADCAST_POLL_SECONDS", "2")
+)
+SHOP_BROADCAST_STALE_SECONDS = int(
+    os.environ.get("SHOP_BROADCAST_STALE_SECONDS", "900")
+)
+if not 1 <= SHOP_BROADCAST_TELEGRAM_MPS <= 20:
+    raise ValueError("Telegram broadcast limit must be 1..20 msg/s.")
+if not 1 <= SHOP_BROADCAST_BALE_STANDARD_MPS <= 5:
+    raise ValueError("Bale standard broadcast limit must be 1..5 msg/s.")
+if not 1 <= SHOP_BROADCAST_BALE_BUSINESS_MPS <= 10:
+    raise ValueError("Bale business broadcast limit must be 1..10 msg/s.")
+if not 0 <= SHOP_BROADCAST_MAX_PAID_CALLS <= 1_000_000:
+    raise ValueError("Maximum billable Bale calls is out of range.")
+if not 1 <= SHOP_BROADCAST_POLL_SECONDS <= 30:
+    raise ValueError("Broadcast polling must be 1..30 seconds.")
+if not 300 <= SHOP_BROADCAST_STALE_SECONDS <= 86_400:
+    raise ValueError("Broadcast stale-claim threshold is invalid.")
