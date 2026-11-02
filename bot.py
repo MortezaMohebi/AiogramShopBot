@@ -24,6 +24,7 @@ from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.bale_wallet import BaleWalletService, CheckoutRejected
+from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
 from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
 from db import create_db_and_tables, engine, get_db_session
@@ -271,6 +272,8 @@ async def bale_webhook(webhook_secret: str, request: Request):
             raise HTTPException(status_code=400, detail="Invalid payer")
         try:
             async with get_db_session() as session:
+                # Blocked customers can pay a previously issued invoice;
+                # reconcile the receipt instead of abandoning real funds.
                 order, changed = await BaleWalletService.confirm_success(
                     session,
                     transport,
@@ -309,7 +312,21 @@ async def bale_webhook(webhook_secret: str, request: Request):
     if event is None:
         return {"status": "ignored"}
 
+    source = payload.get("callback_query") or payload.get("message") or {}
+    customer = source.get("from") if isinstance(source, dict) else {}
     async with get_db_session() as session:
+        await register_customer(
+            session,
+            platform=Platform.BALE,
+            platform_user_id=event.user_id,
+            username=customer.get("username") if isinstance(customer, dict) else None,
+            first_name=customer.get("first_name") if isinstance(customer, dict) else None,
+        )
+        if await is_blocked(
+            session, platform=Platform.BALE,
+            platform_user_id=event.user_id,
+        ):
+            return {"status": "blocked"}
         if event.callback_data and event.callback_data.startswith("shop:checkout:"):
             try:
                 product_id = int(event.callback_data.rsplit(":", 1)[1])
