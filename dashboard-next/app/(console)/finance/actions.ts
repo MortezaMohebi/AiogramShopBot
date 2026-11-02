@@ -30,7 +30,8 @@ export async function adjustWallet(form: FormData) {
     await adminFetch("/wallets/adjust", "POST", {
       platform,
       direction,
-      user_id: Number(userId),
+      // Pydantic validates decimal identifiers exactly; avoid JS number rounding.
+      user_id: userId,
       amount_irr: Number(amount),
       operation_id: key,
       reason: text(form, "reason"),
