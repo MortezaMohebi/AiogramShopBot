@@ -304,9 +304,15 @@ async def overview(staff: Staff, session: Db) -> dict:
         select(func.count()).select_from(Product)
         .where(Product.is_published.is_(True))
     ) or 0)
-    orders = (await session.execute(
-        select(ShopOrder).order_by(ShopOrder.id.desc()).limit(8)
-    )).scalars().all()
+    # Viewer and content/marketing roles may see aggregates, not individual
+    # customer orders. Sales/finance can inspect explicit operational records.
+    orders = (
+        (await session.execute(
+            select(ShopOrder).order_by(ShopOrder.id.desc()).limit(8)
+        )).scalars().all()
+        if staff and staff.role in ("superadmin", "sales", "finance")
+        else []
+    )
     return {
         "products": products,
         "published_products": published,
@@ -335,7 +341,7 @@ async def overview(staff: Staff, session: Db) -> dict:
 @router.get("/categories")
 async def categories(staff: Staff, session: Db) -> list[dict]:
     """Show actual category records in admin-defined order."""
-    require_staff(staff, "content", "sales", "viewer")
+    require_staff(staff, "content")
     items = (await session.execute(
         select(ShopCategory)
         .order_by(ShopCategory.position, ShopCategory.id)
@@ -393,7 +399,7 @@ async def products(
     staff: Staff, session: Db, page: int = 1, search: str = ""
 ) -> dict:
     """Paginate unlimited products with a bounded query and search field."""
-    require_staff(staff, "content", "sales", "viewer")
+    require_staff(staff, "content")
     if page < 1 or page > 100_000 or len(search) > 100:
         raise HTTPException(status_code=400, detail="Invalid page/search")
     predicate = (
@@ -422,7 +428,7 @@ async def products(
 @router.get("/products/{product_id}")
 async def product(product_id: int, staff: Staff, session: Db) -> dict:
     """Read a single product for the editable dashboard form."""
-    require_staff(staff, "content", "sales", "viewer")
+    require_staff(staff, "content")
     item = await session.get(Product, product_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -505,7 +511,7 @@ async def edit_product(
 @router.get("/orders")
 async def orders(staff: Staff, session: Db, page: int = 1) -> dict:
     """Show read-only order state; payment confirmations remain provider-only."""
-    require_staff(staff, "sales", "finance", "viewer")
+    require_staff(staff, "sales", "finance")
     if not 1 <= page <= 100_000:
         raise HTTPException(status_code=400, detail="Invalid page")
     total = int(await session.scalar(
@@ -534,7 +540,7 @@ async def orders(staff: Staff, session: Db, page: int = 1) -> dict:
 @router.get("/customers")
 async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
     """List platform-scoped identities without merging matching numeric IDs."""
-    require_staff(staff, "sales", "viewer")
+    require_staff(staff, "sales")
     if not 1 <= page <= 100_000:
         raise HTTPException(status_code=400, detail="Invalid page")
     total = int(await session.scalar(
@@ -562,7 +568,7 @@ async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
 @router.get("/campaigns")
 async def campaigns(staff: Staff, session: Db) -> list[dict]:
     """Read durable queue progress; campaign controls use existing core."""
-    require_staff(staff, "marketing", "viewer")
+    require_staff(staff, "marketing")
     items = (await session.execute(
         select(ShopCampaign)
         .order_by(ShopCampaign.id.desc()).limit(100)
@@ -813,7 +819,7 @@ async def testimonials(staff: Staff, session: Db, page: int = 1) -> dict:
 @router.get("/shipping")
 async def shipping(staff: Staff, session: Db) -> list[dict]:
     """Display dynamically configured shipping charges in integral rials."""
-    require_staff(staff, "sales", "viewer")
+    require_staff(staff, "sales")
     result = await session.execute(
         select(ShopShippingMethod)
         .order_by(ShopShippingMethod.position, ShopShippingMethod.id)
@@ -832,7 +838,7 @@ async def shipping(staff: Staff, session: Db) -> list[dict]:
 @router.get("/coupons")
 async def coupons(staff: Staff, session: Db) -> list[dict]:
     """Return merchant coupon rules without extending scope to staff wallets."""
-    require_staff(staff, "sales", "marketing", "viewer")
+    require_staff(staff, "sales", "marketing")
     result = await session.execute(
         select(ShopCoupon).order_by(ShopCoupon.id.desc()).limit(1000)
     )

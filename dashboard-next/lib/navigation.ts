@@ -28,7 +28,7 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "محصولات", href: "/products", icon: Boxes,
-    roles: ["superadmin", "content", "sales", "viewer"],
+    roles: ["superadmin", "content"],
   },
   {
     title: "دسته‌بندی‌ها", href: "/categories", icon: FolderTree,
@@ -36,11 +36,11 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "سفارش‌ها", href: "/orders", icon: ClipboardList,
-    roles: ["superadmin", "sales", "finance", "viewer"],
+    roles: ["superadmin", "sales", "finance"],
   },
   {
     title: "مشتریان", href: "/customers", icon: ContactRound,
-    roles: ["superadmin", "sales", "viewer"],
+    roles: ["superadmin", "sales"],
   },
   {
     title: "رسانه‌ها", href: "/media", icon: ImageIcon,
@@ -48,7 +48,11 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "کمپین‌ها", href: "/campaigns", icon: Megaphone,
-    roles: ["superadmin", "marketing", "viewer"],
+    roles: ["superadmin", "marketing"],
+  },
+  {
+    title: "امور مالی", href: "/finance", icon: ShieldCheck,
+    roles: ["superadmin", "finance"],
   },
   {
     title: "گزارش‌ها", href: "/reports", icon: BarChart3,
