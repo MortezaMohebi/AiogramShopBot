@@ -215,6 +215,28 @@ services:
     command: ["python", "-m", "scripts.test_lab_smoke"]
     restart: "no"
 
+
+  # Optional, larger browser image. Shares Caddy's network namespace so
+  # https://localhost:8443 truly exercises the Secure host-only cookie.
+  browser:
+    profiles: ["browser"]
+    build:
+      context: .
+      dockerfile: tests/browser/Dockerfile
+    network_mode: "service:caddy"
+    depends_on:
+      caddy:
+        condition: service_started
+    environment:
+      CI: "1"
+      LAB_BROWSER_BASE_URL: "https://localhost:8443"
+      LAB_ADMIN_PASSWORD: "${LAB_ADMIN_PASSWORD:?Run python scripts/test_lab.py init}"
+      LAB_VIEWER_PASSWORD: "${LAB_VIEWER_PASSWORD:?Run python scripts/test_lab.py init}"
+    volumes:
+      - ./.test-artifacts:/work/test-results
+    shm_size: "512m"
+    restart: "no"
+
 volumes:
   pg_test:
   media_test:
