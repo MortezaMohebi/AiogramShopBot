@@ -29,6 +29,7 @@ from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
 from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
+from dashboard.order_views import ShopOrderReviewView
 from db import create_db_and_tables, engine, get_db_session
 import uvicorn
 from fastapi.responses import JSONResponse
@@ -213,6 +214,7 @@ admin.add_model_view(ShopOrderLineAdmin)
 admin.add_model_view(ShopOrderReviewAuditAdmin)
 admin.add_view(ShopUploadView)
 admin.add_view(ShopMediaPreviewView)
+admin.add_view(ShopOrderReviewView)
 
 app.include_router(processing_router)
 
