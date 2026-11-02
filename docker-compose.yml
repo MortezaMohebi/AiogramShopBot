@@ -29,6 +29,7 @@ services:
       - "127.0.0.1:5000:5000" # ${WEBAPP_PORT}:${WEBAPP_PORT}
     volumes:
       - ./i18n:/bot/i18n
+      - ./media_data:/bot/media_data
     command: [ "python", "-u", "run.py" ]
     restart: always
 

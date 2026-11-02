@@ -217,8 +217,11 @@ class ProductMediaAdmin(ModelView, model=ProductMedia):
     }
     # Prevent arbitrary filesystem paths from being entered in generic CRUD.
     can_create = False
-    can_edit = False
+    can_edit = True
     can_delete = False
+    form_columns = [
+        ProductMedia.caption, ProductMedia.position, ProductMedia.is_published,
+    ]
 
 
 class TestimonialAdmin(ModelView, model=Testimonial):
@@ -240,8 +243,11 @@ class TestimonialAdmin(ModelView, model=Testimonial):
         Testimonial.is_approved: "تأیید انتشار",
     }
     can_create = False
-    can_edit = False
+    can_edit = True
     can_delete = False
+    form_columns = [
+        Testimonial.text, Testimonial.position, Testimonial.is_approved,
+    ]
 
 
 class ShopOrderAdmin(ModelView, model=ShopOrder):

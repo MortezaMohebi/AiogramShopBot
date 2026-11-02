@@ -25,6 +25,7 @@ from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.bale_wallet import BaleWalletService, CheckoutRejected
 from dashboard.persian import localize_model_view
+from dashboard.media_views import ShopUploadView
 from db import create_db_and_tables, engine, get_db_session
 import uvicorn
 from fastapi.responses import JSONResponse
@@ -196,6 +197,7 @@ admin.add_model_view(ProductAdmin)
 admin.add_model_view(ProductMediaAdmin)
 admin.add_model_view(TestimonialAdmin)
 admin.add_model_view(ShopOrderAdmin)
+admin.add_view(ShopUploadView)
 
 app.include_router(processing_router)
 
