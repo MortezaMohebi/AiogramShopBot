@@ -12,12 +12,12 @@ from sqlalchemy import select
 from sqladmin import BaseView, expose
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
+from dashboard.permissions import require_role
 from starlette.responses import RedirectResponse
 
 from db import session_maker
 from models.shop_checkout import ShopOrderLine, ShopOrderReviewAudit
 from models.shop_content import Product, ShopOrder
-from utils.utils import decode_token
 
 
 class ShopOrderReviewView(BaseView):
@@ -27,9 +27,17 @@ class ShopOrderReviewView(BaseView):
     icon = "fa-solid fa-clipboard-check"
     category = "فروش"
 
+    @staticmethod
+    def is_visible(request: Request) -> bool:
+        """Hide operational review from non-sales roles."""
+        return getattr(request.state, "shop_role", None) in (
+            "superadmin", "sales"
+        )
+
     @expose("/order-review", methods=["GET", "POST"])
     async def order_review(self, request: Request):
         """Review or reject unpaid orders without asserting payment success."""
+        require_role(request, "sales")
         if request.method == "POST":
             return await self._decide(request)
         csrf = secrets.token_urlsafe(32)
@@ -77,8 +85,9 @@ class ShopOrderReviewView(BaseView):
         if order_id <= 0 or decision not in ("accept", "reject"):
             raise HTTPException(status_code=400, detail="تصمیم مدیریتی نامعتبر است.")
 
-        claims = decode_token(request.session.get("token"))
-        if not isinstance(claims, dict) or claims.get("sub") != "ADMIN":
+        require_role(request, "sales")
+        staff_id = getattr(request.state, "shop_staff_id", None)
+        if not isinstance(staff_id, int):
             raise HTTPException(status_code=403, detail="اجازه لازم وجود ندارد.")
         async with session_maker() as session:
             order = await session.scalar(
@@ -122,7 +131,7 @@ class ShopOrderReviewView(BaseView):
             session.add(
                 ShopOrderReviewAudit(
                     order_id=order.id,
-                    actor=str(claims["sub"]),
+                    actor=f"staff:{staff_id}",
                     action=decision,
                     old_status=order.status,
                     new_status=next_status,

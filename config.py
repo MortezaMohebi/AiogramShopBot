@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 from enums.currency import Currency
 from enums.runtime_environment import RuntimeEnvironment
-from utils.utils import get_sslipio_external_url, start_ngrok, hash_password
+from utils.utils import get_sslipio_external_url, start_ngrok
 
 load_dotenv(".env.bot.dev")
 RUNTIME_ENVIRONMENT = RuntimeEnvironment(os.environ.get("RUNTIME_ENVIRONMENT"))
@@ -118,7 +118,12 @@ REFERRER_BONUS_CAP_PERCENT = float(os.environ.get("REFERRER_BONUS_CAP_PERCENT", 
 TOTAL_BONUS_CAP_PERCENT = float(os.environ.get("TOTAL_BONUS_CAP_PERCENT", "12"))
 # SQLADMIN
 SQLADMIN_RAW_PASSWORD = os.environ.get("SQLADMIN_RAW_PASSWORD")
-SQLADMIN_HASHED_PASSWORD = hash_password(SQLADMIN_RAW_PASSWORD)
+# Shared SQLAdmin passwords are retired. Accounts are provisioned with
+# scripts/manage_shop_staff.py and stored as strong Argon2 password hashes.
 JWT_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "30"))
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+
+# The SQLAdmin authentication secret must be persistent and private.
+if not JWT_SECRET_KEY or len(JWT_SECRET_KEY) < 32:
+    raise ValueError("JWT_SECRET_KEY must be a random 32+ character secret.")

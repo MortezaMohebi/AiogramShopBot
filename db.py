@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker, Session
 
 import config
 from models.base import Base
+from models.shop_staff import ShopStaff
 
 """
 Imports of these models are needed to correctly create tables in the database.

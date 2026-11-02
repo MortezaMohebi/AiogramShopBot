@@ -11,6 +11,7 @@ from sqladmin import BaseView, expose
 from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
+from dashboard.permissions import require_role
 from starlette.responses import FileResponse, RedirectResponse
 
 import config
@@ -31,6 +32,13 @@ class ShopUploadView(BaseView):
     category = "محتوا"
 
     @staticmethod
+    def is_visible(request: Request) -> bool:
+        """Show the upload screen only to content editors."""
+        return getattr(request.state, "shop_role", None) in (
+            "superadmin", "content"
+        )
+
+    @staticmethod
     async def _products() -> list[Product]:
         """Return editable products for the upload form."""
         async with session_maker() as session:
@@ -42,6 +50,7 @@ class ShopUploadView(BaseView):
     @expose("/media-upload", methods=["GET", "POST"])
     async def media_upload(self, request: Request):
         """Validate CSRF, file and product before committing metadata."""
+        require_role(request, "content")
         if request.method == "GET":
             csrf = secrets.token_urlsafe(32)
             request.session["shop_upload_csrf"] = csrf
@@ -163,6 +172,7 @@ class ShopMediaPreviewView(BaseView):
     @expose("/media-preview/{kind}/{record_id}", methods=["GET"])
     async def media_preview(self, request: Request):
         """Serve only previously validated media to authenticated admins."""
+        require_role(request, "content")
         kind = request.path_params["kind"]
         try:
             record_id = int(request.path_params["record_id"])

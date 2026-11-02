@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqladmin import BaseView, expose
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
+from dashboard.permissions import require_role
 from starlette.responses import RedirectResponse
 
 import config
@@ -16,7 +17,6 @@ from models.shop_content import ShopOrder
 from models.shop_payment import ShopRefundCase
 from services.shop_payments import PaymentRejected
 from services.shop_refunds import ShopRefundService
-from utils.utils import decode_token
 
 
 class ShopRefundReviewView(BaseView):
@@ -26,9 +26,17 @@ class ShopRefundReviewView(BaseView):
     icon = "fa-solid fa-rotate-left"
     category = "مالی"
 
+    @staticmethod
+    def is_visible(request: Request) -> bool:
+        """Hide financial operations from non-finance roles."""
+        return getattr(request.state, "shop_role", None) in (
+            "superadmin", "finance"
+        )
+
     @expose("/refund-review", methods=["GET", "POST"])
     async def refund_review(self, request: Request):
         """Display cases or process one authorized CSRF-protected decision."""
+        require_role(request, "finance")
         if request.method == "POST":
             return await self._handle_decision(request)
         token = secrets.token_urlsafe(32)
@@ -62,8 +70,9 @@ class ShopRefundReviewView(BaseView):
             and secrets.compare_digest(csrf, saved)
         ):
             raise HTTPException(status_code=403, detail="درخواست تأیید نشد.")
-        claims = decode_token(request.session.get("token"))
-        if not isinstance(claims, dict) or claims.get("sub") != "ADMIN":
+        require_role(request, "finance")
+        staff_id = getattr(request.state, "shop_staff_id", None)
+        if not isinstance(staff_id, int):
             raise HTTPException(status_code=403, detail="دسترسی مجاز نیست.")
         try:
             case_id = int(form.get("case_id", "0"))
@@ -72,7 +81,7 @@ class ShopRefundReviewView(BaseView):
         if case_id <= 0:
             raise HTTPException(status_code=400, detail="شناسه نامعتبر است.")
         action = form.get("action")
-        reviewer = "admin"
+        reviewer = f"staff:{staff_id}"
         if form.get("confirmation") != "REFUND_VERIFIED":
             raise HTTPException(
                 status_code=400,
