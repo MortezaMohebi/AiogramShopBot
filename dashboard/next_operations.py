@@ -7,12 +7,11 @@ staff RBAC and wallet accounting. Public Next.js routes never expose keys.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.datastructures import UploadFile
 from starlette.responses import FileResponse
@@ -27,7 +26,8 @@ from dashboard.media_storage import (
 from dashboard.next_api import Db, Staff, require_staff
 from models.shop_content import Product, ProductMedia, Testimonial, ShopIdentity
 from models.shop_engagement import (
-    ShopCampaign, ShopCampaignMedia, ShopReferralPolicy, ShopWalletEntry,
+    ShopCampaign, ShopCampaignMedia, ShopReferralPolicy, ShopWalletAccount,
+    ShopWalletEntry,
 )
 from models.shop_staff import ShopStaff
 from services.shop_payments import PaymentRejected
@@ -193,9 +193,10 @@ async def upload_media(
                     position=position,
                 )
             session.add(record)
+            await session.flush()
+            record_id = record.id
             await session.commit()
-            await session.refresh(record)
-            return {"id": record.id, "status": "pending_review" if target != "campaign" else "draft"}
+            return {"id": record_id, "status": "pending_review" if target != "campaign" else "draft"}
     except (UnsupportedMediaError, SQLAlchemyError, HTTPException) as exc:
         await session.rollback()
         if saved is not None:
@@ -473,7 +474,8 @@ async def wallet_ledger(staff: Staff, session: Db) -> list[dict]:
     require_staff(staff, "finance")
     entries = (await session.execute(
         select(ShopWalletEntry, ShopIdentity.platform, ShopIdentity.platform_user_id)
-        .join(ShopIdentity, ShopIdentity.id == ShopWalletEntry.account_id, isouter=True)
+        .join(ShopWalletAccount, ShopWalletAccount.id == ShopWalletEntry.account_id)
+        .join(ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id)
         .order_by(ShopWalletEntry.id.desc()).limit(100)
     )).all()
     return [
