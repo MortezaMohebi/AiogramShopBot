@@ -71,6 +71,9 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     price: Mapped[int] = mapped_column(BigInteger, nullable=False)
     stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requires_shipping: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -226,6 +229,16 @@ class ShopOrder(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checkout_key: Mapped[str | None] = mapped_column(String(80), unique=True)
+    subtotal_irr: Mapped[int | None] = mapped_column(BigInteger)
+    discount_irr: Mapped[int | None] = mapped_column(BigInteger)
+    shipping_irr: Mapped[int | None] = mapped_column(BigInteger)
+    shipping_address: Mapped[str | None] = mapped_column(String(500))
+    shipping_method_snapshot: Mapped[str | None] = mapped_column(String(120))
+    coupon_code_snapshot: Mapped[str | None] = mapped_column(String(32))
+    lines: Mapped[list["ShopOrderLine"]] = relationship(
+        "ShopOrderLine", back_populates="order"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -235,7 +248,7 @@ class ShopOrder(Base):
         CheckConstraint("unit_price_irr >= 0", name="ck_shop_order_price_positive"),
         CheckConstraint("total_irr > 0", name="ck_shop_order_total_positive"),
         CheckConstraint(
-            "status IN ('pending_payment','paid','paid_unfulfilled','cancelled')",
+            "status IN ('pending_review','pending_payment','paid','paid_unfulfilled','cancelled')",
             name="ck_shop_order_status",
         ),
     )
@@ -302,6 +315,7 @@ class ProductAdmin(ModelView, model=Product):
         Product.description: "توضیحات",
         Product.price: "قیمت (ریال)",
         Product.stock_quantity: "موجودی",
+        Product.requires_shipping: "نیازمند نشانی و ارسال",
         Product.position: "ترتیب",
         Product.is_published: "انتشار",
     }
@@ -435,6 +449,12 @@ class ShopOrderAdmin(ModelView, model=ShopOrder):
         ShopOrder.platform_user_id: "شناسه خریدار",
         ShopOrder.product_name_snapshot: "نام محصول",
         ShopOrder.quantity: "تعداد",
+        ShopOrder.subtotal_irr: "جمع کالاها (ریال)",
+        ShopOrder.discount_irr: "تخفیف (ریال)",
+        ShopOrder.shipping_irr: "هزینه ارسال (ریال)",
+        ShopOrder.shipping_address: "نشانی ارسال",
+        ShopOrder.shipping_method_snapshot: "روش ارسال",
+        ShopOrder.coupon_code_snapshot: "کد تخفیف",
         ShopOrder.total_irr: "مبلغ (ریال)",
         ShopOrder.provider: "روش پرداخت",
         ShopOrder.status: "وضعیت",
