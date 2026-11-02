@@ -16,6 +16,7 @@ from models.shop_checkout import (
 )
 from models.shop_content import Product, ShopCategory, ShopOrder
 from services.shop_cart import ShopCartFlow, validate_coupon
+from services.shop_orders import ShopOrdersFlow
 
 
 class AsyncDatabase:
@@ -199,3 +200,69 @@ def test_percent_coupon_never_creates_zero_rial_invoice(db):
         minimum_subtotal_irr=0, is_active=True, used_count=0,
     )
     assert validate_coupon(coupon, subtotal=1000) == 999
+
+
+@pytest.mark.asyncio
+async def test_order_history_and_cancellation_require_matching_platform(db):
+    """Only the original Bale user can cancel an unpaid Bale request."""
+    first, _ = seed(db)
+    flow = ShopCartFlow()
+    await flow.reply(event(Platform.BALE, callback=f"shop:add:{first.id}"), db)
+    await flow.reply(event(Platform.BALE, callback="shop:address"), db)
+    await flow.reply(
+        event(Platform.BALE, text="تهران خیابان نمونه پلاک ۱۲"), db
+    )
+    await flow.reply(event(Platform.BALE, callback="shop:ship:1"), db)
+    confirmation = await flow.reply(
+        event(Platform.BALE, callback="shop:checkout"), db
+    )
+    place_callback = confirmation.rows[0][0].callback_data
+    await flow.reply(event(Platform.BALE, callback=place_callback), db)
+    order = db.session.scalars(select(ShopOrder)).one()
+    history = ShopOrdersFlow()
+    response = await history.reply(
+        event(Platform.BALE, callback="shop:orders"), db
+    )
+    assert "1 کالا" in response.text
+    assert "در انتظار بررسی" in response.text
+    cancellation = f"shop:cancelorder:{order.id}"
+    rejected = await history.reply(
+        event(Platform.TELEGRAM, callback=cancellation), db
+    )
+    assert "یافت نشد" in rejected.text
+    allowed = await history.reply(
+        event(Platform.BALE, callback=cancellation), db
+    )
+    assert "لغو شد" in allowed.text
+    assert order.status == "cancelled"
+    again = await history.reply(
+        event(Platform.BALE, callback=cancellation), db
+    )
+    assert "امکان‌پذیر نیست" in again.text
+    # Cancellation never decrements stock or creates payment receipts.
+    assert first.stock_quantity == 5
+    assert order.telegram_payment_charge_id is None
+
+
+@pytest.mark.asyncio
+async def test_coupon_expiry_has_recovery_action(db):
+    """An invalidated coupon must remain removable without a developer."""
+    first, _ = seed(db)
+    flow = ShopCartFlow()
+    await flow.reply(event(Platform.TELEGRAM, callback=f"shop:add:{first.id}"), db)
+    await flow.reply(event(Platform.TELEGRAM, callback="shop:coupon"), db)
+    await flow.reply(event(Platform.TELEGRAM, text="SAVE10"), db)
+    coupon = db.session.scalar(select(ShopCoupon))
+    coupon.is_active = False
+    db.session.commit()
+    reply = await flow.reply(
+        event(Platform.TELEGRAM, callback="shop:cart"), db
+    )
+    assert any(
+        action.callback_data == "shop:clear_coupon"
+        for row in reply.rows for action in row
+    )
+    restored = await flow.reply(
+        event(Platform.TELEGRAM, callback="shop:clear_coupon"), db
+    )
+    assert "1,000 ریال" in restored.text
