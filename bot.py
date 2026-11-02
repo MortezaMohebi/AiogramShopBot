@@ -36,6 +36,7 @@ from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
 from dashboard.permissions import secure_model_view
+from dashboard.wallet_views import ShopWalletAdjustmentView
 from models.shop_staff import ShopStaffAdmin
 from models.shop_engagement import (
     ShopWalletAccountAdmin, ShopWalletEntryAdmin, ShopReferralPolicyAdmin,
@@ -238,6 +239,7 @@ admin.add_view(ShopUploadView)
 admin.add_view(ShopMediaPreviewView)
 admin.add_view(ShopOrderReviewView)
 admin.add_view(ShopRefundReviewView)
+admin.add_view(ShopWalletAdjustmentView)
 admin.add_model_view(secure_model_view(ShopStaffAdmin))
 admin.add_model_view(secure_model_view(ShopWalletAccountAdmin))
 admin.add_model_view(secure_model_view(ShopWalletEntryAdmin))

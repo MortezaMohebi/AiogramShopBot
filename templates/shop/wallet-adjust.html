@@ -1,0 +1,71 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<section class="col-12 col-lg-8">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">اصلاح اعتبار داخلی فروشگاه</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted">
+        این اعتبار داخلی فروشگاه است، نه موجودی کیف پول بله یا تلگرام.
+        هر تغییر به‌صورت دائمی در دفترکل ثبت می‌شود.
+      </p>
+      {% if notice %}
+      <div class="alert alert-success" role="status">
+        عملیات در دفترکل ثبت شد.
+      </div>
+      {% endif %}
+      {% if max_amount <= 0 %}
+      <div class="alert alert-warning">
+        اصلاح دستی اعتبار غیرفعال است؛ مدیر اصلی باید سقف ایمن را تنظیم کند.
+      </div>
+      {% endif %}
+      <form method="post" action="/admin/wallet-adjust" autocomplete="off">
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <div class="mb-3">
+          <label class="form-label" for="platform">پیام‌رسان مشتری</label>
+          <select class="form-select" name="platform" id="platform" required>
+            <option value="telegram">تلگرام</option>
+            <option value="bale">بله</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="user_id">شناسه عددی مشتری در پیام‌رسان</label>
+          <input class="form-control ltr" type="number"
+            name="user_id" id="user_id" min="1" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="direction">نوع تغییر</label>
+          <select class="form-select" name="direction" id="direction" required>
+            <option value="credit">افزایش اعتبار فروشگاهی</option>
+            <option value="debit">کاهش اعتبار فروشگاهی</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="amount_irr">مبلغ صحیح به ریال</label>
+          <input class="form-control ltr" type="number"
+            name="amount_irr" id="amount_irr"
+            min="1" max="{{ max_amount }}" required>
+          <small class="text-muted">سقف هر عملیات: {{ max_amount }} ریال</small>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="reason">دلیل مستند عملیات</label>
+          <textarea class="form-control" name="reason" id="reason"
+            minlength="12" maxlength="200" rows="3" required></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="confirmation">
+            برای تأیید عبارت CREDIT_CONFIRMED را وارد کنید.
+          </label>
+          <input class="form-control ltr" name="confirmation" id="confirmation"
+            required placeholder="CREDIT_CONFIRMED">
+        </div>
+        <button type="submit" class="btn btn-primary"
+          {% if max_amount <= 0 %}disabled{% endif %}>
+          ثبت عملیات در دفترکل
+        </button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

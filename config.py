@@ -127,3 +127,10 @@ JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 # The SQLAdmin authentication secret must be persistent and private.
 if not JWT_SECRET_KEY or len(JWT_SECRET_KEY) < 32:
     raise ValueError("JWT_SECRET_KEY must be a random 32+ character secret.")
+
+# Zero disables manual merchant store-credit adjustments until configured.
+SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR = int(
+    os.environ.get("SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR", "0")
+)
+if not 0 <= SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR <= 100_000_000_000:
+    raise ValueError("SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR out of range.")
