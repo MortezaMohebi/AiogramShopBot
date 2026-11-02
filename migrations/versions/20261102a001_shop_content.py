@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("category_id", sa.Integer, sa.ForeignKey("shop_categories.id", ondelete="SET NULL")),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=False),
-        sa.Column("price", sa.Numeric(18, 0), nullable=False),
+        sa.Column("price", sa.BigInteger, nullable=False),
         sa.Column("stock_quantity", sa.Integer, nullable=False, server_default="0"),
         sa.Column("position", sa.Integer, nullable=False, server_default="0"),
         sa.Column("is_published", sa.Boolean, nullable=False, server_default=sa.false()),

@@ -7,11 +7,9 @@ All new catalogue prices are stored as integral Iranian rials (IRR).
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
-
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
-    Numeric, String, Text, UniqueConstraint, func,
+    String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
@@ -51,7 +49,7 @@ class Product(Base):
     category: Mapped[ShopCategory | None] = relationship(back_populates="products")
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    price: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    price: Mapped[int] = mapped_column(BigInteger, nullable=False)
     stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(
@@ -142,7 +140,12 @@ class ShopOrder(Base):
 
     __tablename__ = "shop_orders"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # PostgreSQL uses BIGINT IDENTITY; SQLite tests use INTEGER PRIMARY KEY.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)

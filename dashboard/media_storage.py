@@ -105,7 +105,11 @@ async def save_media(
     root_path.mkdir(mode=0o700, parents=True, exist_ok=True)
 
     header = await uploaded.read(64)
-    mime, extension, kind = detect_media_type(header)
+    try:
+        mime, extension, kind = detect_media_type(header)
+    except UnsupportedMediaError:
+        await uploaded.close()
+        raise
     key = secrets.token_hex(16) + extension
     destination = safe_media_path(root_path, key)
     amount = 0
