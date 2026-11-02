@@ -560,6 +560,7 @@ class ShopCartFlow:
             shipping_address=cart.shipping_address if quote.shipping_required else None,
             shipping_method_snapshot=quote.shipping_label,
             coupon_code_snapshot=quote.coupon_code,
+            coupon_id=cart.coupon_id,
         )
         session.add(order)
         await session.flush()

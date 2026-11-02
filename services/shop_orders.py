@@ -88,6 +88,13 @@ class ShopOrdersFlow:
                 f"{format_rials(order.total_irr, self.display_unit)}\n"
                 f"{STATUS_NAMES.get(order.status, 'در حال بررسی')}"
             )
+            if order.status == "approved_unpaid":
+                rows.append((
+                    InlineAction(
+                        f"💳 پرداخت سفارش #{order.id}",
+                        f"shop:pay:{order.id}",
+                    ),
+                ))
             if (
                 order.provider == "manual_review"
                 and order.status == "pending_review"

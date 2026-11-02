@@ -114,8 +114,7 @@ class ShopPaymentService:
             raise PaymentRejected("نوع کالا معتبر نیست.")
         for line, product in pairs:
             if (
-                line.quantity < 1 or line.unit_price_irr != product.price
-                and product.price < 0
+                line.quantity < 1 or line.unit_price_irr < 0
                 or line.total_irr != line.quantity * line.unit_price_irr
                 or product.stock_quantity < line.quantity
                 or not product.is_published
