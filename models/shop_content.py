@@ -1,107 +1,270 @@
-"""Independent, editable catalog metadata shared across messaging platforms."""
+"""Independent product, media, testimonial and sales data for both bots.
+
+Legacy cryptocurrency transactions and Telegram-only inventory remain intact.
+All new catalogue prices are stored as integral Iranian rials (IRR).
+"""
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
+    Numeric, String, Text, UniqueConstraint, func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
 
 from models.base import Base
 
 
 class Product(Base):
-    """A real product, independent from individual legacy stock items."""
+    """One editable product, not one database record per unit of stock."""
 
     __tablename__ = "shop_products"
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sku: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
     stock_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    media: Mapped[list["ProductMedia"]] = relationship(
+        back_populates="product", passive_deletes=True
+    )
+    testimonials: Mapped[list["Testimonial"]] = relationship(
+        back_populates="product", passive_deletes=True
+    )
+    orders: Mapped[list["ShopOrder"]] = relationship(back_populates="product")
+
     __table_args__ = (
         CheckConstraint("price >= 0", name="ck_shop_product_price"),
         CheckConstraint("stock_quantity >= 0", name="ck_shop_product_stock"),
     )
 
     def __repr__(self) -> str:
-        """Display the product name in administrative forms."""
+        """Display the product name in SQLAdmin."""
         return self.name
 
 
 class ProductMedia(Base):
-    """Multiple files per product, stored independently of Telegram file IDs."""
+    """Original private file and visible metadata, irrespective of platform."""
 
     __tablename__ = "shop_product_media"
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("shop_products.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_products.id", ondelete="RESTRICT"), nullable=False
+    )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     caption: Mapped[str | None] = mapped_column(Text)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    product: Mapped[Product] = relationship(back_populates="media")
+
     __table_args__ = (
-        CheckConstraint("kind IN ('photo', 'video', 'audio', 'document')", name="ck_shop_media_kind"),
+        CheckConstraint(
+            "kind IN ('photo', 'video', 'audio', 'document')",
+            name="ck_shop_media_kind",
+        ),
+        CheckConstraint("size_bytes > 0", name="ck_shop_media_nonempty"),
+        UniqueConstraint("storage_key", name="uq_shop_media_storage_key"),
     )
 
 
 class Testimonial(Base):
-    """Product-specific customer testimonial with publication approval."""
+    """A product-specific customer story, not automatically published."""
 
     __tablename__ = "shop_testimonials"
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("shop_products.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_products.id", ondelete="RESTRICT"), nullable=False
+    )
     text: Mapped[str | None] = mapped_column(Text)
-    media_storage_key: Mapped[str | None] = mapped_column(String(512))
+    media_storage_key: Mapped[str | None] = mapped_column(String(80))
+    media_kind: Mapped[str | None] = mapped_column(String(16))
+    media_mime_type: Mapped[str | None] = mapped_column(String(80))
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_approved: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    product: Mapped[Product] = relationship(back_populates="testimonials")
+
     __table_args__ = (
-        CheckConstraint("text IS NOT NULL OR media_storage_key IS NOT NULL", name="ck_shop_testimonial_content"),
+        CheckConstraint(
+            "text IS NOT NULL OR media_storage_key IS NOT NULL",
+            name="ck_shop_testimonial_content",
+        ),
     )
 
 
+class ShopOrder(Base):
+    """Cross-platform order paid via a platform-native payment provider.
+
+    The customer's identity is `(platform, platform_user_id)`; identifiers
+    from Telegram and Bale must never be assumed globally interchangeable.
+    """
+
+    __tablename__ = "shop_orders"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_products.id", ondelete="RESTRICT"), nullable=False
+    )
+    product: Mapped[Product] = relationship(back_populates="orders")
+    product_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    provider: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="pending_payment"
+    )
+    invoice_payload: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True
+    )
+    telegram_payment_charge_id: Mapped[str | None] = mapped_column(
+        String(128), unique=True
+    )
+    provider_payment_charge_id: Mapped[str | None] = mapped_column(
+        String(128), unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "platform IN ('telegram', 'bale')", name="ck_shop_order_platform"
+        ),
+        CheckConstraint("quantity > 0", name="ck_shop_order_qty_positive"),
+        CheckConstraint("unit_price_irr >= 0", name="ck_shop_order_price_positive"),
+        CheckConstraint("total_irr > 0", name="ck_shop_order_total_positive"),
+        CheckConstraint(
+            "status IN ('pending_payment','paid','paid_unfulfilled','cancelled')",
+            name="ck_shop_order_status",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        """Identify the order in administrative forms."""
+        return f"Order #{self.id}"
+
+
 class ProductAdmin(ModelView, model=Product):
-    """Provide product CRUD without changing legacy checkout tables."""
+    """Manage the product catalogue without modifying old sales data."""
 
     name = "محصول"
     name_plural = "محصولات"
     category = "کاتالوگ"
+    icon = "fa-solid fa-box"
+    column_list = [
+        Product.id, Product.name, Product.sku, Product.price,
+        Product.stock_quantity, Product.position, Product.is_published,
+    ]
     column_searchable_list = [Product.name, Product.sku]
+    column_sortable_list = [Product.position, Product.price, Product.id]
     column_labels = {
-        Product.sku: "کد محصول", Product.name: "نام محصول",
-        Product.description: "توضیحات", Product.price: "قیمت",
-        Product.stock_quantity: "موجودی", Product.position: "ترتیب نمایش",
-        Product.is_published: "منتشر شده",
+        Product.sku: "کد محصول",
+        Product.name: "نام محصول",
+        Product.description: "توضیحات",
+        Product.price: "قیمت (ریال)",
+        Product.stock_quantity: "موجودی",
+        Product.position: "ترتیب",
+        Product.is_published: "انتشار",
     }
+    # Orders retain snapshots; hide products instead of physical deletion.
     can_delete = False
 
 
 class ProductMediaAdmin(ModelView, model=ProductMedia):
-    """Manage original file metadata for each product."""
+    """Read-only metadata; upload only through the validated manager form."""
 
     name = "رسانه محصول"
     name_plural = "رسانه‌های محصول"
     category = "محتوا"
+    icon = "fa-solid fa-images"
+    column_list = [
+        ProductMedia.id, ProductMedia.product_id, ProductMedia.kind,
+        ProductMedia.original_filename, ProductMedia.position,
+        ProductMedia.is_published,
+    ]
     column_labels = {
-        ProductMedia.product_id: "محصول", ProductMedia.kind: "نوع رسانه",
-        ProductMedia.storage_key: "مسیر فایل اصلی",
-        ProductMedia.caption: "توضیح", ProductMedia.position: "ترتیب",
-        ProductMedia.is_published: "منتشر شده",
+        ProductMedia.product_id: "محصول",
+        ProductMedia.kind: "نوع رسانه",
+        ProductMedia.original_filename: "فایل",
+        ProductMedia.storage_key: "شناسه داخلی فایل",
+        ProductMedia.mime_type: "نوع فایل",
+        ProductMedia.caption: "توضیح",
+        ProductMedia.position: "ترتیب",
+        ProductMedia.is_published: "انتشار",
     }
+    # Prevent arbitrary filesystem paths from being entered in generic CRUD.
+    can_create = False
+    can_edit = False
+    can_delete = False
 
 
 class TestimonialAdmin(ModelView, model=Testimonial):
-    """Manage published and unpublished testimonials."""
+    """Moderate customer content; file paths are never directly editable."""
 
     name = "رضایت مشتری"
     name_plural = "رضایت مشتریان"
     category = "محتوا"
+    icon = "fa-solid fa-comment"
+    column_list = [
+        Testimonial.id, Testimonial.product_id, Testimonial.text,
+        Testimonial.position, Testimonial.is_approved,
+    ]
     column_labels = {
-        Testimonial.product_id: "محصول", Testimonial.text: "متن",
-        Testimonial.media_storage_key: "مسیر رسانه",
-        Testimonial.position: "ترتیب", Testimonial.is_approved: "تأیید شده",
+        Testimonial.product_id: "محصول",
+        Testimonial.text: "متن",
+        Testimonial.media_storage_key: "شناسه داخلی رسانه",
+        Testimonial.position: "ترتیب",
+        Testimonial.is_approved: "تأیید انتشار",
     }
+    can_create = False
+    can_edit = False
+    can_delete = False
+
+
+class ShopOrderAdmin(ModelView, model=ShopOrder):
+    """Review payment status; never override provider-confirmed transactions."""
+
+    name = "سفارش"
+    name_plural = "سفارش‌های دو پیام‌رسان"
+    category = "فروش"
+    icon = "fa-solid fa-receipt"
+    column_list = [
+        ShopOrder.id, ShopOrder.platform, ShopOrder.product_name_snapshot,
+        ShopOrder.total_irr, ShopOrder.status, ShopOrder.created_at,
+    ]
+    column_labels = {
+        ShopOrder.platform: "پیام‌رسان",
+        ShopOrder.platform_user_id: "شناسه خریدار",
+        ShopOrder.product_name_snapshot: "نام محصول",
+        ShopOrder.quantity: "تعداد",
+        ShopOrder.total_irr: "مبلغ (ریال)",
+        ShopOrder.provider: "روش پرداخت",
+        ShopOrder.status: "وضعیت",
+        ShopOrder.created_at: "تاریخ ثبت",
+    }
+    can_create = False
+    can_edit = False
+    can_delete = False

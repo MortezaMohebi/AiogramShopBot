@@ -6,6 +6,7 @@ from utils.utils import get_text
 
 
 class Currency(Enum):
+    IRR = "IRR"
     USD = "USD"
     EUR = "EUR"
     GBP = "GBP"

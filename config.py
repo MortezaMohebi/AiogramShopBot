@@ -37,6 +37,16 @@ SUPPORT_LINK = os.environ.get("SUPPORT_LINK")
 BALE_BOT_TOKEN = os.environ.get("BALE_BOT_TOKEN")
 BALE_WEBHOOK_SECRET = os.environ.get("BALE_WEBHOOK_SECRET")
 SHOP_CURRENCY_LABEL = os.environ.get("SHOP_CURRENCY_LABEL", "ریال")
+# Canonical shop prices and native Bale wallet invoices are always IRR.
+SHOP_CURRENCY = "IRR"
+SHOP_DISPLAY_UNIT = os.environ.get("SHOP_DISPLAY_UNIT", "IRR").upper()
+if SHOP_DISPLAY_UNIT not in {"IRR", "TOMAN"}:
+    raise ValueError("SHOP_DISPLAY_UNIT must be IRR or TOMAN.")
+BALE_WALLET_PROVIDER_TOKEN = os.environ.get("BALE_WALLET_PROVIDER_TOKEN", "")
+SHOP_MEDIA_ROOT = os.environ.get("SHOP_MEDIA_ROOT", "./media_data")
+SHOP_MEDIA_MAX_BYTES = int(os.environ.get("SHOP_MEDIA_MAX_BYTES", "20971520"))
+if not 1 <= SHOP_MEDIA_MAX_BYTES <= 20971520:
+    raise ValueError("SHOP_MEDIA_MAX_BYTES must be between 1 and 20971520.")
 # POSTGRESQL
 DB_USER = os.environ.get("POSTGRES_USER", "postgres")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD")
