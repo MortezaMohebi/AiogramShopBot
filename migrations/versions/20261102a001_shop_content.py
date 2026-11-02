@@ -22,6 +22,15 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create the independent product, media, testimonial and order tables."""
     op.create_table(
+        "shop_settings",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("brand_name", sa.String(255)),
+        sa.Column("welcome_message", sa.Text),
+        sa.Column("faq_text", sa.Text),
+        sa.Column("support_url", sa.String(500)),
+        sa.CheckConstraint("id = 1", name="ck_shop_settings_singleton"),
+    )
+    op.create_table(
         "shop_categories",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("name", sa.String(255), nullable=False, unique=True),
@@ -108,3 +117,4 @@ def downgrade() -> None:
     op.drop_table("shop_product_media")
     op.drop_table("shop_products")
     op.drop_table("shop_categories")
+    op.drop_table("shop_settings")

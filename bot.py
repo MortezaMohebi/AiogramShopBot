@@ -30,7 +30,7 @@ from db import create_db_and_tables, engine, get_db_session
 import uvicorn
 from fastapi.responses import JSONResponse
 from enums.cryptocurrency import Cryptocurrency
-from models.shop_content import ProductAdmin, ProductMediaAdmin, ShopCategoryAdmin, ShopOrderAdmin, TestimonialAdmin
+from models.shop_content import ProductAdmin, ProductMediaAdmin, ShopCategoryAdmin, ShopOrderAdmin, ShopSettingsAdmin, TestimonialAdmin
 from models.buy import BuyAdmin
 from models.buyItem import BuyItemAdmin
 from models.cart import CartAdmin
@@ -191,6 +191,7 @@ admin.add_model_view(localize_model_view(CartAdmin))
 admin.add_model_view(localize_model_view(CartItemAdmin))
 admin.add_model_view(localize_model_view(ReferralBonusAdmin))
 admin.add_model_view(localize_model_view(ReviewAdmin))
+admin.add_model_view(ShopSettingsAdmin)
 admin.add_model_view(ShopCategoryAdmin)
 admin.add_model_view(ProductAdmin)
 admin.add_model_view(ProductMediaAdmin)

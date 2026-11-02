@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import (
     BotReply, InboundEvent, InlineAction, MediaAttachment, Platform,
 )
-from models.shop_content import Product, ProductMedia, ShopCategory, Testimonial
+from models.shop_content import (
+    Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
+)
 from services.shop_money import format_rials
 
 _PAGE_SIZE = 6
@@ -77,6 +79,12 @@ class CatalogFlow:
                 return await self._media(
                     session, int(match.group(1)), int(match.group(2))
                 )
+            if data == "shop:home":
+                return await self._home(session)
+            if data == "shop:help":
+                return await self._settings_text(session, key="support")
+            if data == "shop:faq":
+                return await self._settings_text(session, key="faq")
             if data == "shop:categories":
                 return await self._categories_or_products(session)
             if data.startswith("shop:"):
@@ -89,9 +97,46 @@ class CatalogFlow:
         text = (event.text or "").strip()
         if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
             return await self._categories_or_products(session)
-        if event.platform == Platform.BALE and text.split(" ", 1)[0] == "/start":
-            return await self._categories_or_products(session)
+        if text.split(" ", 1)[0] == "/start":
+            return await self._home(session)
+        if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
+            return await self._settings_text(session, key="support")
+        if text in ("❓ پرسش‌های متداول", "/faq"):
+            return await self._settings_text(session, key="faq")
         return None
+
+    async def _home(self, session: AsyncSession) -> BotReply:
+        """Build a small fixed menu, with all business copy from settings."""
+        settings = await session.get(ShopSettings, 1)
+        welcome = (
+            settings.welcome_message
+            if settings and settings.welcome_message
+            else "به فروشگاه خوش آمدید."
+        )
+        return BotReply(
+            text=welcome[:4096],
+            rows=(
+                (_button("🛍 محصولات", "shop:categories"),),
+                (_button("📦 سفارش‌های من", "shop:orders"),),
+                (_button("🆘 پشتیبانی", "shop:help"),),
+                (_button("❓ پرسش‌های متداول", "shop:faq"),),
+            ),
+        )
+
+    async def _settings_text(
+        self, session: AsyncSession, *, key: str
+    ) -> BotReply:
+        """Read help and support information from editable admin settings."""
+        settings = await session.get(ShopSettings, 1)
+        if key == "faq":
+            body = settings.faq_text if settings else None
+        else:
+            url = (settings.support_url or "").strip() if settings else ""
+            body = url if url.startswith("https://") else None
+        return BotReply(
+            text=(body or "اطلاعات این بخش هنوز ثبت نشده است.")[:4096],
+            rows=((_button("🏠 صفحه اول", "shop:home"),),),
+        )
 
     async def _categories_or_products(self, session: AsyncSession) -> BotReply:
         """Show published categories, or all products if no category exists."""

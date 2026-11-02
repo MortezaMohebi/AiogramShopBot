@@ -18,6 +18,26 @@ from markupsafe import Markup, escape
 from models.base import Base
 
 
+class ShopSettings(Base):
+    """Editable brand and help texts, avoiding hardcoded shop information."""
+
+    __tablename__ = "shop_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    brand_name: Mapped[str | None] = mapped_column(String(255))
+    welcome_message: Mapped[str | None] = mapped_column(Text)
+    faq_text: Mapped[str | None] = mapped_column(Text)
+    support_url: Mapped[str | None] = mapped_column(String(500))
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_shop_settings_singleton"),
+    )
+
+    def __repr__(self) -> str:
+        """Show the current shop brand in SQLAdmin."""
+        return self.brand_name or "تنظیمات فروشگاه"
+
+
 class ShopCategory(Base):
     """Dynamic category configured entirely through SQLAdmin."""
 
@@ -191,6 +211,22 @@ class ShopOrder(Base):
     def __repr__(self) -> str:
         """Identify the order in administrative forms."""
         return f"Order #{self.id}"
+
+
+class ShopSettingsAdmin(ModelView, model=ShopSettings):
+    """Manage customer-facing welcome, help and FAQ copy."""
+
+    name = "تنظیم فروشگاه"
+    name_plural = "اطلاعات و پشتیبانی"
+    category = "تنظیمات"
+    icon = "fa-solid fa-gear"
+    column_labels = {
+        ShopSettings.brand_name: "نام فروشگاه",
+        ShopSettings.welcome_message: "پیام خوش‌آمد",
+        ShopSettings.faq_text: "پرسش‌های متداول",
+        ShopSettings.support_url: "لینک پشتیبانی",
+    }
+    can_delete = False
 
 
 class ShopCategoryAdmin(ModelView, model=ShopCategory):
