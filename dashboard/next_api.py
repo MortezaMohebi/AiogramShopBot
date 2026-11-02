@@ -577,7 +577,24 @@ async def campaigns(staff: Staff, session: Db) -> list[dict]:
             .where(ShopCampaignDelivery.campaign_id == item.id)
             .group_by(ShopCampaignDelivery.status)
         )).all()
+        bale_total = await session.scalar(
+            select(func.count()).select_from(ShopCampaignDelivery)
+            .join(
+                ShopIdentity,
+                ShopIdentity.id == ShopCampaignDelivery.identity_id,
+            )
+            .where(
+                ShopCampaignDelivery.campaign_id == item.id,
+                ShopIdentity.platform == "bale",
+            )
+        )
+        media_total = await session.scalar(
+            select(func.count()).select_from(ShopCampaignMedia)
+            .where(ShopCampaignMedia.campaign_id == item.id)
+        )
         result.append({
+            "bale_recipients": int(bale_total or 0),
+            "media_count": int(media_total or 0),
             "id": item.id, "title": item.title, "text": item.text,
             "audience": item.audience, "status": item.status,
             "bale_mode": item.bale_mode,
