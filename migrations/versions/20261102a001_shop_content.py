@@ -80,6 +80,19 @@ def upgrade() -> None:
         sa.CheckConstraint("text IS NOT NULL OR media_storage_key IS NOT NULL", name="ck_shop_testimonial_content"),
     )
     op.create_table(
+        "shop_identities",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("platform", sa.String(12), nullable=False),
+        sa.Column("platform_user_id", sa.BigInteger, nullable=False),
+        sa.Column("username", sa.String(255)),
+        sa.Column("first_name", sa.String(255)),
+        sa.Column("is_blocked", sa.Boolean, nullable=False, server_default=sa.false()),
+        sa.Column("allow_announcements", sa.Boolean, nullable=False, server_default=sa.false()),
+        sa.Column("registered_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("platform", "platform_user_id", name="uq_shop_identity"),
+        sa.CheckConstraint("platform IN ('telegram', 'bale')", name="ck_shop_identity_platform"),
+    )
+    op.create_table(
         "shop_orders",
         sa.Column("id", sa.BigInteger, sa.Identity(), primary_key=True),
         sa.Column("platform", sa.String(12), nullable=False),
@@ -113,6 +126,7 @@ def downgrade() -> None:
     """Drop only new tables, not the pre-existing sales and payment records."""
     op.drop_index("ix_shop_orders_customer", table_name="shop_orders")
     op.drop_table("shop_orders")
+    op.drop_table("shop_identities")
     op.drop_table("shop_testimonials")
     op.drop_table("shop_product_media")
     op.drop_table("shop_products")

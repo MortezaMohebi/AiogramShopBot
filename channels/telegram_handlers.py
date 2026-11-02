@@ -14,6 +14,7 @@ from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
 from services.bale_wallet import BaleWalletService
+from services.shop_identity import is_blocked, register_customer
 import config
 
 
@@ -49,6 +50,18 @@ async def show_shop_catalog(message: Message, session: AsyncSession) -> None:
     # Keep the storefront private, matching Bale's event normalization.
     if message.from_user is None or message.chat.type != "private":
         return
+    await register_customer(
+        session,
+        platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
+    if await is_blocked(
+        session, platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id
+    ):
+        return
     event = InboundEvent(
         platform=Platform.TELEGRAM,
         chat_id=message.chat.id,
@@ -66,6 +79,11 @@ async def shop_catalog_button(
 ) -> None:
     """Handle shop callbacks without sharing Aiogram objects with the core."""
     await callback.answer()
+    if await is_blocked(
+        session, platform=Platform.TELEGRAM,
+        platform_user_id=callback.from_user.id
+    ):
+        return
     if callback.message is None or callback.message.chat.type != "private":
         return
     event = InboundEvent(

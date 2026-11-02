@@ -151,6 +151,38 @@ class Testimonial(Base):
     )
 
 
+class ShopIdentity(Base):
+    """A platform-scoped customer identity with explicit notification opt-in."""
+
+    __tablename__ = "shop_identities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255))
+    first_name: Mapped[str | None] = mapped_column(String(255))
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    allow_announcements: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    registered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("platform", "platform_user_id", name="uq_shop_identity"),
+        CheckConstraint(
+            "platform IN ('telegram', 'bale')", name="ck_shop_identity_platform"
+        ),
+    )
+
+    def __repr__(self) -> str:
+        """Show a scoped identifier instead of an ambiguous user ID."""
+        return f"{self.platform}:{self.platform_user_id}"
+
+
 class ShopOrder(Base):
     """Cross-platform order paid via a platform-native payment provider.
 
@@ -357,6 +389,34 @@ class TestimonialAdmin(ModelView, model=Testimonial):
     form_columns = [
         Testimonial.text, Testimonial.position, Testimonial.is_approved,
     ]
+
+
+class ShopIdentityAdmin(ModelView, model=ShopIdentity):
+    """Manage Telegram and Bale customers without conflating their IDs."""
+
+    name = "مشتری"
+    name_plural = "مشتریان پیام‌رسان‌ها"
+    category = "مشتریان"
+    icon = "fa-solid fa-users"
+    column_list = [
+        ShopIdentity.id, ShopIdentity.platform, ShopIdentity.platform_user_id,
+        ShopIdentity.username, ShopIdentity.is_blocked,
+        ShopIdentity.allow_announcements,
+    ]
+    column_labels = {
+        ShopIdentity.platform: "پیام‌رسان",
+        ShopIdentity.platform_user_id: "شناسه کاربر",
+        ShopIdentity.username: "نام کاربری",
+        ShopIdentity.first_name: "نام",
+        ShopIdentity.is_blocked: "مسدود",
+        ShopIdentity.allow_announcements: "رضایت دریافت اعلان",
+        ShopIdentity.registered_at: "تاریخ عضویت",
+    }
+    form_columns = [
+        ShopIdentity.is_blocked,
+    ]
+    can_create = False
+    can_delete = False
 
 
 class ShopOrderAdmin(ModelView, model=ShopOrder):
