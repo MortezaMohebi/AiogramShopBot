@@ -16,6 +16,8 @@ from pathlib import Path, PurePath
 
 from starlette.datastructures import UploadFile
 
+from channels.media_policy import BALE_OTHER_UPLOAD_LIMIT, upload_limit
+
 
 # Restrict file types to formats supported by the bot APIs and safe previews.
 _SIGNATURES = {
@@ -95,7 +97,7 @@ async def save_media(
     A rejected/partial upload is deleted immediately. The caller removes
     the file if its database transaction fails after storage succeeds.
     """
-    if max_bytes <= 0 or max_bytes > 20 * 1024 * 1024:
+    if max_bytes <= 0 or max_bytes > BALE_OTHER_UPLOAD_LIMIT:
         raise ValueError("Invalid upload size configuration.")
     filename = PurePath((uploaded.filename or "").replace("\\", "/")).name
     filename = "".join(
@@ -110,6 +112,9 @@ async def save_media(
     except UnsupportedMediaError:
         await uploaded.close()
         raise
+    # Multipart photo uploads in Bale are capped at 10 MB; other files
+    # may use up to 50 MB. Do not accept a file that cannot be delivered.
+    max_bytes = upload_limit(kind, max_bytes)
     key = secrets.token_hex(16) + extension
     destination = safe_media_path(root_path, key)
     amount = 0

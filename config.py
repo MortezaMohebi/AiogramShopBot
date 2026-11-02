@@ -77,9 +77,14 @@ BALE_WALLET_CHECKOUT_ENABLED = (
 SHOP_MEDIA_ROOT = os.environ.get("SHOP_MEDIA_ROOT", "./media_data")
 # Legacy screens require a Telegram image ID; never fetch stock photos.
 DEFAULT_MEDIA_FILE_ID = os.environ.get("DEFAULT_MEDIA_FILE_ID", "").strip()
-SHOP_MEDIA_MAX_BYTES = int(os.environ.get("SHOP_MEDIA_MAX_BYTES", "20971520"))
-if not 1 <= SHOP_MEDIA_MAX_BYTES <= 20971520:
-    raise ValueError("SHOP_MEDIA_MAX_BYTES must be between 1 and 20971520.")
+# Bale official multipart limits: photos <=10,000,000 bytes; all other
+# supported media <=50,000,000 bytes. The upload service applies the
+# stricter photo limit even when the configured site limit is higher.
+SHOP_MEDIA_MAX_BYTES = int(
+    os.environ.get("SHOP_MEDIA_MAX_BYTES", "50000000")
+)
+if not 1 <= SHOP_MEDIA_MAX_BYTES <= 50_000_000:
+    raise ValueError("SHOP_MEDIA_MAX_BYTES must be 1..50,000,000 bytes.")
 # POSTGRESQL
 DB_USER = os.environ.get("POSTGRES_USER", "postgres")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD")

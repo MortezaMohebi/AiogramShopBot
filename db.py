@@ -13,10 +13,11 @@ from sqlalchemy.orm import sessionmaker, Session
 import config
 from models.base import Base
 from models.shop_staff import ShopStaff
+from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
     ShopWalletAccount, ShopWalletEntry, ShopReferralProfile,
     ShopReferralAttribution, ShopReferralPolicy, ShopReferralReward,
-    ShopCampaign, ShopCampaignDelivery,
+    ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
 
 """

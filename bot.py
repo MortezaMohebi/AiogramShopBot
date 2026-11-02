@@ -40,10 +40,11 @@ from dashboard.wallet_views import ShopWalletAdjustmentView
 from dashboard.campaign_views import ShopCampaignReviewView
 from dashboard.analytics_views import ShopAnalyticsView
 from models.shop_staff import ShopStaffAdmin
+from models.shop_delivery import ShopRemoteFileAdmin, ShopInboundUpdateAdmin
 from models.shop_engagement import (
     ShopWalletAccountAdmin, ShopWalletEntryAdmin, ShopReferralPolicyAdmin,
     ShopReferralProfileAdmin, ShopReferralRewardAdmin,
-    ShopCampaignAdmin, ShopCampaignDeliveryAdmin,
+    ShopCampaignAdmin, ShopCampaignDeliveryAdmin, ShopCampaignMediaAdmin,
 )
 from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
 from dashboard.order_views import ShopOrderReviewView
@@ -252,6 +253,9 @@ admin.add_model_view(secure_model_view(ShopReferralProfileAdmin))
 admin.add_model_view(secure_model_view(ShopReferralRewardAdmin))
 admin.add_model_view(secure_model_view(ShopCampaignAdmin))
 admin.add_model_view(secure_model_view(ShopCampaignDeliveryAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignMediaAdmin))
+admin.add_model_view(secure_model_view(ShopRemoteFileAdmin))
+admin.add_model_view(secure_model_view(ShopInboundUpdateAdmin))
 
 app.include_router(processing_router)
 
