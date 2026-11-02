@@ -78,6 +78,7 @@ class ShopCampaignReviewView(BaseView):
                 "counts": counts,
                 "nonce": nonce,
                 "result": request.query_params.get("result"),
+                "business_mode": config.BALE_BROADCAST_MODE == "business",
             },
         )
 
