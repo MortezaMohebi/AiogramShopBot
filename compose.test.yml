@@ -81,7 +81,7 @@ services:
     networks:
       - private
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER}\" -d \"${POSTGRES_DB}\""]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -91,11 +91,11 @@ services:
     image: redis:7.4-alpine
     environment:
       REDIS_PASSWORD: "${LAB_REDIS_PASSWORD:?Run python scripts/test_lab.py init}"
-    command: ["/bin/sh", "-ec", "exec redis-server --save '' --appendonly no --requirepass \"${REDIS_PASSWORD}\""]
+    command: ["/bin/sh", "-ec", "exec redis-server --save '' --appendonly no --requirepass \"$${REDIS_PASSWORD}\""]
     networks:
       - private
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 30
