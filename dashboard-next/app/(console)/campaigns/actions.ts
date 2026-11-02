@@ -1,0 +1,87 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { adminFetch } from "@/lib/bridge";
+
+function text(form: FormData, key: string): string {
+  return String(form.get(key) ?? "").trim();
+}
+
+/** Create a draft; no recipient ever receives a message at this stage. */
+export async function createCampaign(form: FormData) {
+  let failed = false;
+  try {
+    await adminFetch("/campaigns", "POST", {
+      title: text(form, "title"),
+      text: text(form, "text"),
+      audience: text(form, "audience"),
+    });
+  } catch {
+    failed = true;
+  }
+  if (failed) redirect("/campaigns?error=create");
+  revalidatePath("/campaigns");
+  redirect("/campaigns?saved=1");
+}
+
+/** Never start a paid campaign without matching explicit operator confirmation. */
+export async function changeCampaign(form: FormData) {
+  const id = text(form, "id");
+  const action = text(form, "action");
+  const baleMode = text(form, "bale_mode") || "standard";
+  const confirmed = text(form, "confirmation");
+  const codes: Record<string, string> = {
+    approve: "APPROVE_CAMPAIGN",
+    pause: "PAUSE_CAMPAIGN",
+    resume: "RESUME_CAMPAIGN",
+    cancel: "CANCEL_CAMPAIGN",
+    start: baleMode === "business" ? "START_PAID_BALE" : "START_CAMPAIGN",
+  };
+  if (!/^\d+$/.test(id) || !codes[action] || confirmed !== codes[action]) {
+    redirect("/campaigns?error=confirmation");
+  }
+
+  let failed = false;
+  try {
+    if (action === "start") {
+      await adminFetch(`/campaigns/${id}/start`, "POST", {
+        bale_mode: baleMode,
+        approved_paid_calls: Number(text(form, "approved_paid_calls") || "0"),
+      });
+    } else {
+      await adminFetch(`/campaigns/${id}/${action}`, "POST", {});
+    }
+  } catch {
+    failed = true;
+  }
+  if (failed) redirect("/campaigns?error=operation");
+  revalidatePath("/campaigns");
+  revalidatePath("/dashboard");
+  redirect("/campaigns?saved=1");
+}
+
+/** Close one uncertain delivery with evidence; never requeue it. */
+export async function reconcileDelivery(form: FormData) {
+  const id = text(form, "campaign_id");
+  const delivery = text(form, "delivery_id");
+  if (
+    !/^\d+$/.test(id) || !/^\d+$/.test(delivery) ||
+    text(form, "confirmation") !== "RECONCILE_DELIVERY"
+  ) {
+    redirect("/campaigns?error=confirmation");
+  }
+  let failed = false;
+  try {
+    await adminFetch(`/campaigns/${id}/reconcile`, "POST", {
+      delivery_id: Number(delivery),
+      resolution: text(form, "resolution"),
+      evidence: text(form, "evidence"),
+    });
+  } catch {
+    failed = true;
+  }
+  if (failed) redirect(`/campaigns/${id}?error=1`);
+  revalidatePath(`/campaigns/${id}`);
+  redirect(`/campaigns/${id}?saved=1`);
+}
