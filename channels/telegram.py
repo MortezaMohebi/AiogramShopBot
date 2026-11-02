@@ -35,6 +35,31 @@ class TelegramTransport:
                     for row in reply.rows
                 ]
             )
+        # Always send uploaded media before the page/navigation text.
+        from aiogram.types import FSInputFile
+        from dashboard.media_storage import safe_media_path
+        from config import SHOP_MEDIA_ROOT
+
+        for attachment in reply.attachments:
+            path = safe_media_path(SHOP_MEDIA_ROOT, attachment.storage_key)
+            media = FSInputFile(path)
+            caption = attachment.caption[:1024] or None
+            if attachment.kind == "photo":
+                await self.bot.send_photo(
+                    chat_id, media, caption=caption, parse_mode=None
+                )
+            elif attachment.kind == "video":
+                await self.bot.send_video(
+                    chat_id, media, caption=caption, parse_mode=None
+                )
+            elif attachment.kind == "audio":
+                await self.bot.send_audio(
+                    chat_id, media, caption=caption, parse_mode=None
+                )
+            else:
+                await self.bot.send_document(
+                    chat_id, media, caption=caption, parse_mode=None
+                )
         # The upstream bot defaults to HTML; product content must be plain.
         await self.bot.send_message(
             chat_id=chat_id,

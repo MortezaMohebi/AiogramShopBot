@@ -33,11 +33,22 @@ class InlineAction:
 
 
 @dataclass(frozen=True, slots=True)
+class MediaAttachment:
+    """Original privately stored media delivered by either messaging adapter."""
+
+    storage_key: str
+    kind: str
+    mime_type: str
+    caption: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class BotReply:
     """Plain text and an optional inline keyboard."""
 
     text: str
     rows: tuple[tuple[InlineAction, ...], ...] = ()
+    attachments: tuple[MediaAttachment, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate common limits before handing data to an adapter."""

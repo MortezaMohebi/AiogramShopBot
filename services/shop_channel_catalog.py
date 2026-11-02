@@ -12,15 +12,19 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
-from models.shop_content import Product, Testimonial
+from channels.contracts import (
+    BotReply, InboundEvent, InlineAction, MediaAttachment, Platform,
+)
+from models.shop_content import Product, ProductMedia, Testimonial
 from services.shop_money import format_rials
 
 _PAGE_SIZE = 6
 _REVIEW_PAGE_SIZE = 3
+_MEDIA_PAGE_SIZE = 4
 _LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,18})\Z")
 _PRODUCT_PATTERN = re.compile(r"shop:item:([1-9][0-9]{0,18})\Z")
 _REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
+_MEDIA_PATTERN = re.compile(r"shop:files:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 
 
 def _price(value: Decimal) -> str:
@@ -60,6 +64,11 @@ class CatalogFlow:
             match = _REVIEW_PATTERN.fullmatch(data)
             if match:
                 return await self._reviews(
+                    session, int(match.group(1)), int(match.group(2))
+                )
+            match = _MEDIA_PATTERN.fullmatch(data)
+            if match:
+                return await self._media(
                     session, int(match.group(1)), int(match.group(2))
                 )
             if data.startswith("shop:"):
@@ -146,9 +155,65 @@ class CatalogFlow:
             text=body,
             rows=(
                 (_button("🛒 ثبت سفارش", f"shop:checkout:{product.id}"),),
+                (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
                 (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
                 (_button("بازگشت به محصولات", "shop:list:0"),),
             ),
+        )
+
+    async def _media(
+        self, session: AsyncSession, product_id: int, requested_page: int
+    ) -> BotReply:
+        """Page through unlimited published product media without hardcoding files."""
+        published = await session.scalar(
+            select(Product.id).where(
+                Product.id == product_id, Product.is_published.is_(True)
+            )
+        )
+        if published is None:
+            return BotReply("این محصول در حال حاضر قابل نمایش نیست.")
+        condition = (
+            ProductMedia.product_id == product_id,
+            ProductMedia.is_published.is_(True),
+        )
+        result = await session.execute(
+            select(func.count()).select_from(ProductMedia).where(*condition)
+        )
+        count = result.scalar_one()
+        if count == 0:
+            return BotReply(
+                "هنوز فایلی برای این محصول منتشر نشده است.",
+                ((_button("بازگشت", f"shop:item:{product_id}"),),),
+            )
+        last_page = (count - 1) // _MEDIA_PAGE_SIZE
+        page = min(requested_page, last_page)
+        items = await session.execute(
+            select(ProductMedia)
+            .where(*condition)
+            .order_by(ProductMedia.position, ProductMedia.id)
+            .offset(page * _MEDIA_PAGE_SIZE)
+            .limit(_MEDIA_PAGE_SIZE)
+        )
+        attachments = tuple(
+            MediaAttachment(
+                storage_key=item.storage_key,
+                kind=item.kind,
+                mime_type=item.mime_type,
+                caption=item.caption or "",
+            )
+            for item in items.scalars().all()
+        )
+        controls = []
+        if page:
+            controls.append(_button("صفحه قبل", f"shop:files:{product_id}:{page - 1}"))
+        if page < last_page:
+            controls.append(_button("صفحه بعد", f"shop:files:{product_id}:{page + 1}"))
+        rows = [tuple(controls)] if controls else []
+        rows.append((_button("بازگشت به محصول", f"shop:item:{product_id}"),))
+        return BotReply(
+            text=f"📎 فایل‌های محصول\nصفحه {page + 1} از {last_page + 1}",
+            rows=tuple(rows),
+            attachments=attachments,
         )
 
     async def _reviews(
@@ -169,7 +234,6 @@ class CatalogFlow:
         condition = (
             Testimonial.product_id == product_id,
             Testimonial.is_approved.is_(True),
-            Testimonial.text.is_not(None),
         )
         count_result = await session.execute(
             select(func.count()).select_from(Testimonial).where(*condition)
@@ -192,9 +256,19 @@ class CatalogFlow:
         )
         testimonials = result.scalars().all()
         snippets = [
-            f"• {item.text[:900]}{'…' if len(item.text) > 900 else ''}"
+            f"• {(item.text or 'رضایت تصویری/صوتی')[:600]}"
             for item in testimonials
         ]
+        attachments = tuple(
+            MediaAttachment(
+                storage_key=item.media_storage_key,
+                kind=item.media_kind or "document",
+                mime_type=item.media_mime_type or "application/octet-stream",
+                caption=(item.text or "")[:900],
+            )
+            for item in testimonials
+            if item.media_storage_key
+        )
         controls = []
         if page > 0:
             controls.append(
@@ -211,4 +285,5 @@ class CatalogFlow:
         return BotReply(
             text="💬 رضایت مشتریان\n\n" + "\n\n".join(snippets),
             rows=tuple(rows),
+            attachments=attachments,
         )

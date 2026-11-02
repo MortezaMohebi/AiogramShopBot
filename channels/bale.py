@@ -11,7 +11,7 @@ from typing import Any
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from channels.contracts import BotReply
+from channels.contracts import BotReply, MediaAttachment
 
 
 class BaleApiError(RuntimeError):
@@ -54,8 +54,59 @@ class BaleTransport:
             # Avoid exceptions from aiohttp that contain a token-bearing URL.
             raise BaleApiError(f"Bale API {method} request failed.") from None
 
+    async def send_media(self, chat_id: int, media: MediaAttachment) -> None:
+        """Upload a private image, video, audio or document to the Bale Bot API."""
+        from aiohttp import FormData
+        from config import SHOP_MEDIA_ROOT
+        from dashboard.media_storage import safe_media_path
+
+        method_by_kind = {
+            "photo": ("sendPhoto", "photo"),
+            "video": ("sendVideo", "video"),
+            "audio": ("sendAudio", "audio"),
+            "document": ("sendDocument", "document"),
+        }
+        selected = method_by_kind.get(media.kind)
+        if selected is None:
+            raise BaleApiError("Unsupported Bale media kind.")
+        method, field_name = selected
+        path = safe_media_path(SHOP_MEDIA_ROOT, media.storage_key)
+
+        form = FormData()
+        form.add_field("chat_id", str(chat_id))
+        if media.caption:
+            form.add_field("caption", media.caption[:1024])
+        # File content is streamed from the original private store, never
+        # fetched from a Telegram-specific or Bale-specific file_id.
+        try:
+            with path.open("rb") as source:
+                form.add_field(
+                    field_name,
+                    source,
+                    filename=path.name,
+                    content_type=media.mime_type,
+                )
+                async with self._session.post(
+                    f"{self._url_prefix}/{method}",
+                    data=form,
+                    timeout=ClientTimeout(total=120),
+                ) as response:
+                    result = await response.json(content_type=None)
+                    if (
+                        response.status >= 400
+                        or not isinstance(result, dict)
+                        or result.get("ok") is not True
+                    ):
+                        raise BaleApiError(
+                            f"Bale API {method} rejected the media upload."
+                        )
+        except (OSError, ClientError, asyncio.TimeoutError, ValueError):
+            raise BaleApiError("Bale media delivery failed.") from None
+
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send UTF-8 text with standard inline callback buttons."""
+        for media in reply.attachments:
+            await self.send_media(chat_id, media)
         payload: dict[str, Any] = {
             "chat_id": chat_id,
             "text": reply.text,
