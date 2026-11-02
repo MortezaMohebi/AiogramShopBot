@@ -811,6 +811,9 @@ async def capabilities(staff: Staff) -> dict:
         "max_paid_calls": config.SHOP_BROADCAST_MAX_PAID_CALLS,
         "wallet_adjustment_limit_irr": str(config.SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR),
         "telegram_stars_refunds_enabled": config.TELEGRAM_STARS_REFUNDS_ENABLED,
+        "bale_prepare_ready": bool(
+            config.BALE_BOT_TOKEN and config.BALE_BROADCAST_PREPARE_CHAT_ID > 0
+        ),
         "media_photo_max_bytes": 10_000_000,
         "media_other_max_bytes": 50_000_000,
     }
