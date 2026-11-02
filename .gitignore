@@ -1,1 +1,7 @@
 /data/
+
+# Private uploads and operational state: never commit user data.
+media_data/
+*.sqlite3
+__pycache__/
+.pytest_cache/

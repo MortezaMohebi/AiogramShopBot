@@ -44,6 +44,8 @@ if SHOP_DISPLAY_UNIT not in {"IRR", "TOMAN"}:
     raise ValueError("SHOP_DISPLAY_UNIT must be IRR or TOMAN.")
 BALE_WALLET_PROVIDER_TOKEN = os.environ.get("BALE_WALLET_PROVIDER_TOKEN", "")
 SHOP_MEDIA_ROOT = os.environ.get("SHOP_MEDIA_ROOT", "./media_data")
+# Legacy screens require a Telegram image ID; never fetch stock photos.
+DEFAULT_MEDIA_FILE_ID = os.environ.get("DEFAULT_MEDIA_FILE_ID", "").strip()
 SHOP_MEDIA_MAX_BYTES = int(os.environ.get("SHOP_MEDIA_MAX_BYTES", "20971520"))
 if not 1 <= SHOP_MEDIA_MAX_BYTES <= 20971520:
     raise ValueError("SHOP_MEDIA_MAX_BYTES must be between 1 and 20971520.")
