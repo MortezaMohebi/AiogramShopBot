@@ -85,3 +85,27 @@ export async function reconcileDelivery(form: FormData) {
   revalidatePath(`/campaigns/${id}`);
   redirect(`/campaigns/${id}?saved=1`);
 }
+
+
+/** Allow attachment removal only while the campaign remains a draft. */
+export async function deleteCampaignMedia(form: FormData) {
+  const campaignId = text(form, "campaign_id");
+  const mediaId = text(form, "media_id");
+  if (
+    !/^[1-9]\d*$/.test(campaignId) ||
+    !/^[1-9]\d*$/.test(mediaId) ||
+    text(form, "confirmation") !== "DELETE_DRAFT_ATTACHMENT"
+  ) {
+    redirect("/campaigns?error=confirmation");
+  }
+  let failed = false;
+  try {
+    await adminFetch(`/campaigns/${campaignId}/media/${mediaId}`, "DELETE");
+  } catch {
+    failed = true;
+  }
+  if (failed) redirect(`/campaigns/${campaignId}?error=media`);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
+  redirect(`/campaigns/${campaignId}?saved=1`);
+}
