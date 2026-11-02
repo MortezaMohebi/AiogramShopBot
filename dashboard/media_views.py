@@ -62,7 +62,7 @@ class ShopUploadView(BaseView):
                     "csrf": csrf,
                     "error": None,
                     "notice": request.query_params.get("status") == "saved",
-                    "max_megabytes": config.SHOP_MEDIA_MAX_BYTES // 1024 // 1024,
+                    "max_megabytes": config.SHOP_MEDIA_MAX_BYTES // 1_000_000,
                 },
             )
 
@@ -152,7 +152,7 @@ class ShopUploadView(BaseView):
                     "csrf": csrf,
                     "error": message,
                     "notice": False,
-                    "max_megabytes": config.SHOP_MEDIA_MAX_BYTES // 1024 // 1024,
+                    "max_megabytes": config.SHOP_MEDIA_MAX_BYTES // 1_000_000,
                 },
                 status_code=400,
             )
