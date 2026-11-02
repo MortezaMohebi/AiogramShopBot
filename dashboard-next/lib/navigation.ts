@@ -32,7 +32,7 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "دسته‌بندی‌ها", href: "/categories", icon: FolderTree,
-    roles: ["superadmin", "content", "sales", "viewer"],
+    roles: ["superadmin", "content"],
   },
   {
     title: "سفارش‌ها", href: "/orders", icon: ClipboardList,
