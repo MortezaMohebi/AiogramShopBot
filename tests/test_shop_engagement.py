@@ -19,7 +19,7 @@ from models.base import Base
 from models.shop_checkout import ShopCoupon, ShopOrderLine
 from models.shop_content import Product, ShopCategory, ShopIdentity, ShopOrder
 from models.shop_engagement import (
-    ShopCampaign, ShopCampaignDelivery,
+    ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
     ShopReferralAttribution, ShopReferralPolicy, ShopReferralProfile,
     ShopReferralReward, ShopWalletAccount, ShopWalletEntry,
 )
@@ -88,7 +88,7 @@ def db():
         ShopWalletAccount.__table__, ShopWalletEntry.__table__,
         ShopReferralProfile.__table__, ShopReferralAttribution.__table__,
         ShopReferralPolicy.__table__, ShopReferralReward.__table__,
-        ShopCampaign.__table__, ShopCampaignDelivery.__table__,
+        ShopCampaign.__table__, ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
     ]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine, expire_on_commit=False) as session:
