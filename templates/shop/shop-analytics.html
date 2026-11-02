@@ -1,96 +1,104 @@
 {% extends "sqladmin/layout.html" %}
 {% block content %}
-<section class="col-12">
+<section class="col-12" aria-labelledby="analytics-title">
   <div class="card">
     <div class="card-header">
-      <h3 class="card-title">گزارش واقعی فروشگاه — تلگرام و بله</h3>
+      <h3 class="card-title" id="analytics-title">
+        گزارش عملکرد فروشگاه — تلگرام و بله
+      </h3>
     </div>
     <div class="card-body">
       <p class="text-muted">
-        اعداد فقط از جداول جدید فروشگاه هستند. سابقه Legacy تلگرام هنوز
-        وارد این گزارش نشده است. مبلغ Stars و اعتبار داخلی با دریافتی
-        ریالی Provider جمع نمی‌شوند؛ دریافتی ریالی ناخالص است و
-        لزوماً درآمد خالص پس از Refund نیست.
+        گزارش فقط جداول جدید فروشگاه را نشان می‌دهد، نه سوابق قدیمی تلگرام.
+        مبلغ ریالی Provider، اعتبار داخلی و Stars ارزهای متفاوتی هستند و
+        با هم جمع نمی‌شوند. بازه زمانی UTC است.
       </p>
-      <nav class="d-flex flex-wrap gap-2 mb-3" aria-label="بازه زمانی">
-        <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}"
-          href="/admin/shop-analytics?days=7">۷ روز</a>
-        <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}"
-          href="/admin/shop-analytics?days=30">۳۰ روز</a>
-        <a class="btn btn-sm {% if days == 90 %}btn-primary{% endif %}"
-          href="/admin/shop-analytics?days=90">۹۰ روز</a>
-        <a class="btn btn-sm {% if days == 0 %}btn-primary{% endif %}"
-          href="/admin/shop-analytics?days=0">تمام دوره</a>
+      <nav class="d-flex flex-wrap gap-2 mb-3" aria-label="بازه گزارش">
+        {% for number, label in periods %}
+          <a class="btn btn-sm {% if report.days == number %}btn-primary{% else %}btn-outline-primary{% endif %}"
+             href="/admin/shop-analytics?days={{ number }}">{{ label }}</a>
+        {% endfor %}
       </nav>
+      <h4 class="mt-3">سفارش‌ها و مشتریان</h4>
       <div class="table-responsive">
-        <table class="table table-vcenter">
+        <table class="table table-vcenter table-striped">
           <thead><tr>
-            <th>شاخص</th><th>Telegram</th><th>Bale</th>
+            <th>پیام‌رسان</th><th>کاربران جدید</th><th>اعلان مجاز</th>
+            <th>سفارش جدید</th><th>پرداخت‌شده</th><th>در انتظار بررسی</th>
+            <th>پرداخت نیازمند رسیدگی</th><th>بازپرداخت‌شده</th>
           </tr></thead>
           <tbody>
+            {% for channel in report.channels %}
             <tr>
-              <td>مشتریان ثبت‌شده در بازه</td>
-              <td>{{ identities.get("telegram", 0) }}</td>
-              <td>{{ identities.get("bale", 0) }}</td>
+              <td>{{ "تلگرام" if channel.platform == "telegram" else "بله" }}</td>
+              <td>{{ "{:,}".format(channel.customers) }}</td>
+              <td>{{ "{:,}".format(channel.opted_in) }}</td>
+              <td>{{ "{:,}".format(channel.orders) }}</td>
+              <td>{{ "{:,}".format(channel.paid_orders) }}</td>
+              <td>{{ "{:,}".format(channel.review_orders) }}</td>
+              <td>{{ "{:,}".format(channel.paid_unfulfilled) }}</td>
+              <td>{{ "{:,}".format(channel.refunded) }}</td>
             </tr>
-            <tr>
-              <td>سفارش‌های پرداخت‌شده</td>
-              <td>{{ orders.telegram.get("paid", 0) }}</td>
-              <td>{{ orders.bale.get("paid", 0) }}</td>
-            </tr>
-            <tr>
-              <td>پرداخت‌شده اما نیازمند رسیدگی</td>
-              <td>{{ orders.telegram.get("paid_unfulfilled", 0) }}</td>
-              <td>{{ orders.bale.get("paid_unfulfilled", 0) }}</td>
-            </tr>
-            <tr>
-              <td>در انتظار بررسی/پرداخت</td>
-              <td>{{ orders.telegram.get("pending_review", 0) +
-                     orders.telegram.get("approved_unpaid", 0) +
-                     orders.telegram.get("pending_payment", 0) }}</td>
-              <td>{{ orders.bale.get("pending_review", 0) +
-                     orders.bale.get("approved_unpaid", 0) +
-                     orders.bale.get("pending_payment", 0) }}</td>
-            </tr>
-            <tr>
-              <td>دریافتی ناخالص Provider (ریال، قبل از بازپرداخت)</td>
-              <td>{{ format_rials(payments.telegram.provider_irr_collected) }}</td>
-              <td>{{ format_rials(payments.bale.provider_irr_collected) }}</td>
-            </tr>
-            <tr>
-              <td>اعتبار داخلی مصرف‌شده (ریال)</td>
-              <td>{{ format_rials(payments.telegram.store_credit_redeemed) }}</td>
-              <td>{{ format_rials(payments.bale.store_credit_redeemed) }}</td>
-            </tr>
-            <tr>
-              <td>Telegram Stars دریافتی (XTR)</td>
-              <td>{{ payments.telegram.stars_xtr }}</td>
-              <td>—</td>
-            </tr>
-            <tr>
-              <td>کل تراکنش‌های تأییدشده در بازه</td>
-              <td>{{ payments.telegram.payment_count }}</td>
-              <td>{{ payments.bale.payment_count }}</td>
-            </tr>
-            <tr>
-              <td>سفارش‌های بازپرداخت‌شده</td>
-              <td>{{ orders.telegram.get("refunded", 0) }}</td>
-              <td>{{ orders.bale.get("refunded", 0) }}</td>
-            </tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
-      <h3 class="card-title mt-4">وضعیت جاری (تمام دوره)</h3>
-      <p>مانده اعتبار داخلی: <strong>{{ wallet_total }}</strong></p>
-      <p>مجموع پاداش‌های معرفی ثبت‌شده:
-        <strong>{{ referral_total }}</strong></p>
-      <p>صف ارسال اطلاعیه: {{ delivery_status.get("queued", 0) }}</p>
-      <p>اطلاعیه ارسال‌شده: {{ delivery_status.get("sent", 0) }}</p>
-      <p>ارسال‌های نیازمند بررسی:
-        {{ delivery_status.get("unknown", 0) +
-           delivery_status.get("sending", 0) }}</p>
-      <p>پرونده‌های بازپرداخت باز در بازه:
-        {{ refunds.get("requested", 0) + refunds.get("provider_pending", 0) }}</p>
+      <h4 class="mt-4">پرداخت‌های تأییدشده و هنوز مستردنشده</h4>
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead><tr>
+            <th>پیام‌رسان</th><th>درگاه خارجی (ریال)</th>
+            <th>اعتبار داخلی مصرف‌شده (ریال)</th><th>Telegram Stars (XTR)</th>
+          </tr></thead>
+          <tbody>
+          {% for channel in report.channels %}
+            <tr>
+              <td>{{ "تلگرام" if channel.platform == "telegram" else "بله" }}</td>
+              <td>{{ "{:,}".format(channel.gross_paid_irr) }}</td>
+              <td>{{ "{:,}".format(channel.store_credit_irr) }}</td>
+              <td>{{ "{:,}".format(channel.telegram_stars_xtr) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted">
+        پرداخت‌هایی که وصول شده‌اند ولی به دلیل موجودی یا تخفیف نیازمند
+        رسیدگی هستند، جدا از مبالغ فروش موفق گزارش می‌شوند.
+        این صفحه جایگزین حسابداری و تطبیق حساب Provider نیست.
+      </p>
+      <h4 class="mt-4">وضعیت عملیاتی (کل سوابق)</h4>
+      <p>
+        پرونده‌های بازپرداخت باز:
+        <strong>{{ "{:,}".format(report.open_refund_cases) }}</strong> ·
+        اطلاعیه در صف: <strong>{{ report.campaigns.queued }}</strong> ·
+        ارسال‌شده: <strong>{{ report.campaigns.sent }}</strong> ·
+        ارسال نامشخص: <strong>{{ report.campaigns.unknown }}</strong> ·
+        نامجاز: <strong>{{ report.campaigns.skipped }}</strong>
+      </p>
+      <h4 class="mt-4">دفترکل اعتبار در بازه</h4>
+      <p>
+        افزایش اعتبار: <strong>{{ "{:,}".format(report.credit_issued_irr) }} ریال</strong>
+        · کاهش اعتبار: <strong>{{ "{:,}".format(report.credit_spent_irr) }} ریال</strong>
+      </p>
+      <p class="text-muted">اعتبار داخلی فروشگاه، واریز جدید از درگاه یا کیف پول بله نیست.</p>
+      <h4 class="mt-4">۱۰ محصول پرفروش بر اساس تعداد</h4>
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead><tr><th>محصول</th><th>شناسه</th><th>تعداد</th></tr></thead>
+          <tbody>
+          {% for product in report.top_products %}
+            <tr>
+              <td>{{ product.name }}</td>
+              <td>{{ product.product_id }}</td>
+              <td>{{ "{:,}".format(product.quantity) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3">فروش تأییدشده‌ای ثبت نشده است.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </section>
