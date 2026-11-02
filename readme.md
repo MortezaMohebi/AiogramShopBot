@@ -177,6 +177,22 @@ a public Telegram-facing callback endpoint. **Bale remains independent**.
 
 These features are on the **Draft PR branch**, not deployed or live-tested.
 
+## Persian shop dashboard, native Bale wallet and IRR
+
+The Draft PR branch also contains an independently editable product/catalogue
+model, private media uploader, product testimonials, Persian/RTL SQLAdmin
+templates, and native Bale wallet invoice/verification flow.
+
+- Canonical catalogue and invoice prices are **integer Iranian rials**.
+- Optional `SHOP_DISPLAY_UNIT=TOMAN` changes text display only.
+- Real Bale wallet checkout is **disabled by default** via
+  `BALE_WALLET_CHECKOUT_ENABLED=false` until live payment/shipping tests.
+- The legacy Telegram crypto wallet is not used for Bale transactions.
+- Old Telegram cart/coupon/shipping features have **not** yet been migrated into
+  the cross-platform services; see the parity matrix for open work.
+
+[Phase 2 implementation and safety report](docs/PHASE2_STATUS.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)

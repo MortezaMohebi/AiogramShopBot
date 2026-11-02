@@ -5,14 +5,14 @@
 | فاز | خروجی قابل آزمون | وضعیت در شروع Fork |
 |---|---|---|
 | F0 | اهداف، معماری و معیارهای پذیرش مکتوب | DONE (documentation) |
-| F1 | داشبورد SQLAdmin فارسی و RTL، منو و عنوان فیلدهای فارسی | IN PROGRESS (templates and labels committed; runtime visual review outstanding) |
-| F2 | محصول مستقل و داینامیک، فایل و رضایت مستقل، CRUD مدیریتی | IN PROGRESS (models, admin and Alembic migration committed; upload/render not wired) |
-| F3 | Media upload امن، Preview و ارسال فایل با Cache تفکیکی هر Bot | PLANNED |
+| F1 | داشبورد SQLAdmin فارسی و RTL، منو/فرم/Modalهای فارسی | CODED (بررسی بصری به مرحله آخر موکول شده) |
+| F2 | محصول/دسته‌بندی مستقل، آپلود امن، رضایت، تنظیمات فروشگاه و CRUD | CODED (Migration، اجرای Bot و آزمون واقعی باقی است) |
+| F3 | Media upload، Preview و ارسال فایل به هر دو Adapter؛ Cache شناسه فایل | IN PROGRESS (Upload/ارسال کدنویسی شد؛ Cache و آزمون باقی است) |
 | F4 | منوی اصلی ثابت با متن فارسی؛ دکمه‌های کاتالوگ و جزئیات محصول از دیتابیس | PLANNED (بدون Menu Builder؛ صرفاً اتصال Catalog به Handlerهای موجود) |
 | F5 | Telegram Adapter، اتصال کاتالوگ و حالت Direct/Proxy/Cloudflare Worker؛ Polling اختیاری | IN PROGRESS (پیاده‌سازی ثبت شد؛ تست Cloudflare و Aiogram واقعی باقی است) |
 | F6 | Bale Adapter هم‌زمان با Telegram، Webhook و API | IN PROGRESS (sendMessage و callback و Webhook کدنویسی شده؛ تست میدانی باقی است) |
-| F7 | سفارش‌های مشترک و Inventory transaction-safe، مبالغ Decimal | PLANNED |
-| F8 | Payment method، تأیید امضای Callback، Idempotency و Refund | PLANNED |
+| F7 | سفارش‌های مشترک، مبالغ ریال صحیح و موجودی اتمیک | IN PROGRESS (مدل اولیه و Bale checkout کدنویسی شد؛ Cart/Shipping و تست باقی است) |
+| F8 | کیف پول رسمی بله، تأیید دریافت، Idempotency و بازپرداخت | IN PROGRESS (SendInvoice/PreCheckout/Inquiry کدنویسی شد؛ Refund و تست باقی است) |
 | F9 | RBAC، Multi-admin، Audit، Backup، مانیتورینگ و تست بار | PLANNED |
 
 ## تحویل هر فاز
@@ -32,3 +32,7 @@ F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محص�
 - داده‌های `Item`، `Buy`، `BuyItem` و `Review` قبلی، تا تهیه Migration و تأیید انتقال داده.
 - قابلیت‌های legacy پرداخت رمزارز یا Multibot بدون Feature Flag / داده‌برداری؛ از UI جدید پنهان شوند اما حذف ناگهانی انجام نشود.
 - تاریخچه سفارش و تراکنش‌های پرداخت.
+
+## گزارش فاز ۲
+
+[گزارش پیاده‌سازی، وضعیت Wallet و فاصله با برابری قابلیت‌ها](PHASE2_STATUS.fa.md)
