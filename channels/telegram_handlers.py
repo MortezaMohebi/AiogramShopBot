@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from db import get_db_session
 from models.shop_checkout import ShopCart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, PreCheckoutQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, Platform
@@ -20,6 +20,8 @@ from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
 from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
+from channels.shop_payment_dispatch import send_order_invoice
+from services.shop_payments import PaymentRejected, ShopPaymentService
 import config
 
 
@@ -140,6 +142,62 @@ async def show_shop_catalog(message: Message, session: AsyncSession) -> None:
         await TelegramTransport(message.bot).send(event.chat_id, reply)
 
 
+@shop_catalog_router.pre_checkout_query()
+async def shop_pre_checkout(query: PreCheckoutQuery) -> None:
+    """Accept only a matching, unpaid, immutable Bot API invoice.
+
+    No purchase is fulfilled at pre-checkout time. The actual receipt arrives
+    later as a separate successful_payment message.
+    """
+    async with get_db_session() as session:
+        accepted, reason = await ShopPaymentService.precheckout(
+            session,
+            platform=Platform.TELEGRAM,
+            payer_id=query.from_user.id,
+            payload=query.invoice_payload,
+            currency=query.currency,
+            amount=query.total_amount,
+        )
+    await query.answer(
+        ok=accepted,
+        error_message=reason if not accepted else None,
+    )
+
+
+@shop_catalog_router.message(F.successful_payment)
+async def shop_successful_payment(message: Message) -> None:
+    """Settle a verified Telegram payment once, never on invoice send."""
+    payment = message.successful_payment
+    if message.from_user is None or message.chat.type != "private":
+        return
+    async with get_db_session() as session:
+        try:
+            order, changed = await ShopPaymentService.settle(
+                session,
+                platform=Platform.TELEGRAM,
+                payer_id=message.from_user.id,
+                chat_id=message.chat.id,
+                payload=payment.invoice_payload,
+                currency=payment.currency,
+                amount=payment.total_amount,
+                charge_id=payment.telegram_payment_charge_id,
+                provider_charge_id=payment.provider_payment_charge_id or None,
+            )
+        except PaymentRejected:
+            # An already-settled external payment must be reconciled by a
+            # human rather than silently discarded or fulfilled twice.
+            raise
+    if changed:
+        note = (
+            f"✅ پرداخت سفارش #{order.id} تأیید شد."
+            if order.status == "paid"
+            else f"⚠️ پرداخت سفارش #{order.id} ثبت شد؛ پیگیری فروشنده لازم است."
+        )
+        await TelegramTransport(message.bot).send(
+            message.chat.id, BotReply(note)
+        )
+
+
 @shop_catalog_router.callback_query(F.data.startswith("shop:"))
 async def shop_catalog_button(
     callback: CallbackQuery, session: AsyncSession
@@ -160,6 +218,21 @@ async def shop_catalog_button(
         callback_data=callback.data,
         callback_query_id=callback.id,
     )
+    if callback.data and callback.data.startswith("shop:pay:"):
+        try:
+            order_id = int(callback.data.removeprefix("shop:pay:"))
+            await send_order_invoice(
+                session,
+                platform=Platform.TELEGRAM,
+                user_id=event.user_id,
+                order_id=order_id,
+                telegram_bot=callback.bot,
+            )
+        except (PaymentRejected, ValueError) as exc:
+            await TelegramTransport(callback.bot).send(
+                event.chat_id, BotReply(str(exc))
+            )
+        return
     reply = await _shop_reply(event, session)
     if reply is not None:
         await TelegramTransport(callback.bot).send(event.chat_id, reply)
