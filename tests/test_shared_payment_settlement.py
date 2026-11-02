@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from channels.contracts import Platform
 from models.base import Base
 from models.shop_checkout import ShopCoupon, ShopOrderLine
-from models.shop_content import Product, ShopOrder
+from models.shop_content import Product, ShopCategory, ShopOrder
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_payments import PaymentRejected, ShopPaymentService
 from services.shop_refunds import ShopRefundService
@@ -62,6 +62,7 @@ def db():
     """Create only payment-related tables, leaving all data disposable."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
     tables = [
+        ShopCategory.__table__,
         Product.__table__,
         ShopCoupon.__table__,
         ShopOrder.__table__,

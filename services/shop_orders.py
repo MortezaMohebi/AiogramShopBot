@@ -123,7 +123,7 @@ class ShopOrdersFlow:
                 ))
             if (
                 order.provider == "manual_review"
-                and order.status == "pending_review"
+                and order.status in ("pending_review", "approved_unpaid")
             ):
                 rows.append((
                     InlineAction(
@@ -150,7 +150,7 @@ class ShopOrdersFlow:
             return BotReply("سفارش یافت نشد.")
         if (
             order.provider != "manual_review"
-            or order.status != "pending_review"
+            or order.status not in ("pending_review", "approved_unpaid")
         ):
             return BotReply(
                 "این سفارش پرداخت‌شده، لغوشده یا در مرحله دیگری است؛ "
