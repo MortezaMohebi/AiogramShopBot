@@ -18,6 +18,7 @@ from starlette.responses import FileResponse
 
 import config
 from channels.contracts import Platform
+from channels.bale import BaleTransport, BaleApiError
 from dashboard.media_storage import (
     UnsupportedMediaError,
     safe_media_path,
@@ -29,9 +30,13 @@ from models.shop_engagement import (
     ShopCampaign, ShopCampaignMedia, ShopReferralPolicy, ShopWalletAccount,
     ShopWalletEntry,
 )
+from models.shop_checkout import ShopOrderLine, ShopOrderReviewAudit
+from models.shop_content import ShopOrder
 from models.shop_staff import ShopStaff
 from services.shop_payments import PaymentRejected
 from services.shop_refunds import ShopRefundService
+from services.shop_campaigns import ShopCampaignService
+from services.shop_broadcast_control import CampaignRejected
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 from utils.utils import hash_password
 
@@ -700,3 +705,159 @@ async def update_referral_policy(
         setattr(policy, field, value)
     await session.commit()
     return {"ok": True}
+
+
+class OrderReviewDecision(BaseModel):
+    """Explicit unpaid-order decisions with no payment-status privileges."""
+
+    model_config = ConfigDict(extra="forbid")
+    decision: str = Field(pattern="^(accept|reject)$")
+    confirmation: str
+
+
+@router.get("/orders/review-queue")
+async def order_review_queue(staff: Staff, session: Db) -> list[dict]:
+    """List only manual prepayment orders awaiting sales decisions."""
+    require_staff(staff, "sales")
+    orders = (await session.execute(
+        select(ShopOrder)
+        .where(
+            ShopOrder.provider == "manual_review",
+            ShopOrder.status.in_(("pending_review", "approved_unpaid")),
+        )
+        .order_by(ShopOrder.id.desc())
+        .limit(100)
+    )).scalars().all()
+    return [
+        {
+            "id": order.id,
+            "status": order.status,
+            "platform": order.platform,
+            "product_id": order.product_id,
+            "total_irr": str(order.total_irr),
+        }
+        for order in orders
+    ]
+
+
+@router.post("/orders/{order_id}/review")
+async def review_unpaid_order(
+    order_id: int,
+    payload: OrderReviewDecision,
+    staff: Staff,
+    session: Db,
+) -> dict:
+    """Accept/reject only a manual-review order and append an audit event."""
+    operator = require_staff(staff, "sales")
+    expected = (
+        "ACCEPT_UNPAID_ORDER"
+        if payload.decision == "accept" else "REJECT_UNPAID_ORDER"
+    )
+    if payload.confirmation != expected:
+        raise HTTPException(
+            status_code=422, detail="Order decision needs confirmation"
+        )
+    order = await session.scalar(
+        select(ShopOrder)
+        .where(
+            ShopOrder.id == order_id,
+            ShopOrder.provider == "manual_review",
+        )
+        .with_for_update()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status not in ("pending_review", "approved_unpaid"):
+        raise HTTPException(status_code=409, detail="Order cannot be reviewed")
+
+    if payload.decision == "accept":
+        if order.status != "pending_review":
+            raise HTTPException(status_code=409, detail="Order already accepted")
+        result = await session.execute(
+            select(ShopOrderLine, Product)
+            .join(Product, ShopOrderLine.product_id == Product.id)
+            .where(ShopOrderLine.order_id == order.id)
+        )
+        lines = result.all()
+        if not lines or any(
+            product.stock_quantity < line.quantity or not product.is_published
+            for line, product in lines
+        ):
+            raise HTTPException(
+                status_code=409, detail="Published stock must be verified"
+            )
+        new_status = "approved_unpaid"
+    else:
+        new_status = "cancelled"
+
+    session.add(
+        ShopOrderReviewAudit(
+            order_id=order.id,
+            actor=f"staff:{operator.id}",
+            action=payload.decision,
+            old_status=order.status,
+            new_status=new_status,
+        )
+    )
+    order.status = new_status
+    await session.commit()
+    return {"id": order.id, "status": new_status}
+
+
+class BaleMediaPrepareDecision(BaseModel):
+    """Require a deliberate operator action before seeding Bale file IDs."""
+
+    model_config = ConfigDict(extra="forbid")
+    confirmation: str
+
+
+@router.post("/broadcast/prepare/{campaign_id}")
+async def prepare_bale_broadcast_media(
+    campaign_id: int,
+    payload: BaleMediaPrepareDecision,
+    request: Request,
+    staff: Staff,
+    session: Db,
+) -> dict:
+    """Use only the normal Bale Bot API and the configured private seed chat.
+
+    This never starts, pays for, or sends the campaign to customers. Any
+    uncertain seed result is surfaced to the operator rather than retried.
+    """
+    require_staff(staff, "marketing")
+    if payload.confirmation != "PREPARE_BALE_MEDIA":
+        raise HTTPException(status_code=422, detail="Confirmation required")
+    if not config.BALE_BOT_TOKEN or config.BALE_BROADCAST_PREPARE_CHAT_ID <= 0:
+        raise HTTPException(
+            status_code=409, detail="Private Bale seed chat is not configured"
+        )
+
+    campaign = await session.scalar(
+        select(ShopCampaign)
+        .where(ShopCampaign.id == campaign_id)
+        .with_for_update()
+    )
+    if campaign is None or campaign.status not in ("draft", "approved"):
+        raise HTTPException(status_code=409, detail="Campaign cannot be prepared")
+    try:
+        attachments = await ShopCampaignService._attachments(session, campaign)
+    except CampaignRejected as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    if not attachments:
+        raise HTTPException(status_code=409, detail="Campaign has no media")
+
+    client = getattr(request.app.state, "bale_http_client", None)
+    if client is None:
+        raise HTTPException(status_code=503, detail="Bale API client unavailable")
+    standard_api = BaleTransport(config.BALE_BOT_TOKEN, client)
+    try:
+        for attachment in attachments:
+            await standard_api.send_media(
+                config.BALE_BROADCAST_PREPARE_CHAT_ID, attachment
+            )
+    except BaleApiError:
+        raise HTTPException(
+            status_code=502,
+            detail="Media preparation requires provider reconciliation",
+        ) from None
+    return {"ok": True, "prepared": len(attachments)}
