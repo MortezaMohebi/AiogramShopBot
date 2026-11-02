@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqladmin.authentication import AuthenticationBackend
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
 import config
@@ -18,6 +20,18 @@ from utils.utils import (
 
 class AdminAuth(AuthenticationBackend):
     """Authenticate against hashed credentials and a live active-staff row."""
+
+    def __init__(self, secret_key: str) -> None:
+        """Use signed sessions with Secure/SameSite cookies by default."""
+        super().__init__(secret_key)
+        self.middlewares = [
+            Middleware(
+                SessionMiddleware,
+                secret_key=secret_key,
+                same_site="lax",
+                https_only=config.SHOP_ADMIN_SECURE_COOKIES,
+            )
+        ]
 
     async def login(self, request: Request) -> bool:
         """Create a short-lived role-bearing session after password verification."""

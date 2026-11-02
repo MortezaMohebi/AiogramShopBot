@@ -12,7 +12,7 @@ from pathlib import Path
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BufferedInputFile
 from redis.asyncio import Redis
-from sqladmin import Admin
+from dashboard.secure_admin import SecureShopAdmin as Admin
 
 import config
 from aiogram import Dispatcher

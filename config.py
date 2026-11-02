@@ -134,3 +134,8 @@ SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR = int(
 )
 if not 0 <= SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR <= 100_000_000_000:
     raise ValueError("SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR out of range.")
+
+# Set to false ONLY for explicitly isolated HTTP development environments.
+SHOP_ADMIN_SECURE_COOKIES = (
+    os.environ.get("SHOP_ADMIN_SECURE_COOKIES", "true").lower() == "true"
+)
