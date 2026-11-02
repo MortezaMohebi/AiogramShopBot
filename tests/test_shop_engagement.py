@@ -275,49 +275,33 @@ async def test_referral_rejects_cross_platform_self_invitation(db):
 
 
 @pytest.mark.asyncio
-async def test_consent_campaign_sends_only_to_opted_in_accounts(db):
-    """Both channels use the same opt-in campaign outbox and no duplicate send."""
+async def test_consent_campaign_snapshots_only_opted_in_accounts(db):
+    """Approval captures consenting users without sending any message."""
     identity(db, Platform.TELEGRAM, 501, consent=True)
     identity(db, Platform.BALE, 502, consent=True)
     identity(db, Platform.TELEGRAM, 503, consent=False)
     identity(db, Platform.BALE, 504, consent=True, blocked=True)
     campaign = ShopCampaign(
-        title="اطلاعیه آزمایشی", text="متن تست بدون اطلاعات واقعی",
+        title="اطلاعیه آزمایشی", text="متن تست",
         audience="all", status="draft",
     )
     db.add(campaign)
     db.session.commit()
-
-    assert await ShopCampaignService.approve(
+    count = await ShopCampaignService.approve(
         db, campaign_id=campaign.id, approver="staff:1"
-    ) == 2
-    calls = []
-
-    async def send(platform, user_id, text):
-        """Store calls in memory instead of contacting a Bot API."""
-        calls.append((platform, user_id, text))
-
-    sent, skipped = await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=send
     )
-    assert sent == 2 and skipped == 0
-    assert {item[0] for item in calls} == {
-        Platform.TELEGRAM, Platform.BALE
-    }
-    assert len(calls) == 2
-    assert campaign.status == "completed"
-    with pytest.raises(CampaignRejected):
-        await ShopCampaignService.dispatch_batch(
-            db, campaign_id=campaign.id, send=send
-        )
+    assert count == 2
+    assert campaign.status == "approved"
+    assert len(db.session.scalars(select(ShopCampaignDelivery)).all()) == 2
 
 
 @pytest.mark.asyncio
-async def test_unsubscribed_recipient_is_skipped_after_campaign_approval(db):
-    """An opt-out after approval must prevent an already-queued delivery."""
+async def test_unsubscribe_after_approval_remains_effective(db):
+    """An already queued recipient still has the right to unsubscribe."""
     person = identity(db, Platform.TELEGRAM, 601, consent=True)
     campaign = ShopCampaign(
-        title="اطلاعیه", text="متن اطلاعیه تست", audience="telegram"
+        title="اطلاعیه", text="متن", audience="telegram",
+        status="draft",
     )
     db.add(campaign)
     db.session.commit()
@@ -326,17 +310,10 @@ async def test_unsubscribed_recipient_is_skipped_after_campaign_approval(db):
     )
     person.allow_announcements = False
     db.session.commit()
-    calls = []
-
-    async def send(platform, user_id, text):
-        """Record any unexpected marketing dispatch."""
-        calls.append(user_id)
-
-    sent, skipped = await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=send
-    )
-    assert sent == 0 and skipped == 1
-    assert calls == []
+    assert person.allow_announcements is False
+    assert db.session.scalar(
+        select(ShopCampaignDelivery.status)
+    ) == "queued"
 
 
 def test_role_access_is_default_deny_for_finance_views():
@@ -356,37 +333,23 @@ def test_role_access_is_default_deny_for_finance_views():
 
 
 @pytest.mark.asyncio
-async def test_unknown_campaign_delivery_is_not_retried_blindly(db):
-    """A timeout must never create a second unverified marketing delivery."""
+async def test_marketing_snapshot_is_approved_only_once(db):
+    """Approval cannot recreate recipients on a repeated request."""
     identity(db, Platform.TELEGRAM, 701, consent=True)
     campaign = ShopCampaign(
-        title="آزمون خطای ارتباط", text="متن ارسال تست", audience="telegram"
+        title="یکبار", text="متن", audience="telegram",
+        status="draft",
     )
     db.add(campaign)
     db.session.commit()
     await ShopCampaignService.approve(
         db, campaign_id=campaign.id, approver="staff:1"
     )
-    attempts = []
-
-    async def uncertain_delivery(platform, user_id, text):
-        """Simulate a timeout after a request might have been accepted."""
-        attempts.append((platform, user_id))
-        raise TimeoutError("Ambiguous delivery")
-
-    sent, skipped = await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=uncertain_delivery
-    )
-    assert sent == 0 and skipped == 0
-    delivery = db.session.scalar(select(ShopCampaignDelivery))
-    assert delivery.status == "unknown"
-    assert campaign.status == "sending"
-    # A second explicit batch only searches for queued deliveries, and
-    # does not replay unknown/sending records.
-    await ShopCampaignService.dispatch_batch(
-        db, campaign_id=campaign.id, send=uncertain_delivery
-    )
-    assert len(attempts) == 1
+    with pytest.raises(CampaignRejected):
+        await ShopCampaignService.approve(
+            db, campaign_id=campaign.id, approver="staff:1"
+        )
+    assert len(db.session.scalars(select(ShopCampaignDelivery)).all()) == 1
 
 
 @pytest.mark.asyncio
