@@ -43,6 +43,10 @@ SHOP_DISPLAY_UNIT = os.environ.get("SHOP_DISPLAY_UNIT", "IRR").upper()
 if SHOP_DISPLAY_UNIT not in {"IRR", "TOMAN"}:
     raise ValueError("SHOP_DISPLAY_UNIT must be IRR or TOMAN.")
 BALE_WALLET_PROVIDER_TOKEN = os.environ.get("BALE_WALLET_PROVIDER_TOKEN", "")
+# Checkout is opt-in until live payment, shipping and reconciliation tests pass.
+BALE_WALLET_CHECKOUT_ENABLED = (
+    os.environ.get("BALE_WALLET_CHECKOUT_ENABLED", "false").lower() == "true"
+)
 SHOP_MEDIA_ROOT = os.environ.get("SHOP_MEDIA_ROOT", "./media_data")
 # Legacy screens require a Telegram image ID; never fetch stock photos.
 DEFAULT_MEDIA_FILE_ID = os.environ.get("DEFAULT_MEDIA_FILE_ID", "").strip()

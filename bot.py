@@ -240,10 +240,13 @@ async def bale_webhook(webhook_secret: str, request: Request):
         query_id = precheckout.get("id")
         if not isinstance(query_id, str) or not query_id:
             raise HTTPException(status_code=400, detail="Invalid pre-checkout query")
-        async with get_db_session() as session:
-            accepted, reason = await BaleWalletService.validate_pre_checkout(
-                session, precheckout
-            )
+        if not config.BALE_WALLET_CHECKOUT_ENABLED:
+            accepted, reason = False, "پرداخت کیف پول در حال حاضر غیرفعال است."
+        else:
+            async with get_db_session() as session:
+                accepted, reason = await BaleWalletService.validate_pre_checkout(
+                    session, precheckout
+                )
         try:
             await transport.answer_pre_checkout(
                 query_id,
@@ -328,6 +331,12 @@ async def bale_webhook(webhook_secret: str, request: Request):
         ):
             return {"status": "blocked"}
         if event.callback_data and event.callback_data.startswith("shop:checkout:"):
+            if not config.BALE_WALLET_CHECKOUT_ENABLED:
+                await transport.send(
+                    event.chat_id,
+                    BotReply("پرداخت کیف پول بله هنوز برای این فروشگاه فعال نیست."),
+                )
+                return {"status": "disabled"}
             try:
                 product_id = int(event.callback_data.rsplit(":", 1)[1])
                 if event.callback_query_id:
