@@ -84,12 +84,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const response = await bridgeResponse(
       `/upload/${target}`, "POST", body, type, session, 120_000,
     );
-    const result = await response.json() as {id: number};
+    const result = await response.json() as {id: number; campaign_id?: number};
     // Always redirect only to a fixed local page, never to user-supplied URLs.
     const next = new URL(`${fallback}?saved=1`, origin);
-    if (target === "campaign") {
-      // The destination is a safe list; the record is visible in its detail UI.
-      next.pathname = "/campaigns";
+    if (target === "campaign" && Number.isSafeInteger(result.campaign_id) && Number(result.campaign_id) > 0) {
+      next.pathname = `/campaigns/${result.campaign_id}`;
     }
     next.searchParams.set("record", String(result.id));
     return NextResponse.redirect(next, 303);
