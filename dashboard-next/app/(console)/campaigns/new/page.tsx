@@ -31,7 +31,7 @@ export default async function NewCampaignPage() {
                 <option value="bale">فقط بله</option>
               </select>
             </label>
-            <p className="text-xs leading-7 text-muted-foreground">رسانه‌های کمپین هنوز از داشبورد قدیمی بارگذاری می‌شوند؛ این فرم فقط پیش‌نویس مشترک ایجاد می‌کند.</p>
+            <p className="text-xs leading-7 text-muted-foreground">پس از ساخت، رسانه‌های کمپین را از صفحه جزئیات بارگذاری کنید؛ تأیید مخاطبان و شروع Worker مستقل‌اند.</p>
             <Button type="submit">ساخت پیش‌نویس</Button>
           </form>
         </CardContent>
