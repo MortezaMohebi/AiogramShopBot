@@ -23,12 +23,17 @@ class BaleTransport:
 
     BASE_URL = "https://tapi.bale.ai"
 
-    def __init__(self, token: str, session: ClientSession) -> None:
-        """Bind a Bale bot token and a reusable HTTP session."""
+    def __init__(
+        self, token: str, session: ClientSession, *,
+        business_mode: bool = False,
+    ) -> None:
+        """Bind one Bale bot to the normal or paid business API explicitly."""
         if not token or "/" in token or "?" in token or "#" in token:
             raise ValueError("Bale bot token is invalid.")
         self._bot_token = token
-        self._url_prefix = f"{self.BASE_URL}/bot{token}"
+        self._business_mode = business_mode
+        route = "business/bot" if business_mode else "bot"
+        self._url_prefix = f"{self.BASE_URL}/{route}{token}"
         self._session = session
 
     async def _call(
@@ -92,6 +97,16 @@ class BaleTransport:
             "chat_id": chat_id,
             "caption": media.caption[:1024],
         }
+
+        if self._business_mode and selected.name == "sendVoice":
+            raise BaleApiError(
+                "Bale business broadcast does not support sendVoice."
+            )
+        if self._business_mode and not cached:
+            raise BaleApiError(
+                "Bale business media requires a cached file_id from the "
+                "same bot. Prepare the media with the regular Bot API first."
+            )
 
         if cached:
             # Bale file IDs are unique per bot. Never borrow another bot's ID.

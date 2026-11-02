@@ -158,3 +158,19 @@ DB_SQL_ECHO = os.environ.get("DB_SQL_ECHO", "false").strip().lower() == "true"
 SHOP_CAMPAIGN_DISPATCH_ENABLED = (
     os.environ.get("SHOP_CAMPAIGN_DISPATCH_ENABLED", "false").lower() == "true"
 )
+
+# Bale regular Bot API has interactive rate limits. The optional Business API
+# has separate higher throughput and CHARGES per message from merchant credit.
+BALE_BROADCAST_MODE = os.environ.get(
+    "BALE_BROADCAST_MODE", "standard"
+).strip().lower()
+if BALE_BROADCAST_MODE not in ("standard", "business"):
+    raise ValueError("BALE_BROADCAST_MODE must be standard or business.")
+BALE_BROADCAST_PAID_ENABLED = (
+    os.environ.get("BALE_BROADCAST_PAID_ENABLED", "false").lower() == "true"
+)
+BALE_BROADCAST_PREPARE_CHAT_ID = int(
+    os.environ.get("BALE_BROADCAST_PREPARE_CHAT_ID", "0")
+)
+if BALE_BROADCAST_PREPARE_CHAT_ID < 0:
+    raise ValueError("BALE_BROADCAST_PREPARE_CHAT_ID must not be negative.")
