@@ -62,6 +62,47 @@ async def database() -> AsyncIterator[AsyncSession]:
 Db = Annotated[AsyncSession, Depends(database)]
 
 
+def verify_bridge_signature(
+    *,
+    secret: str,
+    timestamp: str,
+    method: str,
+    target: str,
+    body: bytes,
+    staff_id: int,
+    session_version: int,
+    signature: str,
+    now: float | None = None,
+) -> bool:
+    """Verify one server-to-server HMAC without accepting client-side roles.
+
+    This pure function also supports fast offline regression tests that
+    exercise body, path, method, timestamp and identity tampering.
+    """
+    try:
+        stamp = int(timestamp)
+    except ValueError:
+        return False
+    clock = time.time() if now is None else now
+    if (
+        abs(clock - stamp) > 60
+        or staff_id < 0 or session_version < 0
+        or len(secret) < 32 or len(signature) != 64
+    ):
+        return False
+    digest = hashlib.sha256(body).hexdigest()
+    canonical = "\n".join((
+        timestamp, method.upper(), target, digest,
+        str(staff_id), str(session_version),
+    ))
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
 async def signed_staff(request: Request, session: Db) -> ShopStaff | None:
     """Validate a bounded HMAC request and an active, unrevoked staff account."""
     secret = config.NEXT_ADMIN_BRIDGE_SECRET
@@ -80,29 +121,20 @@ async def signed_staff(request: Request, session: Db) -> ShopStaff | None:
     except ValueError:
         raise HTTPException(status_code=401, detail="Unauthorized") from None
 
-    if (
-        abs(time.time() - timestamp) > 60
-        or staff_id < 0 or version < 0
-        or len(signature) != 64
-    ):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    # A query string and body are part of the signature; the backend never
-    # authorizes a different resource or arbitrary mutation than was signed.
+    # Method, query string, body, staff ID and revocation version are signed.
     target = request.url.path
     if request.url.query:
         target += f"?{request.url.query}"
-    digest = hashlib.sha256(await request.body()).hexdigest()
-    canonical = "\n".join((
-        stamp, request.method.upper(), target, digest,
-        str(staff_id), str(version),
-    ))
-    expected = hmac.new(
-        secret.encode("utf-8"),
-        canonical.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    if not hmac.compare_digest(signature, expected):
+    if not verify_bridge_signature(
+        secret=secret,
+        timestamp=stamp,
+        method=request.method,
+        target=target,
+        body=await request.body(),
+        staff_id=staff_id,
+        session_version=version,
+        signature=signature,
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if staff_id == 0 and version == 0:
