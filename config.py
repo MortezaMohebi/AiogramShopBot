@@ -218,3 +218,16 @@ if not 1 <= SHOP_BROADCAST_POLL_SECONDS <= 30:
     raise ValueError("Broadcast polling must be 1..30 seconds.")
 if not 300 <= SHOP_BROADCAST_STALE_SECONDS <= 86_400:
     raise ValueError("Broadcast stale-claim threshold is invalid.")
+
+# The Next.js dashboard uses a dedicated server-only HMAC bridge.
+# The bridge is disabled until both processes share a strong secret.
+NEXT_ADMIN_BRIDGE_ENABLED = (
+    os.environ.get("NEXT_ADMIN_BRIDGE_ENABLED", "false").lower() == "true"
+)
+NEXT_ADMIN_BRIDGE_SECRET = os.environ.get(
+    "NEXT_ADMIN_BRIDGE_SECRET", ""
+)
+if NEXT_ADMIN_BRIDGE_ENABLED and len(NEXT_ADMIN_BRIDGE_SECRET) < 32:
+    raise ValueError(
+        "NEXT_ADMIN_BRIDGE_SECRET must be at least 32 characters when enabled."
+    )

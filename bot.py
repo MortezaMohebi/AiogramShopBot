@@ -13,6 +13,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BufferedInputFile, Update
 from redis.asyncio import Redis
 from dashboard.secure_admin import SecureShopAdmin as Admin
+from dashboard.next_api import router as next_admin_router
 
 import config
 from aiogram import Dispatcher
@@ -201,6 +202,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+# Signed Next.js BFF. SQLAdmin remains intact during migration.
+app.include_router(next_admin_router)
 app.state.telegram_bot = bot
 app.mount(
     "/shop-assets",
