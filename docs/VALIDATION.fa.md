@@ -51,3 +51,16 @@
 - [ ] اجرای تست‌ها، Migrationهای `20261102d001` و `20261102d002` و بررسی مرورگر و امنیت واقعی.
 - [ ] بررسی ضدتقلب Referral، اعلان ناشناخته، Revocation و عدم ارسال پس از Opt-out.
 - [ ] اجرای سناریوی کامل Telegram/Bale شامل پرداخت و دریافت/بازگشت اعتبار روی PostgreSQL آزمایشی.
+
+## بازبینی تکمیلی فاز ۵ (Source-only)
+
+- [x] صفحه گزارش یکپارچه به `services/shop_analytics.py` متصل شده تا ریزواحد پرداخت تلگرام، قیمت ریالی و Stars با هم جمع نشوند.
+- [x] صفحه اول داشبورد لینک‌های مدیریتی را با Role و مجوز ModelView فیلتر می‌کند.
+- [x] دفترکل Referral فقط با تأیید واقعی رکورد Provider به اعتبار معرف پاداش می‌دهد.
+- [x] ابزار `scripts/reconcile_shop_referrals.py` با حالت Dry-run و `--apply` صریح در مخزن موجود است.
+- [x] Startup از `create_all()` برای ساخت جداول مالی صرف‌نظر می‌کند و Alembic Head را الزام می‌کند.
+- [x] پیش‌فرض ثبت SQL Parameters غیرفعال است.
+- [x] فایل‌های تست مکمل برای Analytics، Campaign Opt-in و Wallet/Referral به مخزن اضافه شدند.
+- [ ] اجرای تمامی تست‌های مخزن و کنترل خطاهای احتمالی، طبق تصمیم پروژه در مرحله نهایی.
+- [ ] تأیید کامل اتصالات Telegram/Bale، CORS/CSRF/Auth داشبورد، Migration و Reconciliation روی DB آزمایشی.
+- [ ] اثبات ظرفیت Rate Limiting، امنیت ارسال‌های Unknown، عدم تکرار Reward و کنترل بازپرداخت واقعی.
