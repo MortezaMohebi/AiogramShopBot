@@ -237,6 +237,17 @@ async def test_referral_award_requires_first_verified_irr_purchase(db):
     _, order = product_and_order(db, Platform.TELEGRAM, 302, status="paid")
     order.provider = "telegram_fiat"
     order.payment_currency = "IRR"
+    db.add(
+        ShopPaymentAttempt(
+            order_id=order.id,
+            platform="telegram",
+            provider="telegram_fiat",
+            currency="IRR",
+            amount=1000,
+            payload=order.invoice_payload,
+            status="paid",
+        )
+    )
     db.session.commit()
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 100
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 0
