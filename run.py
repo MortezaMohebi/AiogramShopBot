@@ -55,10 +55,10 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
         telegram_id=telegram_id,
         language=language
     ), command.args, session)
-    keyboard = [[shop_catalog_button, all_categories_button],
-                [my_profile_button, help_button], [faq_button],
-                [reviews_button],
-                [cart_button]]
+    keyboard = [[shop_catalog_button, cart_button],
+                [all_categories_button, my_profile_button],
+                [help_button, faq_button],
+                [reviews_button]]
     if telegram_id in config.ADMIN_ID_LIST:
         keyboard.append([admin_menu_button])
     start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, keyboard=keyboard)

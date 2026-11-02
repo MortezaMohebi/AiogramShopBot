@@ -23,6 +23,7 @@ from admin import authentication_backend
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_cart import ShopCartFlow
 from services.bale_wallet import BaleWalletService, CheckoutRejected
 from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
@@ -339,41 +340,20 @@ async def bale_webhook(webhook_secret: str, request: Request):
             platform_user_id=event.user_id,
         ):
             return {"status": "blocked"}
-        if event.callback_data and event.callback_data.startswith("shop:checkout:"):
-            if not config.BALE_WALLET_CHECKOUT_ENABLED:
-                await transport.send(
-                    event.chat_id,
-                    BotReply("پرداخت کیف پول بله هنوز برای این فروشگاه فعال نیست."),
-                )
-                return {"status": "disabled"}
-            try:
-                product_id = int(event.callback_data.rsplit(":", 1)[1])
-                if event.callback_query_id:
-                    await transport.acknowledge(event.callback_query_id)
-                await BaleWalletService.create_invoice(
-                    session,
-                    transport,
-                    product_id=product_id,
-                    platform_user_id=event.user_id,
-                    chat_id=event.chat_id,
-                    provider_token=config.BALE_WALLET_PROVIDER_TOKEN,
-                )
-            except (ValueError, CheckoutRejected) as exc:
-                await transport.send(event.chat_id, BotReply(str(exc)))
-            except BaleApiError:
-                raise HTTPException(status_code=502, detail="Bale delivery failed") from None
-            return {"status": "ok"}
-
         if (event.text and event.text.strip() in ("/orders", "📦 سفارش‌های من")) or event.callback_data == "shop:orders":
             text = await BaleWalletService.list_orders(
                 session, platform="bale", platform_user_id=event.user_id
             )
             reply = BotReply(text)
         else:
-            reply = await CatalogFlow(
-                currency_label=config.SHOP_CURRENCY_LABEL,
-                display_unit=config.SHOP_DISPLAY_UNIT,
+            reply = await ShopCartFlow(
+                display_unit=config.SHOP_DISPLAY_UNIT
             ).reply(event, session)
+            if reply is None:
+                reply = await CatalogFlow(
+                    currency_label=config.SHOP_CURRENCY_LABEL,
+                    display_unit=config.SHOP_DISPLAY_UNIT,
+                ).reply(event, session)
     if reply is None:
         return {"status": "ignored"}
 

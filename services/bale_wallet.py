@@ -240,6 +240,7 @@ class BaleWalletService:
         if not orders:
             return "هنوز سفارشی ثبت نکرده‌اید."
         labels = {
+            "pending_review": "در انتظار بررسی فروشنده",
             "pending_payment": "در انتظار پرداخت",
             "paid": "پرداخت‌شده",
             "paid_unfulfilled": "پرداخت‌شده؛ در انتظار بررسی موجودی",
