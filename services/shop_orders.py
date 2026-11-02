@@ -15,8 +15,11 @@ from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import ShopOrder
 from services.shop_money import format_rials
+from services.shop_refunds import ShopRefundService
+from services.shop_payments import PaymentRejected
 
 _CANCEL = re.compile(r"shop:cancelorder:([1-9][0-9]{0,18})\Z")
+_REFUND = re.compile(r"shop:refundorder:([1-9][0-9]{0,18})\Z")
 
 STATUS_NAMES = {
     "pending_review": "در انتظار بررسی فروشنده",
@@ -46,6 +49,22 @@ class ShopOrdersFlow:
             "/orders", "📦 سفارش‌های من",
         ):
             return await self._history(event, session)
+        match = _REFUND.fullmatch(action)
+        if match is not None:
+            try:
+                case = await ShopRefundService.request(
+                    session,
+                    platform=event.platform,
+                    payer_id=event.user_id,
+                    order_id=int(match.group(1)),
+                    reason="Customer requested refund.",
+                )
+            except PaymentRejected as error:
+                return BotReply(str(error))
+            return BotReply(
+                f"درخواست بازپرداخت سفارش ثبت شد. کد پیگیری #{case.id}. "
+                "تا تأیید تراکنش مرجع، مبلغ بازگشته تلقی نمی‌شود."
+            )
         match = _CANCEL.fullmatch(action)
         if match is not None:
             return await self._cancel(
@@ -88,6 +107,13 @@ class ShopOrdersFlow:
                 f"{format_rials(order.total_irr, self.display_unit)}\n"
                 f"{STATUS_NAMES.get(order.status, 'در حال بررسی')}"
             )
+            if order.status in ("paid", "paid_unfulfilled"):
+                rows.append((
+                    InlineAction(
+                        f"درخواست بازپرداخت #{order.id}",
+                        f"shop:refundorder:{order.id}",
+                    ),
+                ))
             if order.status == "approved_unpaid":
                 rows.append((
                     InlineAction(
