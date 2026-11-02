@@ -196,6 +196,18 @@ class ShopCampaign(Base):
         String(20), nullable=False, default="draft"
     )
     approved_by: Mapped[str | None] = mapped_column(String(120))
+    # Frozen at start; external API calls may never exceed the approved cap.
+    bale_mode: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="standard"
+    )
+    max_paid_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    paid_calls_reserved: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -206,8 +218,17 @@ class ShopCampaign(Base):
             name="ck_shop_campaign_audience",
         ),
         CheckConstraint(
-            "status IN ('draft','approved','sending','completed')",
+            "status IN ('draft','approved','sending','paused',"
+            "'needs_review','completed','cancelled')",
             name="ck_shop_campaign_status",
+        ),
+        CheckConstraint(
+            "bale_mode IN ('standard','business')", name="ck_shop_campaign_mode"
+        ),
+        CheckConstraint(
+            "max_paid_calls >= 0 AND paid_calls_reserved >= 0 "
+            "AND paid_calls_reserved <= max_paid_calls",
+            name="ck_shop_campaign_budget",
         ),
     )
 
@@ -264,6 +285,10 @@ class ShopCampaignDelivery(Base):
         String(16), nullable=False, default="queued"
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_steps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error_code: Mapped[str | None] = mapped_column(String(80))
+    worker_id: Mapped[str | None] = mapped_column(String(48))
 
     __table_args__ = (
         UniqueConstraint(
@@ -273,6 +298,7 @@ class ShopCampaignDelivery(Base):
             "status IN ('queued','sending','sent','unknown','skipped')",
             name="ck_shop_campaign_delivery_status",
         ),
+        CheckConstraint("completed_steps >= 0", name="ck_shop_completed_steps"),
     )
 
 
@@ -391,6 +417,91 @@ class ShopCampaignDeliveryAdmin(ModelView, model=ShopCampaignDelivery):
     column_list = [
         ShopCampaignDelivery.campaign_id, ShopCampaignDelivery.identity_id,
         ShopCampaignDelivery.status, ShopCampaignDelivery.sent_at,
+    ]
+    can_create = False
+    can_edit = False
+    can_delete = False
+    can_export = False
+
+class ShopBroadcastRateSlot(Base):
+    """Durable global-bot and per-chat send pacing across worker processes."""
+
+    __tablename__ = "shop_broadcast_rate_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Recipient ID zero reserves a global bot slot; positive IDs are chats.
+    recipient_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    next_send_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "platform", "bot_fingerprint", "recipient_id",
+            name="uq_shop_broadcast_rate_slot",
+        ),
+        CheckConstraint(
+            "platform IN ('telegram','bale')",
+            name="ck_shop_broadcast_rate_platform",
+        ),
+        CheckConstraint(
+            "recipient_id >= 0", name="ck_shop_broadcast_recipient_id"
+        ),
+    )
+
+
+class ShopCampaignAudit(Base):
+    """Append-only administrative and reconciliation lifecycle records."""
+
+    __tablename__ = "shop_campaign_audit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_campaigns.id", ondelete="RESTRICT"), nullable=False
+    )
+    delivery_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shop_campaign_deliveries.id", ondelete="RESTRICT")
+    )
+    actor: Mapped[str] = mapped_column(String(120), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ShopCampaignAuditAdmin(ModelView, model=ShopCampaignAudit):
+    """Show marketing decisions without permitting edits to the audit trail."""
+
+    name = "سوابق کمپین"
+    name_plural = "سوابق مدیریت Broadcast"
+    category = "بازاریابی"
+    column_list = [
+        ShopCampaignAudit.campaign_id, ShopCampaignAudit.delivery_id,
+        ShopCampaignAudit.actor, ShopCampaignAudit.action,
+        ShopCampaignAudit.previous_status, ShopCampaignAudit.new_status,
+        ShopCampaignAudit.created_at,
+    ]
+    can_create = False
+    can_edit = False
+    can_delete = False
+    can_export = False
+
+
+class ShopBroadcastRateSlotAdmin(ModelView, model=ShopBroadcastRateSlot):
+    """Inspect global/per-recipient rate reservations as read-only metadata."""
+
+    name = "سهمیه ارسال"
+    name_plural = "کنترل نرخ ارسال"
+    category = "بازاریابی"
+    column_list = [
+        ShopBroadcastRateSlot.platform,
+        ShopBroadcastRateSlot.recipient_id,
+        ShopBroadcastRateSlot.next_send_at,
     ]
     can_create = False
     can_edit = False

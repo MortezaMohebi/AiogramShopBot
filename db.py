@@ -18,6 +18,7 @@ from models.shop_engagement import (
     ShopWalletAccount, ShopWalletEntry, ShopReferralProfile,
     ShopReferralAttribution, ShopReferralPolicy, ShopReferralReward,
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
+    ShopBroadcastRateSlot, ShopCampaignAudit,
 )
 
 """

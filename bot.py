@@ -49,6 +49,7 @@ from models.shop_engagement import (
     ShopWalletAccountAdmin, ShopWalletEntryAdmin, ShopReferralPolicyAdmin,
     ShopReferralProfileAdmin, ShopReferralRewardAdmin,
     ShopCampaignAdmin, ShopCampaignDeliveryAdmin, ShopCampaignMediaAdmin,
+    ShopBroadcastRateSlotAdmin, ShopCampaignAuditAdmin,
 )
 from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
 from dashboard.order_views import ShopOrderReviewView
@@ -260,6 +261,8 @@ admin.add_model_view(secure_model_view(ShopReferralRewardAdmin))
 admin.add_model_view(secure_model_view(ShopCampaignAdmin))
 admin.add_model_view(secure_model_view(ShopCampaignDeliveryAdmin))
 admin.add_model_view(secure_model_view(ShopCampaignMediaAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignAuditAdmin))
+admin.add_model_view(secure_model_view(ShopBroadcastRateSlotAdmin))
 admin.add_model_view(secure_model_view(ShopRemoteFileAdmin))
 admin.add_model_view(secure_model_view(ShopInboundUpdateAdmin))
 
