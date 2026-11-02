@@ -313,7 +313,7 @@ class BroadcastControl:
         )
         counts = await delivery_counts(session, campaign.id)
         if (
-            campaign.status == "needs_review"
+            campaign.status in ("needs_review", "paused")
             and not counts.get("unknown")
             and not counts.get("queued")
             and not counts.get("sending")
