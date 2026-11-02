@@ -1,7 +1,12 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from alembic.config import Config as AlembicConfig
+from alembic.script import ScriptDirectory
 from typing import Any
 
 from sqlalchemy import text, Result, CursorResult
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -41,7 +46,8 @@ from models.review import Review
 from models.referral import ReferralBonus
 
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
-engine = create_async_engine(url, echo=True)
+# Do not log SQL parameters containing orders and private customer data.
+engine = create_async_engine(url, echo=config.DB_SQL_ECHO)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
@@ -109,10 +115,37 @@ async def check_all_tables_exist(session: AsyncSession | Session, schema: str = 
     return True
 
 
-async def create_db_and_tables():
-    async with get_db_session() as session:
-        if await check_all_tables_exist(session):
-            pass
-        else:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
+async def create_db_and_tables() -> None:
+    """Fail closed unless the complete Alembic schema is installed.
+
+    Preserves the old startup entrypoint but never uses create_all to bypass
+    financial constraints, migrations or the shop's immutable-ledger tables.
+    """
+    root = Path(__file__).resolve().parent
+    configuration = AlembicConfig(str(root / "alembic.ini"))
+    configuration.set_main_option("script_location", str(root / "migrations"))
+    expected = set(ScriptDirectory.from_config(configuration).get_heads())
+    if not expected:
+        raise RuntimeError("Alembic revision scripts are missing.")
+
+    try:
+        async with get_db_session() as session:
+            result = await session.execute(
+                text("SELECT version_num FROM alembic_version")
+            )
+            current = set(result.scalars().all())
+            if current != expected:
+                raise RuntimeError(
+                    "Database migrations are pending. "
+                    "Back up the database and run: alembic upgrade head."
+                )
+            if not await check_all_tables_exist(session):
+                raise RuntimeError(
+                    "Database schema is incomplete despite an Alembic head. "
+                    "Inspect the database before starting the bot."
+                )
+    except DBAPIError:
+        raise RuntimeError(
+            "Database is unreachable or Alembic is not initialized. "
+            "Provision/migrate it before bot startup."
+        ) from None
