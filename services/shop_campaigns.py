@@ -13,12 +13,18 @@ from datetime import datetime, timezone
 from sqlalchemy import func, insert, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import Platform
+from channels.contracts import MediaAttachment, Platform
+from channels.media_policy import MediaLimitError, bale_media_method
+from dashboard.media_storage import safe_media_path
+import config
 from models.shop_content import ShopIdentity
-from models.shop_engagement import ShopCampaign, ShopCampaignDelivery
+from models.shop_engagement import (
+    ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
+)
 
 
 SendMessage = Callable[[Platform, int, str], Awaitable[None]]
+SendAttachment = Callable[[Platform, int, MediaAttachment], Awaitable[None]]
 _MAX_PER_BATCH = 10
 
 
@@ -28,6 +34,46 @@ class CampaignRejected(ValueError):
 
 class ShopCampaignService:
     """Prepare opted-in recipients and dispatch no more than ten per action."""
+
+    @staticmethod
+    async def _attachments(
+        session: AsyncSession,
+        campaign: ShopCampaign,
+    ) -> tuple[MediaAttachment, ...]:
+        """Load and validate actual private originals before a campaign send."""
+        result = await session.execute(
+            select(ShopCampaignMedia)
+            .where(ShopCampaignMedia.campaign_id == campaign.id)
+            .order_by(ShopCampaignMedia.position, ShopCampaignMedia.id)
+        )
+        attachments = []
+        for item in result.scalars().all():
+            path = safe_media_path(config.SHOP_MEDIA_ROOT, item.storage_key)
+            try:
+                actual_bytes = path.stat().st_size
+            except OSError:
+                raise CampaignRejected(
+                    "یکی از فایل‌های کمپین از فضای خصوصی حذف شده است."
+                ) from None
+            if actual_bytes != item.size_bytes:
+                raise CampaignRejected(
+                    "حجم فایل کمپین تغییر کرده؛ قبل از ارسال بررسی کنید."
+                )
+            try:
+                # The shop uses the stricter Bale caps even for an
+                # all-platform broadcast, so both channels can deliver it.
+                bale_media_method(item.kind, item.mime_type, actual_bytes)
+            except MediaLimitError as error:
+                raise CampaignRejected(str(error)) from None
+            attachments.append(
+                MediaAttachment(
+                    storage_key=item.storage_key,
+                    kind=item.kind,
+                    mime_type=item.mime_type,
+                    caption=item.caption or "",
+                )
+            )
+        return tuple(attachments)
 
     @staticmethod
     async def approve(
@@ -51,6 +97,7 @@ class ShopCampaignService:
             raise CampaignRejected("متن اطلاعیه باید حداکثر ۳۰۰۰ نویسه باشد.")
         if campaign.audience not in ("all", "telegram", "bale"):
             raise CampaignRejected("کانال ارسال معتبر نیست.")
+        await ShopCampaignService._attachments(session, campaign)
 
         clause = [
             ShopIdentity.allow_announcements.is_(True),
@@ -85,6 +132,7 @@ class ShopCampaignService:
         *,
         campaign_id: int,
         send: SendMessage,
+        send_attachment: SendAttachment | None = None,
     ) -> tuple[int, int]:
         """Send a bounded batch of queued notifications at most once.
 
@@ -114,6 +162,13 @@ class ShopCampaignService:
             .limit(_MAX_PER_BATCH)
             .with_for_update(of=ShopCampaignDelivery, skip_locked=True)
         )
+        attachments = await ShopCampaignService._attachments(
+            session, campaign
+        )
+        if attachments and send_attachment is None:
+            raise CampaignRejected(
+                "ارسال فایل‌های کمپین در این اتصال پشتیبانی نمی‌شود."
+            )
         candidates = results.all()
         successes, skipped = 0, 0
 
@@ -150,6 +205,12 @@ class ShopCampaignService:
                     fresh_identity.platform_user_id,
                     campaign.text,
                 )
+                for attachment in attachments:
+                    await send_attachment(
+                        Platform(fresh_identity.platform),
+                        fresh_identity.platform_user_id,
+                        attachment,
+                    )
             except Exception:
                 # The Bot API may have already delivered the message. Do
                 # NOT retry without consulting an operator and provider.
