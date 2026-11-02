@@ -100,6 +100,18 @@ def upgrade() -> None:
         ),
     )
     op.create_table(
+        "shop_broadcast_worker_heartbeats",
+        sa.Column("worker_id", sa.String(48), primary_key=True),
+        sa.Column(
+            "started_at", sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "last_seen_at", sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.now(),
+        ),
+    )
+    op.create_table(
         "shop_campaign_audit",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
@@ -126,6 +138,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove only phase-seven scheduling additions."""
     op.drop_table("shop_campaign_audit")
+    op.drop_table("shop_broadcast_worker_heartbeats")
     op.drop_table("shop_broadcast_rate_slots")
     op.drop_index(
         "ix_shop_campaign_worker_pick", table_name="shop_campaign_deliveries"

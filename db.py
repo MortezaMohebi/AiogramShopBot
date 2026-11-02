@@ -19,6 +19,7 @@ from models.shop_engagement import (
     ShopReferralAttribution, ShopReferralPolicy, ShopReferralReward,
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
     ShopBroadcastRateSlot, ShopCampaignAudit,
+    ShopBroadcastWorkerHeartbeat,
 )
 
 """

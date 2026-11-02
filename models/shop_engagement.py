@@ -507,3 +507,16 @@ class ShopBroadcastRateSlotAdmin(ModelView, model=ShopBroadcastRateSlot):
     can_edit = False
     can_delete = False
     can_export = False
+
+class ShopBroadcastWorkerHeartbeat(Base):
+    """Heartbeat from a shared worker process for admin liveness reporting."""
+
+    __tablename__ = "shop_broadcast_worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
