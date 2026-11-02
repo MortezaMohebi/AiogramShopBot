@@ -138,6 +138,8 @@ async def banned_message(callback: CallbackQuery, language: Language):
 
 if __name__ == '__main__':
     if config.MULTIBOT:
+        if config.TELEGRAM_UPDATE_MODE == "polling":
+            raise ValueError("Legacy MULTIBOT currently requires webhook mode.")
         main_multibot(main_router)
     else:
         dp.include_router(main_router)

@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+from contextlib import suppress
 import sys
 from hmac import compare_digest
 
@@ -57,10 +59,6 @@ dp = Dispatcher(storage=RedisStorage(redis))
 
 async def _startup() -> None:
     await create_db_and_tables()
-    await bot.set_webhook(
-        url=config.WEBHOOK_URL,
-        secret_token=config.WEBHOOK_SECRET_TOKEN
-    )
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
@@ -102,10 +100,35 @@ async def _startup() -> None:
         except Exception as e:
             logging.warning(e)
 
+    if config.TELEGRAM_UPDATE_MODE == "webhook":
+        await bot.set_webhook(
+            url=config.WEBHOOK_URL,
+            secret_token=config.WEBHOOK_SECRET_TOKEN,
+        )
+    else:
+        # Telegram does not permit getUpdates while a webhook is active.
+        await bot.delete_webhook(drop_pending_updates=False)
+        app.state.telegram_polling_task = asyncio.create_task(
+            dp.start_polling(
+                bot,
+                handle_signals=False,
+                close_bot_session=False,
+                polling_timeout=10,
+            ),
+            name="telegram-cloudflare-polling",
+        )
+
 
 async def _shutdown() -> None:
     logging.warning('Shutting down..')
-    await bot.delete_webhook()
+    polling_task = getattr(app.state, "telegram_polling_task", None)
+    if polling_task is not None:
+        if not polling_task.done():
+            polling_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await polling_task
+    else:
+        await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()
     logging.warning('Bye!')
@@ -226,6 +249,8 @@ async def bale_webhook(webhook_secret: str, request: Request):
 
 @app.post(config.WEBHOOK_PATH)
 async def webhook(request: Request):
+    if config.TELEGRAM_UPDATE_MODE != "webhook":
+        raise HTTPException(status_code=404, detail="Not found")
     secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if secret_token != config.WEBHOOK_SECRET_TOKEN:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")

@@ -8,6 +8,9 @@ from utils.utils import get_sslipio_external_url, start_ngrok, hash_password
 
 load_dotenv(".env.bot.dev")
 RUNTIME_ENVIRONMENT = RuntimeEnvironment(os.environ.get("RUNTIME_ENVIRONMENT"))
+TELEGRAM_UPDATE_MODE = os.environ.get("TELEGRAM_UPDATE_MODE", "webhook").strip().lower()
+if TELEGRAM_UPDATE_MODE not in {"webhook", "polling"}:
+    raise ValueError("TELEGRAM_UPDATE_MODE must be webhook or polling.")
 # Prefer an explicit HTTPS host in production. An external IP lookup should
 # never be mandatory for installations hosted behind a known domain.
 explicit_webhook_host = os.environ.get("WEBHOOK_HOST", "").strip()
@@ -15,6 +18,9 @@ if explicit_webhook_host:
     if not explicit_webhook_host.startswith("https://"):
         raise ValueError("WEBHOOK_HOST must use HTTPS.")
     WEBHOOK_HOST = explicit_webhook_host.rstrip("/")
+elif TELEGRAM_UPDATE_MODE == "polling":
+    # Polling through a Cloudflare Worker needs no public Telegram webhook.
+    WEBHOOK_HOST = ""
 elif RUNTIME_ENVIRONMENT == RuntimeEnvironment.DEV:
     WEBHOOK_HOST = start_ngrok()
 else:
