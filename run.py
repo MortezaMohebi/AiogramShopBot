@@ -15,6 +15,10 @@ from handlers.common.review_management import review_management_router
 from channels.contracts import InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from models.shop_content import ShopSettings
+from services.shop_identity import register_customer
+from services.shop_referrals import (
+    ShopReferralService, ReferralRejected,
+)
 from services.shop_channel_catalog import CatalogFlow
 from middleware.database import DBSessionMiddleware
 from middleware.language import I18nMiddleware
@@ -42,6 +46,8 @@ main_router = Router()
 @main_router.message(Command("help"))
 async def start(message: Message, command: CommandObject, session: AsyncSession, language: Language):
     shop_catalog_button = types.KeyboardButton(text="🛍 محصولات")
+    shop_wallet_button = types.KeyboardButton(text="💳 اعتبار من")
+    shop_referral_button = types.KeyboardButton(text="🎁 معرفی دوستان")
     all_categories_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "all_categories"))
     my_profile_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "my_profile"))
     faq_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "faq"))
@@ -50,14 +56,38 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     reviews_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "reviews"))
     cart_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "cart"))
     telegram_id = message.from_user.id
+    await register_customer(
+        session,
+        platform=Platform.TELEGRAM,
+        platform_user_id=telegram_id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
+    referral_arg = (
+        command.args.strip()
+        if command.args and command.args.strip().upper().startswith("R-")
+        else None
+    )
+    if referral_arg is not None:
+        try:
+            await ShopReferralService.claim(
+                session,
+                platform=Platform.TELEGRAM,
+                user_id=telegram_id,
+                code=referral_arg,
+            )
+        except ReferralRejected:
+            # Starting the bot must remain possible even for invalid codes.
+            logging.info("Invalid shop referral code was ignored.")
     await UserService.create_if_not_exist(UserDTO(
         telegram_username=message.from_user.username,
         telegram_id=telegram_id,
         language=language
-    ), command.args, session)
+    ), None if referral_arg is not None else command.args, session)
     keyboard = [[shop_catalog_button, cart_button],
                 [all_categories_button, my_profile_button],
                 [help_button, faq_button],
+                [shop_wallet_button, shop_referral_button],
                 [reviews_button]]
     if telegram_id in config.ADMIN_ID_LIST:
         keyboard.append([admin_menu_button])

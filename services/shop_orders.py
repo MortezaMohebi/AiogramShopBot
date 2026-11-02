@@ -120,6 +120,10 @@ class ShopOrdersFlow:
                         f"💳 پرداخت سفارش #{order.id}",
                         f"shop:pay:{order.id}",
                     ),
+                    InlineAction(
+                        "اعتبار داخلی",
+                        f"shop:creditpay:{order.id}",
+                    ),
                 ))
             if (
                 order.provider == "manual_review"

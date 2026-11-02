@@ -69,6 +69,9 @@ class ShopReferralService:
         code: str,
     ) -> str:
         """Accept only an unambiguous first-purchase, same-platform invite."""
+        policy = await session.get(ShopReferralPolicy, 1)
+        if policy is None or not policy.is_enabled or policy.percent <= 0:
+            raise ReferralRejected("برنامه معرفی مشتری فعال نیست.")
         normalized = code.strip().upper()
         if _CODE.fullmatch(normalized) is None:
             raise ReferralRejected("کد معرفی معتبر نیست.")

@@ -24,6 +24,8 @@ from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
+from services.shop_engagement_flow import ShopEngagementFlow
+from services.shop_referrals import ShopReferralService
 from services.bale_wallet import BaleWalletService, CheckoutRejected
 from services.shop_bale_payments import (
     settle_bale_payment, validate_bale_precheckout,
@@ -352,6 +354,19 @@ async def bale_webhook(webhook_secret: str, request: Request):
                 raise HTTPException(
                     status_code=502, detail="Payment notice delivery failed"
                 ) from None
+        if changed and order.status == "paid":
+            # A referral error must not cause a successful payment to be
+            # reported as a failed transfer or retried by the sender.
+            try:
+                async with get_db_session() as reward_session:
+                    await ShopReferralService.award_for_paid_order(
+                        reward_session, order.id
+                    )
+            except Exception:
+                logging.exception(
+                    "Referral reward processing failed for order ID %s",
+                    order.id,
+                )
         return {"status": "processed" if changed else "already_processed"}
 
     event = normalize_update(Platform.BALE, payload)
@@ -393,9 +408,13 @@ async def bale_webhook(webhook_secret: str, request: Request):
                 ) from None
             return {"status": "invoice_handled"}
 
-        reply = await ShopOrdersFlow(
+        reply = await ShopEngagementFlow(
             display_unit=config.SHOP_DISPLAY_UNIT
         ).reply(event, session)
+        if reply is None:
+            reply = await ShopOrdersFlow(
+                display_unit=config.SHOP_DISPLAY_UNIT
+            ).reply(event, session)
         if reply is None:
             reply = await ShopCartFlow(
                 display_unit=config.SHOP_DISPLAY_UNIT

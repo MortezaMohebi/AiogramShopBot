@@ -18,6 +18,8 @@ from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
+from services.shop_engagement_flow import ShopEngagementFlow
+from services.shop_referrals import ShopReferralService
 from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
 from channels.shop_payment_dispatch import send_order_invoice
@@ -52,6 +54,11 @@ async def _shop_reply(
     event: InboundEvent, session: AsyncSession
 ) -> BotReply | None:
     """Select the common cart first, then catalog for non-cart actions."""
+    engagement = await ShopEngagementFlow(
+        config.SHOP_DISPLAY_UNIT
+    ).reply(event, session)
+    if engagement is not None:
+        return engagement
     orders = await ShopOrdersFlow(config.SHOP_DISPLAY_UNIT).reply(event, session)
     if orders is not None:
         return orders
@@ -67,6 +74,43 @@ def _flow() -> CatalogFlow:
         currency_label=config.SHOP_CURRENCY_LABEL,
         display_unit=config.SHOP_DISPLAY_UNIT,
     )
+
+
+@shop_catalog_router.message(
+    Command("wallet", "referral", "ref", "subscribe", "unsubscribe")
+)
+@shop_catalog_router.message(F.text.in_({
+    "💳 اعتبار من", "🎁 معرفی دوستان",
+    "📣 دریافت اطلاعیه", "🔕 لغو اطلاعیه",
+}))
+async def engagement_message(
+    message: Message, session: AsyncSession
+) -> None:
+    """Use one shared entitlement and consent flow on Telegram."""
+    if message.from_user is None or message.chat.type != "private":
+        return
+    await register_customer(
+        session,
+        platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
+    if await is_blocked(
+        session,
+        platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+    ):
+        return
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        text=message.text,
+    )
+    reply = await _shop_reply(event, session)
+    if reply is not None:
+        await TelegramTransport(message.bot).send(event.chat_id, reply)
 
 
 @shop_catalog_router.message(Command("orders"))
@@ -196,6 +240,20 @@ async def shop_successful_payment(message: Message) -> None:
         await TelegramTransport(message.bot).send(
             message.chat.id, BotReply(note)
         )
+        # Paid settlement is already committed. Referral failures must not
+        # roll back an external provider transaction.
+        if order.status == "paid":
+            import logging
+            try:
+                async with get_db_session() as reward_session:
+                    await ShopReferralService.award_for_paid_order(
+                        reward_session, order.id
+                    )
+            except Exception:
+                logging.exception(
+                    "Referral reward processing failed for order ID %s",
+                    order.id,
+                )
 
 
 @shop_catalog_router.callback_query(F.data.startswith("shop:"))
