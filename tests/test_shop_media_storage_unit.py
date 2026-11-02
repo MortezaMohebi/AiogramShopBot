@@ -44,7 +44,7 @@ async def test_save_media_keeps_uploaded_name_out_of_path(tmp_path):
     stored = await save_media(file, root=tmp_path, max_bytes=1000)
     assert stored.kind == "photo"
     assert stored.original_filename == "bad.png"
-    assert stored.storage_key if hasattr(stored, "storage_key") else stored.key
+    assert stored.key.endswith(".png")
     path = safe_media_path(tmp_path, stored.key)
     assert path.is_file()
     assert path.read_bytes().startswith(b"\x89PNG")

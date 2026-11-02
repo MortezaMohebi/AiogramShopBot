@@ -1,14 +1,12 @@
 """Contract and catalog tests without a real Telegram or Bale token."""
 
-from decimal import Decimal
-
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from channels.contracts import InboundEvent, Platform, normalize_update
 from models.base import Base
-from models.shop_content import Product, Testimonial
+from models.shop_content import Product, ProductMedia, ShopCategory, Testimonial
 from services.shop_channel_catalog import CatalogFlow
 
 
@@ -23,13 +21,20 @@ class AsyncSessionProxy:
         """Execute a real SQL statement without external PostgreSQL."""
         return self.session.execute(statement)
 
+    async def scalar(self, statement):
+        """Return one scalar from the disposable database."""
+        return self.session.scalar(statement)
+
 
 @pytest.fixture
 def session():
     """Provide isolated catalog rows and clean up after every test."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
-        engine, tables=[Product.__table__, Testimonial.__table__]
+        engine, tables=[
+            ShopCategory.__table__, Product.__table__,
+            ProductMedia.__table__, Testimonial.__table__,
+        ]
     )
     with Session(engine) as db:
         yield db
@@ -55,11 +60,11 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
     session.add_all(
         [
             Product(
-                sku="P-1", name="کرم", description="توضیح", price=Decimal("250"),
+                sku="P-1", name="کرم", description="توضیح", price=250,
                 stock_quantity=2, is_published=True,
             ),
             Product(
-                sku="P-2", name="پنهان", description="مخفی", price=Decimal("8"),
+                sku="P-2", name="پنهان", description="مخفی", price=8,
                 stock_quantity=1, is_published=False,
             ),
         ]
@@ -70,7 +75,7 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
         event(platform, text="/catalog"), AsyncSessionProxy(session)
     )
     assert reply is not None
-    assert len(reply.rows) == 1
+    assert len(reply.rows) == 2
     assert reply.rows[0][0].label == "کرم"
     assert "پنهان" not in reply.text
     detail = await flow.reply(
@@ -78,6 +83,7 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
     )
     assert "توضیح" in detail.text
     assert "250" in detail.text
+    assert "ریال" in detail.text
 
 
 @pytest.mark.asyncio
@@ -85,7 +91,7 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
 async def test_only_approved_testimonials_render(session, platform):
     """Hide unapproved customer testimonials across both channels."""
     product = Product(
-        sku="P-3", name="محصول", description="توضیح", price=Decimal("20"),
+        sku="P-3", name="محصول", description="توضیح", price=20,
         stock_quantity=10, is_published=True,
     )
     session.add(product)
@@ -130,3 +136,52 @@ def test_equivalent_update_normalization(platform):
             }
         },
     ) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_dynamic_category_and_unpublished_media(session, platform):
+    """Keep categories and files in the database for both message adapters."""
+    category = ShopCategory(
+        name="محصولات مراقبتی", is_published=True, position=1,
+    )
+    session.add(category)
+    session.flush()
+    product = Product(
+        category_id=category.id,
+        name="محصول", sku="DATA-1", description="توضیح", price=500,
+        stock_quantity=5, is_published=True,
+    )
+    session.add(product)
+    session.flush()
+    session.add_all(
+        [
+            ProductMedia(
+                product_id=product.id, kind="document",
+                storage_key="0" * 32 + ".pdf", original_filename="guide.pdf",
+                mime_type="application/pdf", size_bytes=25,
+                is_published=True, position=1,
+            ),
+            ProductMedia(
+                product_id=product.id, kind="photo",
+                storage_key="1" * 32 + ".png", original_filename="secret.png",
+                mime_type="image/png", size_bytes=20,
+                is_published=False, position=2,
+            ),
+        ]
+    )
+    session.commit()
+    flow = CatalogFlow()
+    proxy = AsyncSessionProxy(session)
+    start = await flow.reply(event(platform, text="/catalog"), proxy)
+    assert start.rows[0][0].label == "محصولات مراقبتی"
+    category_page = await flow.reply(
+        event(platform, callback=f"shop:category:{category.id}:0"),
+        proxy,
+    )
+    assert category_page.rows[0][0].label == "محصول"
+    attachments = await flow.reply(
+        event(platform, callback=f"shop:files:{product.id}:0"), proxy
+    )
+    assert len(attachments.attachments) == 1
+    assert attachments.attachments[0].mime_type == "application/pdf"
