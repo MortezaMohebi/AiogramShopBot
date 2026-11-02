@@ -129,6 +129,17 @@ class ShopWalletService:
             return prior, False
 
         account = await ShopWalletService._account(session, identity_id)
+        # Another request may have committed this key while our request
+        # waited on the row lock. Avoid a double debit on concurrent retries.
+        concurrent = await session.scalar(
+            select(ShopWalletEntry).where(
+                ShopWalletEntry.operation_key == operation_key
+            )
+        )
+        if concurrent is not None:
+            if concurrent.account_id != account.id or concurrent.delta_irr != delta_irr:
+                raise StoreCreditRejected("کلید عملیات برای مبلغ دیگری ثبت شده است.")
+            return concurrent, False
         balance_after = account.balance_irr + delta_irr
         if not 0 <= balance_after <= MAX_RIALS:
             raise StoreCreditRejected("موجودی اعتبار کافی نیست یا سقف آن پر شده است.")
