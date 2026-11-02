@@ -29,6 +29,8 @@ test("Real staff login, dashboard, media and dark mode", async ({
   const password = process.env.LAB_ADMIN_PASSWORD;
   if (!password) throw new Error("Lab admin password was not configured");
 
+  // Keep the theme deterministic regardless of the runner's OS setting.
+  await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("labadmin");
   await page.getByLabel("رمز عبور").fill(password);
