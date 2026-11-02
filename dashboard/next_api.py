@@ -809,6 +809,8 @@ async def capabilities(staff: Staff) -> dict:
             and config.BALE_BROADCAST_PAID_ENABLED
         ),
         "max_paid_calls": config.SHOP_BROADCAST_MAX_PAID_CALLS,
+        "wallet_adjustment_limit_irr": str(config.SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR),
+        "telegram_stars_refunds_enabled": config.TELEGRAM_STARS_REFUNDS_ENABLED,
         "media_photo_max_bytes": 10_000_000,
         "media_other_max_bytes": 50_000_000,
     }
@@ -904,18 +906,18 @@ async def refunds(staff: Staff, session: Db) -> list[dict]:
     """Review financial cases, never expose unverified refund confirmation."""
     require_staff(staff, "finance")
     records = (await session.execute(
-        select(ShopRefundCase, ShopOrder.platform, ShopOrder.total_irr)
+        select(ShopRefundCase, ShopOrder.platform, ShopOrder.total_irr, ShopOrder.provider)
         .join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
         .order_by(ShopRefundCase.id.desc()).limit(200)
     )).all()
     return [
         {
             "id": row.id, "order_id": row.order_id,
-            "platform": platform, "status": row.status,
+            "platform": platform, "provider": provider, "status": row.status,
             "reason": row.reason, "amount_irr": str(amount),
             "created_at": row.created_at.isoformat(),
         }
-        for row, platform, amount in records
+        for row, platform, amount, provider in records
     ]
 
 
