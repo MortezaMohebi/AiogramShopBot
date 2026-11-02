@@ -8,7 +8,14 @@ from utils.utils import get_sslipio_external_url, start_ngrok, hash_password
 
 load_dotenv(".env.bot.dev")
 RUNTIME_ENVIRONMENT = RuntimeEnvironment(os.environ.get("RUNTIME_ENVIRONMENT"))
-if RUNTIME_ENVIRONMENT == RuntimeEnvironment.DEV:
+# Prefer an explicit HTTPS host in production. An external IP lookup should
+# never be mandatory for installations hosted behind a known domain.
+explicit_webhook_host = os.environ.get("WEBHOOK_HOST", "").strip()
+if explicit_webhook_host:
+    if not explicit_webhook_host.startswith("https://"):
+        raise ValueError("WEBHOOK_HOST must use HTTPS.")
+    WEBHOOK_HOST = explicit_webhook_host.rstrip("/")
+elif RUNTIME_ENVIRONMENT == RuntimeEnvironment.DEV:
     WEBHOOK_HOST = start_ngrok()
 else:
     WEBHOOK_HOST = get_sslipio_external_url()

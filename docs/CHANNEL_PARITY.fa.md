@@ -67,3 +67,15 @@ MULTIBOT=false
 6. یکسان‌سازی نهایی منوی ثابت با حذف مسیر قدیمی کاتالوگ پس از Migration خرید.
 
 **نکته:** وضعیت «کدنویسی‌شده» با «PASS» فرق دارد. بدون اجرای تست‌ها هیچ مسیر Production-ready نیست.
+
+### دستورهای Smoke Test پیشنهادی (در محیط دارای Dependency)
+
+```bash
+python -m compileall -q channels services/shop_channel_catalog.py
+pytest -q tests/test_shop_channel_catalog.py tests/test_bale_channel_transport.py tests/test_telegram_channel_transport.py
+alembic upgrade head
+```
+
+تست Migration باید در دیتابیس آزمایشی مستقل اجرا شود؛ دستور بالا روی دیتابیس اصلی بدون Backup مجاز نیست. فایل‌های تست از Network استفاده نمی‌کنند، اما به Dependencies واقعی پروژه نیاز دارند.
+
+در Production، `WEBHOOK_HOST=https://your-domain.example` تنظیم شود تا نیازی به سرویس خارجی تشخیص IP نباشد. به‌دلیل وجود مسیر محرمانه بله، Access Log مربوط به URL باید در Reverse Proxy حذف یا Redact شود. کد فعلی در حالت Bale، Access Log داخلی Uvicorn را غیرفعال می‌کند.
