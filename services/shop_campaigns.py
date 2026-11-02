@@ -116,21 +116,38 @@ class ShopCampaignService:
         )
         candidates = results.all()
         successes, skipped = 0, 0
+
+        # Claim *all* selected rows before the first network call. This
+        # prevents a concurrent manager request from sending them again
+        # after the first message has released the database row locks.
+        for delivery, _ in candidates:
+            delivery.status = "sending"
+        if candidates:
+            campaign.status = "sending"
+            await session.commit()
+
         for delivery, identity in candidates:
-            # Recheck consent after a prepared recipient opts out.
-            if identity.is_blocked or not identity.allow_announcements:
+            # Load the current identity again after claiming each row:
+            # customers can unsubscribe after campaign approval.
+            fresh_identity = await session.scalar(
+                select(ShopIdentity).where(
+                    ShopIdentity.id == identity.id
+                ).execution_options(populate_existing=True)
+            )
+            if (
+                fresh_identity is None
+                or fresh_identity.is_blocked
+                or not fresh_identity.allow_announcements
+            ):
                 delivery.status = "skipped"
                 skipped += 1
                 await session.commit()
                 continue
-            delivery.status = "sending"
-            campaign.status = "sending"
-            await session.commit()
 
             try:
                 await send(
-                    Platform(identity.platform),
-                    identity.platform_user_id,
+                    Platform(fresh_identity.platform),
+                    fresh_identity.platform_user_id,
                     campaign.text,
                 )
             except Exception:
