@@ -15,13 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import (
     BotReply, InboundEvent, InlineAction, MediaAttachment, Platform,
 )
-from models.shop_content import Product, ProductMedia, Testimonial
+from models.shop_content import Product, ProductMedia, ShopCategory, Testimonial
 from services.shop_money import format_rials
 
 _PAGE_SIZE = 6
 _REVIEW_PAGE_SIZE = 3
 _MEDIA_PAGE_SIZE = 4
 _LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,18})\Z")
+_CATEGORY_PATTERN = re.compile(r"shop:category:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _PRODUCT_PATTERN = re.compile(r"shop:item:([1-9][0-9]{0,18})\Z")
 _REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _MEDIA_PATTERN = re.compile(r"shop:files:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
@@ -58,6 +59,11 @@ class CatalogFlow:
             match = _LIST_PATTERN.fullmatch(data)
             if match:
                 return await self._list_products(session, int(match.group(1)))
+            match = _CATEGORY_PATTERN.fullmatch(data)
+            if match:
+                return await self._list_products(
+                    session, int(match.group(2)), category_id=int(match.group(1))
+                )
             match = _PRODUCT_PATTERN.fullmatch(data)
             if match:
                 return await self._product(session, int(match.group(1)))
@@ -71,6 +77,8 @@ class CatalogFlow:
                 return await self._media(
                     session, int(match.group(1)), int(match.group(2))
                 )
+            if data == "shop:categories":
+                return await self._categories_or_products(session)
             if data.startswith("shop:"):
                 return BotReply(
                     "درخواست معتبر نیست. لطفاً دوباره از فهرست محصولات شروع کنید.",
@@ -80,18 +88,52 @@ class CatalogFlow:
 
         text = (event.text or "").strip()
         if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
-            return await self._list_products(session, 0)
+            return await self._categories_or_products(session)
         if event.platform == Platform.BALE and text.split(" ", 1)[0] == "/start":
-            return await self._list_products(session, 0)
+            return await self._categories_or_products(session)
         return None
 
+    async def _categories_or_products(self, session: AsyncSession) -> BotReply:
+        """Show published categories, or all products if no category exists."""
+        result = await session.execute(
+            select(ShopCategory)
+            .where(ShopCategory.is_published.is_(True))
+            .order_by(ShopCategory.position, ShopCategory.id)
+        )
+        categories = result.scalars().all()
+        if not categories:
+            return await self._list_products(session, 0)
+        rows = [
+            (_button(item.name, f"shop:category:{item.id}:0"),)
+            for item in categories
+        ]
+        rows.append((_button("همه محصولات", "shop:list:0"),))
+        return BotReply(
+            text="🗂️ دسته‌بندی محصولات را انتخاب کنید:",
+            rows=tuple(rows),
+        )
+
     async def _list_products(
-        self, session: AsyncSession, requested_page: int
+        self,
+        session: AsyncSession,
+        requested_page: int,
+        category_id: int | None = None,
     ) -> BotReply:
         """Render a bounded page of published products."""
         condition = Product.is_published.is_(True)
+        filters = [condition]
+        if category_id is not None:
+            selected = await session.scalar(
+                select(ShopCategory.id).where(
+                    ShopCategory.id == category_id,
+                    ShopCategory.is_published.is_(True),
+                )
+            )
+            if selected is None:
+                return BotReply("این دسته‌بندی قابل نمایش نیست.")
+            filters.append(Product.category_id == category_id)
         count_result = await session.execute(
-            select(func.count()).select_from(Product).where(condition)
+            select(func.count()).select_from(Product).where(*filters)
         )
         count = count_result.scalar_one()
         if count == 0:
@@ -101,7 +143,7 @@ class CatalogFlow:
         page = min(requested_page, last_page)
         results = await session.execute(
             select(Product)
-            .where(condition)
+            .where(*filters)
             .order_by(Product.position, Product.id)
             .offset(page * _PAGE_SIZE)
             .limit(_PAGE_SIZE)
@@ -112,12 +154,17 @@ class CatalogFlow:
             for product in products
         ]
         controls = []
+        prefix = (
+            f"shop:category:{category_id}" if category_id is not None
+            else "shop:list"
+        )
         if page > 0:
-            controls.append(_button("صفحه قبل", f"shop:list:{page - 1}"))
+            controls.append(_button("صفحه قبل", f"{prefix}:{page - 1}"))
         if page < last_page:
-            controls.append(_button("صفحه بعد", f"shop:list:{page + 1}"))
+            controls.append(_button("صفحه بعد", f"{prefix}:{page + 1}"))
         if controls:
             rows.append(tuple(controls))
+        rows.append((_button("🗂️ دسته‌بندی‌ها", "shop:categories"),))
 
         return BotReply(
             text=f"🛍 محصولات فروشگاه\nصفحه {page + 1} از {last_page + 1}",

@@ -22,9 +22,17 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create the independent product, media, testimonial and order tables."""
     op.create_table(
+        "shop_categories",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("name", sa.String(255), nullable=False, unique=True),
+        sa.Column("position", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("is_published", sa.Boolean, nullable=False, server_default=sa.false()),
+    )
+    op.create_table(
         "shop_products",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("sku", sa.String(64), nullable=False, unique=True),
+        sa.Column("category_id", sa.Integer, sa.ForeignKey("shop_categories.id", ondelete="SET NULL")),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=False),
         sa.Column("price", sa.Numeric(18, 0), nullable=False),
@@ -99,3 +107,4 @@ def downgrade() -> None:
     op.drop_table("shop_testimonials")
     op.drop_table("shop_product_media")
     op.drop_table("shop_products")
+    op.drop_table("shop_categories")

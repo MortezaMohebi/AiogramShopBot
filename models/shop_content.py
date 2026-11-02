@@ -20,6 +20,24 @@ from markupsafe import Markup, escape
 from models.base import Base
 
 
+class ShopCategory(Base):
+    """Dynamic category configured entirely through SQLAdmin."""
+
+    __tablename__ = "shop_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    products: Mapped[list["Product"]] = relationship(back_populates="category")
+
+    def __repr__(self) -> str:
+        """Display the category name in the admin."""
+        return self.name
+
+
 class Product(Base):
     """One editable product, not one database record per unit of stock."""
 
@@ -27,6 +45,10 @@ class Product(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sku: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shop_categories.id", ondelete="SET NULL")
+    )
+    category: Mapped[ShopCategory | None] = relationship(back_populates="products")
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
@@ -168,6 +190,27 @@ class ShopOrder(Base):
         return f"Order #{self.id}"
 
 
+class ShopCategoryAdmin(ModelView, model=ShopCategory):
+    """CRUD for user-defined categories; never a static Enum."""
+
+    name = "دسته‌بندی"
+    name_plural = "دسته‌بندی‌های فروشگاه"
+    category = "کاتالوگ"
+    icon = "fa-solid fa-layer-group"
+    column_list = [
+        ShopCategory.id, ShopCategory.name, ShopCategory.position,
+        ShopCategory.is_published,
+    ]
+    column_searchable_list = [ShopCategory.name]
+    column_sortable_list = [ShopCategory.position, ShopCategory.name]
+    column_labels = {
+        ShopCategory.name: "نام دسته‌بندی",
+        ShopCategory.position: "ترتیب نمایش",
+        ShopCategory.is_published: "انتشار",
+    }
+    can_delete = False
+
+
 class ProductAdmin(ModelView, model=Product):
     """Manage the product catalogue without modifying old sales data."""
 
@@ -176,13 +219,14 @@ class ProductAdmin(ModelView, model=Product):
     category = "کاتالوگ"
     icon = "fa-solid fa-box"
     column_list = [
-        Product.id, Product.name, Product.sku, Product.price,
+        Product.id, Product.name, Product.sku, Product.category_id, Product.price,
         Product.stock_quantity, Product.position, Product.is_published,
     ]
     column_searchable_list = [Product.name, Product.sku]
     column_sortable_list = [Product.position, Product.price, Product.id]
     column_labels = {
         Product.sku: "کد محصول",
+        Product.category_id: "دسته‌بندی",
         Product.name: "نام محصول",
         Product.description: "توضیحات",
         Product.price: "قیمت (ریال)",
