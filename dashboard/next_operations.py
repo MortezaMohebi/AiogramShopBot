@@ -124,7 +124,10 @@ async def upload_media(
 
     saved = None
     try:
-        async with request.form(max_files=1, max_fields=10, max_part_size=4096) as form:
+        # Up to 2,000 UTF-8 Persian characters need more than 4 KiB.
+        async with request.form(
+            max_files=1, max_fields=10, max_part_size=8192
+        ) as form:
             position = bounded_number(form.get("position", "0"))
             caption = form.get("caption", "")
             if not isinstance(caption, str):
