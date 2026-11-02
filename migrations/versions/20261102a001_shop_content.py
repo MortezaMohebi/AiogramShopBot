@@ -16,7 +16,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create the new catalog, media, testimonial and menu tables."""
+    """Create the new catalog, media, and testimonial tables."""
     op.create_table(
         "shop_products",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -51,23 +51,10 @@ def upgrade() -> None:
         sa.Column("is_approved", sa.Boolean, nullable=False, server_default=sa.false()),
         sa.CheckConstraint("text IS NOT NULL OR media_storage_key IS NOT NULL", name="ck_shop_testimonial_content"),
     )
-    op.create_table(
-        "shop_menu_items",
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("title", sa.String(120), nullable=False),
-        sa.Column("action", sa.String(40), nullable=False),
-        sa.Column("action_value", sa.String(512)),
-        sa.Column("parent_id", sa.Integer, sa.ForeignKey("shop_menu_items.id")),
-        sa.Column("platform", sa.String(12), nullable=False, server_default="all"),
-        sa.Column("position", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("is_enabled", sa.Boolean, nullable=False, server_default=sa.true()),
-        sa.CheckConstraint("platform IN ('all', 'telegram', 'bale')", name="ck_shop_menu_platform"),
-    )
 
 
 def downgrade() -> None:
-    """Drop only tables introduced by this migration."""
-    op.drop_table("shop_menu_items")
+    """Drop only the catalog tables introduced by this migration."""
     op.drop_table("shop_testimonials")
     op.drop_table("shop_product_media")
     op.drop_table("shop_products")

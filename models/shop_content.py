@@ -64,23 +64,6 @@ class Testimonial(Base):
     )
 
 
-class ShopMenuItem(Base):
-    """A menu item configured by an administrator, not a static keyboard."""
-
-    __tablename__ = "shop_menu_items"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(String(120), nullable=False)
-    action: Mapped[str] = mapped_column(String(40), nullable=False)
-    action_value: Mapped[str | None] = mapped_column(String(512))
-    parent_id: Mapped[int | None] = mapped_column(ForeignKey("shop_menu_items.id"))
-    platform: Mapped[str] = mapped_column(String(12), nullable=False, default="all")
-    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    __table_args__ = (
-        CheckConstraint("platform IN ('all', 'telegram', 'bale')", name="ck_shop_menu_platform"),
-    )
-
-
 class ProductAdmin(ModelView, model=Product):
     """Provide product CRUD without changing legacy checkout tables."""
 
@@ -121,21 +104,4 @@ class TestimonialAdmin(ModelView, model=Testimonial):
         Testimonial.product_id: "محصول", Testimonial.text: "متن",
         Testimonial.media_storage_key: "مسیر رسانه",
         Testimonial.position: "ترتیب", Testimonial.is_approved: "تأیید شده",
-    }
-
-
-class ShopMenuItemAdmin(ModelView, model=ShopMenuItem):
-    """Manage the next-generation database-driven bot menu."""
-
-    name = "گزینه منو"
-    name_plural = "منوهای ربات"
-    category = "تنظیمات"
-    column_labels = {
-        ShopMenuItem.title: "عنوان دکمه",
-        ShopMenuItem.action: "نوع عملکرد",
-        ShopMenuItem.action_value: "مقصد",
-        ShopMenuItem.parent_id: "منوی والد",
-        ShopMenuItem.platform: "پیام‌رسان",
-        ShopMenuItem.position: "ترتیب",
-        ShopMenuItem.is_enabled: "فعال",
     }

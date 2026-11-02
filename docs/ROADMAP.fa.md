@@ -8,7 +8,7 @@
 | F1 | داشبورد SQLAdmin فارسی و RTL، منو و عنوان فیلدهای فارسی | IN PROGRESS (templates and labels committed; runtime visual review outstanding) |
 | F2 | محصول مستقل و داینامیک، فایل و رضایت مستقل، CRUD مدیریتی | IN PROGRESS (models, admin and Alembic migration committed; upload/render not wired) |
 | F3 | Media upload امن، Preview و ارسال فایل با Cache تفکیکی هر Bot | PLANNED |
-| F4 | Menu Builder داینامیک از دیتابیس و نمایش به‌روز بدون Restart | IN PROGRESS (menu records/admin available; bot handlers still static) |
+| F4 | منوی اصلی ثابت با متن فارسی؛ دکمه‌های کاتالوگ و جزئیات محصول از دیتابیس | PLANNED (بدون Menu Builder؛ صرفاً اتصال Catalog به Handlerهای موجود) |
 | F5 | Telegram adapter و اتصال واقعی کاتالوگ/رسانه/منو | PLANNED |
 | F6 | Bale adapter، تست میدانی و سازگاری انواع پیام و دکمه | PLANNED |
 | F7 | سفارش‌های مشترک و Inventory transaction-safe، مبالغ Decimal | PLANNED |
@@ -25,7 +25,7 @@
 
 ## ترتیب اولویت
 
-F1 و F2 پایه داشبورد هستند. F3/F4 راه ارائه کاتالوگ پویا را باز می‌کنند. سپس F5 و F6 باید روی یک Core مشترک قابل تست اجرا شوند. F7 و F8 تنها بعد از تعیین نوع محصول و روش واقعی پرداخت تکمیل می‌شوند. F9 از ابتدا به‌صورت افزایشی اعمال می‌شود.
+F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محصول به منوهای موجود در F4 راه ارائه کاتالوگ پویا را باز می‌کنند. سپس F5 و F6 باید روی یک Core مشترک قابل تست اجرا شوند. F7 و F8 تنها بعد از تعیین نوع محصول و روش واقعی پرداخت تکمیل می‌شوند. F9 از ابتدا به‌صورت افزایشی اعمال می‌شود.
 
 ## مواردی که نباید ناآگاهانه حذف شوند
 
