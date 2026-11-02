@@ -1,0 +1,228 @@
+# Isolated integration lab. NEVER use production volumes, credentials or bots.
+# Start with: python scripts/test_lab.py up
+name: dual-messenger-shop-lab
+
+x-python-env: &python-env
+  SHOP_TEST_LAB: "1"
+  RUNTIME_ENVIRONMENT: "PROD"
+  WEBHOOK_HOST: "https://disabled.invalid"
+  TELEGRAM_UPDATE_MODE: "webhook"
+  WEBAPP_HOST: "0.0.0.0"
+  WEBAPP_PORT: "5000"
+  ADMIN_ID_LIST: ""
+  POSTGRES_USER: "shop_lab"
+  POSTGRES_PASSWORD: "${LAB_POSTGRES_PASSWORD:?Run python scripts/test_lab.py init}"
+  POSTGRES_DB: "shop_lab_test"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_SQL_ECHO: "false"
+  REDIS_HOST: "redis"
+  REDIS_PASSWORD: "${LAB_REDIS_PASSWORD:?Run python scripts/test_lab.py init}"
+  JWT_SECRET_KEY: "${LAB_JWT_SECRET:?Run python scripts/test_lab.py init}"
+  SHOP_MEDIA_ROOT: "/bot/media_data"
+  SHOP_MEDIA_MAX_BYTES: "50000000"
+  SHOP_ADMIN_SECURE_COOKIES: "true"
+  NEXT_ADMIN_BRIDGE_ENABLED: "true"
+  NEXT_ADMIN_BRIDGE_SECRET: "${LAB_BRIDGE_SECRET:?Run python scripts/test_lab.py init}"
+  TELEGRAM_FIAT_CHECKOUT_ENABLED: "false"
+  TELEGRAM_STARS_CHECKOUT_ENABLED: "false"
+  TELEGRAM_STARS_REFUNDS_ENABLED: "false"
+  BALE_WALLET_CHECKOUT_ENABLED: "false"
+  BALE_BROADCAST_MODE: "standard"
+  BALE_BROADCAST_PAID_ENABLED: "false"
+  BALE_BROADCAST_PREPARE_CHAT_ID: "0"
+  SHOP_BROADCAST_WORKER_ENABLED: "false"
+  SHOP_CAMPAIGN_DISPATCH_ENABLED: "false"
+  SHOP_BROADCAST_MAX_PAID_CALLS: "0"
+  SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR: "0"
+  CRYPTO_FORWARDING_MODE: "false"
+  TELEGRAM_API_MODE: "direct"
+  # All messaging credentials are empty on purpose.
+  TOKEN: ""
+  BALE_BOT_TOKEN: ""
+  BALE_WALLET_PROVIDER_TOKEN: ""
+  TELEGRAM_FIAT_PROVIDER_TOKEN: ""
+  TELEGRAM_WORKER_SECRET: ""
+  BALE_WEBHOOK_SECRET: ""
+  KRYPTO_EXPRESS_API_KEY: ""
+
+x-seed-env: &seed-env
+  <<: *python-env
+  LAB_ADMIN_USERNAME: "labadmin"
+  LAB_ADMIN_PASSWORD: "${LAB_ADMIN_PASSWORD:?Run python scripts/test_lab.py init}"
+  LAB_CONTENT_PASSWORD: "${LAB_CONTENT_PASSWORD:?Run python scripts/test_lab.py init}"
+  LAB_SALES_PASSWORD: "${LAB_SALES_PASSWORD:?Run python scripts/test_lab.py init}"
+  LAB_MARKETING_PASSWORD: "${LAB_MARKETING_PASSWORD:?Run python scripts/test_lab.py init}"
+  LAB_FINANCE_PASSWORD: "${LAB_FINANCE_PASSWORD:?Run python scripts/test_lab.py init}"
+  LAB_VIEWER_PASSWORD: "${LAB_VIEWER_PASSWORD:?Run python scripts/test_lab.py init}"
+
+x-python-service: &python-service
+  build:
+    context: .
+    dockerfile: Dockerfile.test
+  environment: *python-env
+  networks:
+    - private
+  init: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: "shop_lab"
+      POSTGRES_PASSWORD: "${LAB_POSTGRES_PASSWORD:?Run python scripts/test_lab.py init}"
+      POSTGRES_DB: "shop_lab_test"
+    volumes:
+      - pg_test:/var/lib/postgresql
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$${POSTGRES_USER}\" -d \"$$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    environment:
+      REDIS_PASSWORD: "${LAB_REDIS_PASSWORD:?Run python scripts/test_lab.py init}"
+    command: ["/bin/sh", "-ec", "exec redis-server --save '' --appendonly no --requirepass \"$$${REDIS_PASSWORD}\""]
+    networks:
+      - private
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *python-service
+    environment: *seed-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-ec", "alembic upgrade head && python -m scripts.test_lab_seed"]
+    volumes:
+      - media_test:/bot/media_data
+    restart: "no"
+
+  api:
+    <<: *python-service
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - uvicorn
+      - scripts.test_lab_app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    volumes:
+      - media_test:/bot/media_data
+    expose:
+      - "5000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:5000/__lab/health', timeout=3).status == 200"
+      interval: 8s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  next-admin:
+    build:
+      context: ./dashboard-next
+      dockerfile: Dockerfile.test
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: "production"
+      NEXT_TELEMETRY_DISABLED: "1"
+      SHOP_FASTAPI_INTERNAL_URL: "http://api:5000"
+      NEXT_ADMIN_PUBLIC_ORIGIN: "https://localhost:8443"
+      NEXT_ADMIN_BRIDGE_SECRET: "${LAB_BRIDGE_SECRET:?Run python scripts/test_lab.py init}"
+      NEXT_ADMIN_SESSION_SECRET: "${LAB_SESSION_SECRET:?Run python scripts/test_lab.py init}"
+    expose:
+      - "3000"
+    networks:
+      - private
+      - front
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 8s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    depends_on:
+      next-admin:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - ./tests/docker/Caddyfile.lab:/etc/caddy/Caddyfile:ro
+      - caddy_test:/data
+      - caddy_config_test:/config
+    networks:
+      - front
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  pytest:
+    <<: *python-service
+    profiles: ["qa"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "pytest", "-q", "tests"]
+    restart: "no"
+
+  smoke:
+    <<: *python-service
+    profiles: ["qa"]
+    environment: *seed-env
+    depends_on:
+      api:
+        condition: service_healthy
+      next-admin:
+        condition: service_healthy
+    command: ["python", "-m", "scripts.test_lab_smoke"]
+    restart: "no"
+
+volumes:
+  pg_test:
+  media_test:
+  caddy_test:
+  caddy_config_test:
+
+networks:
+  private:
+    internal: true
+  front:
+    driver: bridge
