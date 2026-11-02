@@ -11,8 +11,10 @@ from sqladmin import Admin
 import config
 from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
+from fastapi.staticfiles import StaticFiles
 
 from admin import authentication_backend
+from dashboard.persian import localize_model_view
 from db import create_db_and_tables, engine
 import uvicorn
 from fastapi.responses import JSONResponse
@@ -111,21 +113,32 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-admin = Admin(app=app, engine=engine, authentication_backend=authentication_backend)
-admin.add_model_view(UserAdmin)
-admin.add_model_view(BuyAdmin)
-admin.add_model_view(ShippingOptionAdmin)
-admin.add_model_view(CouponAdmin)
-admin.add_model_view(CategoryAdmin)
-admin.add_model_view(SubcategoryAdmin)
-admin.add_model_view(ItemAdmin)
-admin.add_model_view(DepositAdmin)
-admin.add_model_view(BuyItemAdmin)
-admin.add_model_view(PaymentAdmin)
-admin.add_model_view(CartAdmin)
-admin.add_model_view(CartItemAdmin)
-admin.add_model_view(ReferralBonusAdmin)
-admin.add_model_view(ReviewAdmin)
+app.mount(
+    "/shop-assets",
+    StaticFiles(directory=Path(__file__).resolve().parent / "assets"),
+    name="shop-assets",
+)
+admin = Admin(
+    app=app,
+    engine=engine,
+    authentication_backend=authentication_backend,
+    title="مدیریت فروشگاه",
+    templates_dir=str(Path(__file__).resolve().parent / "templates"),
+)
+admin.add_model_view(localize_model_view(UserAdmin))
+admin.add_model_view(localize_model_view(BuyAdmin))
+admin.add_model_view(localize_model_view(ShippingOptionAdmin))
+admin.add_model_view(localize_model_view(CouponAdmin))
+admin.add_model_view(localize_model_view(CategoryAdmin))
+admin.add_model_view(localize_model_view(SubcategoryAdmin))
+admin.add_model_view(localize_model_view(ItemAdmin))
+admin.add_model_view(localize_model_view(DepositAdmin))
+admin.add_model_view(localize_model_view(BuyItemAdmin))
+admin.add_model_view(localize_model_view(PaymentAdmin))
+admin.add_model_view(localize_model_view(CartAdmin))
+admin.add_model_view(localize_model_view(CartItemAdmin))
+admin.add_model_view(localize_model_view(ReferralBonusAdmin))
+admin.add_model_view(localize_model_view(ReviewAdmin))
 
 app.include_router(processing_router)
 
