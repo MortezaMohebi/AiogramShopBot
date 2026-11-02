@@ -145,3 +145,7 @@ Coupon، Quote، ثبت درخواست بدون پرداخت، تاریخچه و
 | رمزارز و برداشت | Legacy تلگرام؛ اختیاری | عمداً پشتیبانی نمی‌شود |
 
 **همه موارد بالایی کدنویسی شده و هنوز تست و Deploy نشده‌اند.** [گزارش فاز ۵](PHASE5_ENGAGEMENT.fa.md)
+
+## فاز ۵ — توانمندی‌های غیررمزارزی جدید
+
+کدهای Store Credit ریالی، Referral، Consent، Broadcast و Analytics در Core مشترک برای Telegram و Bale ثبت شده‌اند. این موارد تست API واقعی ندارند و Broadcast پیش‌فرض غیرفعال است. [جزئیات فاز ۵](PHASE5_PARITY.fa.md)

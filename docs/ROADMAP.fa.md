@@ -51,3 +51,7 @@ F1 و F2 پایه داشبورد هستند. F3 و اتصال فهرست محص�
 ## گزارش فاز ۵
 
 [اعتبار داخلی، Referral، ارسال اختیاری و RBAC](PHASE5_ENGAGEMENT.fa.md)
+
+## مستند برابری قابلیت‌ها — فاز ۵
+
+[اعتبار داخلی، Referral، Broadcast و Analytics](PHASE5_PARITY.fa.md)

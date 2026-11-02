@@ -64,3 +64,12 @@
 - [ ] اجرای تمامی تست‌های مخزن و کنترل خطاهای احتمالی، طبق تصمیم پروژه در مرحله نهایی.
 - [ ] تأیید کامل اتصالات Telegram/Bale، CORS/CSRF/Auth داشبورد، Migration و Reconciliation روی DB آزمایشی.
 - [ ] اثبات ظرفیت Rate Limiting، امنیت ارسال‌های Unknown، عدم تکرار Reward و کنترل بازپرداخت واقعی.
+
+## فاز ۵ — قابلیت‌های دوکاناله
+
+- [x] کیف پول داخلی ریالی با Ledger و Idempotency به هر دو کانال در کد متصل شد.
+- [x] Referral اختیاری، Consent و Campaign Outbox برای هر دو پیام‌رسان ثبت شد.
+- [x] RBAC و صفحه‌های مالی/کمپین/گزارش با کنترل نقش ثبت شدند.
+- [x] ارسال واقعی کمپین با `SHOP_CAMPAIGN_DISPATCH_ENABLED=false` به‌صورت پیش‌فرض بسته شد.
+- [ ] تست‌های `test_shop_engagement.py` و تست SQLite/PostgreSQL هم‌زمان اجرا شوند.
+- [ ] تأیید امنیت و عدم هم‌پوشانی Handlerهای Legacy و مشترک، قبل از Merge.
