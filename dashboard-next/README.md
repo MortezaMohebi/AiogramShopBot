@@ -29,8 +29,10 @@ query, body hash, staff ID and session version; it also checks actual staff
 `is_active` and `session_version` in PostgreSQL on each call. Login is
 throttled in Redis. A role change or session revocation invalidates access.
 
-Public Next.js routes are limited to login/logout. All data mutations are
-server actions, subjected to Next.js Origin checks and backend role validation.
+Public Next.js routes comprise login/logout and **authenticated** upload/preview
+handlers. All other data mutations use server actions. The upload handler
+checks exact HTTPS Origin, signed staff identity, role and a hard 50.1 MB
+request ceiling before forwarding byte-for-byte signed multipart to FastAPI.
 Never put backend credentials in a `NEXT_PUBLIC_` setting.
 
 ## Local integration (after final approval)
@@ -41,11 +43,14 @@ Never put backend credentials in a `NEXT_PUBLIC_` setting.
    `SHOP_FASTAPI_INTERNAL_URL=http://localhost:5000` for local dev and
    copy exactly the backend bridge secret into `NEXT_ADMIN_BRIDGE_SECRET`.
    Use a **different** 32+ character `NEXT_ADMIN_SESSION_SECRET`.
-3. `npm install` from `dashboard-next`, then `npm run typecheck`,
-   `npm run build`, `npm run dev`.
-4. Sign in with an account provisioned by
+3. Configure `NEXT_ADMIN_PUBLIC_ORIGIN` to the exact admin HTTPS origin
+   (such as `https://admin.example.com`, without trailing slash).
+   At the ingress/proxy, allow a **50,100,000-byte** upload request body.
+4. Generate and review `package-lock.json`, use `npm ci`, then
+   `npm run typecheck`, `npm run lint`, `npm run build`, `npm run dev`.
+5. Sign in with an account provisioned by
    `python scripts/manage_shop_staff.py add <username> --role superadmin`.
-5. Test all CRUD, role isolation, session revocation and RTL behavior against
+6. Test all CRUD, role isolation, session revocation and RTL behavior against
    an **isolated** PostgreSQL/Redis database; do not point a development UI
    at production.
 
@@ -64,21 +69,27 @@ imports, Persian translations and existing access controls.
 - /dashboard — actual KPIs / channel comparison / order highlights
 - /products and /products/[id]/edit — live product CRUD
 - /categories — live category CRUD
-- /orders, /customers — scoped, read-only operational tables
+- /orders — scoped orders, plus audited accept/reject of unpaid manual orders
+- /customers — scoped, read-only customer identities
 - /campaigns — draft creation, audited approval/start/pause/resume
-- /campaigns/[id] — uncertain delivery evidence/reconciliation
+- /campaigns/[id] — evidence/reconciliation, draft attachment upload,
+  private preview, draft deletion, and guarded Bale private-chat preparation
 - /reports — separate IRR, store credit and XTR
-- /settings — mutable welcome/FAQ/help/shop name
+- /settings — editable welcome/FAQ/help/shop name and referral reward policy
 - /shipping and /coupons — live merchant CRUD, exact IRR charges
-- /media — read-only metadata, legacy private uploader fallback
-- /reviews — read-only testimonial review queue
-- /finance — read-only wallets and refund case metadata
+- /media — bounded native upload, private preview, caption/order editing,
+  approve/unpublish and delete-only-when-unpublished
+- /reviews — native text/file upload, approval, revocation and deletion
+- /finance — live store-credit ledger and capped/idempotent manual adjustments,
+  provider-verified manual refunds, merchant-credit refunds and opt-in Stars API
+- /staff — superadmin account creation, roles, disablement and password rotation
 
-**Intentional gradual replacement:** heavy 50 MB file upload, media moderation,
-refund confirmation, sensitive merchant credit adjustments, staff provisioning,
-old Telegram Legacy transaction history stay within
-their existing guarded SQLAdmin/CLI pathways. Do not claim those features have
-migrated until complete BFF APIs and tests exist.
+**Source migration scope:** the Next.js forms and corresponding signed Python
+endpoints for uploads, moderation, financial cases, staff, manual order decisions
+and referral settings are implemented. **They are not yet production accepted.**
+Old Telegram legacy transaction history, migration/deployment and provider live
+validation remain separate. Retain SQLAdmin as a tested fallback until the
+entire new dashboard passes real integration and browser security QA.
 
 ## Deployment
 
@@ -92,6 +103,30 @@ The deployment profile and root `NEXT_ADMIN_BRIDGE_ENABLED` flag both
 remain disabled by default. **No real bots, payments or migrations have run.**
 
 Production hardening TODO: generate/review `package-lock.json` and use
-`npm ci` before production; verify HMAC/session and login throttling in
-integration tests, role penetration tests, build/typecheck, RTL browser QA
-and Content Security Policy with the final reverse proxy.
+`npm ci` before production; verify HMAC/session/login throttling,
+full 10/50 MB multipart ingestion, permission/isolation, durable financial
+cases, build/typecheck/lint, RTL browser QA and Content Security Policy with
+the final reverse proxy. Added isolated regression source under
+`tests/test_next_admin_operations_offline.py`; execution still pending.
+
+## Operations endpoint and security design
+
+```text
+Browser (HTTPS, RTL, host-only staff cookie)
+  -> Next.js Route Handler /api/admin/upload?target=...
+     -> exact Origin + authenticated role + total body <=50.1 MB
+     -> HMAC(SHA256 of the identical multipart bytes)
+  -> FastAPI signed /internal/admin/v1/upload/{target}
+     -> live ShopStaff RBAC + body limit + media signature detection
+     -> private media file (0600) + database metadata (unpublished)
+  -> Next.js authenticated /api/admin/preview/{kind}/{id}
+     -> signed FastAPI FileResponse (no-store, sandbox, nosniff)
+
+Sensitive Server Actions (orders, wallet, refund, staff, campaigns)
+  -> signed Python bridge -> guarded existing services and audit records
+```
+
+**No direct browser-to-storage URLs, provider tokens, private file keys,
+PostgreSQL credentials or merchant financial secrets.** The HMAC bridge is
+opt-in, request-limited and checks each database staff role/version. No server
+component should bypass the authoritative Python services.
