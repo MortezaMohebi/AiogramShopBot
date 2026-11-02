@@ -1,0 +1,103 @@
+"""Route Bale wallet events to the shared or preserved legacy payment flow.
+
+The independent `inquireTransaction` check is mandatory for new orders.
+Neither Bale nor Telegram shares raw numeric customer IDs with the other.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from channels.bale import BaleTransport
+from channels.contracts import Platform
+from models.shop_payment import ShopPaymentAttempt
+from services.bale_wallet import BaleWalletService, CheckoutRejected
+from services.shop_payments import PaymentRejected, ShopPaymentService
+
+
+async def _is_new_intent(session: AsyncSession, payload: Any) -> bool:
+    """Identify a multi-line shop invoice without routing it as legacy stock."""
+    if not isinstance(payload, str) or not payload:
+        return False
+    found = await session.scalar(
+        select(ShopPaymentAttempt.id).where(
+            ShopPaymentAttempt.payload == payload,
+            ShopPaymentAttempt.platform == Platform.BALE.value,
+        )
+    )
+    return found is not None
+
+
+async def validate_bale_precheckout(
+    session: AsyncSession,
+    query: Mapping[str, Any],
+) -> tuple[bool, str | None]:
+    """Check the correct order ledger before accepting Bale wallet payment."""
+    if await _is_new_intent(session, query.get("invoice_payload")):
+        payer = query.get("from")
+        payer_id = payer.get("id") if isinstance(payer, Mapping) else None
+        return await ShopPaymentService.precheckout(
+            session,
+            platform=Platform.BALE,
+            payer_id=payer_id,
+            payload=query.get("invoice_payload"),
+            currency=query.get("currency"),
+            amount=query.get("total_amount"),
+        )
+    # Old direct-item invoices issued before migration may still be payable;
+    # preserve their settlement path without mixing their order models.
+    return await BaleWalletService.validate_pre_checkout(session, query)
+
+
+async def settle_bale_payment(
+    session: AsyncSession,
+    transport: BaleTransport,
+    *,
+    payer_id: int,
+    chat_id: int,
+    payment: Mapping[str, Any],
+):
+    """Verify native wallet evidence and commit the correct ledger once."""
+    if not await _is_new_intent(session, payment.get("invoice_payload")):
+        return await BaleWalletService.confirm_success(
+            session,
+            transport,
+            payer_id=payer_id,
+            chat_id=chat_id,
+            payment=payment,
+        )
+
+    tx_id = payment.get("telegram_payment_charge_id")
+    reference = payment.get("provider_payment_charge_id")
+    amount = payment.get("total_amount")
+    if (
+        not isinstance(tx_id, str) or not tx_id
+        or not isinstance(reference, str) or not reference
+        or type(amount) is not int or amount <= 0
+    ):
+        raise PaymentRejected("شناسه یا مبلغ رسید کیف پول معتبر نیست.")
+    evidence = await transport.inquire_transaction(tx_id)
+    if not (
+        evidence.get("status") == "paid"
+        and str(evidence.get("id")) == tx_id
+        and type(evidence.get("userID")) is int
+        and evidence["userID"] == payer_id
+        and type(evidence.get("amount")) is int
+        and evidence["amount"] == amount
+    ):
+        raise PaymentRejected("استعلام مستقل کیف پول بله با رسید مطابقت ندارد.")
+
+    return await ShopPaymentService.settle(
+        session,
+        platform=Platform.BALE,
+        payer_id=payer_id,
+        chat_id=chat_id,
+        payload=payment.get("invoice_payload"),
+        currency=payment.get("currency"),
+        amount=amount,
+        charge_id=tx_id,
+        provider_charge_id=reference,
+    )
