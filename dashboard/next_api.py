@@ -825,14 +825,7 @@ async def shipping(staff: Staff, session: Db) -> list[dict]:
         .order_by(ShopShippingMethod.position, ShopShippingMethod.id)
         .limit(1000)
     )
-    return [
-        {
-            "id": row.id, "name": row.name,
-            "price_irr": str(row.price_irr), "is_active": row.is_active,
-            "position": row.position,
-        }
-        for row in result.scalars()
-    ]
+    return [shipping_data(row) for row in result.scalars()]
 
 
 @router.get("/coupons")
@@ -842,15 +835,7 @@ async def coupons(staff: Staff, session: Db) -> list[dict]:
     result = await session.execute(
         select(ShopCoupon).order_by(ShopCoupon.id.desc()).limit(1000)
     )
-    return [
-        {
-            "id": row.id, "code": row.code,
-            "type": row.discount_type, "value": str(row.value),
-            "used": row.used_count, "max_uses": row.max_uses,
-            "is_active": row.is_active,
-        }
-        for row in result.scalars()
-    ]
+    return [coupon_data(row) for row in result.scalars()]
 
 
 @router.get("/refunds")
@@ -950,3 +935,133 @@ async def reconcile_campaign(
     except CampaignRejected as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
     return {"ok": True}
+
+
+class ShippingPayload(BaseModel):
+    """Editable merchant shipping method with precise integer-rial fees."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    price_irr: int = Field(ge=0, le=PRICE_LIMIT)
+    position: int = Field(default=0, ge=0, le=1_000_000)
+    is_active: bool = True
+
+
+class CouponPayload(BaseModel):
+    """Marketing-controlled discount; never exposes wallet credit fields."""
+
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=3, max_length=32)
+    discount_type: Literal["fixed", "percent"]
+    value: int = Field(ge=1, le=PRICE_LIMIT)
+    minimum_subtotal_irr: int = Field(default=0, ge=0, le=PRICE_LIMIT)
+    max_uses: int | None = Field(default=None, ge=1)
+    expires_at: datetime | None = None
+    is_active: bool = True
+
+
+def shipping_data(item: ShopShippingMethod) -> dict:
+    """Serialize money in strings to preserve JavaScript integer precision."""
+    return {
+        "id": item.id, "name": item.name,
+        "price_irr": str(item.price_irr), "position": item.position,
+        "is_active": item.is_active,
+    }
+
+
+def coupon_data(item: ShopCoupon) -> dict:
+    """Expose meaningful coupon attributes while never writing usage_count."""
+    return {
+        "id": item.id, "code": item.code,
+        "discount_type": item.discount_type, "value": str(item.value),
+        "minimum_subtotal_irr": str(item.minimum_subtotal_irr),
+        "max_uses": item.max_uses, "used_count": item.used_count,
+        "expires_at": item.expires_at.isoformat() if item.expires_at else None,
+        "is_active": item.is_active,
+    }
+
+
+@router.post("/shipping", status_code=201)
+async def add_shipping(
+    payload: ShippingPayload, staff: Staff, session: Db
+) -> dict:
+    """Create an active or inactive checkout shipping option via the database."""
+    require_staff(staff, "sales")
+    item = ShopShippingMethod(**{
+        **payload.model_dump(), "price_irr": payload.price_irr,
+    })
+    session.add(item)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Shipping method exists") from None
+    await session.refresh(item)
+    return {"id": item.id}
+
+
+@router.patch("/shipping/{method_id}")
+async def edit_shipping(
+    method_id: int, payload: ShippingPayload, staff: Staff, session: Db
+) -> dict:
+    """Update a method without changing past order shipping snapshots."""
+    require_staff(staff, "sales")
+    item = await session.get(ShopShippingMethod, method_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Shipping method not found")
+    for key, value in payload.model_dump().items():
+        setattr(item, key, value)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Shipping method exists") from None
+    return {"id": item.id}
+
+
+def normalize_coupon(payload: CouponPayload) -> dict:
+    """Enforce uppercase promo codes, bounded percentage and safe expiry."""
+    import re
+
+    code = payload.code.strip().upper()
+    if re.fullmatch(r"[A-Z0-9_-]{3,32}", code) is None:
+        raise HTTPException(status_code=422, detail="Invalid coupon code")
+    if payload.discount_type == "percent" and payload.value > 100:
+        raise HTTPException(status_code=422, detail="Percent cannot exceed 100")
+    return {**payload.model_dump(), "code": code}
+
+
+@router.post("/coupons", status_code=201)
+async def add_coupon(
+    payload: CouponPayload, staff: Staff, session: Db
+) -> dict:
+    """Create only a merchant-funded coupon with default unused counter."""
+    require_staff(staff, "marketing")
+    item = ShopCoupon(**normalize_coupon(payload))
+    session.add(item)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Coupon code exists") from None
+    await session.refresh(item)
+    return {"id": item.id}
+
+
+@router.patch("/coupons/{coupon_id}")
+async def edit_coupon(
+    coupon_id: int, payload: CouponPayload, staff: Staff, session: Db
+) -> dict:
+    """Edit a rule; consumed-count remains immutable through this interface."""
+    require_staff(staff, "marketing")
+    item = await session.get(ShopCoupon, coupon_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Coupon not found")
+    for key, value in normalize_coupon(payload).items():
+        setattr(item, key, value)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Coupon code exists") from None
+    return {"id": item.id}
