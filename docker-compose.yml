@@ -54,6 +54,28 @@ services:
     command: ["python", "-m", "workers.shop_broadcast"]
     restart: unless-stopped
 
+  # Separate Persian Next.js dashboard; disabled until integration QA.
+  # One shared app for all staff users, preserving Python as the business core.
+  next-admin:
+    profiles:
+      - dashboard-next
+    build:
+      context: ./dashboard-next
+      dockerfile: Dockerfile
+    env_file:
+      - .env.next-admin
+    environment:
+      SHOP_FASTAPI_INTERNAL_URL: http://bot:5000
+      NODE_ENV: production
+      PORT: "3000"
+    depends_on:
+      - bot
+    networks:
+      - caddy
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
   redis:
     image: redis:latest
     container_name: redis
