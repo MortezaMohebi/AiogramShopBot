@@ -1,0 +1,28 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<section class="col-12" aria-labelledby="dashboard-title">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title" id="dashboard-title">مدیریت فروشگاه</h3>
+    </div>
+    <div class="card-body">
+      <p>از فهرست زیر برای مدیریت اطلاعات فروشگاه استفاده کنید.</p>
+      <p class="text-muted">محتوای کالاها و رسانه‌ها از پایگاه داده خوانده می‌شود؛ هیچ کالای نمونه‌ای به‌طور خودکار ایجاد نمی‌شود.</p>
+      <div class="row row-cards">
+        {% for view in admin.views %}
+          {% if view.is_model %}
+            <div class="col-md-6 col-xl-4">
+              <a class="card card-link" href="{{ url_for('admin:list', identity=view.identity) }}">
+                <div class="card-body d-flex align-items-center gap-2">
+                  <i class="{{ view.icon or 'fa-solid fa-folder-open' }}" aria-hidden="true"></i>
+                  <span>{{ view.name_plural }}</span>
+                </div>
+              </a>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
