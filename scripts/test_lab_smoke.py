@@ -255,6 +255,23 @@ def main() -> None:
     )
     expect(status, 200, "finance sees refund queue")
 
+    status, wallet_accounts = request_json(
+        "GET", "/wallets", operator=accounts["finance"]
+    )
+    expect(status, 200, "finance sees store-credit accounts")
+    if not isinstance(wallet_accounts, dict):
+        raise AssertionError("Store-credit accounts payload is malformed")
+    demo_accounts = {
+        item["platform"]: item["balance_irr"]
+        for item in wallet_accounts.get("items", [])
+        if item["user_id"] == "101001"
+    }
+    if demo_accounts.get("telegram") != "500000":
+        raise AssertionError("Telegram lab credit isolation failed")
+    if demo_accounts.get("bale") != "350000":
+        raise AssertionError("Bale lab credit isolation failed")
+    print("PASS matching Telegram/Bale IDs remain separate credit accounts")
+
     # Test a real upload transaction on the temporary DB and private volume.
     media_id: int | None = None
     try:
