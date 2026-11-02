@@ -1,0 +1,97 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<section class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">گزارش واقعی فروشگاه — تلگرام و بله</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted">
+        اعداد فقط از جداول جدید فروشگاه هستند. سابقه Legacy تلگرام هنوز
+        وارد این گزارش نشده است. مبلغ Stars و اعتبار داخلی با دریافتی
+        ریالی Provider جمع نمی‌شوند؛ دریافتی ریالی ناخالص است و
+        لزوماً درآمد خالص پس از Refund نیست.
+      </p>
+      <nav class="d-flex flex-wrap gap-2 mb-3" aria-label="بازه زمانی">
+        <a class="btn btn-sm {% if days == 7 %}btn-primary{% endif %}"
+          href="/admin/shop-analytics?days=7">۷ روز</a>
+        <a class="btn btn-sm {% if days == 30 %}btn-primary{% endif %}"
+          href="/admin/shop-analytics?days=30">۳۰ روز</a>
+        <a class="btn btn-sm {% if days == 90 %}btn-primary{% endif %}"
+          href="/admin/shop-analytics?days=90">۹۰ روز</a>
+        <a class="btn btn-sm {% if days == 0 %}btn-primary{% endif %}"
+          href="/admin/shop-analytics?days=0">تمام دوره</a>
+      </nav>
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead><tr>
+            <th>شاخص</th><th>Telegram</th><th>Bale</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td>مشتریان ثبت‌شده در بازه</td>
+              <td>{{ identities.get("telegram", 0) }}</td>
+              <td>{{ identities.get("bale", 0) }}</td>
+            </tr>
+            <tr>
+              <td>سفارش‌های پرداخت‌شده</td>
+              <td>{{ orders.telegram.get("paid", 0) }}</td>
+              <td>{{ orders.bale.get("paid", 0) }}</td>
+            </tr>
+            <tr>
+              <td>پرداخت‌شده اما نیازمند رسیدگی</td>
+              <td>{{ orders.telegram.get("paid_unfulfilled", 0) }}</td>
+              <td>{{ orders.bale.get("paid_unfulfilled", 0) }}</td>
+            </tr>
+            <tr>
+              <td>در انتظار بررسی/پرداخت</td>
+              <td>{{ orders.telegram.get("pending_review", 0) +
+                     orders.telegram.get("approved_unpaid", 0) +
+                     orders.telegram.get("pending_payment", 0) }}</td>
+              <td>{{ orders.bale.get("pending_review", 0) +
+                     orders.bale.get("approved_unpaid", 0) +
+                     orders.bale.get("pending_payment", 0) }}</td>
+            </tr>
+            <tr>
+              <td>دریافتی ناخالص Provider (ریال، قبل از بازپرداخت)</td>
+              <td>{{ format_rials(payments.telegram.provider_irr_collected) }}</td>
+              <td>{{ format_rials(payments.bale.provider_irr_collected) }}</td>
+            </tr>
+            <tr>
+              <td>اعتبار داخلی مصرف‌شده (ریال)</td>
+              <td>{{ format_rials(payments.telegram.store_credit_redeemed) }}</td>
+              <td>{{ format_rials(payments.bale.store_credit_redeemed) }}</td>
+            </tr>
+            <tr>
+              <td>Telegram Stars دریافتی (XTR)</td>
+              <td>{{ payments.telegram.stars_xtr }}</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>کل تراکنش‌های تأییدشده در بازه</td>
+              <td>{{ payments.telegram.payment_count }}</td>
+              <td>{{ payments.bale.payment_count }}</td>
+            </tr>
+            <tr>
+              <td>سفارش‌های بازپرداخت‌شده</td>
+              <td>{{ orders.telegram.get("refunded", 0) }}</td>
+              <td>{{ orders.bale.get("refunded", 0) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="card-title mt-4">وضعیت جاری (تمام دوره)</h3>
+      <p>مانده اعتبار داخلی: <strong>{{ wallet_total }}</strong></p>
+      <p>مجموع پاداش‌های معرفی ثبت‌شده:
+        <strong>{{ referral_total }}</strong></p>
+      <p>صف ارسال اطلاعیه: {{ delivery_status.get("queued", 0) }}</p>
+      <p>اطلاعیه ارسال‌شده: {{ delivery_status.get("sent", 0) }}</p>
+      <p>ارسال‌های نیازمند بررسی:
+        {{ delivery_status.get("unknown", 0) +
+           delivery_status.get("sending", 0) }}</p>
+      <p>پرونده‌های بازپرداخت باز در بازه:
+        {{ refunds.get("requested", 0) + refunds.get("provider_pending", 0) }}</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -38,6 +38,7 @@ from dashboard.persian import localize_model_view
 from dashboard.permissions import secure_model_view
 from dashboard.wallet_views import ShopWalletAdjustmentView
 from dashboard.campaign_views import ShopCampaignReviewView
+from dashboard.analytics_views import ShopAnalyticsView
 from models.shop_staff import ShopStaffAdmin
 from models.shop_engagement import (
     ShopWalletAccountAdmin, ShopWalletEntryAdmin, ShopReferralPolicyAdmin,
@@ -242,6 +243,7 @@ admin.add_view(ShopOrderReviewView)
 admin.add_view(ShopRefundReviewView)
 admin.add_view(ShopWalletAdjustmentView)
 admin.add_view(ShopCampaignReviewView)
+admin.add_view(ShopAnalyticsView)
 admin.add_model_view(secure_model_view(ShopStaffAdmin))
 admin.add_model_view(secure_model_view(ShopWalletAccountAdmin))
 admin.add_model_view(secure_model_view(ShopWalletEntryAdmin))
