@@ -38,6 +38,10 @@ from models.shop_checkout import (
     ShopCartAdmin, ShopCartItemAdmin, ShopShippingMethodAdmin,
     ShopCouponAdmin, ShopOrderLineAdmin, ShopOrderReviewAuditAdmin,
 )
+from models.shop_payment import (
+    ShopPaymentAttemptAdmin,
+    ShopRefundCaseAdmin,
+)
 from models.shop_content import ProductAdmin, ProductMediaAdmin, ShopCategoryAdmin, ShopIdentityAdmin, ShopOrderAdmin, ShopSettingsAdmin, TestimonialAdmin
 from models.buy import BuyAdmin
 from models.buyItem import BuyItemAdmin
@@ -212,6 +216,8 @@ admin.add_model_view(ShopCartAdmin)
 admin.add_model_view(ShopCartItemAdmin)
 admin.add_model_view(ShopOrderLineAdmin)
 admin.add_model_view(ShopOrderReviewAuditAdmin)
+admin.add_model_view(ShopPaymentAttemptAdmin)
+admin.add_model_view(ShopRefundCaseAdmin)
 admin.add_view(ShopUploadView)
 admin.add_view(ShopMediaPreviewView)
 admin.add_view(ShopOrderReviewView)

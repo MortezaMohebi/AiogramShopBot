@@ -24,6 +24,7 @@ STATUS_NAMES = {
     "pending_payment": "در انتظار پرداخت",
     "paid": "پرداخت‌شده",
     "paid_unfulfilled": "پرداخت شده؛ نیازمند بررسی",
+    "refunded": "بازپرداخت‌شده",
     "cancelled": "لغو‌شده",
 }
 

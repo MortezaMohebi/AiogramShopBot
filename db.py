@@ -12,6 +12,7 @@ from models.base import Base
 Imports of these models are needed to correctly create tables in the database.
 For more information see https://stackoverflow.com/questions/7478403/sqlalchemy-classes-across-files
 """
+from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopShippingMethod, ShopCoupon, ShopOrderLine,
     ShopOrderReviewAudit,

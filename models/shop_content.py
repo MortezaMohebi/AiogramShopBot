@@ -74,6 +74,10 @@ class Product(Base):
     requires_shipping: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )
+    product_type: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="physical"
+    )
+    price_stars: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -89,6 +93,18 @@ class Product(Base):
     __table_args__ = (
         CheckConstraint("price >= 0", name="ck_shop_product_price"),
         CheckConstraint("stock_quantity >= 0", name="ck_shop_product_stock"),
+        CheckConstraint(
+            "product_type IN ('physical','digital')",
+            name="ck_shop_product_type",
+        ),
+        CheckConstraint(
+            "price_stars IS NULL OR price_stars > 0",
+            name="ck_shop_product_price_stars",
+        ),
+        CheckConstraint(
+            "product_type != 'digital' OR requires_shipping = false",
+            name="ck_shop_digital_no_shipping",
+        ),
     )
 
     def __repr__(self) -> str:
@@ -236,6 +252,11 @@ class ShopOrder(Base):
     shipping_address: Mapped[str | None] = mapped_column(String(500))
     shipping_method_snapshot: Mapped[str | None] = mapped_column(String(120))
     coupon_code_snapshot: Mapped[str | None] = mapped_column(String(32))
+    coupon_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shop_coupons.id", ondelete="SET NULL")
+    )
+    payment_currency: Mapped[str | None] = mapped_column(String(3))
+    payment_amount: Mapped[int | None] = mapped_column(BigInteger)
     lines: Mapped[list["ShopOrderLine"]] = relationship(
         "ShopOrderLine", back_populates="order"
     )
@@ -248,7 +269,7 @@ class ShopOrder(Base):
         CheckConstraint("unit_price_irr >= 0", name="ck_shop_order_price_positive"),
         CheckConstraint("total_irr > 0", name="ck_shop_order_total_positive"),
         CheckConstraint(
-            "status IN ('pending_review','approved_unpaid','pending_payment','paid','paid_unfulfilled','cancelled')",
+            "status IN ('pending_review','approved_unpaid','pending_payment','paid','paid_unfulfilled','cancelled','refunded')",
             name="ck_shop_order_status",
         ),
     )
@@ -316,6 +337,8 @@ class ProductAdmin(ModelView, model=Product):
         Product.price: "قیمت (ریال)",
         Product.stock_quantity: "موجودی",
         Product.requires_shipping: "نیازمند نشانی و ارسال",
+        Product.product_type: "نوع محصول (physical/digital)",
+        Product.price_stars: "قیمت Telegram Stars",
         Product.position: "ترتیب",
         Product.is_published: "انتشار",
     }
@@ -455,6 +478,8 @@ class ShopOrderAdmin(ModelView, model=ShopOrder):
         ShopOrder.shipping_address: "نشانی ارسال",
         ShopOrder.shipping_method_snapshot: "روش ارسال",
         ShopOrder.coupon_code_snapshot: "کد تخفیف",
+        ShopOrder.payment_currency: "ارز پرداخت",
+        ShopOrder.payment_amount: "مبلغ در واحد API",
         ShopOrder.total_irr: "مبلغ (ریال)",
         ShopOrder.provider: "روش پرداخت",
         ShopOrder.status: "وضعیت",

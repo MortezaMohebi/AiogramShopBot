@@ -44,6 +44,26 @@ if SHOP_DISPLAY_UNIT not in {"IRR", "TOMAN"}:
     raise ValueError("SHOP_DISPLAY_UNIT must be IRR or TOMAN.")
 BALE_WALLET_PROVIDER_TOKEN = os.environ.get("BALE_WALLET_PROVIDER_TOKEN", "")
 # Checkout is opt-in until live payment, shipping and reconciliation tests pass.
+# Telegram fiat must be enabled only after a provider confirms IRR support.
+TELEGRAM_FIAT_CHECKOUT_ENABLED = (
+    os.environ.get("TELEGRAM_FIAT_CHECKOUT_ENABLED", "false").lower() == "true"
+)
+TELEGRAM_FIAT_PROVIDER_TOKEN = os.environ.get(
+    "TELEGRAM_FIAT_PROVIDER_TOKEN", ""
+).strip()
+# Provider's confirmed conversion of an integer rial to its Bot API minor unit.
+TELEGRAM_IRR_MINOR_MULTIPLIER = int(
+    os.environ.get("TELEGRAM_IRR_MINOR_MULTIPLIER", "0")
+)
+TELEGRAM_STARS_CHECKOUT_ENABLED = (
+    os.environ.get("TELEGRAM_STARS_CHECKOUT_ENABLED", "false").lower() == "true"
+)
+TELEGRAM_STARS_REFUNDS_ENABLED = (
+    os.environ.get("TELEGRAM_STARS_REFUNDS_ENABLED", "false").lower() == "true"
+)
+if TELEGRAM_IRR_MINOR_MULTIPLIER not in (0, 1, 10, 100):
+    raise ValueError("Telegram IRR minor multiplier is unsupported.")
+
 BALE_WALLET_CHECKOUT_ENABLED = (
     os.environ.get("BALE_WALLET_CHECKOUT_ENABLED", "false").lower() == "true"
 )
