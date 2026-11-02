@@ -30,8 +30,15 @@ WEBAPP_HOST = os.environ.get("WEBAPP_HOST", "0.0.0.0")
 WEBAPP_PORT = int(os.environ.get("WEBAPP_PORT", "5000"))
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 TOKEN = os.environ.get("TOKEN")
-ADMIN_ID_LIST = os.environ.get("ADMIN_ID_LIST").split(',')
-ADMIN_ID_LIST = [int(admin_id) for admin_id in ADMIN_ID_LIST]
+# Legacy Telegram notification IDs are optional, not dashboard credentials.
+_raw_admin_ids = os.environ.get("ADMIN_ID_LIST", "").strip()
+try:
+    ADMIN_ID_LIST = (
+        [int(value.strip()) for value in _raw_admin_ids.split(",")]
+        if _raw_admin_ids else []
+    )
+except ValueError:
+    raise ValueError("ADMIN_ID_LIST must contain numeric IDs only.") from None
 SUPPORT_LINK = os.environ.get("SUPPORT_LINK")
 # Dual-channel storefront: secrets are never stored in version control.
 BALE_BOT_TOKEN = os.environ.get("BALE_BOT_TOKEN")
@@ -138,3 +145,6 @@ if not 0 <= SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR <= 100_000_000_000:
 SHOP_ADMIN_SECURE_COOKIES = (
     os.environ.get("SHOP_ADMIN_SECURE_COOKIES", "true").lower() == "true"
 )
+
+# Keep SQL parameters (addresses/payment metadata) out of production logs.
+DB_SQL_ECHO = os.environ.get("DB_SQL_ECHO", "false").strip().lower() == "true"
