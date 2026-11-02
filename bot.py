@@ -1,5 +1,9 @@
+import json
 import logging
 import sys
+from hmac import compare_digest
+
+from aiohttp import ClientSession, ClientTimeout
 import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,8 +18,11 @@ from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from admin import authentication_backend
+from channels.bale import BaleApiError, BaleTransport
+from channels.contracts import Platform, normalize_update
+from services.shop_channel_catalog import CatalogFlow
 from dashboard.persian import localize_model_view
-from db import create_db_and_tables, engine
+from db import create_db_and_tables, engine, get_db_session
 import uvicorn
 from fastapi.responses import JSONResponse
 from enums.cryptocurrency import Cryptocurrency
@@ -106,11 +113,32 @@ async def _shutdown() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await _startup()
+    """Manage the Telegram bot and optional reusable Bale HTTP client."""
+    if bool(config.BALE_BOT_TOKEN) != bool(config.BALE_WEBHOOK_SECRET):
+        raise ValueError(
+            "Configure BALE_BOT_TOKEN and BALE_WEBHOOK_SECRET together."
+        )
+    if config.BALE_BOT_TOKEN and len(config.BALE_WEBHOOK_SECRET) < 32:
+        raise ValueError("BALE_WEBHOOK_SECRET must contain at least 32 characters.")
+
+    bale_client = (
+        ClientSession(timeout=ClientTimeout(total=15))
+        if config.BALE_BOT_TOKEN
+        else None
+    )
+    app.state.bale_http_client = bale_client
+    started = False
     try:
+        await _startup()
+        started = True
         yield
     finally:
-        await _shutdown()
+        try:
+            if started:
+                await _shutdown()
+        finally:
+            if bale_client is not None:
+                await bale_client.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -145,6 +173,55 @@ admin.add_model_view(ProductMediaAdmin)
 admin.add_model_view(TestimonialAdmin)
 
 app.include_router(processing_router)
+
+
+@app.post("/webhooks/bale/{webhook_secret}")
+async def bale_webhook(webhook_secret: str, request: Request):
+    """Receive private Bale events with a secret URL and shared catalog logic.
+
+    The supplied Bale snapshot does not document Telegram-style secret
+    headers. Keep the path secret unguessable and redact it from proxy logs.
+    """
+    configured_secret = config.BALE_WEBHOOK_SECRET
+    if (
+        not config.BALE_BOT_TOKEN
+        or not configured_secret
+        or not compare_digest(webhook_secret, configured_secret)
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    raw = await request.body()
+    if len(raw) > 256_000:
+        raise HTTPException(status_code=413, detail="Payload too large")
+    try:
+        payload = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid JSON") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid update")
+
+    event = normalize_update(Platform.BALE, payload)
+    if event is None:
+        return {"status": "ignored"}
+
+    async with get_db_session() as session:
+        reply = await CatalogFlow(
+            currency_label=config.SHOP_CURRENCY_LABEL
+        ).reply(event, session)
+    if reply is None:
+        return {"status": "ignored"}
+
+    transport = BaleTransport(
+        config.BALE_BOT_TOKEN, request.app.state.bale_http_client
+    )
+    try:
+        if event.callback_query_id:
+            await transport.acknowledge(event.callback_query_id)
+        await transport.send(event.chat_id, reply)
+    except BaleApiError:
+        # Return an error so the gateway can retry; never log credentials.
+        raise HTTPException(status_code=502, detail="Bale delivery failed") from None
+    return {"status": "ok"}
 
 
 @app.post(config.WEBHOOK_PATH)
@@ -186,5 +263,7 @@ def main() -> None:
         port=config.WEBAPP_PORT,
         proxy_headers=True,
         forwarded_allow_ips="*",
+        # Secret URLs must not appear in Uvicorn access logs.
+        access_log=not bool(config.BALE_BOT_TOKEN),
     )
 

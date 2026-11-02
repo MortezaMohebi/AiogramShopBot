@@ -17,6 +17,7 @@ from middleware.language import I18nMiddleware
 from middleware.throttling_middleware import ThrottlingMiddleware
 from models.user import UserDTO
 from multibot import main as main_multibot
+from channels.telegram_handlers import shop_catalog_router
 from handlers.user.cart import cart_router
 from handlers.admin.admin import admin_router
 from handlers.user.all_categories import all_categories_router
@@ -36,6 +37,7 @@ main_router = Router()
 @main_router.message(CommandStart())
 @main_router.message(Command("help"))
 async def start(message: Message, command: CommandObject, session: AsyncSession, language: Language):
+    shop_catalog_button = types.KeyboardButton(text="🛍 محصولات")
     all_categories_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "all_categories"))
     my_profile_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "my_profile"))
     faq_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "faq"))
@@ -49,7 +51,8 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
         telegram_id=telegram_id,
         language=language
     ), command.args, session)
-    keyboard = [[all_categories_button, my_profile_button], [faq_button, help_button],
+    keyboard = [[shop_catalog_button, all_categories_button],
+                [my_profile_button, help_button], [faq_button],
                 [reviews_button],
                 [cart_button]]
     if telegram_id in config.ADMIN_ID_LIST:
@@ -110,6 +113,7 @@ users_routers.include_routers(
 users_routers.message.middleware(throttling_middleware)
 users_routers.callback_query.middleware(throttling_middleware)
 main_router.include_router(admin_router)
+main_router.include_router(shop_catalog_router)
 main_router.include_routers(users_routers)
 main_router.message.middleware(DBSessionMiddleware())
 main_router.callback_query.middleware(DBSessionMiddleware())

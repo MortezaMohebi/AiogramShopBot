@@ -20,6 +20,10 @@ TOKEN = os.environ.get("TOKEN")
 ADMIN_ID_LIST = os.environ.get("ADMIN_ID_LIST").split(',')
 ADMIN_ID_LIST = [int(admin_id) for admin_id in ADMIN_ID_LIST]
 SUPPORT_LINK = os.environ.get("SUPPORT_LINK")
+# Dual-channel storefront: secrets are never stored in version control.
+BALE_BOT_TOKEN = os.environ.get("BALE_BOT_TOKEN")
+BALE_WEBHOOK_SECRET = os.environ.get("BALE_WEBHOOK_SECRET")
+SHOP_CURRENCY_LABEL = os.environ.get("SHOP_CURRENCY_LABEL", "ریال")
 # POSTGRESQL
 DB_USER = os.environ.get("POSTGRES_USER", "postgres")
 DB_PASS = os.environ.get("POSTGRES_PASSWORD")
