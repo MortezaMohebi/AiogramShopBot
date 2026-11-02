@@ -14,7 +14,13 @@ if TELEGRAM_UPDATE_MODE not in {"webhook", "polling"}:
 # Prefer an explicit HTTPS host in production. An external IP lookup should
 # never be mandatory for installations hosted behind a known domain.
 explicit_webhook_host = os.environ.get("WEBHOOK_HOST", "").strip()
-if explicit_webhook_host:
+# An outbound-only Worker must not open ngrok or fetch a public IP address.
+IS_BROADCAST_PROCESS = (
+    os.environ.get("SHOP_PROCESS_ROLE", "") == "broadcast_worker"
+)
+if IS_BROADCAST_PROCESS:
+    WEBHOOK_HOST = ""
+elif explicit_webhook_host:
     if not explicit_webhook_host.startswith("https://"):
         raise ValueError("WEBHOOK_HOST must use HTTPS.")
     WEBHOOK_HOST = explicit_webhook_host.rstrip("/")
