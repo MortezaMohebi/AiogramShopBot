@@ -8,3 +8,6 @@ __pycache__/
 
 # Never commit Next.js BFF sessions, bridge credentials or production secrets.
 .env.next-admin
+
+# Only generated, local integration-lab credentials; never check in.
+.env.test.local
