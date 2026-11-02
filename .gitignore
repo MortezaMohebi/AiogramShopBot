@@ -11,3 +11,6 @@ __pycache__/
 
 # Only generated, local integration-lab credentials; never check in.
 .env.test.local
+
+# Browser test artifacts are never included in images or Git.
+.test-artifacts/
