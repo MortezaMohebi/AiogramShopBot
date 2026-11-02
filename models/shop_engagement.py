@@ -212,6 +212,40 @@ class ShopCampaign(Base):
     )
 
 
+class ShopCampaignMedia(Base):
+    """An optional, ordered attachment for a single draft campaign.
+
+    The original file remains on private storage. A campaign may reference
+    any number of attachments without a hardcoded product/file count.
+    """
+
+    __tablename__ = "shop_campaign_media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_campaigns.id", ondelete="RESTRICT"), nullable=False
+    )
+    storage_key: Mapped[str] = mapped_column(
+        String(80), nullable=False, unique=True
+    )
+    original_filename: Mapped[str] = mapped_column(
+        String(255), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    caption: Mapped[str | None] = mapped_column(Text)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('photo','video','audio','document')",
+            name="ck_shop_campaign_media_kind",
+        ),
+        CheckConstraint("size_bytes > 0", name="ck_shop_campaign_media_size"),
+    )
+
+
 class ShopCampaignDelivery(Base):
     """A single no-blind-retry send attempt for one opted-in recipient."""
 
@@ -326,6 +360,23 @@ class ShopCampaignAdmin(ModelView, model=ShopCampaign):
         ShopCampaign.title, ShopCampaign.text, ShopCampaign.audience,
     ]
     can_create = True
+    can_edit = False
+    can_delete = False
+    can_export = False
+
+
+class ShopCampaignMediaAdmin(ModelView, model=ShopCampaignMedia):
+    """Inspect uploaded attachments; only the guarded uploader may create."""
+
+    name = "رسانه کمپین"
+    name_plural = "فایل‌های کمپین‌های Broadcast"
+    category = "بازاریابی"
+    column_list = [
+        ShopCampaignMedia.campaign_id, ShopCampaignMedia.original_filename,
+        ShopCampaignMedia.kind, ShopCampaignMedia.size_bytes,
+        ShopCampaignMedia.position,
+    ]
+    can_create = False
     can_edit = False
     can_delete = False
     can_export = False
