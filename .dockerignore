@@ -2,3 +2,13 @@
 .idea
 venv
 .env.next-admin
+
+# Keep all production, development and generated test secrets out of images.
+.env*
+*.pem
+*.key
+__pycache__/
+.pytest_cache/
+node_modules/
+.next/
+.git/
