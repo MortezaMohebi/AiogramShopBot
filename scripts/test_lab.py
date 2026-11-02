@@ -107,7 +107,7 @@ def main() -> int:
 
     commands = {
         "config": ("config", "--quiet"),
-        "up": ("up", "--build", "-d", "--wait"),
+        "up": ("up", "--build", "-d"),
         "smoke": ("--profile", "qa", "run", "--rm", "smoke"),
         "logs": ("logs", "--tail=200", "-f"),
         "status": ("ps", "-a"),
