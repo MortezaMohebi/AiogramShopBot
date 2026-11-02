@@ -1,0 +1,54 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<section class="col-12 col-lg-8">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">افزودن فایل به Broadcast</h3>
+    </div>
+    <div class="card-body">
+      <p class="text-muted">
+        تعداد فایل‌های کمپین ثابت نیست. فقط قبل از تأیید کمپین می‌توان
+        فایل اضافه کرد. ارسال مستقیم عکس در بله تا ۱۰ مگابایت و سایر
+        فایل‌ها تا ۵۰ مگابایت است.
+      </p>
+      {% if saved %}
+      <div class="alert alert-success" role="status">
+        فایل در فضای خصوصی ذخیره شد؛ تا تأیید کمپین برای مشتریان ارسال نمی‌شود.
+      </div>
+      {% endif %}
+      {% if error %}
+      <div class="alert alert-danger" role="alert">{{ error }}</div>
+      {% endif %}
+      <form method="post" enctype="multipart/form-data" autocomplete="off">
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <div class="mb-3">
+          <label class="form-label" for="campaign_id">کمپین پیش‌نویس</label>
+          <select class="form-select" name="campaign_id" id="campaign_id" required>
+            <option value="">انتخاب کمپین</option>
+            {% for campaign in campaigns %}
+            <option value="{{ campaign.id }}">{{ campaign.title }} (#{{ campaign.id }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="file">تصویر، ویدیو، صوت یا سند</label>
+          <input class="form-control" type="file" id="file" name="file"
+                 accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mp3,.ogg,.pdf"
+                 required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="caption">توضیح اختیاری رسانه</label>
+          <textarea class="form-control" name="caption" id="caption"
+                    maxlength="1024" rows="3"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="position">ترتیب نمایش</label>
+          <input class="form-control" type="number" name="position"
+                 id="position" min="0" max="1000000" value="0" required>
+        </div>
+        <button class="btn btn-primary" type="submit">ثبت فایل کمپین</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}
