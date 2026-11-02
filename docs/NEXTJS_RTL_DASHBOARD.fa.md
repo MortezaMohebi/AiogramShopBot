@@ -171,7 +171,7 @@ Client-side Environment Variable قرار نمی‌گیرد. سرویس FastAPI 
 
 | مسیر API داخلی | مجوز | سیاست | 
 |---|---|---|
-| `POST /upload/product|testimonial` | content | Magic signature، ذخیره خصوصی، انتشار اولیه False، ۱۰ MB عکس/۵۰ MB سایر |
+| `POST /upload/product` و `POST /upload/testimonial` | content | Magic signature، ذخیره خصوصی، انتشار اولیه False، ۱۰ MB عکس/۵۰ MB سایر |
 | `POST /upload/campaign` | marketing | قفل Draft قبل از آپلود؛ Approved و Sending تغییر نمی‌کنند |
 | `GET /media/preview/{kind}/{id}` | content/marketing | احراز هویت، Role، Content-Security-Policy sandbox، No-Store |
 | `PATCH/DELETE /media/{id}` | content | تغییر Caption موجب لغو انتشار؛ حذف فقط در حالت unpublished |
