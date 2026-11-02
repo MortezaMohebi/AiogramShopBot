@@ -12,6 +12,9 @@ from starlette.responses import RedirectResponse
 
 import config
 from channels.bale import BaleTransport
+from channels.media_policy import bale_media_method
+from services.shop_media_delivery import bot_fingerprint, cached_file_id
+from dashboard.media_storage import safe_media_path
 from channels.contracts import BotReply, MediaAttachment, Platform
 from channels.telegram import TelegramTransport
 from dashboard.permissions import require_role
@@ -90,13 +93,16 @@ class ShopCampaignReviewView(BaseView):
             raise HTTPException(status_code=403, detail="فرم تأیید نشد.")
         action = form.get("action")
         confirmation = form.get("confirmation")
-        if confirmation not in ("APPROVE_CAMPAIGN", "SEND_BATCH"):
+        if confirmation not in (
+            "APPROVE_CAMPAIGN", "SEND_BATCH", "PREPARE_BALE_MEDIA"
+        ):
             raise HTTPException(
                 status_code=400, detail="تأیید صریح عملیات لازم است."
             )
         if (action, confirmation) not in (
             ("approve", "APPROVE_CAMPAIGN"),
             ("dispatch", "SEND_BATCH"),
+            ("prepare", "PREPARE_BALE_MEDIA"),
         ):
             raise HTTPException(status_code=400, detail="عملیات معتبر نیست.")
         try:
@@ -116,6 +122,37 @@ class ShopCampaignReviewView(BaseView):
                         session, campaign_id=campaign_id,
                         approver=f"staff:{staff_id}",
                     )
+                elif action == "prepare":
+                    if (
+                        not config.BALE_BOT_TOKEN
+                        or config.BALE_BROADCAST_PREPARE_CHAT_ID <= 0
+                    ):
+                        raise CampaignRejected(
+                            "ابتدا شناسه چت آماده‌سازی و توکن بله را تنظیم کنید."
+                        )
+                    campaign = await session.get(ShopCampaign, campaign_id)
+                    if campaign is None or campaign.status not in (
+                        "draft", "approved"
+                    ):
+                        raise CampaignRejected(
+                            "فقط کمپین پیش‌نویس/تأییدشده قابل آماده‌سازی است."
+                        )
+                    attachments = await ShopCampaignService._attachments(
+                        session, campaign
+                    )
+                    if not attachments:
+                        raise CampaignRejected("کمپین هیچ فایل رسانه‌ای ندارد.")
+                    regular = BaleTransport(
+                        config.BALE_BOT_TOKEN,
+                        self._admin_ref.app.state.bale_http_client,
+                    )
+                    for attachment in attachments:
+                        # Explicit operator action: uploads to the configured
+                        # *private admin chat* through the regular free API.
+                        await regular.send_media(
+                            config.BALE_BROADCAST_PREPARE_CHAT_ID,
+                            attachment,
+                        )
                 else:
                     if not config.SHOP_CAMPAIGN_DISPATCH_ENABLED:
                         raise CampaignRejected(
@@ -143,6 +180,18 @@ class ShopCampaignReviewView(BaseView):
                                 "ابتدا اتصال بله را پیکربندی کنید."
                             )
 
+                    campaign = await session.get(ShopCampaign, campaign_id)
+                    if campaign is None:
+                        raise CampaignRejected("کمپین پیدا نشد.")
+                    uses_bale = campaign.audience in ("all", "bale")
+                    paid_bale = (
+                        uses_bale and
+                        config.BALE_BROADCAST_MODE == "business"
+                    )
+                    if paid_bale and not config.BALE_BROADCAST_PAID_ENABLED:
+                        raise CampaignRejected(
+                            "Business API بله هزینه‌دار است؛ فعال‌سازی صریح لازم است."
+                        )
                     telegram = TelegramTransport(
                         self._admin_ref.app.state.telegram_bot
                     )
@@ -150,9 +199,46 @@ class ShopCampaignReviewView(BaseView):
                         BaleTransport(
                             config.BALE_BOT_TOKEN,
                             self._admin_ref.app.state.bale_http_client,
+                            business_mode=paid_bale,
                         )
                         if config.BALE_BOT_TOKEN else None
                     )
+
+                    async def media_preflight(
+                        attachments: tuple[MediaAttachment, ...],
+                    ) -> None:
+                        """Refuse paid sends before any recipient if file IDs lack."""
+                        if not paid_bale:
+                            return
+                        if not config.BALE_BOT_TOKEN:
+                            raise CampaignRejected("توکن بازوی بله تنظیم نشده است.")
+                        key = bot_fingerprint(config.BALE_BOT_TOKEN)
+                        for attachment in attachments:
+                            path = safe_media_path(
+                                config.SHOP_MEDIA_ROOT, attachment.storage_key
+                            )
+                            method = bale_media_method(
+                                attachment.kind,
+                                attachment.mime_type,
+                                path.stat().st_size,
+                            )
+                            if method.name not in (
+                                "sendPhoto", "sendVideo",
+                                "sendDocument", "sendAudio",
+                            ):
+                                raise CampaignRejected(
+                                    "این نوع رسانه در Business API بله مجاز نیست."
+                                )
+                            file_id = await cached_file_id(
+                                platform="bale", bot_key=key,
+                                storage_key=attachment.storage_key,
+                                kind=method.kind,
+                            )
+                            if not file_id:
+                                raise CampaignRejected(
+                                    "فایل کمپین هنوز برای Business API آماده نیست؛ "
+                                    "ابتدا «آماده‌سازی رسانه بله» را اجرا کنید."
+                                )
 
                     async def deliver(
                         platform: Platform, user_id: int, text: str
@@ -188,6 +274,7 @@ class ShopCampaignReviewView(BaseView):
                         campaign_id=campaign_id,
                         send=deliver,
                         send_attachment=deliver_attachment,
+                        media_preflight=media_preflight,
                     )
             except CampaignRejected as error:
                 await session.rollback()
