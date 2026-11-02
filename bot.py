@@ -35,6 +35,7 @@ from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
 from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
 from dashboard.order_views import ShopOrderReviewView
+from dashboard.refund_views import ShopRefundReviewView
 from db import create_db_and_tables, engine, get_db_session
 import uvicorn
 from fastapi.responses import JSONResponse
@@ -182,6 +183,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.telegram_bot = bot
 app.mount(
     "/shop-assets",
     StaticFiles(directory=Path(__file__).resolve().parent / "assets"),
@@ -226,6 +228,7 @@ admin.add_model_view(ShopRefundCaseAdmin)
 admin.add_view(ShopUploadView)
 admin.add_view(ShopMediaPreviewView)
 admin.add_view(ShopOrderReviewView)
+admin.add_view(ShopRefundReviewView)
 
 app.include_router(processing_router)
 
