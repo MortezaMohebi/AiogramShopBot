@@ -7,6 +7,7 @@ moderation and deletion without connecting to Telegram/Bale providers.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -148,7 +149,11 @@ def form_upload(product_id: int) -> tuple[bytes, str]:
             f"{value}\r\n".encode("utf-8")
         )
     # The existing media validator relies on recognized signature bytes.
-    fake_png = b"\x89PNG\r\n\x1a\n" + b"isolated-test-only-payload"
+    # Valid 1×1 PNG; no external image host, network or user upload.
+    fake_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+        "AAAADElEQVR4nGMI6LkEAALeAa822kbFAAAAAElFTkSuQmCC"
+    )
     parts.append(
         f'--{boundary}\r\n'
         'Content-Disposition: form-data; name="file"; filename="lab.png"\r\n'
