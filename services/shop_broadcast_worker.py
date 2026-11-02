@@ -71,40 +71,50 @@ class BroadcastWorker:
             seconds=config.SHOP_BROADCAST_STALE_SECONDS
         )
         async with session_maker() as session:
-            result = await session.execute(
-                select(ShopCampaignDelivery)
+            # Always lock Campaign first, then Delivery, matching the
+            # administrator's pause/cancel lock order and preventing deadlocks.
+            campaigns = await session.execute(
+                select(ShopCampaign)
                 .where(
-                    ShopCampaignDelivery.status == "sending",
-                    ShopCampaignDelivery.claimed_at < cutoff,
+                    select(ShopCampaignDelivery.id)
+                    .where(
+                        ShopCampaignDelivery.campaign_id == ShopCampaign.id,
+                        ShopCampaignDelivery.status == "sending",
+                        ShopCampaignDelivery.claimed_at < cutoff,
+                    ).exists()
                 )
-                .order_by(ShopCampaignDelivery.id)
+                .order_by(ShopCampaign.id)
                 .limit(25)
                 .with_for_update(skip_locked=True)
             )
-            rows = result.scalars().all()
-            for delivery in rows:
-                campaign = await session.scalar(
-                    select(ShopCampaign).where(
-                        ShopCampaign.id == delivery.campaign_id
-                    ).with_for_update()
+            changed = 0
+            for campaign in campaigns.scalars().all():
+                rows = await session.execute(
+                    select(ShopCampaignDelivery).where(
+                        ShopCampaignDelivery.campaign_id == campaign.id,
+                        ShopCampaignDelivery.status == "sending",
+                        ShopCampaignDelivery.claimed_at < cutoff,
+                    ).order_by(ShopCampaignDelivery.id)
+                    .limit(25).with_for_update(skip_locked=True)
                 )
-                old = delivery.status
-                delivery.status = "unknown"
-                delivery.last_error_code = "stale_after_restart"
-                record_audit(
-                    session, campaign_id=delivery.campaign_id,
-                    delivery_id=delivery.id,
-                    actor="worker", action="quarantine",
-                    old_status=old, new_status="unknown",
-                    reason="In-flight recipient exceeded stale threshold.",
-                )
-                if campaign is not None and campaign.status == "sending":
+                for delivery in rows.scalars().all():
+                    delivery.status = "unknown"
+                    delivery.last_error_code = "stale_after_restart"
+                    record_audit(
+                        session, campaign_id=campaign.id,
+                        delivery_id=delivery.id, actor="worker",
+                        action="quarantine", old_status="sending",
+                        new_status="unknown",
+                        reason="In-flight delivery exceeded stale threshold.",
+                    )
+                    changed += 1
+                if changed and campaign.status == "sending":
                     campaign.status = "paused"
                     campaign.paused_at = datetime.now(timezone.utc)
                     campaign.last_error_code = "stale_after_restart"
-            if rows:
+            if changed:
                 await session.commit()
-            return len(rows)
+            return changed
 
     async def _claim_one(self) -> ClaimedRecipient | None:
         """Lock one active campaign and one queued delivery before dispatch."""
@@ -261,6 +271,20 @@ class BroadcastWorker:
         from db import session_maker
 
         async with session_maker() as session:
+            # Identify the parent without locking, then lock campaign first.
+            # This matches control transitions and stale-delivery quarantine.
+            delivery_id_parent = await session.scalar(
+                select(ShopCampaignDelivery.campaign_id).where(
+                    ShopCampaignDelivery.id == delivery_id
+                )
+            )
+            if delivery_id_parent is None:
+                return
+            campaign = await session.scalar(
+                select(ShopCampaign).where(
+                    ShopCampaign.id == delivery_id_parent
+                ).with_for_update()
+            )
             delivery = await session.scalar(
                 select(ShopCampaignDelivery)
                 .where(ShopCampaignDelivery.id == delivery_id)
@@ -268,11 +292,6 @@ class BroadcastWorker:
             )
             if delivery is None or delivery.status != "sending":
                 return
-            campaign = await session.scalar(
-                select(ShopCampaign).where(
-                    ShopCampaign.id == delivery.campaign_id
-                ).with_for_update()
-            )
             delivery.status = status
             delivery.last_error_code = error_code
             if status == "sent":
