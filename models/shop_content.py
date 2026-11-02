@@ -463,3 +463,7 @@ class ShopOrderAdmin(ModelView, model=ShopOrder):
     can_create = False
     can_edit = False
     can_delete = False
+
+# Resolve string-based SQLAlchemy relationships even when callers import only
+# models.shop_content (e.g., isolated catalogue unit tests).
+from models import shop_checkout as _shop_checkout  # noqa: F401,E402
