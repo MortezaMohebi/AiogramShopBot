@@ -21,7 +21,7 @@ class User(Base):
     consume_records = Column(Float, default=0.0)
     registered_at = Column(DateTime(timezone=True), default=func.now())
     can_receive_messages = Column(Boolean, default=True)
-    language = Column(Enum(Language), default=Language.EN, nullable=False)
+    language = Column(Enum(Language), default=Language.FA, nullable=False)
     is_banned = Column(Boolean, default=False)
     referral_code = Column(String(8), nullable=True, unique=True, index=True)
     referred_by_user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
@@ -78,7 +78,7 @@ class UserDTO(BaseModel):
     consume_records: float | None = None
     registered_at: datetime | None = None
     can_receive_messages: bool | None = None
-    language: Language = Language.EN
+    language: Language = Language.FA
     is_banned: bool = False
     referral_code: str | None = None
     referred_by_user_id: int | None = None

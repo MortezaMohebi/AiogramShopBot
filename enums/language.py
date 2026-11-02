@@ -3,22 +3,27 @@ from enum import Enum
 
 class Language(str, Enum):
     EN = "en"
+    FA = "fa"
     FR = "fr"
     DE = "de"
     IT = "it"
     ZH = "zh"
 
     @staticmethod
-    def from_locale(locale: str) -> 'Language':
+    def from_locale(locale: str | None) -> 'Language':
+        """Parse BCP-47 tags, defaulting to Persian for an Iranian shop."""
+        code = (locale or "").replace("_", "-").split("-", 1)[0].lower()
         try:
-            return Language(locale.lower())
+            return Language(code)
         except ValueError:
-            return Language.EN
+            return Language.FA
 
     def get_country_code(self):
         match self:
             case Language.EN:
                 return "US"
+            case Language.FA:
+                return "IR"
             case Language.ZH:
                 return "CN"
             case _:
