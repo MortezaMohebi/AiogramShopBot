@@ -12,3 +12,15 @@ __pycache__/
 node_modules/
 .next/
 .git/
+
+# Never bake persisted production / local state into test or runtime images.
+media_data/
+postgres_data/
+caddy_data/
+caddy_config/
+redis_data/
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
