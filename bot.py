@@ -25,6 +25,11 @@ from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
 from services.bale_wallet import BaleWalletService, CheckoutRejected
+from services.shop_bale_payments import (
+    settle_bale_payment, validate_bale_precheckout,
+)
+from services.shop_payments import PaymentRejected
+from channels.shop_payment_dispatch import send_order_invoice
 from services.shop_orders import ShopOrdersFlow
 from services.shop_identity import is_blocked, register_customer
 from dashboard.persian import localize_model_view
@@ -264,7 +269,7 @@ async def bale_webhook(webhook_secret: str, request: Request):
             accepted, reason = False, "پرداخت کیف پول در حال حاضر غیرفعال است."
         else:
             async with get_db_session() as session:
-                accepted, reason = await BaleWalletService.validate_pre_checkout(
+                accepted, reason = await validate_bale_precheckout(
                     session, precheckout
                 )
         try:
@@ -297,14 +302,14 @@ async def bale_webhook(webhook_secret: str, request: Request):
             async with get_db_session() as session:
                 # Blocked customers can pay a previously issued invoice;
                 # reconcile the receipt instead of abandoning real funds.
-                order, changed = await BaleWalletService.confirm_success(
+                order, changed = await settle_bale_payment(
                     session,
                     transport,
                     payer_id=payer["id"],
                     chat_id=chat["id"],
                     payment=payment_message["successful_payment"],
                 )
-        except CheckoutRejected:
+        except (CheckoutRejected, PaymentRejected):
             raise HTTPException(
                 status_code=422, detail="Wallet receipt did not match order"
             ) from None
@@ -350,6 +355,26 @@ async def bale_webhook(webhook_secret: str, request: Request):
             platform_user_id=event.user_id,
         ):
             return {"status": "blocked"}
+        if event.callback_data and event.callback_data.startswith("shop:pay:"):
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            try:
+                order_id = int(event.callback_data.removeprefix("shop:pay:"))
+                await send_order_invoice(
+                    session,
+                    platform=Platform.BALE,
+                    user_id=event.user_id,
+                    order_id=order_id,
+                    bale_transport=transport,
+                )
+            except (ValueError, PaymentRejected) as exc:
+                await transport.send(event.chat_id, BotReply(str(exc)))
+            except BaleApiError:
+                raise HTTPException(
+                    status_code=502, detail="Bale invoice delivery unavailable"
+                ) from None
+            return {"status": "invoice_handled"}
+
         reply = await ShopOrdersFlow(
             display_unit=config.SHOP_DISPLAY_UNIT
         ).reply(event, session)
