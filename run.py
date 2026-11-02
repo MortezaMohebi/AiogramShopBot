@@ -12,6 +12,10 @@ from enums.bot_entity import BotEntity
 from enums.keyboard_button import KeyboardButton
 from enums.language import Language
 from handlers.common.review_management import review_management_router
+from channels.contracts import InboundEvent, Platform
+from channels.telegram import TelegramTransport
+from models.shop_content import ShopSettings
+from services.shop_channel_catalog import CatalogFlow
 from middleware.database import DBSessionMiddleware
 from middleware.language import I18nMiddleware
 from middleware.throttling_middleware import ThrottlingMiddleware
@@ -59,27 +63,47 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
         keyboard.append([admin_menu_button])
     start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, keyboard=keyboard)
     bot_photo_id = get_bot_photo_id()
-    await message.answer_photo(photo=bot_photo_id,
-                               caption=get_text(language, BotEntity.COMMON, "start_message"),
-                               reply_markup=start_markup)
+    # The shop's own welcome copy comes from the admin dashboard.
+    settings = await session.get(ShopSettings, 1)
+    welcome = (
+        settings.welcome_message
+        if settings and settings.welcome_message
+        else get_text(language, BotEntity.COMMON, "start_message")
+    )
+    await message.answer_photo(
+        photo=bot_photo_id,
+        caption=welcome[:1024],
+        reply_markup=start_markup,
+        parse_mode=None,
+    )
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())
 async def faq(message: Message, session: AsyncSession, language: Language):
-    button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.FAQ, session)
-    media = MediaService.convert_to_media(button_media.media_id,
-                                          caption=get_text(language, BotEntity.USER, "faq_string"))
-    await NotificationService.answer_media(message, media)
+    """Send FAQ content managed from the shared SQLAdmin dashboard."""
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        text="/faq",
+    )
+    response = await CatalogFlow().reply(event, session)
+    if response is not None:
+        await TelegramTransport(message.bot).send(message.chat.id, response)
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.HELP)), IsUserExistFilter())
 async def support(message: Message, session: AsyncSession, language: Language):
-    kb_builder = InlineKeyboardBuilder()
-    kb_builder.button(text=get_text(language, BotEntity.USER, "help_button"), url=SUPPORT_LINK)
-    button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.HELP, session)
-    media = MediaService.convert_to_media(button_media.media_id,
-                                          caption=get_text(language, BotEntity.USER, "help_string"))
-    await NotificationService.answer_media(message, media, kb_builder.as_markup())
+    """Send current support details managed in the shared SQLAdmin dashboard."""
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        text="/help",
+    )
+    response = await CatalogFlow().reply(event, session)
+    if response is not None:
+        await TelegramTransport(message.bot).send(message.chat.id, response)
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.REVIEWS)), IsUserExistFilter())
