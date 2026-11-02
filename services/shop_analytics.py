@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import ShopIdentity, ShopOrder
@@ -99,7 +99,10 @@ async def build_shop_analytics(
             func.count(ShopIdentity.id),
             func.coalesce(
                 func.sum(
-                    func.cast(ShopIdentity.allow_announcements, func.NUMERIC)
+                    case(
+                        (ShopIdentity.allow_announcements.is_(True), 1),
+                        else_=0,
+                    )
                 ),
                 0,
             ),
@@ -188,9 +191,6 @@ async def build_shop_analytics(
             )
         )
 
-    campaign_clause = (
-        [ShopCampaignDelivery.sent_at >= since] if since else []
-    )
     # Campaign approval and sending are events without a `created_at`
     # on the recipient outbox; all pending states remain visible to prevent
     # old unresolved deliveries disappearing from operational reports.
@@ -214,13 +214,13 @@ async def build_shop_analytics(
     wallet_result = await session.execute(
         select(
             func.coalesce(func.sum(
-                func.case(
+                case(
                     (ShopWalletEntry.delta_irr > 0, ShopWalletEntry.delta_irr),
                     else_=0,
                 )
             ), 0),
             func.coalesce(func.sum(
-                func.case(
+                case(
                     (ShopWalletEntry.delta_irr < 0, -ShopWalletEntry.delta_irr),
                     else_=0,
                 )
