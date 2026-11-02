@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_content import Product, Testimonial
+from services.shop_money import format_rials
 
 _PAGE_SIZE = 6
 _REVIEW_PAGE_SIZE = 3
@@ -37,9 +38,12 @@ def _button(label: str, payload: str) -> InlineAction:
 class CatalogFlow:
     """Resolve catalog and review navigation using one shared SQL schema."""
 
-    def __init__(self, currency_label: str = "ریال") -> None:
-        """Provide an explicit display currency, never convert stored prices."""
+    def __init__(
+        self, currency_label: str = "ریال", display_unit: str = "IRR"
+    ) -> None:
+        """Display canonical IRR in rials or tomans without float conversion."""
         self.currency_label = currency_label
+        self.display_unit = display_unit
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
@@ -136,11 +140,12 @@ class CatalogFlow:
             description += "…"
         body = (
             f"{product.name}\n\n{description}\n\n"
-            f"قیمت: {_price(product.price)} {self.currency_label}\n{stock}"
+            f"قیمت: {format_rials(product.price, self.display_unit)}\n{stock}"
         )
         return BotReply(
             text=body,
             rows=(
+                (_button("🛒 ثبت سفارش", f"shop:checkout:{product.id}"),),
                 (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
                 (_button("بازگشت به محصولات", "shop:list:0"),),
             ),

@@ -21,8 +21,9 @@ from fastapi.staticfiles import StaticFiles
 
 from admin import authentication_backend
 from channels.bale import BaleApiError, BaleTransport
-from channels.contracts import Platform, normalize_update
+from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
+from services.bale_wallet import BaleWalletService, CheckoutRejected
 from dashboard.persian import localize_model_view
 from db import create_db_and_tables, engine, get_db_session
 import uvicorn
@@ -228,16 +229,42 @@ async def bale_webhook(webhook_secret: str, request: Request):
     if event is None:
         return {"status": "ignored"}
 
-    async with get_db_session() as session:
-        reply = await CatalogFlow(
-            currency_label=config.SHOP_CURRENCY_LABEL
-        ).reply(event, session)
-    if reply is None:
-        return {"status": "ignored"}
-
     transport = BaleTransport(
         config.BALE_BOT_TOKEN, request.app.state.bale_http_client
     )
+    async with get_db_session() as session:
+        if event.callback_data and event.callback_data.startswith("shop:checkout:"):
+            try:
+                product_id = int(event.callback_data.rsplit(":", 1)[1])
+                if event.callback_query_id:
+                    await transport.acknowledge(event.callback_query_id)
+                await BaleWalletService.create_invoice(
+                    session,
+                    transport,
+                    product_id=product_id,
+                    platform_user_id=event.user_id,
+                    chat_id=event.chat_id,
+                    provider_token=config.BALE_WALLET_PROVIDER_TOKEN,
+                )
+            except (ValueError, CheckoutRejected) as exc:
+                await transport.send(event.chat_id, BotReply(str(exc)))
+            except BaleApiError:
+                raise HTTPException(status_code=502, detail="Bale delivery failed") from None
+            return {"status": "ok"}
+
+        if event.text and event.text.strip() in ("/orders", "📦 سفارش‌های من"):
+            text = await BaleWalletService.list_orders(
+                session, platform="bale", platform_user_id=event.user_id
+            )
+            reply = BotReply(text)
+        else:
+            reply = await CatalogFlow(
+                currency_label=config.SHOP_CURRENCY_LABEL,
+                display_unit=config.SHOP_DISPLAY_UNIT,
+            ).reply(event, session)
+    if reply is None:
+        return {"status": "ignored"}
+
     try:
         if event.callback_query_id:
             await transport.acknowledge(event.callback_query_id)

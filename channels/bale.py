@@ -75,6 +75,65 @@ class BaleTransport:
             }
         await self._call("sendMessage", payload)
 
+    async def send_invoice(
+        self,
+        *,
+        chat_id: int,
+        title: str,
+        description: str,
+        payload: str,
+        provider_token: str,
+        amount_irr: int,
+    ) -> None:
+        """Issue a native Bale wallet invoice for one order, priced in rials."""
+        if not provider_token or not provider_token.strip():
+            raise ValueError("Bale wallet provider token is not configured.")
+        if not 1 <= len(title) <= 32 or not 1 <= len(description) <= 255:
+            raise ValueError("Bale invoice title or description is out of range.")
+        if not 1 <= len(payload.encode("utf-8")) <= 128:
+            raise ValueError("Bale invoice payload is out of range.")
+        if type(amount_irr) is not int or amount_irr <= 0:
+            raise ValueError("Bale wallet amount must be a positive rial integer.")
+
+        await self._call(
+            "sendInvoice",
+            {
+                "chat_id": chat_id,
+                "title": title,
+                "description": description,
+                "payload": payload,
+                "provider_token": provider_token,
+                "prices": [{"label": title, "amount": amount_irr}],
+            },
+        )
+
+    async def answer_pre_checkout(
+        self, query_id: str, *, accepted: bool, error_message: str | None = None
+    ) -> None:
+        """Reply to Bale's pre-checkout request within its ten-second limit."""
+        if not query_id:
+            raise ValueError("A Bale pre-checkout query ID is required.")
+        data: dict[str, Any] = {
+            "pre_checkout_query_id": query_id,
+            "ok": accepted,
+        }
+        if not accepted:
+            data["error_message"] = (
+                error_message or "سفارش فعلاً قابل پرداخت نیست."
+            )[:255]
+        await self._call("answerPreCheckoutQuery", data)
+
+    async def inquire_transaction(self, transaction_id: str) -> dict[str, Any]:
+        """Retrieve verified transaction status from Bale before fulfillment."""
+        if not transaction_id or len(transaction_id) > 128:
+            raise ValueError("Invalid Bale transaction ID.")
+        result = await self._call(
+            "inquireTransaction", {"transaction_id": transaction_id}
+        )
+        if not isinstance(result, dict):
+            raise BaleApiError("Bale inquiry did not return a transaction.")
+        return result
+
     async def acknowledge(self, query_id: str) -> None:
         """Acknowledge newer Bale callbacks; old clients lack the method.
 
