@@ -1,43 +1,101 @@
+"""SQLAdmin login using database staff identities and revocable sessions."""
+
+from __future__ import annotations
+
+from sqlalchemy import select
 from sqladmin.authentication import AuthenticationBackend
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
 import config
-from config import SQLADMIN_HASHED_PASSWORD
-from enums.user_role import UserRole
-from utils.utils import create_access_token, decode_token, verify_password
+from db import session_maker
+from models.shop_staff import ShopStaff
+from utils.utils import (
+    create_access_token,
+    decode_token,
+    verify_password,
+)
 
 
 class AdminAuth(AuthenticationBackend):
-    async def login(self, request: Request) -> bool:
-        form = await request.form()
-        username = form.get("username")
-        password = form.get("password")
+    """Authenticate against hashed credentials and a live active-staff row."""
 
-        if username == "admin" and verify_password(password, SQLADMIN_HASHED_PASSWORD):
-            token = create_access_token(
-                {
-                    "sub": UserRole.ADMIN.name,
-                }
+    def __init__(self, secret_key: str) -> None:
+        """Use signed sessions with Secure/SameSite cookies by default."""
+        super().__init__(secret_key)
+        self.middlewares = [
+            Middleware(
+                SessionMiddleware,
+                secret_key=secret_key,
+                same_site="lax",
+                https_only=config.SHOP_ADMIN_SECURE_COOKIES,
             )
+        ]
 
-            request.session.update({"token": token})
-            return True
-        else:
+    async def login(self, request: Request) -> bool:
+        """Create a short-lived role-bearing session after password verification."""
+        form = await request.form()
+        username, password = form.get("username"), form.get("password")
+        if not isinstance(username, str) or not isinstance(password, str):
+            return False
+        username = username.strip().casefold()
+        if not 1 <= len(username) <= 80 or not password:
             return False
 
+        async with session_maker() as session:
+            staff = await session.scalar(
+                select(ShopStaff).where(
+                    ShopStaff.username == username,
+                    ShopStaff.is_active.is_(True),
+                )
+            )
+            if staff is None or not verify_password(
+                password, staff.password_hash
+            ):
+                return False
+            token = create_access_token({
+                "sub": str(staff.id),
+                "role": staff.role,
+                "sv": staff.session_version,
+            })
+        request.session.clear()
+        request.session["token"] = token
+        return True
+
     async def logout(self, request: Request) -> bool:
+        """Remove the admin session token."""
         request.session.clear()
         return True
 
     async def authenticate(self, request: Request) -> bool:
+        """Revalidate the staff identity and session version on every request."""
         token = request.session.get("token")
-        if not token:
+        if not isinstance(token, str):
             return False
-
-        payload = decode_token(token)
-        if not payload:
+        claims = decode_token(token)
+        if not isinstance(claims, dict):
+            request.session.clear()
             return False
-
+        try:
+            staff_id = int(claims.get("sub"))
+        except (TypeError, ValueError):
+            request.session.clear()
+            return False
+        if staff_id <= 0 or type(claims.get("sv")) is not int:
+            request.session.clear()
+            return False
+        async with session_maker() as session:
+            staff = await session.get(ShopStaff, staff_id)
+            if (
+                staff is None or not staff.is_active
+                or staff.session_version != claims["sv"]
+                or staff.role != claims.get("role")
+            ):
+                request.session.clear()
+                return False
+            request.state.shop_role = staff.role
+            request.state.shop_staff_id = staff.id
         return True
 
 

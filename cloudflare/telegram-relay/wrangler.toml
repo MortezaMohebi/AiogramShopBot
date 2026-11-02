@@ -1,0 +1,10 @@
+# Replace the Worker name and configure its public URL in TELEGRAM_WORKER_URL.
+# Sensitive credentials must ONLY be supplied as Cloudflare Secrets:
+#   npx wrangler secret put RELAY_SHARED_SECRET
+name = "telegram-shop-api-relay"
+main = "src/index.mjs"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[observability]
+enabled = false

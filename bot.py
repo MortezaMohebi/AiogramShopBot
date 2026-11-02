@@ -1,22 +1,72 @@
+import asyncio
+import json
 import logging
+from contextlib import suppress
 import sys
+from hmac import compare_digest
+
+from aiohttp import ClientSession, ClientTimeout
 import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile, URLInputFile
+from aiogram.types import BufferedInputFile, Update
 from redis.asyncio import Redis
-from sqladmin import Admin
+from dashboard.secure_admin import SecureShopAdmin as Admin
 
 import config
 from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
+from fastapi.staticfiles import StaticFiles
 
 from admin import authentication_backend
-from db import create_db_and_tables, engine
+from channels.bale import BaleApiError, BaleTransport
+from channels.contracts import BotReply, Platform, normalize_update
+from services.shop_channel_catalog import CatalogFlow
+from services.shop_cart import ShopCartFlow
+from services.shop_engagement_flow import ShopEngagementFlow
+from services.shop_referrals import ShopReferralService
+from services.bale_wallet import BaleWalletService, CheckoutRejected
+from services.shop_bale_payments import (
+    settle_bale_payment, validate_bale_precheckout,
+)
+from services.shop_payments import PaymentRejected
+from channels.shop_payment_dispatch import send_order_invoice
+from services.shop_orders import ShopOrdersFlow
+from services.shop_identity import is_blocked, register_customer
+from services.shop_updates import claim_update, finish_update
+from dashboard.persian import localize_model_view
+from dashboard.permissions import secure_model_view
+from dashboard.wallet_views import ShopWalletAdjustmentView
+from dashboard.campaign_views import ShopCampaignReviewView
+from dashboard.campaign_media_views import (
+    ShopCampaignMediaUploadView, ShopCampaignMediaPreviewView,
+)
+from dashboard.analytics_views import ShopAnalyticsView
+from models.shop_staff import ShopStaffAdmin
+from models.shop_delivery import ShopRemoteFileAdmin, ShopInboundUpdateAdmin
+from models.shop_engagement import (
+    ShopWalletAccountAdmin, ShopWalletEntryAdmin, ShopReferralPolicyAdmin,
+    ShopReferralProfileAdmin, ShopReferralRewardAdmin,
+    ShopCampaignAdmin, ShopCampaignDeliveryAdmin, ShopCampaignMediaAdmin,
+    ShopBroadcastRateSlotAdmin, ShopCampaignAuditAdmin,
+)
+from dashboard.media_views import ShopMediaPreviewView, ShopUploadView
+from dashboard.order_views import ShopOrderReviewView
+from dashboard.refund_views import ShopRefundReviewView
+from db import create_db_and_tables, engine, get_db_session
 import uvicorn
 from fastapi.responses import JSONResponse
 from enums.cryptocurrency import Cryptocurrency
+from models.shop_checkout import (
+    ShopCartAdmin, ShopCartItemAdmin, ShopShippingMethodAdmin,
+    ShopCouponAdmin, ShopOrderLineAdmin, ShopOrderReviewAuditAdmin,
+)
+from models.shop_payment import (
+    ShopPaymentAttemptAdmin,
+    ShopRefundCaseAdmin,
+)
+from models.shop_content import ProductAdmin, ProductMediaAdmin, ShopCategoryAdmin, ShopIdentityAdmin, ShopOrderAdmin, ShopSettingsAdmin, TestimonialAdmin
 from models.buy import BuyAdmin
 from models.buyItem import BuyItemAdmin
 from models.cart import CartAdmin
@@ -47,29 +97,23 @@ dp = Dispatcher(storage=RedisStorage(redis))
 
 async def _startup() -> None:
     await create_db_and_tables()
-    await bot.set_webhook(
-        url=config.WEBHOOK_URL,
-        secret_token=config.WEBHOOK_SECRET_TOKEN
-    )
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
     me = await bot.get_me()
     photos = await bot.get_user_profile_photos(me.id)
-    if photos.total_count == 0:
-        photo_id_list = []
-        for admin_id in config.ADMIN_ID_LIST:
-            try:
-                msg = await bot.send_photo(chat_id=admin_id,
-                                           photo=URLInputFile(url="https://img.freepik.com/premium-vector/no-photo-available-vector-icon-default-image-symbol-picture-coming-soon-web-site-mobile-app_87543-18055.jpg",
-                                                              filename="no_image.png"))
-                bot_photo_id = msg.photo[-1].file_id
-                photo_id_list.append(bot_photo_id)
-            except Exception as _:
-                pass
-        bot_photo_id = photo_id_list[0]
-    else:
-        bot_photo_id = photos.photos[0][-1].file_id
+    # No hardcoded product or placeholder image and no external stock-photo URL.
+    # The legacy upstream views require a Telegram file_id for their navigation.
+    bot_photo_id = (
+        photos.photos[0][-1].file_id
+        if photos.total_count > 0
+        else config.DEFAULT_MEDIA_FILE_ID
+    )
+    if not bot_photo_id:
+        raise RuntimeError(
+            "Configure DEFAULT_MEDIA_FILE_ID for legacy Telegram menus "
+            "or set a profile image for the bot before starting."
+        )
     with open("static/no_image.jpeg", "w") as f:
         f.write(bot_photo_id)
     await MediaService.update_inaccessible_media(bot)
@@ -92,10 +136,35 @@ async def _startup() -> None:
         except Exception as e:
             logging.warning(e)
 
+    if config.TELEGRAM_UPDATE_MODE == "webhook":
+        await bot.set_webhook(
+            url=config.WEBHOOK_URL,
+            secret_token=config.WEBHOOK_SECRET_TOKEN,
+        )
+    else:
+        # Telegram does not permit getUpdates while a webhook is active.
+        await bot.delete_webhook(drop_pending_updates=False)
+        app.state.telegram_polling_task = asyncio.create_task(
+            dp.start_polling(
+                bot,
+                handle_signals=False,
+                close_bot_session=False,
+                polling_timeout=10,
+            ),
+            name="telegram-cloudflare-polling",
+        )
+
 
 async def _shutdown() -> None:
     logging.warning('Shutting down..')
-    await bot.delete_webhook()
+    polling_task = getattr(app.state, "telegram_polling_task", None)
+    if polling_task is not None:
+        if not polling_task.done():
+            polling_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await polling_task
+    else:
+        await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()
     logging.warning('Bye!')
@@ -103,46 +172,373 @@ async def _shutdown() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await _startup()
+    """Manage the Telegram bot and optional reusable Bale HTTP client."""
+    if bool(config.BALE_BOT_TOKEN) != bool(config.BALE_WEBHOOK_SECRET):
+        raise ValueError(
+            "Configure BALE_BOT_TOKEN and BALE_WEBHOOK_SECRET together."
+        )
+    if config.BALE_BOT_TOKEN and len(config.BALE_WEBHOOK_SECRET) < 32:
+        raise ValueError("BALE_WEBHOOK_SECRET must contain at least 32 characters.")
+
+    bale_client = (
+        ClientSession(timeout=ClientTimeout(total=15))
+        if config.BALE_BOT_TOKEN
+        else None
+    )
+    app.state.bale_http_client = bale_client
+    started = False
     try:
+        await _startup()
+        started = True
         yield
     finally:
-        await _shutdown()
+        try:
+            if started:
+                await _shutdown()
+        finally:
+            if bale_client is not None:
+                await bale_client.close()
 
 
 app = FastAPI(lifespan=lifespan)
-admin = Admin(app=app, engine=engine, authentication_backend=authentication_backend)
-admin.add_model_view(UserAdmin)
-admin.add_model_view(BuyAdmin)
-admin.add_model_view(ShippingOptionAdmin)
-admin.add_model_view(CouponAdmin)
-admin.add_model_view(CategoryAdmin)
-admin.add_model_view(SubcategoryAdmin)
-admin.add_model_view(ItemAdmin)
-admin.add_model_view(DepositAdmin)
-admin.add_model_view(BuyItemAdmin)
-admin.add_model_view(PaymentAdmin)
-admin.add_model_view(CartAdmin)
-admin.add_model_view(CartItemAdmin)
-admin.add_model_view(ReferralBonusAdmin)
-admin.add_model_view(ReviewAdmin)
+app.state.telegram_bot = bot
+app.mount(
+    "/shop-assets",
+    StaticFiles(directory=Path(__file__).resolve().parent / "assets"),
+    name="shop-assets",
+)
+admin = Admin(
+    app=app,
+    engine=engine,
+    authentication_backend=authentication_backend,
+    title="مدیریت فروشگاه",
+    templates_dir=str(Path(__file__).resolve().parent / "templates"),
+)
+admin.add_model_view(secure_model_view(localize_model_view(UserAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(BuyAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(ShippingOptionAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(CouponAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(CategoryAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(SubcategoryAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(ItemAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(DepositAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(BuyItemAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(PaymentAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(CartAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(CartItemAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(ReferralBonusAdmin)))
+admin.add_model_view(secure_model_view(localize_model_view(ReviewAdmin)))
+admin.add_model_view(secure_model_view(ShopSettingsAdmin))
+admin.add_model_view(secure_model_view(ShopCategoryAdmin))
+admin.add_model_view(secure_model_view(ProductAdmin))
+admin.add_model_view(secure_model_view(ProductMediaAdmin))
+admin.add_model_view(secure_model_view(TestimonialAdmin))
+admin.add_model_view(secure_model_view(ShopIdentityAdmin))
+admin.add_model_view(secure_model_view(ShopOrderAdmin))
+admin.add_model_view(secure_model_view(ShopShippingMethodAdmin))
+admin.add_model_view(secure_model_view(ShopCouponAdmin))
+admin.add_model_view(secure_model_view(ShopCartAdmin))
+admin.add_model_view(secure_model_view(ShopCartItemAdmin))
+admin.add_model_view(secure_model_view(ShopOrderLineAdmin))
+admin.add_model_view(secure_model_view(ShopOrderReviewAuditAdmin))
+admin.add_model_view(secure_model_view(ShopPaymentAttemptAdmin))
+admin.add_model_view(secure_model_view(ShopRefundCaseAdmin))
+admin.add_view(ShopUploadView)
+admin.add_view(ShopMediaPreviewView)
+admin.add_view(ShopOrderReviewView)
+admin.add_view(ShopRefundReviewView)
+admin.add_view(ShopWalletAdjustmentView)
+admin.add_view(ShopCampaignReviewView)
+admin.add_view(ShopCampaignMediaUploadView)
+admin.add_view(ShopCampaignMediaPreviewView)
+admin.add_view(ShopAnalyticsView)
+admin.add_model_view(secure_model_view(ShopStaffAdmin))
+admin.add_model_view(secure_model_view(ShopWalletAccountAdmin))
+admin.add_model_view(secure_model_view(ShopWalletEntryAdmin))
+admin.add_model_view(secure_model_view(ShopReferralPolicyAdmin))
+admin.add_model_view(secure_model_view(ShopReferralProfileAdmin))
+admin.add_model_view(secure_model_view(ShopReferralRewardAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignDeliveryAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignMediaAdmin))
+admin.add_model_view(secure_model_view(ShopCampaignAuditAdmin))
+admin.add_model_view(secure_model_view(ShopBroadcastRateSlotAdmin))
+admin.add_model_view(secure_model_view(ShopRemoteFileAdmin))
+admin.add_model_view(secure_model_view(ShopInboundUpdateAdmin))
 
 app.include_router(processing_router)
 
 
-@app.post(config.WEBHOOK_PATH)
-async def webhook(request: Request):
-    secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-    if secret_token != config.WEBHOOK_SECRET_TOKEN:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+@app.post("/webhooks/bale/{webhook_secret}")
+async def bale_webhook(webhook_secret: str, request: Request):
+    """Receive private Bale events with a secret URL and shared catalog logic.
+
+    The supplied Bale snapshot does not document Telegram-style secret
+    headers. Keep the path secret unguessable and redact it from proxy logs.
+    """
+    configured_secret = config.BALE_WEBHOOK_SECRET
+    if (
+        not config.BALE_BOT_TOKEN
+        or not configured_secret
+        or not compare_digest(webhook_secret, configured_secret)
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    raw = await request.body()
+    if len(raw) > 256_000:
+        raise HTTPException(status_code=413, detail="Payload too large")
+    try:
+        payload = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid JSON") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid update")
+
+    # A unique update receipt is persisted before any outgoing Bot API send.
+    update_id = payload.get("update_id")
+    if type(update_id) is not int or update_id < 0:
+        raise HTTPException(status_code=400, detail="Invalid update ID")
+    fresh, state = await claim_update(
+        platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
+        update_id=update_id,
+    )
+    if not fresh:
+        return {"status": "duplicate", "receipt_state": state}
+    try:
+        response = await _process_bale_update(request, payload)
+    except Exception:
+        await finish_update(
+            platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
+            update_id=update_id, success=False,
+        )
+        raise
+    await finish_update(
+        platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
+        update_id=update_id, success=True,
+    )
+    return response
+
+
+async def _process_bale_update(request: Request, payload: dict):
+    """Handle an already-claimed Bale update exactly once per bot."""
+
+    transport = BaleTransport(
+        config.BALE_BOT_TOKEN, request.app.state.bale_http_client
+    )
+    # Payment events must be consumed BEFORE generic message normalization.
+    # Bale's successful_payment messages do not necessarily contain text.
+    precheckout = payload.get("pre_checkout_query")
+    if isinstance(precheckout, dict):
+        query_id = precheckout.get("id")
+        if not isinstance(query_id, str) or not query_id:
+            raise HTTPException(status_code=400, detail="Invalid pre-checkout query")
+        if not config.BALE_WALLET_CHECKOUT_ENABLED:
+            accepted, reason = False, "پرداخت کیف پول در حال حاضر غیرفعال است."
+        else:
+            async with get_db_session() as session:
+                accepted, reason = await validate_bale_precheckout(
+                    session, precheckout
+                )
+        try:
+            await transport.answer_pre_checkout(
+                query_id,
+                accepted=accepted,
+                error_message=reason,
+            )
+        except BaleApiError:
+            raise HTTPException(
+                status_code=502, detail="Bale pre-checkout response failed"
+            ) from None
+        return {"status": "accepted" if accepted else "declined"}
+
+    payment_message = payload.get("message")
+    if isinstance(payment_message, dict) and isinstance(
+        payment_message.get("successful_payment"), dict
+    ):
+        payer = payment_message.get("from")
+        chat = payment_message.get("chat")
+        if (
+            not isinstance(payer, dict)
+            or type(payer.get("id")) is not int
+            or not isinstance(chat, dict)
+            or chat.get("type") != "private"
+            or type(chat.get("id")) is not int
+        ):
+            raise HTTPException(status_code=400, detail="Invalid payer")
+        try:
+            async with get_db_session() as session:
+                # Blocked customers can pay a previously issued invoice;
+                # reconcile the receipt instead of abandoning real funds.
+                order, changed = await settle_bale_payment(
+                    session,
+                    transport,
+                    payer_id=payer["id"],
+                    chat_id=chat["id"],
+                    payment=payment_message["successful_payment"],
+                )
+        except (CheckoutRejected, PaymentRejected):
+            raise HTTPException(
+                status_code=422, detail="Wallet receipt did not match order"
+            ) from None
+        except BaleApiError:
+            raise HTTPException(
+                status_code=502, detail="Bale payment inquiry unavailable"
+            ) from None
+        if changed:
+            note = (
+                f"✅ پرداخت سفارش #{order.id} تأیید شد."
+                if order.status == "paid"
+                else (
+                    f"⚠️ پرداخت سفارش #{order.id} ثبت شد، اما موجودی نیاز به "
+                    "بررسی فروشنده دارد. سفارش برای پیگیری نگه داشته شده است."
+                )
+            )
+            try:
+                await transport.send(chat["id"], BotReply(note))
+            except BaleApiError:
+                # Payment settlement is already durable. Retries are safe:
+                # confirm_success will not deduct inventory twice.
+                raise HTTPException(
+                    status_code=502, detail="Payment notice delivery failed"
+                ) from None
+        if changed and order.status == "paid":
+            # A referral error must not cause a successful payment to be
+            # reported as a failed transfer or retried by the sender.
+            try:
+                async with get_db_session() as reward_session:
+                    await ShopReferralService.award_for_paid_order(
+                        reward_session, order.id
+                    )
+            except Exception:
+                logging.exception(
+                    "Referral reward processing failed for order ID %s",
+                    order.id,
+                )
+        return {"status": "processed" if changed else "already_processed"}
+
+    event = normalize_update(Platform.BALE, payload)
+    if event is None:
+        return {"status": "ignored"}
+
+    source = payload.get("callback_query") or payload.get("message") or {}
+    customer = source.get("from") if isinstance(source, dict) else {}
+    async with get_db_session() as session:
+        await register_customer(
+            session,
+            platform=Platform.BALE,
+            platform_user_id=event.user_id,
+            username=customer.get("username") if isinstance(customer, dict) else None,
+            first_name=customer.get("first_name") if isinstance(customer, dict) else None,
+        )
+        if await is_blocked(
+            session, platform=Platform.BALE,
+            platform_user_id=event.user_id,
+        ):
+            return {"status": "blocked"}
+        if event.callback_data and event.callback_data.startswith("shop:pay:"):
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            try:
+                order_id = int(event.callback_data.removeprefix("shop:pay:"))
+                await send_order_invoice(
+                    session,
+                    platform=Platform.BALE,
+                    user_id=event.user_id,
+                    order_id=order_id,
+                    bale_transport=transport,
+                )
+            except (ValueError, PaymentRejected) as exc:
+                await transport.send(event.chat_id, BotReply(str(exc)))
+            except BaleApiError:
+                raise HTTPException(
+                    status_code=502, detail="Bale invoice delivery unavailable"
+                ) from None
+            return {"status": "invoice_handled"}
+
+        reply = await ShopEngagementFlow(
+            display_unit=config.SHOP_DISPLAY_UNIT
+        ).reply(event, session)
+        if reply is None:
+            reply = await ShopOrdersFlow(
+                display_unit=config.SHOP_DISPLAY_UNIT
+            ).reply(event, session)
+        if reply is None:
+            reply = await ShopCartFlow(
+                display_unit=config.SHOP_DISPLAY_UNIT
+            ).reply(event, session)
+        if reply is None:
+            reply = await CatalogFlow(
+                currency_label=config.SHOP_CURRENCY_LABEL,
+                display_unit=config.SHOP_DISPLAY_UNIT,
+            ).reply(event, session)
+    if reply is None:
+        return {"status": "ignored"}
 
     try:
-        update_data = await request.json()
-        await dp.feed_webhook_update(bot, update_data)
-        return {"status": "ok"}
-    except Exception as e:
-        logging.error(f"Error processing webhook: {e}")
-        return {"status": "error"}, status.HTTP_500_INTERNAL_SERVER_ERROR
+        if event.callback_query_id:
+            await transport.acknowledge(event.callback_query_id)
+        await transport.send(event.chat_id, reply)
+    except BaleApiError:
+        # Return an error so the gateway can retry; never log credentials.
+        raise HTTPException(status_code=502, detail="Bale delivery failed") from None
+    return {"status": "ok"}
+
+
+@app.post(config.WEBHOOK_PATH)
+async def webhook(request: Request):
+    """Deduplicate Telegram webhook receipts independently of Bale."""
+    if config.TELEGRAM_UPDATE_MODE != "webhook":
+        raise HTTPException(status_code=404, detail="Not found")
+    secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    expected = config.WEBHOOK_SECRET_TOKEN or ""
+    if not expected or not secret_token or not compare_digest(
+        secret_token, expected
+    ):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    raw = await request.body()
+    if len(raw) > 256_000:
+        raise HTTPException(status_code=413, detail="Update too large")
+    try:
+        update_data = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid JSON") from None
+    if not isinstance(update_data, dict):
+        raise HTTPException(status_code=400, detail="Invalid update")
+    update_id = update_data.get("update_id")
+    if type(update_id) is not int or update_id < 0:
+        raise HTTPException(status_code=400, detail="Invalid update ID")
+
+    fresh, receipt_state = await claim_update(
+        platform=Platform.TELEGRAM, token=config.TOKEN,
+        update_id=update_id,
+    )
+    if not fresh:
+        return {"status": "duplicate", "receipt_state": receipt_state}
+
+    try:
+        # Wait until handlers finish before marking the update processed.
+        # feed_webhook_update may detach long-running handlers into the
+        # background, which would create an inaccurate dedup receipt.
+        parsed_update = Update.model_validate(
+            update_data, context={"bot": bot}
+        )
+        await dp.feed_update(bot, parsed_update)
+    except Exception:
+        await finish_update(
+            platform=Platform.TELEGRAM, token=config.TOKEN,
+            update_id=update_id, success=False,
+        )
+        # Do not embed bot tokens, customer content or exception URLs.
+        raise HTTPException(
+            status_code=502, detail="Telegram webhook processing failed"
+        ) from None
+
+    await finish_update(
+        platform=Platform.TELEGRAM, token=config.TOKEN,
+        update_id=update_id, success=True,
+    )
+    return {"status": "ok"}
 
 
 @app.exception_handler(Exception)
@@ -169,5 +565,7 @@ def main() -> None:
         port=config.WEBAPP_PORT,
         proxy_headers=True,
         forwarded_allow_ips="*",
+        # Secret URLs must not appear in Uvicorn access logs.
+        access_log=not bool(config.BALE_BOT_TOKEN),
     )
 

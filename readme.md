@@ -160,6 +160,125 @@ More Telegram bot GIF demos, admin flow examples, and screenshots are available 
 </a>
 
 
+
+## Optional Cloudflare Worker transport (Telegram)
+
+This fork supports `TELEGRAM_API_MODE=cloudflare_worker` with a configurable
+`TELEGRAM_WORKER_URL` and a separate secret stored in the Worker and VPS
+environments. Unlike an open URL-rewriting proxy, the Worker authenticates
+requests and forwards only Telegram Bot API and file-download paths.
+
+The receiving side can use `TELEGRAM_UPDATE_MODE=webhook` (original behaviour)
+or `TELEGRAM_UPDATE_MODE=polling` to get updates through the Worker without
+a public Telegram-facing callback endpoint. **Bale remains independent**.
+
+- [Cloudflare Worker deployment and security guide (Persian)](docs/CLOUDFLARE_WORKER.fa.md)
+- [Telegram/Bale feature parity and API differences (Persian)](docs/CHANNEL_PARITY.fa.md)
+
+These features are on the **Draft PR branch**, not deployed or live-tested.
+
+## Persian shop dashboard, native Bale wallet and IRR
+
+The Draft PR branch also contains an independently editable product/catalogue
+model, private media uploader, product testimonials, Persian/RTL SQLAdmin
+templates, and native Bale wallet invoice/verification flow.
+
+- Canonical catalogue and invoice prices are **integer Iranian rials**.
+- Optional `SHOP_DISPLAY_UNIT=TOMAN` changes text display only.
+- Real Bale wallet checkout is **disabled by default** via
+  `BALE_WALLET_CHECKOUT_ENABLED=false` until live payment/shipping tests.
+- The legacy Telegram crypto wallet is not used for Bale transactions.
+- Old Telegram cart/coupon/shipping features have **not** yet been migrated into
+  the cross-platform services; see the parity matrix for open work.
+
+[Phase 2 implementation and safety report](docs/PHASE2_STATUS.fa.md)
+
+## Shared checkout foundation (Telegram + Bale)
+
+The draft fork now includes common multi-item baskets, product quantities,
+merchant-defined coupons, address capture, shipping methods, immutable order
+line snapshots, customer order history/cancellation, and a guarded Persian
+order-review dashboard.
+
+**No money is collected by this shared checkout path.** New requests use
+`pending_review` / `approved_unpaid` and must not be interpreted as paid
+orders. The previous single-item Bale Wallet implementation stays disabled
+until multi-item settlement and provider verification are implemented and
+tested. Telegram legacy purchase history remains separate.
+
+[Phase 3 checkout status and safety contract (Persian)](docs/PHASE3_SHARED_CHECKOUT.fa.md)
+
+## Shared payment intents (draft, opt-in only)
+
+The Telegram/Bale shared order flow now includes immutable payment intents,
+verified pre-checkout, success-receipt settlement, atomic product/coupon
+allocation, Telegram Stars pricing (XTR), native Bale wallet invoices in IRR,
+and an auditable refund process.
+
+All payment and Stars refund flags default to **false**. The existing
+`pending_review` cart request remains unpaid until an operator reviews it.
+Physical Telegram invoices require a verified provider token and an
+explicitly configured IRR minor-unit factor. Real API, migration and
+concurrency tests are deferred to final integration.
+
+[Phase 4 payment safety and refund contract (Persian)](docs/PHASE4_PAYMENTS.fa.md)
+
+## Shared non-crypto capabilities (draft Phase 5)
+
+New cross-platform code includes merchant IRR store credit with an immutable
+ledger; approved, confirmed shop-credit purchases/refunds; opt-in referral
+rewards on verified fiat payments; consent-based marketing campaigns; and
+read-only Persian admin analytics that keep Telegram Stars, IRR and issued
+credit separate.
+
+The old shared admin login is replaced with individually provisioned staff
+accounts and deny-by-default roles. No default password or production account
+is installed automatically.
+
+**All financial adjustments and payment providers remain disabled by
+default. No live Bot API or database tests have been run.**
+
+[Phase 5 scope, operational controls and deferred verification (Persian)](docs/PHASE5_ENGAGEMENT.fa.md)
+
+## Media safety and two-platform Broadcast (draft Phase 6)
+
+The shared dashboard accepts media up to the official **Bale multipart** limits:
+10 MB per photo and 50 MB per video/audio/document. File IDs are stored
+separately for each Telegram/Bale bot; original media stays in private storage.
+
+Consent-only marketing campaigns now include ordered image/video/audio/PDF
+attachments and a durable recipient outbox. Broadcast runs in bounded,
+administrator-approved batches. Bale supports optional `standard` or paid
+`business` broadcast mode; paid mode is disabled by default and requires
+pre-uploaded file IDs belonging to the same Bale bot.
+
+Webhook update IDs are recorded per platform and bot before handling. Replayed
+updates are not executed again; uncertain outcomes require manual review.
+
+**The new code is not deployed or live-tested.** Do not enable paid Business
+broadcast or merge this draft before final Test → Debug → Retest.
+
+[Phase 6 Bale media limits, broadcast and deduplication (Persian)](docs/PHASE6_MEDIA_BROADCAST.fa.md)
+
+## Fully automatic opt-in Broadcast worker (draft Phase 7)
+
+After an administrator approves recipients and starts a campaign **once**,
+a separate shared worker drains the entire PostgreSQL outbox. It honors
+per-bot and per-user pacing, opt-out and block state changes, supports
+ordered media, and stores durable progress, manual-reconciliation receipts
+and audit entries. Managers can pause/resume/cancel and view progress in
+Persian SQLAdmin.
+
+Bale Business API remains opt-in and requires a confirmed *exact*
+per-campaign upper bound on billable API messages. Uncertain external
+delivery is never blindly retried after a restart. Docker Compose includes
+an optional `broadcast-worker` service rather than one container per user.
+
+All worker/dispatch flags are **OFF by default**; no live delivery,
+PostgreSQL migration or provider tests have occurred.
+
+[Phase 7 automatic Broadcast and operational safety guide (Persian)](docs/PHASE7_DURABLE_BROADCAST.fa.md)
+
 ## 📄 License
 
 [MIT License](LICENSE)

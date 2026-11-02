@@ -12,11 +12,20 @@ from enums.bot_entity import BotEntity
 from enums.keyboard_button import KeyboardButton
 from enums.language import Language
 from handlers.common.review_management import review_management_router
+from channels.contracts import InboundEvent, Platform
+from channels.telegram import TelegramTransport
+from models.shop_content import ShopSettings
+from services.shop_identity import register_customer
+from services.shop_referrals import (
+    ShopReferralService, ReferralRejected,
+)
+from services.shop_channel_catalog import CatalogFlow
 from middleware.database import DBSessionMiddleware
 from middleware.language import I18nMiddleware
 from middleware.throttling_middleware import ThrottlingMiddleware
 from models.user import UserDTO
 from multibot import main as main_multibot
+from channels.telegram_handlers import shop_catalog_router
 from handlers.user.cart import cart_router
 from handlers.admin.admin import admin_router
 from handlers.user.all_categories import all_categories_router
@@ -36,6 +45,9 @@ main_router = Router()
 @main_router.message(CommandStart())
 @main_router.message(Command("help"))
 async def start(message: Message, command: CommandObject, session: AsyncSession, language: Language):
+    shop_catalog_button = types.KeyboardButton(text="🛍 محصولات")
+    shop_wallet_button = types.KeyboardButton(text="💳 اعتبار من")
+    shop_referral_button = types.KeyboardButton(text="🎁 معرفی دوستان")
     all_categories_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "all_categories"))
     my_profile_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "my_profile"))
     faq_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "faq"))
@@ -44,39 +56,84 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     reviews_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "reviews"))
     cart_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "cart"))
     telegram_id = message.from_user.id
+    await register_customer(
+        session,
+        platform=Platform.TELEGRAM,
+        platform_user_id=telegram_id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
+    referral_arg = (
+        command.args.strip()
+        if command.args and command.args.strip().upper().startswith("R-")
+        else None
+    )
+    if referral_arg is not None:
+        try:
+            await ShopReferralService.claim(
+                session,
+                platform=Platform.TELEGRAM,
+                user_id=telegram_id,
+                code=referral_arg,
+            )
+        except ReferralRejected:
+            # Starting the bot must remain possible even for invalid codes.
+            logging.info("Invalid shop referral code was ignored.")
     await UserService.create_if_not_exist(UserDTO(
         telegram_username=message.from_user.username,
         telegram_id=telegram_id,
         language=language
-    ), command.args, session)
-    keyboard = [[all_categories_button, my_profile_button], [faq_button, help_button],
-                [reviews_button],
-                [cart_button]]
+    ), None if referral_arg is not None else command.args, session)
+    keyboard = [[shop_catalog_button, cart_button],
+                [all_categories_button, my_profile_button],
+                [help_button, faq_button],
+                [shop_wallet_button, shop_referral_button],
+                [reviews_button]]
     if telegram_id in config.ADMIN_ID_LIST:
         keyboard.append([admin_menu_button])
     start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, keyboard=keyboard)
     bot_photo_id = get_bot_photo_id()
-    await message.answer_photo(photo=bot_photo_id,
-                               caption=get_text(language, BotEntity.COMMON, "start_message"),
-                               reply_markup=start_markup)
+    # The shop's own welcome copy comes from the admin dashboard.
+    settings = await session.get(ShopSettings, 1)
+    welcome = (
+        settings.welcome_message
+        if settings and settings.welcome_message
+        else get_text(language, BotEntity.COMMON, "start_message")
+    )
+    await message.answer_photo(
+        photo=bot_photo_id,
+        caption=welcome[:1024],
+        reply_markup=start_markup,
+        parse_mode=None,
+    )
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())
 async def faq(message: Message, session: AsyncSession, language: Language):
-    button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.FAQ, session)
-    media = MediaService.convert_to_media(button_media.media_id,
-                                          caption=get_text(language, BotEntity.USER, "faq_string"))
-    await NotificationService.answer_media(message, media)
+    """Send FAQ content managed from the shared SQLAdmin dashboard."""
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        text="/faq",
+    )
+    response = await CatalogFlow().reply(event, session)
+    if response is not None:
+        await TelegramTransport(message.bot).send(message.chat.id, response)
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.HELP)), IsUserExistFilter())
 async def support(message: Message, session: AsyncSession, language: Language):
-    kb_builder = InlineKeyboardBuilder()
-    kb_builder.button(text=get_text(language, BotEntity.USER, "help_button"), url=SUPPORT_LINK)
-    button_media = await ButtonMediaRepository.get_by_button(KeyboardButton.HELP, session)
-    media = MediaService.convert_to_media(button_media.media_id,
-                                          caption=get_text(language, BotEntity.USER, "help_string"))
-    await NotificationService.answer_media(message, media, kb_builder.as_markup())
+    """Send current support details managed in the shared SQLAdmin dashboard."""
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        text="/help",
+    )
+    response = await CatalogFlow().reply(event, session)
+    if response is not None:
+        await TelegramTransport(message.bot).send(message.chat.id, response)
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.REVIEWS)), IsUserExistFilter())
@@ -110,6 +167,7 @@ users_routers.include_routers(
 users_routers.message.middleware(throttling_middleware)
 users_routers.callback_query.middleware(throttling_middleware)
 main_router.include_router(admin_router)
+main_router.include_router(shop_catalog_router)
 main_router.include_routers(users_routers)
 main_router.message.middleware(DBSessionMiddleware())
 main_router.callback_query.middleware(DBSessionMiddleware())
@@ -134,6 +192,8 @@ async def banned_message(callback: CallbackQuery, language: Language):
 
 if __name__ == '__main__':
     if config.MULTIBOT:
+        if config.TELEGRAM_UPDATE_MODE == "polling":
+            raise ValueError("Legacy MULTIBOT currently requires webhook mode.")
         main_multibot(main_router)
     else:
         dp.include_router(main_router)

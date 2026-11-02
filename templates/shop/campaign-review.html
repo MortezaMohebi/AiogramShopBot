@@ -1,0 +1,311 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<section class="col-12" aria-labelledby="broadcast-title">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title" id="broadcast-title">
+        Broadcast — مدیریت صف پایدار تلگرام و بله
+      </h3>
+      <div class="card-actions">
+        <a href="/admin/campaign-review" class="btn btn-outline-secondary btn-sm">
+          <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+          به‌روزرسانی وضعیت
+        </a>
+      </div>
+    </div>
+    <div class="card-body">
+      <p>
+        <a href="/admin/campaign-media-upload" class="btn btn-outline-primary">
+          <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>
+          افزودن رسانه به کمپین پیش‌نویس
+        </a>
+      </p>
+      {% if worker_enabled and worker_online %}
+      <div class="alert alert-success" role="status">
+        Worker مشترک فعال است؛ بعد از یک‌بار شروع، تمام مخاطبان صف‌شده
+        به‌صورت خودکار و با محدودیت نرخ ارسال پردازش می‌شوند.
+      </div>
+      {% elif worker_enabled %}
+      <div class="alert alert-warning" role="alert">
+        اجازه اجرای Worker فعال است اما Heartbeat تازه‌ای دریافت نشده است.
+        اجرای کمپین بدون بررسی وضعیت Worker توصیه نمی‌شود.
+      </div>
+      {% else %}
+      <div class="alert alert-warning" role="alert">
+        ارسال واقعی غیرفعال است. تا تکمیل تست‌های عملیاتی، تغییر وضعیت
+        کمپین به ارسال فعال مجاز نیست.
+      </div>
+      {% endif %}
+      <p class="text-muted">
+        هر گیرنده باید دریافت اطلاعیه را به‌صورت صریح پذیرفته باشد.
+        تعداد کل مخاطبان کمپین محدود نیست؛ Worker از صف PostgreSQL
+        به‌صورت پیوسته ادامه می‌دهد. «نامشخص» هرگز خودکار ارسال مجدد ندارد.
+        توقف یا لغو، ارسال بعدی را متوقف می‌کند؛ API در حال اجرا ممکن است
+        پیش از توقف تکمیل شود.
+      </p>
+      {% if result %}
+      <div class="alert alert-info" role="status">
+        درخواست «{{ result }}» ثبت شد. وضعیت واقعی را در جدول بررسی کنید.
+      </div>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table table-vcenter table-striped">
+          <thead>
+            <tr>
+              <th>کمپین / مخاطب</th>
+              <th>کانال</th>
+              <th>وضعیت</th>
+              <th>پیشرفت</th>
+              <th>هزینه و خطا</th>
+              <th>مدیریت</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for campaign in campaigns %}
+            {% set stats = counts.get(campaign.id, {}) %}
+            {% set queued = stats.get('queued', 0) %}
+            {% set inflight = stats.get('sending', 0) %}
+            {% set sent = stats.get('sent', 0) %}
+            {% set skipped = stats.get('skipped', 0) %}
+            {% set unknown = stats.get('unknown', 0) %}
+            {% set total = queued + inflight + sent + skipped + unknown %}
+            {% set finished = sent + skipped %}
+            {% set progress = (finished * 100 // total) if total else 100 %}
+            <tr>
+              <td>
+                <strong>{{ campaign.title }}</strong>
+                <span class="text-muted">#{{ campaign.id }}</span>
+                <div class="small text-muted">کل مخاطبان: {{ "{:,}".format(total) }}</div>
+              </td>
+              <td>
+                {% if campaign.audience == 'all' %}هر دو پیام‌رسان
+                {% elif campaign.audience == 'telegram' %}تلگرام
+                {% else %}بله{% endif %}
+                <div class="small">
+                  حالت بله: {{ 'Business هزینه‌دار' if campaign.bale_mode == 'business' else 'Standard' }}
+                </div>
+              </td>
+              <td>
+                {% set states = {
+                    'draft': 'پیش‌نویس',
+                    'approved': 'تأییدشده؛ آماده شروع',
+                    'sending': 'در حال ارسال خودکار',
+                    'paused': 'متوقف‌شده',
+                    'needs_review': 'نیازمند بررسی گیرنده‌ها',
+                    'completed': 'پایان‌یافته',
+                    'cancelled': 'لغوشده'
+                } %}
+                <strong>{{ states.get(campaign.status, campaign.status) }}</strong>
+                <div class="small text-muted">
+                  صف: {{ queued }} · در حال ارسال: {{ inflight }}
+                </div>
+              </td>
+              <td style="min-width: 150px;">
+                <div class="progress mb-1" role="progressbar"
+                     aria-label="پیشرفت کمپین" aria-valuenow="{{ progress }}"
+                     aria-valuemin="0" aria-valuemax="100">
+                  <div class="progress-bar" style="width: {{ progress }}%;"></div>
+                </div>
+                <div class="small">
+                  {{ progress }}٪ · ارسال‌شده: {{ sent }} · نادیده‌شده: {{ skipped }}
+                </div>
+                {% if unknown %}
+                <div class="text-warning small">
+                  نامشخص: {{ unknown }} (بدون Retry خودکار)
+                </div>
+                {% endif %}
+              </td>
+              <td>
+                {% if campaign.bale_mode == 'business' %}
+                <div>
+                  درخواست‌های پولی رزروشده:
+                  <strong>{{ campaign.paid_calls_reserved }}</strong> از
+                  <strong>{{ campaign.max_paid_calls }}</strong>
+                </div>
+                {% else %}
+                <span class="text-muted small">هزینه Business API ندارد</span>
+                {% endif %}
+                {% if campaign.last_error_code %}
+                <div class="text-warning small">
+                  خطای آخر: {{ campaign.last_error_code }}
+                </div>
+                {% endif %}
+              </td>
+              <td style="min-width: 260px;">
+                {% if campaign.status == 'draft' %}
+                <form method="post" action="/admin/campaign-review" class="mb-2">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="approve">
+                  <input type="text" class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" required placeholder="APPROVE_CAMPAIGN">
+                  <button class="btn btn-primary btn-sm" type="submit">
+                    تأیید مخاطبان مجاز
+                  </button>
+                </form>
+                {% elif campaign.status == 'approved' %}
+                <form method="post" action="/admin/campaign-review" class="mb-2">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="start">
+                  <label class="form-label small" for="mode-{{ campaign.id }}">
+                    روش ارسال بله (پس از شروع ثابت می‌ماند)
+                  </label>
+                  <select id="mode-{{ campaign.id }}" name="bale_mode"
+                          class="form-select form-select-sm mb-1">
+                    <option value="standard">Standard بدون Business API</option>
+                    {% if bale_paid_enabled %}
+                    <option value="business">Business هزینه‌دار</option>
+                    {% endif %}
+                  </select>
+                  <div class="small text-muted mb-1">
+                    سقف لازم برای Business: {{ estimate.get(campaign.id, 0) }}
+                    درخواست؛ سقف فروشگاه: {{ bale_paid_cap }}
+                  </div>
+                  <label class="form-label small" for="budget-{{ campaign.id }}">
+                    سقف درخواست‌های پولی (Standard = صفر)
+                  </label>
+                  <input type="number" id="budget-{{ campaign.id }}"
+                         class="form-control form-control-sm mb-1"
+                         name="max_paid_calls" min="0" max="{{ bale_paid_cap }}"
+                         value="0" required>
+                  <input class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" required
+                         placeholder="START_CAMPAIGN / START_PAID_BALE">
+                  <button type="submit" class="btn btn-success btn-sm"
+                          {% if not worker_enabled %}disabled{% endif %}>
+                    شروع ارسال خودکار به تمام مخاطبان
+                  </button>
+                </form>
+                {% elif campaign.status == 'sending' %}
+                <form method="post" action="/admin/campaign-review" class="mb-2">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="pause">
+                  <input class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" required placeholder="PAUSE_CAMPAIGN">
+                  <button type="submit" class="btn btn-warning btn-sm">
+                    توقف کنترل‌شده
+                  </button>
+                </form>
+                {% elif campaign.status == 'paused' %}
+                <form method="post" action="/admin/campaign-review" class="mb-2">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="resume">
+                  <input class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" required placeholder="RESUME_CAMPAIGN">
+                  <button type="submit" class="btn btn-primary btn-sm"
+                          {% if not worker_enabled %}disabled{% endif %}>
+                    ادامه ارسال موارد صف‌شده
+                  </button>
+                </form>
+                {% endif %}
+                {% if campaign.status in ('approved','sending','paused','needs_review') %}
+                <form method="post" action="/admin/campaign-review" class="mb-2">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="cancel">
+                  <input class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" required placeholder="CANCEL_CAMPAIGN">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">
+                    لغو ارسال‌های باقیمانده
+                  </button>
+                </form>
+                {% endif %}
+                {% if campaign.status in ('draft', 'approved') and bale_prepare_ready %}
+                <form method="post" action="/admin/campaign-review">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="action" value="prepare">
+                  <input class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" required placeholder="PREPARE_BALE_MEDIA">
+                  <button type="submit" class="btn btn-outline-secondary btn-sm">
+                    آماده‌سازی file_id بله در چت مدیر
+                  </button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">کمپینی تعریف نشده است.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h4 class="mt-4">گیرنده‌های نامشخص — بررسی دستی</h4>
+      <p class="text-muted">
+        یک پیام ممکن است در پلتفرم تحویل شده باشد حتی اگر پاسخ API قطع شده
+        باشد. بدون بررسی شواهد Provider، این گیرنده‌ها دوباره ارسال نمی‌شوند.
+        فقط وضعیت را با مدرک ثبت کنید؛ «نادیده‌شده» به معنی بازپرداخت نیست.
+      </p>
+      <div class="table-responsive">
+        <table class="table table-vcenter">
+          <thead>
+            <tr><th>کمپین</th><th>گیرنده</th><th>پیشرفت</th><th>ثبت نتیجه</th></tr>
+          </thead>
+          <tbody>
+          {% for campaign in campaigns %}
+            {% for delivery, identity in unresolved.get(campaign.id, []) %}
+            <tr>
+              <td>{{ campaign.id }}</td>
+              <td>
+                {{ 'تلگرام' if identity.platform == 'telegram' else 'بله' }}
+                · <span class="ltr">{{ identity.platform_user_id }}</span>
+              </td>
+              <td>
+                پیام‌های تأییدشده: {{ delivery.completed_steps }}
+                <div class="small">{{ delivery.last_error_code or 'نامشخص' }}</div>
+              </td>
+              <td>
+                <form method="post" action="/admin/campaign-review">
+                  <input type="hidden" name="nonce" value="{{ nonce }}">
+                  <input type="hidden" name="campaign_id" value="{{ campaign.id }}">
+                  <input type="hidden" name="delivery_id" value="{{ delivery.id }}">
+                  <input type="hidden" name="action" value="reconcile">
+                  <label class="form-label" for="resolution-{{ delivery.id }}">
+                    نتیجه پس از بررسی شواهد
+                  </label>
+                  <select id="resolution-{{ delivery.id }}" class="form-select mb-1"
+                          name="resolution" required>
+                    <option value="sent">تحویل با مدرک تأیید شد</option>
+                    <option value="skipped">بدون تحویل؛ بستن رکورد</option>
+                  </select>
+                  <textarea class="form-control mb-1" name="evidence"
+                            rows="2" minlength="12" maxlength="255"
+                            placeholder="مدرک و شماره پیگیری، حداقل ۱۲ نویسه" required></textarea>
+                  <input class="form-control form-control-sm mb-1 ltr"
+                         name="confirmation" placeholder="RECONCILE_DELIVERY" required>
+                  <button type="submit" class="btn btn-outline-primary btn-sm">
+                    ثبت نتیجه در Audit
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4">موردی برای بررسی نمایش داده نمی‌شود.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if campaigns|selectattr('status', 'equalto', 'sending')|list %}
+      <script>
+        // Refresh only while no manager is editing a form.
+        // A running worker updates progress in PostgreSQL independently.
+        window.setInterval(function () {
+          const focused = document.activeElement;
+          const editing = focused && ["INPUT", "TEXTAREA", "SELECT"].includes(
+            focused.tagName
+          );
+          if (!editing) {
+            window.location.reload();
+          }
+        }, 12000);
+      </script>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

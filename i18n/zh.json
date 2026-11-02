@@ -295,7 +295,9 @@
     "usdt_erc20_top_up": "USDT ERC-20",
     "usdc_erc20_top_up": "USDC ERC-20",
     "usdt_bep20_top_up": "USDT BEP-20",
-    "usdc_bep20_top_up": "USDC BEP-20"
+    "usdc_bep20_top_up": "USDC BEP-20",
+    "irr_symbol": "ریال",
+    "irr_text": "Iranian rial"
   },
   "user": {
     "all_categories": "🗂️ 所有分类",
