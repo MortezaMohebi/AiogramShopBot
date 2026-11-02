@@ -106,6 +106,7 @@ class BroadcastWorker:
             )
             changed = 0
             for campaign in campaigns.scalars().all():
+                changed_campaign = 0
                 rows = await session.execute(
                     select(ShopCampaignDelivery).where(
                         ShopCampaignDelivery.campaign_id == campaign.id,
@@ -125,7 +126,8 @@ class BroadcastWorker:
                         reason="In-flight delivery exceeded stale threshold.",
                     )
                     changed += 1
-                if changed and campaign.status == "sending":
+                    changed_campaign += 1
+                if changed_campaign and campaign.status == "sending":
                     campaign.status = "paused"
                     campaign.paused_at = datetime.now(timezone.utc)
                     campaign.last_error_code = "stale_after_restart"
