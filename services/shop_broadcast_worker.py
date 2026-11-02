@@ -167,9 +167,8 @@ class BroadcastWorker:
                 bale_mode=active.bale_mode,
             )
 
-    @staticmethod
     async def _step_allowed(
-        claim: ClaimedRecipient,
+        self, claim: ClaimedRecipient,
     ) -> tuple[bool, int]:
         """Check current opt-in and pause/cancel state before each API call."""
         from db import session_maker
@@ -187,8 +186,9 @@ class BroadcastWorker:
                 )
                 .where(
                     ShopCampaignDelivery.id == claim.delivery_id,
-                    ShopCampaignDelivery.worker_id == claim.campaign_id * 0
-                    if False else ShopCampaignDelivery.status == "sending",
+                    ShopCampaignDelivery.campaign_id == claim.campaign_id,
+                    ShopCampaignDelivery.worker_id == self.worker_id,
+                    ShopCampaignDelivery.status == "sending",
                 )
             )
             row = result.one_or_none()
