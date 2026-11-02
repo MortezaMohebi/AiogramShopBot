@@ -103,6 +103,31 @@ def verify_bridge_signature(
     return hmac.compare_digest(signature, expected)
 
 
+async def bounded_bridge_body(request: Request) -> bytes:
+    """Read a signed body once with a hard bound even for chunked uploads.
+
+    Starlette's cached request body is restored for its multipart parser.
+    Enforcing a bound before signature verification avoids unbounded memory.
+    """
+    upload = request.url.path.startswith("/internal/admin/v1/upload/")
+    limit = 50_100_000 if upload else 256 * 1024
+    header = request.headers.get("content-length")
+    if header is not None:
+        try:
+            length = int(header)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid content length") from None
+        if length < 0 or length > limit:
+            raise HTTPException(status_code=413, detail="Request body too large")
+    collected = bytearray()
+    async for chunk in request.stream():
+        if len(collected) + len(chunk) > limit:
+            raise HTTPException(status_code=413, detail="Request body too large")
+        collected.extend(chunk)
+    request._body = bytes(collected)  # Reuse Starlette's body cache for form().
+    return request._body
+
+
 async def signed_staff(request: Request, session: Db) -> ShopStaff | None:
     """Validate a bounded HMAC request and an active, unrevoked staff account."""
     secret = config.NEXT_ADMIN_BRIDGE_SECRET
@@ -125,12 +150,13 @@ async def signed_staff(request: Request, session: Db) -> ShopStaff | None:
     target = request.url.path
     if request.url.query:
         target += f"?{request.url.query}"
+    body = await bounded_bridge_body(request)
     if not verify_bridge_signature(
         secret=secret,
         timestamp=stamp,
         method=request.method,
         target=target,
-        body=await request.body(),
+        body=body,
         staff_id=staff_id,
         session_version=version,
         signature=signature,
@@ -812,6 +838,7 @@ async def media(staff: Staff, session: Db, page: int = 1) -> dict:
                 "size_bytes": item.size_bytes,
                 "is_published": item.is_published,
                 "position": item.position,
+                "caption": item.caption, "mime_type": item.mime_type,
             }
             for item, name in entries
         ],
@@ -841,6 +868,8 @@ async def testimonials(staff: Staff, session: Db, page: int = 1) -> dict:
                 "product_name": name, "text": row.text,
                 "has_file": row.media_storage_key is not None,
                 "is_approved": row.is_approved,
+                "position": row.position,
+                "media_kind": row.media_kind,
             }
             for row, name in entries
         ],
@@ -1097,3 +1126,9 @@ async def edit_coupon(
         await session.rollback()
         raise HTTPException(status_code=409, detail="Coupon code exists") from None
     return {"id": item.id}
+
+
+# Extend the same signed bridge; FastAPI remains the only business core.
+from dashboard.next_operations import router as next_operations_router  # noqa: E402
+
+router.include_router(next_operations_router)
