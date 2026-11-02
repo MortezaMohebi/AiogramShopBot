@@ -92,6 +92,12 @@ def upgrade() -> None:
             "max_uses IS NULL OR max_uses > 0", name="ck_shop_coupon_max_uses"
         ),
     )
+    op.create_index(
+        "uq_shop_coupon_code_casefold",
+        "shop_coupons",
+        [sa.text("upper(code)")],
+        unique=True,
+    )
     op.create_table(
         "shop_carts",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -180,6 +186,7 @@ def downgrade() -> None:
     op.drop_table("shop_order_lines")
     op.drop_table("shop_cart_items")
     op.drop_table("shop_carts")
+    op.drop_index("uq_shop_coupon_code_casefold", table_name="shop_coupons")
     op.drop_table("shop_coupons")
     op.drop_table("shop_shipping_methods")
     op.drop_constraint("ck_shop_order_status", "shop_orders", type_="check")

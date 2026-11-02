@@ -409,7 +409,7 @@ class ShopCartFlow:
             if not re.fullmatch(r"[A-Z0-9_-]{3,32}", code):
                 raise CartRejected("کد تخفیف معتبر نیست.")
             coupon = await session.scalar(
-                select(ShopCoupon).where(ShopCoupon.code == code)
+                select(ShopCoupon).where(func.upper(ShopCoupon.code) == code)
             )
             if coupon is None:
                 raise CartRejected("کد تخفیف یافت نشد.")

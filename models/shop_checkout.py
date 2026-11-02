@@ -6,7 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
-    String, UniqueConstraint, func,
+    Index, String, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
@@ -64,6 +64,7 @@ class ShopCoupon(Base):
             "minimum_subtotal_irr >= 0", name="ck_shop_coupon_minimum"
         ),
         CheckConstraint("used_count >= 0", name="ck_shop_coupon_usage"),
+        Index("uq_shop_coupon_code_casefold", func.upper(code), unique=True),
         CheckConstraint(
             "max_uses IS NULL OR max_uses > 0", name="ck_shop_coupon_max_uses"
         ),
