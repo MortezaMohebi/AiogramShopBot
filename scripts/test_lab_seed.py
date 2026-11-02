@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from uuid import uuid4
 
 from sqlalchemy import select
 
@@ -133,6 +132,27 @@ async def seed() -> None:
                 ))
         await session.flush()
 
+        # Separate store-credit accounts for the SAME numeric user ID on
+        # Telegram and Bale. Neither amount is a native Bale wallet balance.
+        for platform, fake_credit in (
+            ("telegram", 500_000),
+            ("bale", 350_000),
+        ):
+            identity = await session.scalar(
+                select(ShopIdentity).where(
+                    ShopIdentity.platform == platform,
+                    ShopIdentity.platform_user_id == 101001,
+                )
+            )
+            await ShopWalletService.apply(
+                session,
+                identity_id=identity.id,
+                delta_irr=fake_credit,
+                operation_key=f"lab-initial-store-credit:{platform}:101001",
+                reason="Synthetic onboarding credit for integration tests",
+                actor="lab:seed",
+            )
+
         shipping = await session.scalar(
             select(ShopShippingMethod)
             .where(ShopShippingMethod.name == "ارسال آزمایشی")
@@ -221,7 +241,7 @@ async def seed() -> None:
 
     print(
         "Test-only seed is ready: six staff roles, two products, "
-        "two platform-scoped identities, one unpaid order, "
+        "two platform-scoped identities and isolated demo balances, one unpaid order, "
         "one draft campaign and a review. No live provider calls."
     )
 
