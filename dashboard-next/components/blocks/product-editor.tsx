@@ -33,13 +33,13 @@ export function ProductEditor({
               <Input name="name" required maxLength={255} defaultValue={product?.name ?? ""} />
             </label>
             <label className="space-y-2 text-sm font-medium">
-              کد SKU
-              <Input name="sku" dir="ltr" required maxLength={64} className="text-start" defaultValue={product?.sku ?? ""} />
+              کد SKU (اختیاری؛ در صورت خالی بودن خودکار ساخته می‌شود)
+              <Input name="sku" dir="ltr" maxLength={64} className="text-start" defaultValue={product?.sku ?? ""} />
             </label>
           </div>
           <label className="block space-y-2 text-sm font-medium">
             توضیحات
-            <Textarea name="description" required minLength={1} maxLength={40000} rows={8} defaultValue={product?.description ?? ""} />
+            <Textarea name="description" maxLength={40000} rows={8} defaultValue={product?.description ?? ""} />
           </label>
           <label className="block space-y-2 text-sm font-medium">
             دسته‌بندی
