@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
+from models.shop_customer_crm import ShopCustomerProfile
+from services.shop_customer_crm import effective_restriction
 
 
 async def register_customer(
@@ -65,10 +67,19 @@ async def is_blocked(
     session: AsyncSession, *, platform: Platform, platform_user_id: int
 ) -> bool:
     """Check the platform-scoped ban without mutating any records."""
-    result = await session.execute(
-        select(ShopIdentity.is_blocked).where(
+    rows = await session.execute(
+        select(
+            ShopIdentity.is_blocked,
+            ShopCustomerProfile.restriction_until,
+        )
+        .outerjoin(
+            ShopCustomerProfile,
+            ShopCustomerProfile.identity_id == ShopIdentity.id,
+        )
+        .where(
             ShopIdentity.platform == platform.value,
             ShopIdentity.platform_user_id == platform_user_id,
         )
     )
-    return result.scalar_one_or_none() is True
+    row = rows.first()
+    return effective_restriction(row[0], row[1]) if row else False
