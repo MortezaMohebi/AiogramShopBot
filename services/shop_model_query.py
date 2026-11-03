@@ -14,8 +14,7 @@ from typing import Any
 from sqlalchemy import case, cast, func, select, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.shop_content import Product
-from models.shop_uom import ShopUom
+from sqlalchemy.orm import InstrumentedAttribute
 from services import shop_admin_security as security
 from services.shop_model_registry import (
     DT_FORMATS, Dataset, Field, filtered_clause, safe_value,
@@ -56,38 +55,51 @@ def predicate(
 async def serialize_rows(
     db: AsyncSession, dataset: Dataset, rows: Sequence,
 ) -> list[dict]:
-    """Serialize only fields exposed by the same registry definition."""
-    units: dict[str, str] = {}
-    if dataset.name == "products" and rows:
-        identifiers = {
-            identifier for item in rows
-            for identifier in (item.uom_id, item.purchase_uom_id)
-            if identifier
-        }
-        units = dict((await db.execute(
-            select(ShopUom.id, ShopUom.code).where(
-                ShopUom.id.in_(identifiers),
-                ShopUom.store_id.in_(trusted_context().active_store_ids),
-            )
-        )).all())
+    """Serialize registered ORM attributes and computed fields generically.
+
+    Computed fields are registered as SQLAlchemy expressions in the Dataset
+    declaration. Resolve them in bounded batched selects, never by N+1
+    queries or hardcoded per-model special cases.
+    """
+    fields = [field for field in dataset.fields if field.exportable]
+    computed = [
+        field for field in fields
+        if field.column is not None
+        and not isinstance(field.column, InstrumentedAttribute)
+    ]
+    computed_values: dict[Any, dict[str, Any]] = {}
+    if computed and rows:
+        # Bound IN-list size for SQLite/PostgreSQL and avoid large packets.
+        identifiers = [getattr(row, dataset.primary_order) for row in rows]
+        for offset in range(0, len(identifiers), 300):
+            window = identifiers[offset:offset + 300]
+            records = (await db.execute(select(
+                dataset.model.id,
+                *(field.column.label(field.key) for field in computed),
+            ).where(
+                dataset.model.id.in_(window),
+                *predicate(dataset, []),
+            ))).all()
+            for record in records:
+                computed_values[record[0]] = {
+                    field.key: record[index + 1]
+                    for index, field in enumerate(computed)
+                }
     result = []
     for row in rows:
+        pk = getattr(row, dataset.primary_order)
+        values = computed_values.get(pk, {})
         record = {}
-        for field in dataset.fields:
-            if not field.exportable:
-                continue
-            if field.key == "uom_code":
-                value = units.get(row.uom_id)
-            elif field.key == "purchase_uom_code":
-                value = units.get(row.purchase_uom_id)
-            elif field.column is not None:
+        for field in fields:
+            if isinstance(field.column, InstrumentedAttribute):
                 value = getattr(row, field.column.key)
+            elif field.column is not None:
+                value = values.get(field.key)
             else:
-                continue
+                value = None
             record[field.key] = safe_value(value)
         result.append(record)
     return result
-
 
 async def search(
     db: AsyncSession, dataset: Dataset, *, filters: list[dict[str, Any]],
