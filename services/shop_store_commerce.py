@@ -18,7 +18,7 @@ from models.shop_engagement import ShopWalletAccount
 from models.shop_multibot import ShopBot, ShopStore
 from models.shop_store_commerce import (
     ShopStoreCommercePolicy, ShopStoreCustomer,
-    ShopStoreCustomerLinkEvent,
+    ShopStoreCustomerLinkEvent, ShopBotCommercePolicy,
 )
 from services import shop_admin_security as security
 
@@ -178,3 +178,60 @@ async def set_store_policy(
         store_id=store_id, cart_scope=row.cart_scope,
         credit_scope=row.credit_scope, version=row.version,
     )
+
+
+async def bot_policy_snapshot(
+    db: AsyncSession, *, bot_id: str,
+) -> dict:
+    """Return explicit per-bot permissions; absence never means allow."""
+    bot = await db.get(ShopBot, bot_id)
+    if bot is None:
+        raise security.SecurityRejected("bot_not_found", 404)
+    row = await db.get(ShopBotCommercePolicy, bot_id)
+    return {
+        "bot_id": bot_id,
+        "runtime_owner": bot.runtime_owner,
+        "version": row.version if row else 0,
+        "cart_enabled": row.cart_enabled if row else None,
+        "credit_enabled": row.credit_enabled if row else None,
+        "credit_label": row.credit_label if row else None,
+        "default_deny": bot.runtime_owner == "registry",
+    }
+
+
+async def update_bot_policy(
+    db: AsyncSession, *, bot_id: str, actor_id: int,
+    expected_version: int, cart_enabled: bool | None,
+    credit_enabled: bool | None, credit_label: str | None,
+) -> dict:
+    """Store independent Cart/Credit switches without erasing any balances."""
+    if (
+        cart_enabled is not None and type(cart_enabled) is not bool
+    ) or (
+        credit_enabled is not None and type(credit_enabled) is not bool
+    ):
+        raise security.SecurityRejected("invalid_bot_commerce_policy", 422)
+    if credit_label is not None:
+        credit_label = credit_label.strip()
+        if not 1 <= len(credit_label) <= 80:
+            raise security.SecurityRejected("invalid_bot_commerce_policy", 422)
+    bot = await db.get(ShopBot, bot_id)
+    if bot is None:
+        raise security.SecurityRejected("bot_not_found", 404)
+    row = await db.scalar(select(ShopBotCommercePolicy).where(
+        ShopBotCommercePolicy.bot_id == bot_id,
+    ).with_for_update())
+    if row is None:
+        if expected_version != 0:
+            raise security.SecurityRejected("configuration_changed", 409)
+        row = ShopBotCommercePolicy(bot_id=bot_id)
+        db.add(row)
+    elif row.version != expected_version:
+        raise security.SecurityRejected("configuration_changed", 409)
+    row.cart_enabled = cart_enabled
+    row.credit_enabled = credit_enabled
+    row.credit_label = credit_label
+    row.version += 1
+    row.updated_by = actor_id
+    await db.commit()
+    return await bot_policy_snapshot(db, bot_id=bot_id)
