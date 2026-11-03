@@ -26,6 +26,16 @@ const SAFE_CODES = new Set([
   "transport_unchanged", "transport_history_not_found",
   "transport_interrupted", "transport_restored_to_verified",
   "bot_identity_mismatch", "provider_not_configured", "provider_state_unavailable",
+  "invalid_registry_slug", "invalid_registry_name", "store_slug_exists",
+  "store_not_found", "store_not_active", "bot_slug_exists",
+  "bot_not_found", "bot_not_active", "invalid_bot_platform",
+  "legacy_bot_credential_locked", "bot_credential_stage_requires_draft",
+  "invalid_bot_token_format", "invalid_credential_state",
+  "bot_secret_key_invalid", "bot_secret_key_unavailable",
+  "bot_secret_unreadable", "bot_secret_binding_mismatch",
+  "bot_secret_unavailable", "bot_credential_missing",
+  "credential_version_conflict", "invalid_bot_runtime",
+
 
   "confirmation_required",
 ]);

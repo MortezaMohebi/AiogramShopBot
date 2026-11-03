@@ -79,6 +79,7 @@ async def bootstrap_schema() -> None:
     # db.py imports every legacy and shared-shop model into Base.metadata.
     from db import engine, verify_codespace_schema
     from models.base import Base
+    from services.shop_multibot_bootstrap import adopt_legacy_codespace
 
     expected_tables = set(Base.metadata.tables)
 
@@ -131,6 +132,9 @@ async def bootstrap_schema() -> None:
 
         # Verify every expected ORM table and column before committing DDL.
         await verify_codespace_schema(connection)
+        # The compatibility entrypoint performs the same append-only adoption
+        # as scripts.security_bootstrap; neither requires a fresh/reset DB.
+        await adopt_legacy_codespace(connection)
 
 
 async def create_admin() -> None:
