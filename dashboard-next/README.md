@@ -35,6 +35,21 @@ checks exact HTTPS Origin, signed staff identity, role and a hard 50.1 MB
 request ceiling before forwarding byte-for-byte signed multipart to FastAPI.
 Never put backend credentials in a `NEXT_PUBLIC_` setting.
 
+## Optional CAPTCHA and CDN
+
+The login supports Cloudflare Turnstile, Google reCAPTCHA v2 checkbox and
+Google reCAPTCHA v3 (score-based), configured with server-only environment
+variables. No provider is required by default, but enabling one requires
+working keys and provider verification: errors fail closed. The existing
+CSRF double-submit cookie and FastAPI credential throttling remain in place.
+
+An optional HTTPS CDN can serve the build's immutable /_next/static assets.
+Without NEXT_ADMIN_CDN_URL, Next.js serves them locally. Private media and
+all authentication/API traffic remain same-origin and are NEVER public CDN
+objects. See [deployment and security guide](../docs/ADMIN_CAPTCHA_CDN.fa.md).
+
+Run the offline provider policy tests with npm run test:captcha (Node 22+).
+
 ## Local integration (after final approval)
 
 1. Copy the root `.env.template` to the actual private `.env` and set
