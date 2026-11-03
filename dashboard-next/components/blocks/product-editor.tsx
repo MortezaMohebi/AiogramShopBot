@@ -6,6 +6,8 @@ import { saveProduct } from "@/app/(console)/products/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CategoryPicker } from "@/components/blocks/category-picker";
+import { ProductMediaManager, type ProductAsset } from "@/components/blocks/product-media-manager";
 import { Textarea } from "@/components/ui/textarea";
 import type { Category, Product } from "@/lib/types";
 
@@ -13,12 +15,15 @@ import type { Category, Product } from "@/lib/types";
 export function ProductEditor({
   product,
   categories,
+  media = [],
 }: {
   product?: Product;
   categories: Category[];
+  media?: ProductAsset[];
 }) {
   const [kind, setKind] = useState<"physical" | "digital">(product?.product_type ?? "physical");
   return (
+    <div>
     <form action={saveProduct} className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
       <input type="hidden" name="id" value={product?.id ?? ""} />
       <Card>
@@ -41,15 +46,7 @@ export function ProductEditor({
             توضیحات
             <Textarea name="description" maxLength={40000} rows={8} defaultValue={product?.description ?? ""} />
           </label>
-          <label className="block space-y-2 text-sm font-medium">
-            دسته‌بندی
-            <select name="category_id" defaultValue={product?.category_id ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">بدون دسته‌بندی</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
-              ))}
-            </select>
-          </label>
+          <CategoryPicker initial={categories} selectedId={product?.category_id ?? null} />
         </CardContent>
       </Card>
       <div className="space-y-5">
@@ -106,5 +103,13 @@ export function ProductEditor({
         </Card>
       </div>
     </form>
+    {product?.id ? <div className="mt-5">
+        <Card><CardHeader><CardTitle>تصاویر و فایل‌های محصول</CardTitle>
+          <CardDescription>آپلود چندگانه، Drag & Drop و تأیید انتشار هر فایل؛ فایل‌های اصلی به‌صورت خصوصی نگهداری می‌شوند.</CardDescription>
+        </CardHeader><CardContent><ProductMediaManager productId={product.id} initial={media} /></CardContent></Card>
+      </div> : <div className="mt-5 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+        پس از ذخیرهٔ محصول، بدون ورود به بخش جداگانه، تصاویر و فایل‌ها را در همین صفحه اضافه کنید.
+      </div>}
+    </div>
   );
 }
