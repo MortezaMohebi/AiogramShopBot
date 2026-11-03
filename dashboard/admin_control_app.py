@@ -30,6 +30,8 @@ from dashboard.telegram_transport_api import router as telegram_transport_router
 from dashboard.shop_multibot_api import router as multibot_foundation_router
 from dashboard.shop_multibot_management_api import router as multibot_management_router
 from dashboard.shop_bot_catalog_api import router as bot_catalog_router
+from dashboard.shop_multibot_receiver_api import router as multi_receiver_router
+from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
 PREFIX = "/internal/admin/v1"
@@ -57,7 +59,10 @@ def permission_for(path: str, method: str) -> str | None:
         "bot-profiles": "bots.read" if method == "GET" else "bots.configure",
         "payment-rails": "settings.manage",
         "stores": "bots.read" if method == "GET" else "bots.configure",
-        "bot-registry": "bots.read" if method == "GET" else "bots.configure",
+        "bot-registry": (
+            "bots.apply" if path.endswith("/receiver/activate")
+            else "bots.read" if method == "GET" else "bots.configure"
+        ),
         "bot-catalog": "bots.read" if method == "GET" else "bots.configure",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
@@ -78,6 +83,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         supervisor = None
+        multi_supervisor = None
         # Legacy startup must not silently register/delete provider webhooks.
         # The supervised controller now owns all receiver-mode transitions.
         original_mode = config.TELEGRAM_UPDATE_MODE
@@ -87,13 +93,21 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
         try:
             async with legacy.router.lifespan_context(legacy):
                 config.TELEGRAM_UPDATE_MODE = original_mode
-                if live_receivers:
-                    from services.shop_connection_runtime import ConnectionSupervisor
-                    supervisor = ConnectionSupervisor(legacy)
-                    await supervisor.start()
                 try:
+                    if live_receivers:
+                        from services.shop_connection_runtime import ConnectionSupervisor
+
+                        supervisor = ConnectionSupervisor(legacy)
+                        await supervisor.start()
+                        if config.MULTIBOT_V2_RUNTIME_ENABLED:
+                            from services.shop_multibot_supervisor import MultiBotSupervisor
+
+                            multi_supervisor = MultiBotSupervisor(legacy)
+                            await multi_supervisor.start()
                     yield
                 finally:
+                    if multi_supervisor is not None:
+                        await multi_supervisor.close()
                     if supervisor:
                         await supervisor.close()
         finally:
@@ -180,5 +194,8 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(multibot_foundation_router)
     app.include_router(multibot_management_router)
     app.include_router(bot_catalog_router)
+    app.include_router(multi_receiver_router)
+    # Public provider callbacks are authenticated by opaque route credentials.
+    app.include_router(multi_webhook_router)
     app.mount("/", legacy)
     return app
