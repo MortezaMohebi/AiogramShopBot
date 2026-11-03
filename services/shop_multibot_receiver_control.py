@@ -244,7 +244,9 @@ async def activate_receiver(
     # All requests to the provider are outside the database transaction;
     # a crash or timeout never results in an automatic replay of setWebhook.
     try:
-        async with provider_client(bot.platform, token) as client:
+        async with provider_client(
+            bot.platform, token, bot_id=bot.id,
+        ) as client:
             if bot.platform == "telegram":
                 identity = await asyncio.wait_for(client.get_me(), 12)
                 actual_id = identity.id
