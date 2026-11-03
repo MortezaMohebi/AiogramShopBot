@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
 
 from models.base import Base
+from models.shop_scope import legacy_bot_default
 
 
 class ShopWalletAccount(Base):
@@ -27,6 +28,11 @@ class ShopWalletAccount(Base):
     identity_id: Mapped[int] = mapped_column(
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False, unique=True,
+    )
+    # Immutable verified scope; legacy reads remain compatible during cutover.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
     )
     balance_irr: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0
@@ -50,6 +56,11 @@ class ShopWalletEntry(Base):
     account_id: Mapped[int] = mapped_column(
         ForeignKey("shop_wallet_accounts.id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    # Immutable verified scope; legacy reads remain compatible during cutover.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
     )
     operation_key: Mapped[str] = mapped_column(
         String(128), nullable=False, unique=True
@@ -81,6 +92,11 @@ class ShopReferralProfile(Base):
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False, unique=True,
     )
+    # Immutable verified scope; legacy reads remain compatible during cutover.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
+    )
     code: Mapped[str] = mapped_column(
         String(24), nullable=False, unique=True
     )
@@ -100,6 +116,11 @@ class ShopReferralAttribution(Base):
     inviter_identity_id: Mapped[int] = mapped_column(
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    # Immutable verified scope; legacy reads remain compatible during cutover.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
     )
     code_snapshot: Mapped[str] = mapped_column(String(24), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -167,6 +188,11 @@ class ShopReferralReward(Base):
         ForeignKey("shop_orders.id", ondelete="RESTRICT"),
         nullable=False, unique=True,
     )
+    # Immutable verified scope; legacy reads remain compatible during cutover.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
+    )
     bonus_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     wallet_entry_id: Mapped[int] = mapped_column(
         ForeignKey("shop_wallet_entries.id", ondelete="RESTRICT"),
@@ -187,6 +213,11 @@ class ShopCampaign(Base):
     __tablename__ = "shop_campaigns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Legacy campaigns may address both platforms, so retain NULL for them.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     audience: Mapped[str] = mapped_column(
@@ -280,6 +311,11 @@ class ShopCampaignDelivery(Base):
     identity_id: Mapped[int] = mapped_column(
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    # Immutable verified scope; legacy reads remain compatible during cutover.
+    bot_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        index=True,
     )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="queued"
@@ -430,6 +466,10 @@ class ShopBroadcastRateSlot(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     # Recipient ID zero reserves a global bot slot; positive IDs are chats.
     recipient_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
