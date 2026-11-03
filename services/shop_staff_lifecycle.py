@@ -37,7 +37,11 @@ def policy_for(db: Session, *, lock: bool = False) -> ShopPasswordPolicy:
     stmt = select(ShopPasswordPolicy).where(ShopPasswordPolicy.id == 1)
     if lock:
         stmt = stmt.with_for_update()
-    return db.scalar(stmt) or ShopPasswordPolicy(id=1, min_length=14)
+    return db.scalar(stmt) or ShopPasswordPolicy(
+        id=1, min_length=14,
+        require_upper=False, require_lower=False,
+        require_digit=False, require_symbol=False,
+    )
 
 
 def validate_password(db: Session, value: str) -> None:
