@@ -1149,6 +1149,25 @@ async def bot_connections(staff: Staff, session: Db) -> dict:
     require_staff(staff, "superadmin")
     await session.execute(text("SELECT 1"))
 
+    import os
+    from redis.asyncio import Redis
+
+    pending_mode = None
+    try:
+        cache = Redis(
+            host=config.REDIS_HOST,
+            password=config.REDIS_PASSWORD,
+            decode_responses=True,
+            socket_connect_timeout=2,
+        )
+        try:
+            pending_mode = await cache.get("shop:pending:telegram:update_mode")
+        finally:
+            await cache.aclose()
+    except Exception:
+        # Do not hide the actual deployment mode if Redis is unavailable.
+        pending_mode = None
+
     from urllib.parse import urlsplit
 
     provider_origin = config.WEBHOOK_HOST
@@ -1161,6 +1180,7 @@ async def bot_connections(staff: Staff, session: Db) -> dict:
         "telegram": {
             "configured": bool(config.TOKEN),
             "update_mode": config.TELEGRAM_UPDATE_MODE,
+            "pending_update_mode": pending_mode,
             "api_transport": config.TELEGRAM_API_MODE,
             "webhook_url": (
                 config.WEBHOOK_URL if config.TELEGRAM_UPDATE_MODE == "webhook"
@@ -1186,6 +1206,55 @@ async def bot_connections(staff: Staff, session: Db) -> dict:
             "Changing them requires an explicit controlled restart; "
             "saving storefront text does not alter provider webhooks."
         ),
+    }
+
+
+class TelegramModeRequest(BaseModel):
+    """Explicitly stage a mode switch; no implicit provider mutation."""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["webhook", "polling"]
+    confirmation: str
+
+
+@router.post("/bot-connections/telegram-mode-request")
+async def request_telegram_mode(
+    payload: TelegramModeRequest, staff: Staff,
+) -> dict:
+    """Stage the mode for supervised Codespaces activation after a restart.
+
+    A Telegram webhook and getUpdates cannot receive updates concurrently.
+    Never call deleteWebhook or launch a second poller from a web request.
+    """
+    require_staff(staff, "superadmin")
+
+    import os
+    if (
+        os.environ.get("CODESPACE_FRESH_SCHEMA") != "true"
+        or os.environ.get("POSTGRES_DB") != "shop_codespace"
+    ):
+        raise HTTPException(
+            status_code=403, detail="Controlled activation unavailable"
+        )
+    if payload.confirmation != "STAGE_TELEGRAM_MODE":
+        raise HTTPException(
+            status_code=422, detail="Explicit confirmation required"
+        )
+
+    from redis.asyncio import Redis
+
+    cache = Redis(
+        host=config.REDIS_HOST, password=config.REDIS_PASSWORD,
+        decode_responses=True, socket_connect_timeout=2,
+    )
+    try:
+        await cache.set("shop:pending:telegram:update_mode", payload.mode)
+    finally:
+        await cache.aclose()
+    return {
+        "ok": True,
+        "pending_update_mode": payload.mode,
+        "activation": "codespace_restart_required",
     }
 
 
