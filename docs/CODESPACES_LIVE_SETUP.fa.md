@@ -341,3 +341,62 @@ UID/GID غیرروت 101:101 و بدون Linux Capability اجرا می‌شود
 **قبل از موفق‌شدن Healthcheck و عمومی‌بودن پورت 8080،
 دستور `connect` را اجرا نکن.** پس از آماده‌شدن Gateway،
 `doctor` و سپس `connect` را اجرا کن.
+
+
+## رفع 403 Forbidden در ورود داشبورد (Codespaces Reverse Proxy)
+
+در نسخهٔ اولیه، فرم Login با POST معمولی به
+`/api/auth/login` ارسال می‌شد. بررسی سخت‌گیرانهٔ
+`Origin === NEXT_ADMIN_PUBLIC_ORIGIN` می‌توانست قبل از
+بررسی رمز عبور درخواست را رد کند و صفحهٔ خام
+`Forbidden` نشان دهد. برخی مرورگرها/پروکسی‌ها هدر `Origin`
+را حذف می‌کنند یا مقدار `null` می‌فرستند.
+
+اکنون Login از یک Challenge تصادفی کوتاه‌مدت استفاده می‌کند:
+Browser ابتدا از `GET /api/auth/challenge` یک مقدار امن
+دریافت می‌کند؛ سرور یک Cookie اختصاصیِ
+`HttpOnly`، `Secure` و `SameSite=Strict` تنظیم می‌کند؛ سپس
+درخواست `POST /api/auth/login` با یک Header اختصاصی همان مقدار
+را ارائه می‌دهد. سرور این دو را با مقایسهٔ ثابت‌زمان بررسی می‌کند.
+درخواست‌های Cross-Site همچنان رد می‌شوند.
+
+خطاها به‌صورت فارسی در خود فرم نمایش داده می‌شوند:
+رمز اشتباه (401)، محدودیت تلاش (429)، سرویس خارج از دسترس (503)،
+عدم تطابق Challenge (403) و اختلال شبکه. دیگر صفحهٔ خام
+`Forbidden` برای ورود عادی نمایش داده نمی‌شود؛
+فرم قدیمیِ موجود در Tabهای باز نیز به صفحهٔ ورود برگردانده می‌شود.
+
+بعد از گرفتن تغییرات GitHub:
+
+```bash
+git pull --ff-only origin feat/codespaces-live-stack-20261103
+
+# فقط داشبورد را بساز؛ بدون تماس با Telegram/Bale
+bash scripts/setup_codespace.sh build-dashboard
+
+# اجرای مجدد سرویس‌ها با حفظ PostgreSQL و رسانه‌ها
+bash scripts/setup_codespace.sh start
+
+# آزمون واقعی HTTP روی localhost، با حساب ساختگی و بدون رمز واقعی
+bash scripts/setup_codespace.sh auth-smoke
+```
+
+خروجی موفق `auth-smoke` باید سه PASS داشته باشد:
+عدم پذیرش POST بدون Challenge، ایجاد Cookie و توکن امنیتی،
+و عبور موفق درخواست دارای Challenge از Proxy تا FastAPI
+(پاسخ 401 برای حساب کاملاً ساختگی نتیجهٔ درست این تست است).
+
+سپس در مرورگر، صفحهٔ `/login` را **Hard Refresh** کن و با
+رمز فعلی `shopadmin` وارد شو. اگر رمز قبلاً در چت/لاگ
+منتشر شده، پس از ورود آن را از `/staff` تغییر بده.
+رمز یا مقدار Cookie را در خروجی‌های اشتراکی منتشر نکن.
+
+اگر مشکل ادامه داشت، نتیجهٔ `auth-smoke`، وضعیت
+`bash scripts/setup_codespace.sh status` و
+لاگ‌های Sanitized داشبورد را ارسال کن. مقدار فایل
+`.codespaces/live.env` محرمانه است.
+
+**توجه:** اصلاح Login محافظت CSRF را حذف نمی‌کند و سیاست مستقلِ
+`connect` برای خصوصی‌بودن پورت `3000` را تغییر نمی‌دهد.
+تا زمانی که پورت داشبورد Public باشد، ثبت Webhook واقعی با
+`connect` طبق سیاست فعلی مسدود می‌ماند.
