@@ -24,6 +24,7 @@ from models.shop_customer_crm import (
     ShopCustomerProfile, ShopCustomerNote, ShopCustomerConsentEvent,
     ShopCustomerAudit, ShopCustomerRetentionPolicy,
 )
+from models.shop_staff_preferences import ShopStaffPreferences
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
