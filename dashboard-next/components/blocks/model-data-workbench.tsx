@@ -38,6 +38,7 @@ const ERRORS: Record<string, string> = {
   import_duplicate_key: "یک شناسهٔ Import در چند سطر فایل تکرار شده است.",
   import_stock_adjustment_required: "تغییر موجودی محصول قدیمی از Import مجاز نیست؛ سند اصلاح انبار لازم است.",
   import_publish_requires_review: "انتشار محصول از طریق Import مجاز نیست.",
+  uom_locked: "واحد فروش محصول دارای موجودی یا سابقهٔ خرید را نمی‌توان از طریق Import تغییر داد.",
   import_identity_conflict: "External Reference و SKU به دو رکورد متفاوت اشاره می‌کنند.",
   import_preview_required: "فایل پس از Preview تغییر کرده است؛ دوباره Preview بگیرید.",
   store_access_denied: "دسترسی این Store برای کاربر مجاز نیست.",
