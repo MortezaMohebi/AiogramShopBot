@@ -179,8 +179,8 @@ class ShopIdentity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
-        ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        String(36), nullable=False, default=legacy_bot_default, index=True,
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
     )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     username: Mapped[str | None] = mapped_column(String(255))
@@ -224,8 +224,8 @@ class ShopOrder(Base):
     )
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
-        ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        String(36), nullable=False, default=legacy_bot_default, index=True,
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
     )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
