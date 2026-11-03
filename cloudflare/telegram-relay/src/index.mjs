@@ -145,8 +145,9 @@ async function handleRequest(request, env, ctx) {
       // A Worker must hold its capacity lease for the entire streamed
       // response, not just until the upstream sends HTTP headers.
       const bridge = new TransformStream();
+      const heldReservation = reservation;
       const pending = response.body.pipeTo(bridge.writable)
-        .finally(() => releaseQuota(reservation));
+        .finally(() => releaseQuota(heldReservation));
       if (ctx?.waitUntil) ctx.waitUntil(pending.catch(() => undefined));
       else void pending.catch(() => undefined);
       reservation = null;
