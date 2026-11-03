@@ -90,7 +90,9 @@ def upgrade() -> None:
     op.create_index(
         "uq_shop_bot_credential_fingerprint",
         "shop_bot_credentials", ["token_fingerprint"], unique=True,
-        postgresql_where=sa.text("token_fingerprint IS NOT NULL"),
+        postgresql_where=sa.text(
+            "token_fingerprint IS NOT NULL AND state IN ('staged','active')"
+        ),
     )
     # Keep old deployments running: match legacy maintenance state without
     # changing any live receiver or ShopBotProfile record.
