@@ -15,6 +15,7 @@ from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import ShopOrder
 from services.shop_money import format_rials
+from services.shop_channel_features import get_features
 from services.shop_refunds import ShopRefundService
 from services.shop_payments import PaymentRejected
 
@@ -98,6 +99,7 @@ class ShopOrdersFlow:
             .group_by(ShopOrderLine.order_id)
         )
         quantities = dict(counts_result.all())
+        features = await get_features(session, event.platform.value)
         lines = ["📦 سفارش‌های من"]
         rows: list[tuple[InlineAction, ...]] = []
         for order in orders:
@@ -115,16 +117,15 @@ class ShopOrdersFlow:
                     ),
                 ))
             if order.status == "approved_unpaid":
-                rows.append((
-                    InlineAction(
-                        f"💳 پرداخت سفارش #{order.id}",
-                        f"shop:pay:{order.id}",
-                    ),
-                    InlineAction(
-                        "اعتبار داخلی",
+                actions = [InlineAction(
+                    f"💳 پرداخت سفارش #{order.id}", f"shop:pay:{order.id}",
+                )]
+                if features.store_credit_enabled:
+                    actions.append(InlineAction(
+                        features.store_credit_label,
                         f"shop:creditpay:{order.id}",
-                    ),
-                ))
+                    ))
+                rows.append(tuple(actions))
             if (
                 order.provider == "manual_review"
                 and order.status in ("pending_review", "approved_unpaid")
