@@ -36,5 +36,23 @@ export default async function StaffPage({ searchParams }: { searchParams: Params
     {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">تغییرات ثبت شد.</p> : null}
     {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{errors[params.error] ?? "ذخیره ممکن نشد؛ دسترسی، وضعیت نشست و داده‌ها را بررسی کنید."}</p> : null}
     <StaffSecurityPanel members={members} invites={invitations.items} initialPolicy={policy} currentId={operator.id} />
+    <section aria-labelledby="store-access-title" className="space-y-3 rounded-xl border bg-card p-5">
+      <h2 id="store-access-title" className="text-base font-semibold">
+        دسترسی کاربران به فروشگاه‌ها
+      </h2>
+      <p className="text-sm leading-7 text-muted-foreground">
+        Allowed Stores و Default Store هر کاربر مستقل از نقش سراسری او است.
+        دسترسی مؤثر تنها در Storeهای مجاز و فعال نشست اعمال می‌شود.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {members.map(member => <div key={member.id}
+          className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+          <span className="min-w-0 truncate">{member.username} · {member.role}</span>
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/staff/${member.id}/stores`}>Storeهای مجاز</Link>
+          </Button>
+        </div>)}
+      </div>
+    </section>
   </div>;
 }
