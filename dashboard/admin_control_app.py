@@ -36,6 +36,8 @@ from dashboard.shop_multibot_receiver_api import router as multi_receiver_router
 from dashboard.shop_relay_pool_api import router as relay_pool_router
 from dashboard.shop_store_commerce_api import router as store_commerce_router
 from dashboard.shop_store_context_api import router as store_context_router
+from dashboard.shop_uom_api import router as shop_uom_router
+from dashboard.shop_model_data_api import router as model_data_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -45,7 +47,9 @@ PREFIX = "/internal/admin/v1"
 def permission_for(path: str, method: str) -> str | None:
     """Map server-owned route families to fixed capabilities; fail closed."""
     resource = path.removeprefix(PREFIX).strip("/").split("/")[0]
-    if resource == "store-context":
+    if resource in {"store-context", "data-models"}:
+        # Model-specific read/write capabilities are checked a second time
+        # inside the typed metadata-driven API, after session validation.
         return "dashboard.read"
     if resource in {"auth", "account", "capabilities", "overview"}:
         return "account.manage_self" if resource in {"auth", "account"} else "dashboard.read"
@@ -57,6 +61,10 @@ def permission_for(path: str, method: str) -> str | None:
         ("/activate", "/pause", "/revoke")
     ):
         return "bots.apply"
+    if resource == "stores" and path.endswith(
+        ("/uoms", "/uom-categories")
+    ):
+        return "catalog.read" if method == "GET" else "catalog.write"
     if resource in {"products", "categories"}:
         return "catalog.read" if method == "GET" else "catalog.write"
     return {
@@ -192,7 +200,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
+                if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 # Only session-authenticated requests can acquire StoreContext.
@@ -210,7 +218,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "payment-accounts", "bot-registry", "bot-catalog",
                         "products", "categories", "orders", "customers",
                         "overview", "reports", "settings",
-                        "shipping", "coupons",
+                        "shipping", "coupons", "data-models",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -262,6 +270,8 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(relay_pool_router)
     app.include_router(store_commerce_router)
     app.include_router(store_context_router)
+    app.include_router(shop_uom_router)
+    app.include_router(model_data_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
     app.mount("/", legacy)

@@ -31,6 +31,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Par
         description="کاتالوگ مشترک تلگرام و بله؛ تمام نام‌ها، قیمت‌ها، وضعیت انتشار و تعداد کالاها از دیتابیس خوانده می‌شود."
         action={canEdit ? <Button asChild><Link href="/products/new"><Plus /> محصول جدید</Link></Button> : undefined}
       />
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href="/data-models/products">Search، Group By، Import/Export</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/uoms">Units of Measure</Link>
+        </Button>
+      </div>
       {q.saved ? <p role="status" className="mb-4 rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">محصول در دیتابیس ذخیره شد.</p> : null}
       <Card>
         <CardContent className="pt-5">

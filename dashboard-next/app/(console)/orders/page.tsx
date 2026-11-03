@@ -32,6 +32,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Param
   return (
     <div className="space-y-6">
       <PageHeading title="سفارش‌ها" description="سفارش‌های تلگرام و بله با وضعیت واقعی پرداخت؛ مدیر فقط درخواست‌های پیش از پرداخت را قبول یا رد می‌کند." />
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href="/data-models/orders">Search، Group By تاریخ و Export سفارش‌ها</Link>
+        </Button>
+      </div>
       {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">تصمیم مدیر در سوابق سفارش ثبت شد.</p> : null}
       {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">تصمیم انجام نشد. وضعیت سفارش، موجودی کالای منتشرشده و عبارت تأیید را بررسی کنید.</p> : null}
       {["superadmin", "sales"].includes(staff.role) ? (

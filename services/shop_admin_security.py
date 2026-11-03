@@ -34,7 +34,7 @@ BASE_PERMISSIONS = frozenset({"account.manage_self", "dashboard.read", "reports.
 ROLE_PERMISSIONS = {
     "viewer": BASE_PERMISSIONS,
     "content": BASE_PERMISSIONS | {"catalog.read", "catalog.write", "media.manage"},
-    "sales": BASE_PERMISSIONS | {"customers.read", "orders.read", "orders.manage", "shipping.manage", "coupons.manage"},
+    "sales": BASE_PERMISSIONS | {"customers.read", "customers.import", "orders.read", "orders.manage", "shipping.manage", "coupons.manage"},
     "finance": BASE_PERMISSIONS | {"orders.read", "finance.read", "wallet.adjust", "refund.execute", "reports.read"},
     "marketing": BASE_PERMISSIONS | {"campaigns.manage", "broadcast.approve", "coupons.manage", "reports.read"},
 }

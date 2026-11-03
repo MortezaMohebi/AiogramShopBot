@@ -6,6 +6,8 @@
 **Bot Catalog ACL (P3):** `feat/multibot-catalog-acl-20261103`  
 **Multi-Bot Runtime & Commerce (P4):** `feat/multibot-runtime-commerce-20261103`  
 **Relay Worker Pool (P5):** `feat/multibot-relay-worker-pool-20261104`  
+**Store/Customer ownership & StoreContext:** PR #11 `feat/store-customer-commerce-ownership-20261104` → PR #12 `feat/multistore-context-user-access-20261104` (Draft؛ QA معوق)  
+**UoM & generic data access:** PR #13 `feat/uom-generic-data-io-search-20261104` (Preview یک‌بارمصرف، Migrationها تا `20261104y001`، Draft؛ QA معوق)  
 **Parent branch:** `feat/staff-security-invites-mfa-audit-20261103` (PR #5، هنوز Draft)  
 **اصل معماری:** One Store → Many Bots؛ Shared Product Catalog با دسترسی اختصاصی هر بات؛ Many Bots → Many outbound Worker/Proxy Routes.
 
@@ -31,7 +33,10 @@
 | P3 Bot Catalog Access | سه جدول ACL، Predicate مشترک، کنترل Catalog/Callback/Cart/Checkout، پنل Many2many بات و محصول و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
 | P4 Multi-Bot Runtime & Commerce | Receiver مستقل، Dispatcher، Migration، اسکوپ مالی، UI فعال‌سازی MFA و محدودیت Broadcast ثبت شد | محیط تست در دسترس نیست؛ PostgreSQL، Provider، Next.js و E2E اجرا نشده‌اند |
 | P5 Shared Relay Worker Pool | Registry چند Worker، Many2many Bot/Worker، Credential مستقل و Rotation، مدیریت Next.js، Cloudflare Durable Object quota و Safe Read-only Failover در سورس ثبت شده | تست‌ها اجرا نشده؛ Cloudflare و Provider و PostgreSQL هنوز تأیید نشده‌اند |
+| Post-P5 Multi-Store, UoM & Data Toolkit | StoreCustomer/StoreContext، UoM مستقل هر Store، قابلیت‌های Search/Group، Import/Export CSV و XLSX با Template و Preview در شاخه‌های جداگانه ثبت شد | هیچ‌یک از Migration، Pytest، Node/Next.js، PostgreSQL و Provider به‌صورت اجرایی تأیید نشده‌اند |
 | P6 Migration & Final Acceptance | شروع نشده | شروع نشده |
+
+مستند جدید UoM و Generic Model Data Toolkit شامل Import/Export، Group By، امنیت Store و QA معوق در [`UOM_GENERIC_DATA.fa.md`](./UOM_GENERIC_DATA.fa.md) قرار دارد.
 
 جزئیات P5، مراحل Provision کلید هر بات، قوانین Failover و QA معوق در
 [`P5_RELAY_WORKER_POOL.fa.md`](./P5_RELAY_WORKER_POOL.fa.md) ثبت شده‌اند.

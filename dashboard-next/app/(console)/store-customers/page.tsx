@@ -24,6 +24,11 @@ export default async function StoreCustomersPage({
   return <div className="space-y-6">
     <PageHeading title="مشتریان فروشگاه"
       description="یک Customer می‌تواند چند هویت پیام‌رسانی تأییدشده داشته باشد؛ شناسهٔ مساوی به معنای یک نفر نیست." />
+    <div className="flex flex-wrap gap-2">
+      <Button asChild size="sm" variant="outline">
+        <Link href="/data-models/customers">Search و Import/Export مشتریان</Link>
+      </Button>
+    </div>
     <Card>
       <CardHeader><CardTitle>پرونده‌های مستقل مشتریان ({data.total})</CardTitle></CardHeader>
       <CardContent className="space-y-4">

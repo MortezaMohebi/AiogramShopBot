@@ -29,7 +29,7 @@ from models.shop_content import (
     Product, ProductMedia, Testimonial, ShopCategory, ShopIdentity, ShopOrder, ShopSettings,
 )
 from models.shop_checkout import (
-    ShopOrderLine, ShopShippingMethod, ShopCoupon,
+    ShopOrderLine, ShopCartItem, ShopShippingMethod, ShopCoupon,
 )
 from models.shop_payment import ShopRefundCase, ShopPaymentAttempt
 from models.shop_engagement import (
@@ -42,6 +42,7 @@ from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
 from services.shop_store_context import current_context
+from services.shop_uom import validate_product_units
 from models.shop_multibot import DEFAULT_STORE_ID
 from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
@@ -115,8 +116,21 @@ async def bounded_bridge_body(request: Request) -> bytes:
     Starlette's cached request body is restored for its multipart parser.
     Enforcing a bound before signature verification avoids unbounded memory.
     """
-    upload = request.url.path.startswith("/internal/admin/v1/upload/")
-    limit = 50_100_000 if upload else 256 * 1024
+    path = request.url.path
+    upload = path.startswith("/internal/admin/v1/upload/")
+    # Only the signed, typed model import endpoint may accept an 8 MiB
+    # spreadsheet. All other admin API requests keep their previous limits.
+    data_import = (
+        request.method == "POST"
+        and path.startswith("/internal/admin/v1/data-models/")
+        and path.endswith("/import")
+        and len(path.split("/")) == 7
+    )
+    limit = (
+        50_100_000 if upload else
+        8 * 1024 * 1024 if data_import else
+        256 * 1024
+    )
     header = request.headers.get("content-length")
     if header is not None:
         try:
@@ -210,6 +224,9 @@ def product_data(item: Product) -> dict:
         "id": item.id,
         "store_id": item.store_id,
         "sku": item.sku,
+        "external_ref": item.external_ref,
+        "uom_id": item.uom_id,
+        "purchase_uom_id": item.purchase_uom_id,
         "category_id": item.category_id,
         "name": item.name,
         "description": item.description,
@@ -253,6 +270,9 @@ class ProductPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     sku: str = Field(default="", max_length=64)
+    external_ref: str | None = Field(default=None, max_length=80)
+    uom_id: str | None = Field(default=None, max_length=36)
+    purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
@@ -273,6 +293,9 @@ class ProductPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     sku: str | None = Field(default=None, max_length=64)
+    external_ref: str | None = Field(default=None, max_length=80)
+    uom_id: str | None = Field(default=None, max_length=36)
+    purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
@@ -564,6 +587,16 @@ async def create_product(
     # merchant to invent an SKU for every new product.
     fields["sku"] = fields["sku"].strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields["description"] = fields["description"].strip()
+    scope = current_context()
+    if scope is not None:
+        scope.require(scope.current_store_id, write=True)
+    store_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    fields["store_id"] = store_id
+    fields["uom_id"], fields["purchase_uom_id"] = await validate_product_units(
+        session, store_id=store_id,
+        uom_id=fields.get("uom_id"),
+        purchase_uom_id=fields.get("purchase_uom_id"),
+    )
     fields["position"] = await session.run_sync(
         lambda sync: next_display_position(sync, Product)
     )
@@ -615,6 +648,30 @@ async def edit_product(
             raise HTTPException(status_code=422, detail="Null not allowed")
     if "sku" in fields:
         fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
+    if "uom_id" in fields or "purchase_uom_id" in fields:
+        selected, purchase = await validate_product_units(
+            session, store_id=record.store_id,
+            uom_id=fields.get("uom_id", record.uom_id),
+            purchase_uom_id=fields.get(
+                "purchase_uom_id", record.purchase_uom_id,
+            ),
+        )
+        if selected != record.uom_id:
+            # Existing stock, open carts or historic orders are quantified in
+            # the original unit. Relabeling them would corrupt inventory.
+            has_cart = await session.scalar(select(ShopCartItem.id).where(
+                ShopCartItem.product_id == record.id,
+            ).limit(1))
+            has_order = await session.scalar(select(ShopOrderLine.id).where(
+                ShopOrderLine.product_id == record.id,
+            ).limit(1))
+            if record.stock_quantity or has_cart is not None or has_order is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="uom_locked",
+                )
+        fields["uom_id"] = selected
+        fields["purchase_uom_id"] = purchase
     fields = validated_product_values(fields, current=record)
     category_id = fields.get("category_id")
     if category_id is not None:

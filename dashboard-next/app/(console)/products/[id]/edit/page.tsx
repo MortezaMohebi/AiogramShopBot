@@ -5,6 +5,7 @@ import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Category, Product } from "@/lib/types";
 import type { ProductFile } from "@/components/blocks/product-media-panel";
 import type { ProductBotCatalogList } from "@/lib/bot-catalog-acl";
+import type { UomList } from "@/lib/uoms";
 
 type Params = Promise<{ id: string }>;
 type Search = Promise<{
@@ -45,12 +46,16 @@ export default async function EditProductPage({
         )
       : Promise.resolve(undefined),
   ]);
+  const units = await adminFetch<UomList>(
+    `/stores/${product.store_id}/uoms`,
+  );
   return (
     <div>
       <PageHeading title={`ویرایش «${product.name}»`} description="محصول در کاتالوگ مشترک است؛ مجوز نمایش آن برای هر بات جداگانه مدیریت می‌شود. مبالغ سفارش‌های گذشته تغییر نمی‌کنند." />
       {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ویرایش ذخیره نشد. داده‌ها یا تکراری‌بودن SKU را بررسی کنید.</p> : null}
       <ProductEditor
-        product={product} categories={categories} media={media.items}
+        product={product} categories={categories} uoms={units.items}
+        media={media.items}
         botAccess={botAccess} botAccessQuery={botQuery}
         botAccessSaved={query.bot_acl_saved === "1"}
         botAccessError={query.bot_acl_error === "1"}

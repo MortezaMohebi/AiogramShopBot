@@ -22,6 +22,7 @@ from models.shop_multibot import (
 from services import shop_admin_security as security
 from services.shop_bot_secrets import credential_status
 from services.shop_bot_operations import operation_data
+from services.shop_uom import seed_store_units
 from services.shop_store_context import (
     current_context, grant_new_store_creator,
 )
@@ -62,6 +63,9 @@ def create_store(
         id=str(uuid4()), slug=slug, name=name, state="paused",
     )
     db.add(store)
+    db.flush()
+    # Every new Store owns its UoM catalog; no cross-Store unit reuse.
+    seed_store_units(db, store.id)
     # Only the creator gets manager access. Other users require explicit grants.
     grant_new_store_creator(db, staff_id=actor_id, store_id=store.id)
     security.audit(db, actor_id, "store.created", store.id)

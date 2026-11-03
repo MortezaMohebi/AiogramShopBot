@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from sqlalchemy import (
-    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
-    String, Text, UniqueConstraint, func,
+    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey,
+    ForeignKeyConstraint, Integer, String, Text, UniqueConstraint,
+    func, Index, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
@@ -18,6 +19,7 @@ from markupsafe import Markup, escape
 from models.base import Base
 from models.shop_scope import legacy_bot_default
 from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_uom import default_unit_id
 
 
 class ShopSettings(Base):
@@ -78,6 +80,15 @@ class Product(Base):
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sku: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_ref: Mapped[str | None] = mapped_column(String(80))
+    uom_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_uoms.id", ondelete="RESTRICT"),
+        nullable=False, default=lambda: default_unit_id(DEFAULT_STORE_ID),
+        index=True,
+    )
+    purchase_uom_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_uoms.id", ondelete="RESTRICT"),
+    )
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("shop_categories.id", ondelete="SET NULL")
     )
@@ -108,6 +119,22 @@ class Product(Base):
     __table_args__ = (
         UniqueConstraint(
             "store_id", "sku", name="uq_shop_product_store_sku",
+        ),
+        ForeignKeyConstraint(
+            ["store_id", "uom_id"],
+            ["shop_uoms.store_id", "shop_uoms.id"],
+            name="fk_shop_product_unit_store", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["store_id", "purchase_uom_id"],
+            ["shop_uoms.store_id", "shop_uoms.id"],
+            name="fk_shop_product_purchase_unit_store", ondelete="RESTRICT",
+        ),
+        Index(
+            "uq_shop_product_store_external_ref",
+            "store_id", "external_ref", unique=True,
+            postgresql_where=text("external_ref IS NOT NULL"),
+            sqlite_where=text("external_ref IS NOT NULL"),
         ),
         CheckConstraint("price >= 0", name="ck_shop_product_price"),
         CheckConstraint("stock_quantity >= 0", name="ck_shop_product_stock"),

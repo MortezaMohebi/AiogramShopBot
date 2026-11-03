@@ -224,6 +224,9 @@ class ShopOrderLine(Base):
         String(255), nullable=False
     )
     sku_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
+    uom_code_snapshot: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="piece", server_default="piece",
+    )
     unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)

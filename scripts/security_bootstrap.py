@@ -5,7 +5,8 @@ A partial legacy schema still fails closed instead of being silently repaired.
 """
 from __future__ import annotations
 import asyncio
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, select
+from sqlalchemy.orm import Session
 
 
 def permitted_missing(existing: set[str], expected: set[str], additions: set[str]) -> set[str]:
@@ -43,8 +44,12 @@ async def main() -> None:
     from models.shop_relay_pool import RELAY_POOL_TABLES
     from models.shop_store_commerce import STORE_COMMERCE_TABLES
     from models.shop_staff_store import STAFF_STORE_TABLES
+    from models.shop_uom import ShopUom, ShopUomCategory
+    from models.shop_model_import import MODEL_IMPORT_TABLES
     from services.shop_multibot_bootstrap import adopt_legacy_codespace
     from services.shop_bot_operations_bootstrap import upgrade_codespace_bot_operations
+    from services.shop_uom import seed_store_units
+    from models.shop_multibot import ShopStore
     async with engine.begin() as connection:
         if await connection.scalar(text("SELECT current_database()")) != "shop_codespace":
             raise RuntimeError("Only the Codespaces database may be bootstrapped")
@@ -56,7 +61,7 @@ async def main() -> None:
                 raise RuntimeError("Versioned databases must use their migrations")
         # These new tables are additive; neither existing product nor order
         # columns are changed. An existing Codespace keeps all its data.
-        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | set(CRM_TABLE_NAMES) | set(STAFF_PREFERENCES_TABLES) | set(BOT_PROFILE_TABLES) | set(PAYMENT_RAIL_TABLES) | set(CUSTOMER_LINK_TABLES) | set(STAFF_STATES_TABLES) | set(TELEGRAM_TRANSPORT_TABLES) | set(MULTIBOT_FOUNDATION_TABLES) | set(BOT_OPERATIONS_TABLES) | set(BOT_CATALOG_ACL_TABLES) | set(BOT_RUNTIME_TABLES) | set(RELAY_POOL_TABLES) | set(STORE_COMMERCE_TABLES) | set(STAFF_STORE_TABLES) | {"shop_product_visibility"}
+        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | set(CRM_TABLE_NAMES) | set(STAFF_PREFERENCES_TABLES) | set(BOT_PROFILE_TABLES) | set(PAYMENT_RAIL_TABLES) | set(CUSTOMER_LINK_TABLES) | set(STAFF_STATES_TABLES) | set(TELEGRAM_TRANSPORT_TABLES) | set(MULTIBOT_FOUNDATION_TABLES) | set(BOT_OPERATIONS_TABLES) | set(BOT_CATALOG_ACL_TABLES) | set(BOT_RUNTIME_TABLES) | set(RELAY_POOL_TABLES) | set(STORE_COMMERCE_TABLES) | set(STAFF_STORE_TABLES) | set(MODEL_IMPORT_TABLES) | {ShopUom.__tablename__, ShopUomCategory.__tablename__, "shop_product_visibility"}
         missing = permitted_missing(tables, set(Base.metadata.tables), additions)
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,
@@ -70,6 +75,15 @@ async def main() -> None:
         # Nullable credential verification receipts and legacy status rows
         # migrate in-place; Codespace volumes and customer data are preserved.
         await upgrade_codespace_bot_operations(connection)
+        # Fresh-schema mode does not run Alembic data backfills. Seed
+        # deterministic Store-owned units inside the same locked transaction.
+        def ensure_uoms(sync_connection) -> None:
+            with Session(bind=sync_connection) as session:
+                ids = session.scalars(select(ShopStore.id)).all()
+                for store_id in ids:
+                    seed_store_units(session, store_id)
+                session.flush()
+        await connection.run_sync(ensure_uoms)
         await verify_codespace_schema(connection)
     await create_admin()
     print("Security schema verified; existing accounts, orders and media preserved.")

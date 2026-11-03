@@ -3,6 +3,8 @@ import { ProductEditor } from "@/components/blocks/product-editor";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Category } from "@/lib/types";
+import type { UomList } from "@/lib/uoms";
+import type { StoreContextSnapshot } from "@/lib/store-context";
 
 type Params = Promise<{ error?: string; ref?: string }>;
 
@@ -10,7 +12,13 @@ type Params = Promise<{ error?: string; ref?: string }>;
 export default async function NewProductPage({ searchParams }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (!["superadmin", "content"].includes(staff.role)) notFound();
-  const categories = await adminFetch<Category[]>("/categories");
+  const [categories, context] = await Promise.all([
+    adminFetch<Category[]>("/categories"),
+    adminFetch<StoreContextSnapshot>("/store-context"),
+  ]);
+  const units = await adminFetch<UomList>(
+    `/stores/${context.current_store_id}/uoms`,
+  );
   const params = await searchParams;
   return (
     <div>
@@ -26,7 +34,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
         } as Record<string, string>)[params.error] ?? "ثبت محصول انجام نشد."}
         {params.ref && /^[a-f0-9-]{36}$/i.test(params.ref) ? <span className="mt-2 block font-mono text-xs" dir="ltr">Request ID: {params.ref}</span> : null}
       </p> : null}
-      <ProductEditor categories={categories} />
+      <ProductEditor categories={categories} uoms={units.items} />
     </div>
   );
 }

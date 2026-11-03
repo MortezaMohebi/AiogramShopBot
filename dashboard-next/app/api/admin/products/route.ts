@@ -8,7 +8,8 @@ import type { Staff } from "@/lib/types";
 export const runtime = "nodejs";
 const MAX_BYTES = 120_000;
 const keys = new Set([
-  "sku", "name", "description", "category_id", "price_irr",
+  "sku", "external_ref", "uom_id", "purchase_uom_id",
+  "name", "description", "category_id", "price_irr",
   "price_stars", "stock_quantity", "product_type", "requires_shipping",
   "is_published", "show_description", "show_stock", "show_media", "show_reviews",
 ]);
@@ -69,7 +70,7 @@ async function save(request: NextRequest, method: "POST" | "PATCH") {
       if (error.status === 401) return failed("session_expired", 401);
       if (error.status === 403) return failed("permission_denied", 403);
       if (error.status === 404) return failed("not_found", 404);
-      if (error.status === 409) return failed("sku_exists", 409);
+      if (error.status === 409) return failed(error.code === "uom_locked" ? "uom_locked" : "sku_exists", 409);
       if (error.status === 422) return failed("invalid_product", 422);
     }
     return failed("service_unavailable", 503);
