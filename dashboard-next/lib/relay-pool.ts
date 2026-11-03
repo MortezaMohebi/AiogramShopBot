@@ -30,6 +30,11 @@ export interface BotRelayRoute {
   credential_version: number | null;
   credential_state: "staged" | "active" | "retiring" | "revoked" | null;
   credential_verified_at: string | null;
+  credential_history: {
+    version: number;
+    state: "staged" | "active" | "retiring" | "revoked";
+    verified_at: string | null;
+  }[];
 }
 
 export interface BotRelaySnapshot {
