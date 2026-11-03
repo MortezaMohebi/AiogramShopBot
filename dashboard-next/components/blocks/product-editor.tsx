@@ -22,7 +22,7 @@ import type { Category, Product } from "@/lib/types";
 import type { UomUnit } from "@/lib/uoms";
 
 type SaveCode =
-  | "invalid_product" | "sku_exists" | "permission_denied"
+  | "invalid_product" | "sku_exists" | "uom_locked" | "permission_denied"
   | "session_expired" | "security_check_failed"
   | "service_unavailable" | "invalid_request";
 
