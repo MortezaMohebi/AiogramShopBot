@@ -88,3 +88,46 @@ def test_admin_password_never_has_a_public_api_route() -> None:
     ).read_text("utf-8")
     assert "codespace_setup.py credentials" in login
     assert "LIVE_ADMIN_PASSWORD" not in login
+
+
+
+def test_fresh_schema_classification_requires_empty_database() -> None:
+    """Create a schema only from an empty test DB, not over actual records."""
+    from scripts.codespace_migrate import classify_schema
+
+    expected = {"shop_staff", "shop_products", "shop_orders"}
+
+    assert classify_schema(set(), expected) == "create"
+    assert classify_schema({"alembic_version"}, expected) == "create"
+    assert classify_schema(expected, expected) == "verify"
+    assert classify_schema(expected | {"alembic_version"}, expected) == "verify"
+
+    with pytest.raises(RuntimeError, match="Partial or unexpected"):
+        classify_schema({"shop_staff"}, expected)
+
+    with pytest.raises(RuntimeError, match="Partial or unexpected"):
+        classify_schema({"shop_staff", "other_table"}, expected)
+
+    with pytest.raises(RuntimeError, match="revision"):
+        classify_schema(
+            {"alembic_version"}, expected, old_revisions_present=True,
+        )
+
+
+def test_fresh_schema_bootstrap_never_stamps_migrations() -> None:
+    """Prevent reintroducing legacy SQLite Alembic history on fresh PG."""
+    root = Path(__file__).resolve().parent.parent
+    bootstrap = (root / "scripts/codespace_migrate.py").read_text("utf-8")
+    assert "Base.metadata.create_all" in bootstrap
+    assert "command.stamp(" not in bootstrap
+    assert "command.upgrade(" not in bootstrap
+    assert "checkfirst=False" in bootstrap
+
+    db_source = (root / "db.py").read_text("utf-8")
+    assert 'os.environ.get("CODESPACE_FRESH_SCHEMA") == "true"' in db_source
+    assert "verify_codespace_schema(connection)" in db_source
+
+    compose = (root / "compose.codespaces.yml").read_text("utf-8")
+    assert 'CODESPACE_FRESH_SCHEMA: "true"' in compose
+    assert "  bootstrap:" in compose
+    assert "service_completed_successfully" in compose
