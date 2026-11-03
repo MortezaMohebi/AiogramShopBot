@@ -396,6 +396,52 @@ async def apply(
             ) from None
 
 
+async def sync_broadcast_session(bot) -> bool:
+    """Align the separate broadcast process with the verified DB transport.
+
+    Unlike API startup this function never reclassifies an in-progress admin
+    operation. It runs before each recipient is claimed and each outbound step,
+    so newly queued broadcasts never rely on a stale Deployment-only route.
+    """
+    from db import session_maker
+    from utils.telegram import create_bot
+
+    if not isinstance(bot.session, RotatingTelegramSession):
+        raise RuntimeError("Broadcast Telegram session must be managed")
+    async with session_maker() as db:
+        active, spec, _ = await _current(db)
+        fingerprint = config_fingerprint(spec)
+        expected_id = active.verified_bot_id if active else None
+    if bot.session.fingerprint == fingerprint:
+        return False
+    if active is None:
+        # This is the initial Deployment transport, already constructed at
+        # worker startup. No network request is needed for an unchanged route.
+        bot.session._fingerprint = fingerprint
+        return False
+
+    candidate = make_session(spec)
+    try:
+        probing = create_bot(config.TOKEN, candidate)
+        observed = await asyncio.wait_for(probing.get_me(), timeout=15)
+        if observed.id != expected_id:
+            raise security.SecurityRejected("bot_identity_mismatch", 409)
+        old = await asyncio.wait_for(
+            bot.session.replace(
+                candidate, fingerprint=fingerprint,
+            ), timeout=30,
+        )
+    except BaseException:
+        await candidate.close()
+        raise
+    try:
+        await old.close()
+    except Exception:
+        # A retired session may already have closed during shutdown.
+        pass
+    return True
+
+
 async def reconcile(
     db: AsyncSession, *, actor_id: int, change_id: str, bot,
 ) -> dict:
