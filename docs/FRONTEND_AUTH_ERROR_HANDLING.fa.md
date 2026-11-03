@@ -105,3 +105,58 @@ Bot APIای را استفاده نمی‌کند.
 تغییریافته از سمت محیط واقعی دریافت نشده است. برای سایر
 فرم‌های مدیریتی، تعمیم خطاهای قابل بازیابی در مراحل بعدی
 قابل انجام است و نباید پوشش جزئی فعلی را با پذیرش کامل اشتباه گرفت.
+
+
+## جلوگیری از افشای نام مدیر در فرم عمومی
+
+صفحهٔ `/login` فقط برچسب دائمی «نام کاربری» و فیلد
+`autocomplete=username` دارد. هیچ شناسهٔ حساب واقعی از جمله
+`shopadmin` به‌عنوان Placeholder، متن راهنما یا مقدار اولیه
+به بازدیدکننده نشان داده نمی‌شود. راهنمای عمومی زیر فرم فقط
+اطلاع می‌دهد ورود مختص کاربران مجاز است. اطلاعات Bootstrap فقط
+در ترمینال خصوصیِ Codespace مدیریت می‌شوند.
+
+تست رگرسیون:
+`tests/browser/auth-login.spec.ts` باید عدم وجود Placeholder
+و عدم نمایش شناسهٔ مدیر در DOM را بررسی کند؛
+`tests/test_codespaces_source_offline.py` نیز افشای تصادفی
+شناسه را در سورس Login شناسایی می‌کند.
+
+### بررسی Runtime مطابق Skill رسمی `next-dev-loop`
+
+مرجع: https://github.com/vercel/next.js/blob/canary/skills/next-dev-loop/SKILL.md
+
+این Skill فقط زمانی قابل اجرای واقعی است که محیط زیر آماده باشد:
+
+- `next dev` با Turbopack و Next.js 16.3+ (پروژه 16.4.3 دارد).
+- مرورگر `agent-browser` نسخهٔ 0.31.1 یا جدیدتر.
+- ابزارهای Next.js روی `/_next/mcp` شامل
+  `get_compilation_issues` و `get_routes`.
+
+**تصویر Production Docker با `next build`، جایگزین
+`next dev` نیست.** برای Dev Loop، از یک محیط توسعهٔ جداگانه با
+پورت Private متفاوت استفاده کن تا سرویس فعلی پورت 3000
+قطع یا Cache `.next` آن پاک نشود.
+
+در Codespace‌ای که Node.js و npm نصب دارد، دستور نصب Skill و
+ابزار مرورگر طبق مستندات رسمی:
+
+```bash
+npx skills add vercel/next.js --skill next-dev-loop
+npm i -g agent-browser@latest
+agent-browser skills get core
+```
+
+سپس در محیط توسعهٔ مستقل `next dev` اجرا کن و از Agent دارای
+این Skill بخواه:
+
+> Inspect the live /login route with next-dev-loop. Check
+> get_compilation_issues and get_errors via /_next/mcp; use
+> agent-browser to verify that the username input has a visible
+> label and autocomplete, no placeholder or real administrator
+> identifier is rendered, and login error states remain usable.
+> Inspect the React tree and browser console. Report results.
+
+این بخش **تا اجرای واقعی Skill و تأیید مرورگر روی Codespace
+در وضعیت Pending** است. موفقیت تست ایستای سورس یا
+`npm run build` به‌تنهایی معادل PASS شدن Next Dev Loop نیست.
