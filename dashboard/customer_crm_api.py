@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.next_api import database, signed_staff
@@ -362,3 +362,44 @@ async def set_retention(
     ))
     await db.commit()
     return {"ok": True}
+
+
+class RetentionPurge(StrictPayload):
+    """Explicit policy-bound removal of obsolete private CRM notes."""
+
+    dry_run: bool = True
+    confirmation: str = Field(default="", max_length=30)
+
+
+@router.post("/customer-retention/purge")
+async def purge_expired_case_notes(
+    payload: RetentionPurge, actor: Actor, db: Db,
+) -> dict:
+    """Purge only expired support notes; never customer orders or ledgers.
+
+    A dry run is the default. Executing deletion requires a deliberate
+    confirmation and recent authentication enforced by the session boundary.
+    """
+    from datetime import timedelta
+
+    member = require(actor, "audit.read")
+    policy = await db.get(ShopCustomerRetentionPolicy, 1)
+    days = policy.note_retention_days if policy else 365
+    cutoff = security.clock() - timedelta(days=days)
+    predicate = ShopCustomerNote.created_at < cutoff
+    count = int(await db.scalar(
+        select(func.count()).select_from(ShopCustomerNote).where(predicate)
+    ) or 0)
+    if payload.dry_run:
+        return {"ok": True, "dry_run": True, "notes_eligible": count}
+    if payload.confirmation != "PURGE_EXPIRED_NOTES":
+        raise security.SecurityRejected("confirmation_required", 422)
+    result = await db.execute(delete(ShopCustomerNote).where(predicate))
+    deleted = int(result.rowcount or 0)
+    await db.run_sync(lambda sync: security.audit(
+        sync, member.id, "settings.customer_notes_purged", str(deleted),
+    ))
+    await db.commit()
+    return {"ok": True, "dry_run": False, "notes_deleted": deleted}
+
+
