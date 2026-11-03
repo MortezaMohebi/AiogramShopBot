@@ -19,6 +19,7 @@ from services.shop_money import format_rials
 from services.shop_referrals import ReferralRejected, ShopReferralService
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 from services.shop_channel_features import get_features
+from services.shop_identity_links import LinkRejected, begin, claim, approve, cancel
 
 
 _CREDIT_PREVIEW = re.compile(r"shop:creditpay:([1-9][0-9]{0,18})\Z")
@@ -43,6 +44,55 @@ class ShopEngagementFlow:
         """Resolve only commands owned by the shared engagement service."""
         callback = event.callback_data or ""
         text = (event.text or "").strip()
+        command, _, argument = text.partition(" ")
+
+        # Linking requires actions by both provider-authenticated identities
+        # and a final confirmation from the initiating account.
+        if command == "/linkstart":
+            try:
+                key = await begin(
+                    session, platform=event.platform.value,
+                    user_id=event.user_id,
+                )
+                other = "بله" if event.platform.value == "telegram" else "تلگرام"
+                return BotReply(
+                    "کد محرمانهٔ اتصال حساب‌ها (۱۰ دقیقه):\n"
+                    f"{key}\n"
+                    f"این کد را در بات {other} با فرمان زیر وارد کنید:\n"
+                    f"/linkconfirm {key}\n"
+                    "سپس به همین بات برگردید و وارد کنید:\n"
+                    f"/linkapprove {key}\n"
+                    "کد را به فرد دیگری ندهید.",
+                )
+            except LinkRejected as error:
+                return BotReply(str(error))
+        if command in {"/linkconfirm", "/linkapprove", "/linkcancel"}:
+            try:
+                if command == "/linkconfirm":
+                    await claim(
+                        session, platform=event.platform.value,
+                        user_id=event.user_id, token=argument.strip(),
+                    )
+                    return BotReply(
+                        "حساب دوم تأیید اولیه شد. صاحب حساب اول باید در "
+                        "پیام‌رسان اول، فرمان /linkapprove را با همان کد ارسال کند.",
+                    )
+                if command == "/linkapprove":
+                    await approve(
+                        session, platform=event.platform.value,
+                        user_id=event.user_id, token=argument.strip(),
+                    )
+                    return BotReply(
+                        "✅ اتصال هویت تأیید شد. موجودی، سبد و سفارش‌های "
+                        "دو پیام‌رسان مستقل باقی می‌مانند.",
+                    )
+                await cancel(
+                    session, platform=event.platform.value,
+                    user_id=event.user_id, token=argument.strip(),
+                )
+                return BotReply("درخواست اتصال لغو شد.")
+            except LinkRejected as error:
+                return BotReply(str(error))
         if (
             callback in {"shop:wallet"} or text in ("/wallet", "💳 اعتبار من")
             or _CREDIT_PREVIEW.fullmatch(callback)
