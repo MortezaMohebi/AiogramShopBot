@@ -44,6 +44,7 @@ def permission_for(path: str, method: str) -> str | None:
         "wallets": "finance.read" if method == "GET" else "wallet.adjust",
         "refunds": "finance.read" if method == "GET" else "refund.execute",
         "settings": "settings.manage", "referral-policy": "settings.manage",
+        "channel-features": "settings.manage",
         "staff": "staff.manage", "broadcast": "broadcast.approve",
         "campaigns": "broadcast.approve" if path.endswith(("/start", "/approve")) else "campaigns.manage",
         "bot-connections": "bots.read" if method == "GET" else "bots.configure",
@@ -145,7 +146,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if path.startswith(PREFIX + "/staff") and request.method != "GET":
+                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features")) and request.method != "GET":
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 await db.commit()
