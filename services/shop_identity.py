@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
 from models.shop_scope import legacy_id
+from services.shop_store_commerce import attach_new_customer, bot_store
 from models.shop_customer_crm import ShopCustomerProfile
 from services.shop_customer_crm import effective_restriction
 
@@ -36,6 +37,7 @@ async def register_customer(
         first_name = first_name.strip()[:255] or None
 
     owner = bot_id or legacy_id(platform.value)
+    store_id = await bot_store(session, bot_id=owner)
     condition = (
         ShopIdentity.bot_id == owner,
         ShopIdentity.platform == platform.value,
@@ -45,6 +47,7 @@ async def register_customer(
     identity = result.scalar_one_or_none()
     if identity is None:
         identity = ShopIdentity(
+            store_id=store_id,
             bot_id=owner,
             platform=platform.value,
             platform_user_id=platform_user_id,
@@ -54,10 +57,14 @@ async def register_customer(
         )
         session.add(identity)
     else:
+        if identity.store_id != store_id:
+            raise ValueError("Customer Store ownership mismatch.")
         if username is not None:
             identity.username = username
         if first_name is not None:
             identity.first_name = first_name
+    if identity.customer_id is None:
+        await attach_new_customer(session, identity)
     try:
         await session.commit()
     except IntegrityError:
