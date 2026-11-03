@@ -7,12 +7,13 @@ Telegram Bot API token; an admin cannot redirect it to an arbitrary server.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 from dataclasses import asdict, dataclass
 from ipaddress import ip_address
-from urllib.parse import unquote, urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit
 
 from aiohttp import BasicAuth
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -286,6 +287,15 @@ def make_session(spec: TelegramTransportSpec) -> AiohttpSession:
         worker_url=validated.worker_url,
         relay_secret=validated.worker_secret,
     )
+
+
+def config_fingerprint(spec: TelegramTransportSpec) -> str:
+    """Compute a non-reversible digest of the exact active route and credentials."""
+    payload = json.dumps(
+        asdict(spec), ensure_ascii=False,
+        sort_keys=True, separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def public_data(spec: TelegramTransportSpec, *, version: int, source: str) -> dict:
