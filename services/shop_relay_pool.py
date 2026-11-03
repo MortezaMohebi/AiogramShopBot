@@ -175,7 +175,19 @@ async def list_bot_routes(
             ShopRelayCredential.worker_id == worker.id,
             ShopRelayCredential.state.in_(("staged", "active")),
         ).order_by(ShopRelayCredential.version.desc()).limit(1))
-        items.append(_safe_route(route, worker, credential))
+        history = (await db.scalars(select(ShopRelayCredential).where(
+            ShopRelayCredential.bot_id == bot_id,
+            ShopRelayCredential.worker_id == worker.id,
+        ).order_by(ShopRelayCredential.version.desc()).limit(20))).all()
+        row = _safe_route(route, worker, credential)
+        row["credential_history"] = [{
+            "version": item.version,
+            "state": item.state,
+            "verified_at": (
+                item.verified_at.isoformat() if item.verified_at else None
+            ),
+        } for item in history]
+        items.append(row)
     return {"bot_id": bot_id, "items": items}
 
 
