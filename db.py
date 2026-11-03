@@ -50,6 +50,7 @@ from models.shop_staff_store import (
     ShopStaffStoreAccess, ShopStaffStorePreference, ShopAdminSessionStore,
 )
 from models.shop_uom import ShopUomCategory, ShopUom
+from models.shop_model_import import ShopModelImportPreview
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )
