@@ -42,6 +42,8 @@ from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
 from services.shop_store_context import current_context
+from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
@@ -820,7 +822,13 @@ async def change_campaign(
 async def settings(staff: Staff, session: Db) -> dict:
     """Return editable brand and help text without exposing bot tokens."""
     require_staff(staff, "superadmin")
-    row = await session.get(ShopSettings, 1)
+    scope = current_context()
+    current_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    row = (
+        await session.get(ShopSettings, 1)
+        if current_id == DEFAULT_STORE_ID
+        else await session.get(ShopStoreSettings, current_id)
+    )
     return {
         "brand_name": row.brand_name if row else "",
         "welcome_message": row.welcome_message if row else "",
@@ -835,10 +843,18 @@ async def change_settings(
 ) -> dict:
     """Write merchant text settings; never allow application environment edits."""
     require_staff(staff, "superadmin")
-    row = await session.get(ShopSettings, 1)
-    if row is None:
-        row = ShopSettings(id=1)
-        session.add(row)
+    scope = current_context()
+    current_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    if current_id == DEFAULT_STORE_ID:
+        row = await session.get(ShopSettings, 1)
+        if row is None:
+            row = ShopSettings(id=1)
+            session.add(row)
+    else:
+        row = await session.get(ShopStoreSettings, current_id)
+        if row is None:
+            row = ShopStoreSettings(store_id=current_id)
+            session.add(row)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, key, value)
     await session.commit()
