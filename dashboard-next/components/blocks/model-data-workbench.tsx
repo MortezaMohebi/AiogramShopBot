@@ -56,10 +56,18 @@ export function ModelDataWorkbench({ metadata }: Props) {
   const groupable = metadata.fields.filter((item) => item.groupable);
   const visibleFields = metadata.fields.filter((item) => item.exportable);
 
-  const [field, setField] = useState(searchable[0]?.key ?? "id");
+  const [field, setField] = useState(
+    searchable.find((item) => item.kind === "string")?.key ??
+    searchable[0]?.key ?? "id",
+  );
   const [op, setOp] = useState<FieldOperator>("contains");
   const [value, setValue] = useState("");
   const [sortBy, setSortBy] = useState(sortable[0]?.key ?? "id");
+  const selectedField = searchable.find((item) => item.key === field);
+  const textField = selectedField?.kind === "string" || selectedField?.kind === "enum";
+  const applicableOps = OPS.filter(([name]) => (
+    textField || (name !== "contains" && name !== "starts")
+  ));
   const [descending, setDescending] = useState(true);
   const [filters, setFilters] = useState<ModelFilter[]>([]);
   const [searchResult, setSearchResult] = useState<ModelSearchResult | null>(null);
@@ -179,7 +187,11 @@ export function ModelDataWorkbench({ metadata }: Props) {
       <CardContent className="space-y-4">
         <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_auto] lg:items-end">
           <label className="space-y-2 text-sm">فیلد
-            <select value={field} onChange={(event) => setField(event.target.value)}
+            <select value={field} onChange={(event) => {
+              setField(event.target.value);
+              const next = searchable.find((item) => item.key === event.target.value);
+              setOp(next?.kind === "string" || next?.kind === "enum" ? "contains" : "eq");
+            }}
               className="h-10 w-full rounded-md border bg-background px-3">
               {searchable.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
             </select>
@@ -187,7 +199,7 @@ export function ModelDataWorkbench({ metadata }: Props) {
           <label className="space-y-2 text-sm">عملگر
             <select value={op} onChange={(event) => setOp(event.target.value as FieldOperator)}
               className="h-10 rounded-md border bg-background px-3">
-              {OPS.map(([key, label]) =>
+              {applicableOps.map(([key, label]) =>
                 <option key={key} value={key}>{label}</option>)}
             </select>
           </label>
