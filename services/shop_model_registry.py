@@ -195,7 +195,8 @@ CUSTOMER = Dataset(
     (
         Field("id", "ID", "integer", ShopStoreCustomer.id),
         Field("external_ref", "شناسه خارجی", "string",
-              ShopStoreCustomer.external_ref, importable=True, max_length=80),
+              ShopStoreCustomer.external_ref, importable=True,
+              required=True, max_length=80),
         Field("display_name", "نام مشتری", "string",
               ShopStoreCustomer.display_name, importable=True, max_length=255),
         Field("phone", "تلفن", "string", ShopStoreCustomer.phone,
