@@ -517,7 +517,13 @@ async def redeem_staff(payload: RedeemRequest, staff: Staff, db: Db) -> dict:
     if staff is not None:
         raise security.SecurityRejected("invalid_request", 422)
     digest = hashlib.sha256(payload.token.encode("ascii")).hexdigest()
+    # A global cap prevents attackers from bypassing per-link throttling by
+    # generating unlimited random non-existing tokens.
+    await throttle("staff-redeem-global", 500, 60)
     await throttle("staff-redeem:" + digest, 8, 600)
+    await db.run_sync(lambda sync: lifecycle.prepare_redemption(
+        sync, payload.kind, payload.token, payload.password,
+    ))
     password_hash = await asyncio.to_thread(hash_password, payload.password)
     try:
         await db.run_sync(lambda sync: lifecycle.redeem(
