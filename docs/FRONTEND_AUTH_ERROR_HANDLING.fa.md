@@ -160,3 +160,51 @@ agent-browser skills get core
 این بخش **تا اجرای واقعی Skill و تأیید مرورگر روی Codespace
 در وضعیت Pending** است. موفقیت تست ایستای سورس یا
 `npm run build` به‌تنهایی معادل PASS شدن Next Dev Loop نیست.
+
+
+## اصلاح برخورد آیکن نمایش رمز با متن در RTL
+
+**تأیید علت:** صفحهٔ Login راست‌به‌چپ است، اما مقدار رمز به‌درستی
+`dir="ltr"` داشت. دکمهٔ نمایش رمز با `end-2` از جهت
+والد RTL در سمت چپ قرار می‌گرفت؛ بااین‌حال `pe-11` روی
+Input دارای جهت LTR، Padding را در **سمت راست** ایجاد می‌کرد.
+بنابراین کاراکترهای رمز و کنترل نمایش رمز هر دو از سمت چپ
+شروع می‌شدند و روی هم می‌افتادند.
+
+**اصلاح محدود به Login:** والد Input و دکمه `dir="ltr"`
+گرفته‌اند و کلاس‌ها به `ps-12` برای Input و `start-2`
+برای دکمه تبدیل شده‌اند. برچسب فارسی همچنان RTL است؛
+جهت تمام Inputهای دیگر تغییر نکرده است.
+
+برای جلوگیری از بازگشت مشکل، تست
+`tests/browser/auth-login.spec.ts` مستقیماً Geometry واقعی
+محاسبه‌شده از `paddingLeft`، Bounding Box فیلد و دکمه را
+بررسی می‌کند: باید دست‌کم **۶ پیکسل** فاصلهٔ امن وجود
+داشته باشد. همچنین نمایش/مخفی‌سازی رمز تست می‌شود.
+این تست برای Viewportهای ۳۲۰، ۷۶۸ و ۱۴۴۰ ثبت شده است.
+
+در یک Reproduction جداگانه با Chromium و Tailwind 4،
+در هر سه عرض، Padding قدیمی فاصلهٔ منفی **۲۸ پیکسل**
+و CSS اصلاح‌شده فاصلهٔ مثبت **۸ پیکسل** داشت؛
+این آزمون به Browser آزمایشیِ خودِ برنامه متصل نبوده است.
+
+**اجرای لازم برای پذیرش نهایی در Codespaces:**
+
+```bash
+git pull --ff-only origin feat/codespaces-live-stack-20261103
+bash scripts/setup_codespace.sh build-dashboard
+bash scripts/setup_codespace.sh start
+
+cd tests/browser
+npm install --no-audit --no-fund
+npx playwright install chromium
+LAB_BROWSER_BASE_URL=http://127.0.0.1:3000 \
+  npx playwright test auth-login.spec.ts \
+  --grep "Password reveal control" --reporter=list
+```
+
+برای اجرای کامل Skill رسمی `next-dev-loop` باید علاوه
+بر Build، یک `next dev` جدا روی پورت خصوصی (مثلاً ۳۰۰۱)
+به‌همراه `/_next/mcp` و `agent-browser` اجرا شود.
+نتیجهٔ تست Chromium ایزوله به معنای PASS شدن
+`next-dev-loop` در Codespace نیست.
