@@ -68,4 +68,38 @@ class ShopBotOperations(Base):
     )
 
 
-BOT_OPERATIONS_TABLES = frozenset({ShopBotOperations.__tablename__})
+class ShopBotOperationsEvent(Base):
+    """Immutable before/after state change without credential material."""
+
+    __tablename__ = "shop_bot_operations_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    bot_id: Mapped[str] = mapped_column(
+        ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    actor_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_staff.id"), nullable=False,
+    )
+    previous_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    next_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "previous_state IN ('active','maintenance','paused','disabled')",
+            name="ck_bot_state_audit_previous",
+        ),
+        CheckConstraint(
+            "next_state IN ('active','maintenance','paused','disabled')",
+            name="ck_bot_state_audit_next",
+        ),
+    )
+
+
+BOT_OPERATIONS_TABLES = frozenset({
+    ShopBotOperations.__tablename__,
+    ShopBotOperationsEvent.__tablename__,
+})
