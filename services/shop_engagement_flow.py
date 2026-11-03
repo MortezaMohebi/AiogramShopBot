@@ -129,8 +129,9 @@ class ShopEngagementFlow:
             f" — {entry.reason[:60]}"
             for entry in entries
         )
+        features = await get_features(session, event.platform.value)
         return BotReply(
-            "💳 اعتبار داخلی فروشگاه\n"
+            f"💳 {features.store_credit_label}\n"
             f"موجودی: {format_rials(balance, self.display_unit)}\n\n"
             "این اعتبار جدا از کیف پول شخصی بله و رمزارز تلگرام است.\n"
             + (history or "هنوز تراکنشی ثبت نشده است."),
