@@ -11,7 +11,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
+from models.shop_admin_control import AdminProfile, AdminSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.datastructures import UploadFile
 from starlette.responses import FileResponse
@@ -578,11 +579,26 @@ async def list_staff(staff: Staff, session: Db) -> list[dict]:
     members = (await session.execute(
         select(ShopStaff).order_by(ShopStaff.id).limit(1000)
     )).scalars().all()
+    # Aggregate recent sign-ins without revealing session tokens or MFA seeds.
+    mfa_rows = (await session.execute(
+        select(AdminProfile.staff_id, AdminProfile.mfa_secret)
+    )).all()
+    mfa_by_id = {staff_id: bool(seed) for staff_id, seed in mfa_rows}
+    sign_ins = (await session.execute(
+        select(AdminSession.staff_id, func.max(AdminSession.created_at))
+        .group_by(AdminSession.staff_id)
+    )).all()
+    last_by_id = dict(sign_ins)
     return [
         {
             "id": member.id, "username": member.username,
             "role": member.role, "is_active": member.is_active,
             "created_at": member.created_at.isoformat(),
+            "mfa_enabled": mfa_by_id.get(member.id, False),
+            "last_login_at": (
+                last_by_id[member.id].isoformat()
+                if member.id in last_by_id else None
+            ),
         }
         for member in members
     ]
