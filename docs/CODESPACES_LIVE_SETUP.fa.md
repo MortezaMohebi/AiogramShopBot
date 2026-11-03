@@ -6,6 +6,30 @@
 Redis و پنل Next.js** اجرا می‌شوند. ارتباط واقعی Bot API برقرار می‌شود،
 اما فعال‌سازی پرداخت یا Broadcast پولی بخشی از این راه‌اندازی نیست.
 
+## ساخت دیتابیس جدید بدون Migration
+
+چون این Codespace دیتابیس خالی دارد، **هیچ Migration تاریخی لازم نیست**.
+سرویس `bootstrap` همهٔ جدول‌های اصلی و مشترک تلگرام/بله را با
+`Base.metadata.create_all()` مستقیماً از مدل‌های SQLAlchemy می‌سازد و
+بعد حساب مدیر `shopadmin` را ایجاد می‌کند.
+
+- Migrationهای قدیمی SQLite اجرا یا `stamp` نمی‌شوند.
+- اجرای دوباره، جدول‌های کامل را فقط بررسی می‌کند و اطلاعات را نگه می‌دارد.
+- اگر جدول‌های ناقص یا دادهٔ غیرمنتظره پیدا شود، Bootstrap متوقف می‌شود؛
+  پاک‌سازی خودکار انجام نمی‌شود.
+- این روش فقط برای `shop_codespace` و
+  `CODESPACE_FRESH_SCHEMA=true` مجاز است. محیط Production همچنان
+  به Alembic نیاز دارد.
+- `create_all()` جدول موجود را Upgrade نمی‌کند؛ در توسعه‌های آینده
+  برای تغییر ساختار باید دیتابیس آزمایش را آگاهانه بازسازی یا
+  Migration مناسب طراحی کنیم.
+
+اگر اولین تلاش Alembic جدول ناقصی ایجاد کرده باشد و **مطمئن هستی هیچ
+داده‌ای در این Codespace وجود ندارد**، پس از دیدن خطای Bootstrap می‌توانی
+از `bash scripts/setup_codespace.sh reset --yes` استفاده کنی و بعد
+`start` را اجرا کنی. این دستور Volumeهای اختصاصی Codespace را
+برای همیشه حذف می‌کند، بنابراین آن را بدون نیاز واقعی اجرا نکن.
+
 ## ۱. ساخت Codespace
 
 ۱. در GitHub مخزن `MortezaMohebi/AiogramShopBot` را باز کن.
@@ -52,7 +76,7 @@ bash scripts/setup_codespace.sh init
 # چک کردن Compose بدون اجرای سرویس
 bash scripts/setup_codespace.sh config
 
-# Build، PostgreSQL، Alembic migration، Redis، Bot و Next.js
+# Build، PostgreSQL، ایجاد مستقیم جدول‌ها با SQLAlchemy، Redis، Bot و Next.js
 bash scripts/setup_codespace.sh start
 
 # دستور مدیریت Visibility پورت‌ها (یا تنظیم دستی در PORTS)
@@ -196,7 +220,7 @@ bash scripts/setup_codespace.sh logs
 ```
 
 `compose.codespaces.yml` سرویس‌های زیر را دارد: PostgreSQL 18،
-Redis، Migration، Backend اصلی، Dashboard، Nginx Gateway، Pytest و
+Redis، Bootstrap مستقیم ساختار از مدل‌های SQLAlchemy، Backend اصلی، Dashboard، Nginx Gateway، Pytest و
 **Broadcast Worker اختیاری** در Profile `broadcast`.
 
 در راه‌اندازی اولیه فلگ‌های زیر خاموش هستند:
@@ -237,7 +261,7 @@ GitHub Codespaces ممکن است پس از Restart یا Recreate، پورت Pub
 
 **وضعیت پذیرش:** فایل Docker و اسکریپت‌ها در GitHub پیاده‌سازی
 شده‌اند اما در این جلسه دسترسی اجرایی به Docker Codespace تو وجود
-نداشته و `docker compose up`، Migration واقعی، Build و تست
+نداشته و `docker compose up`، ساخت ساختار دیتابیس، Build و تست
 پیام‌رسان هنوز اجرا نشده‌اند. تا PASS شدن چرخهٔ تست/دیباگ،
 این شاخه برای Production تأیید نمی‌شود.
 
