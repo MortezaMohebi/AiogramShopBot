@@ -5,6 +5,7 @@ from __future__ import annotations
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.session.base import BaseSession
 from aiogram.enums import ParseMode
 
 import config
@@ -43,7 +44,7 @@ def create_telegram_session() -> AiohttpSession:
     )
 
 
-def create_bot(token: str, session: AiohttpSession | None = None) -> Bot:
+def create_bot(token: str, session: BaseSession | None = None) -> Bot:
     """Build an Aiogram Bot using the selected Telegram API transport."""
     session = session or create_telegram_session()
     return Bot(
