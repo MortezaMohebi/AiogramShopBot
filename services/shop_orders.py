@@ -17,7 +17,9 @@ from models.shop_content import ShopOrder
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_payment_rails import rail_enabled
-from services.shop_bot_catalog_acl import resolve_legacy_scope, visible_product_ids
+from services.shop_bot_catalog_acl import resolve_scope, visible_product_ids
+from models.shop_scope import legacy_id
+from services.shop_bot_context import BotContext
 import config
 from services.shop_refunds import ShopRefundService
 from services.shop_payments import PaymentRejected
@@ -39,9 +41,21 @@ STATUS_NAMES = {
 class ShopOrdersFlow:
     """Provide one order-history experience for both messaging platforms."""
 
-    def __init__(self, display_unit: str = "IRR") -> None:
-        """Select a display unit; money remains canonical integer IRR."""
+    def __init__(
+        self, display_unit: str = "IRR",
+        *, bot_context: BotContext | None = None,
+    ) -> None:
+        """Bind only a previously verified bot identity for every query."""
         self.display_unit = display_unit
+        self.bot_context = bot_context
+
+    def _bot_id(self, platform) -> str:
+        """Scope all order reads and callbacks to the authenticated bot."""
+        if self.bot_context is None:
+            return legacy_id(platform.value)
+        if self.bot_context.platform != platform:
+            raise PaymentRejected("شناسه بات با پیام‌رسان تطبیق ندارد.")
+        return self.bot_context.bot_id
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
@@ -60,6 +74,7 @@ class ShopOrdersFlow:
                     session,
                     platform=event.platform,
                     payer_id=event.user_id,
+                    bot_id=self._bot_id(event.platform),
                     order_id=int(match.group(1)),
                     reason="Customer requested refund.",
                 )
@@ -83,6 +98,7 @@ class ShopOrdersFlow:
         result = await session.execute(
             select(ShopOrder)
             .where(
+                ShopOrder.bot_id == self._bot_id(event.platform),
                 ShopOrder.platform == event.platform.value,
                 ShopOrder.platform_user_id == event.user_id,
             )
@@ -116,7 +132,7 @@ class ShopOrdersFlow:
             all_products.add(product_id)
         allowed_products = await visible_product_ids(
             session,
-            await resolve_legacy_scope(session, event.platform.value),
+            await resolve_scope(session, bot_id=self._bot_id(event.platform)),
             all_products,
         )
         features = await get_features(session, event.platform.value)
@@ -197,6 +213,7 @@ class ShopOrdersFlow:
         result = await session.execute(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
+                ShopOrder.bot_id == self._bot_id(event.platform),
                 ShopOrder.platform == event.platform.value,
                 ShopOrder.platform_user_id == event.user_id,
             ).with_for_update()
