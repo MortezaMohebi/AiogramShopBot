@@ -23,6 +23,7 @@ from models.shop_bot_catalog_acl import (
     ShopBotProductRule,
 )
 from models.shop_content import Product, ShopCategory
+from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
     DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopBotRegistryEvent, ShopStore,
 )
@@ -70,6 +71,9 @@ async def resolve_scope(
             (bot.status == "legacy" and bot.runtime_owner == "legacy")
             or (bot.status == "active" and bot.runtime_owner == "registry")
         )
+        policy = await db.get(ShopBotOperations, bot.id)
+        if policy is not None and policy.desired_state != "active":
+            available = False
     return CatalogScope(
         bot_id=bot.id,
         store_id=bot.store_id,
