@@ -51,11 +51,28 @@ def _adopt_synchronous(connection) -> None:
     ))
     if store_exists is None:
         raise RuntimeError("Default store registry entry was not created")
+    store_slug = connection.scalar(select(ShopStore.slug).where(
+        ShopStore.id == DEFAULT_STORE_ID,
+    ))
+    if store_slug != "default":
+        raise RuntimeError("Default store registry identity is inconsistent")
 
     records = connection.execute(select(ShopBotProfile.__table__)).mappings()
     profiles = {row["platform"]: row for row in records}
 
     for platform, bot_id in LEGACY_BOT_IDS.items():
+        existing_bot = connection.execute(select(ShopBot.__table__).where(
+            ShopBot.id == bot_id,
+        )).mappings().first()
+        if existing_bot and (
+            existing_bot["platform"] != platform
+            or existing_bot["store_id"] != DEFAULT_STORE_ID
+            or existing_bot["runtime_owner"] != "legacy"
+            or existing_bot["status"] != "legacy"
+        ):
+            raise RuntimeError(
+                "Legacy bot registry identity conflicts with an existing bot"
+            )
         profile = profiles.get(platform, {})
         inserted = connection.execute(
             pg_insert(ShopBot.__table__).values(
