@@ -26,6 +26,8 @@ from models.shop_engagement import (
     ShopWalletEntry,
 )
 from models.shop_payment import ShopPaymentAttempt
+from models.shop_channel_features import ShopChannelFeature
+from models.shop_payment_rail import ShopPaymentRail
 from services.shop_referrals import ShopReferralService
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 
@@ -57,6 +59,10 @@ class AsyncDB:
     async def scalar(self, statement):
         """Return one ORM scalar."""
         return self.session.scalar(statement)
+
+    async def scalars(self, statement):
+        """Read scalar results from the isolated database."""
+        return self.session.scalars(statement)
 
     async def execute(self, statement):
         """Execute a SQLAlchemy statement."""
@@ -90,6 +96,7 @@ def db():
     Base.metadata.create_all(
         engine,
         tables=[
+            ShopChannelFeature.__table__, ShopPaymentRail.__table__,
             ShopCategory.__table__,
             Product.__table__,
             ShopIdentity.__table__,
