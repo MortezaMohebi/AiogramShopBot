@@ -80,10 +80,11 @@ async def list_customers(
     restriction: Literal["all", "blocked", "active"] = "all",
     consent: Literal["all", "yes", "no"] = "all",
     owner: int | None = None,
+    tag: str = "",
 ) -> dict:
     """Search and filter 20 identities without merging provider user IDs."""
     require(actor)
-    if not 1 <= page <= 100000 or len(q) > 100 or (
+    if not 1 <= page <= 100000 or len(q) > 100 or len(tag) > 32 or (
         owner is not None and owner < 1
     ):
         raise security.SecurityRejected("invalid_request", 422)
@@ -95,6 +96,11 @@ async def list_customers(
         conditions.append(ShopIdentity.allow_announcements.is_(consent == "yes"))
     if owner is not None:
         conditions.append(ShopCustomerProfile.owner_staff_id == owner)
+    if tag.strip():
+        checked = crm.validate_tags([tag.strip()])[0]
+        conditions.append(ShopCustomerProfile.tags_json.contains(
+            json.dumps(checked, ensure_ascii=False),
+        ))
     if q.strip():
         needle = q.strip()
         conditions.append(or_(
@@ -144,6 +150,20 @@ async def list_customers(
         "page": page,
         "page_size": 20,
     }
+
+
+@router.get("/customers/assignees")
+async def customer_assignees(actor: Actor, db: Db) -> dict:
+    """Return assignable staff identities without leaking credentials."""
+    require(actor)
+    rows = (await db.scalars(select(ShopStaff).where(
+        ShopStaff.is_active.is_(True),
+        ShopStaff.role.in_(("superadmin", "sales")),
+    ).order_by(ShopStaff.username).limit(250))).all()
+    return {"items": [
+        {"id": member.id, "username": member.username}
+        for member in rows
+    ]}
 
 
 @router.get("/customers/{customer_id}")
