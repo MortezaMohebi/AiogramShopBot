@@ -40,9 +40,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let payload: unknown;
   try {
-    const bytes = await request.text();
-    if (bytes.length > 512) throw new Error("too long");
-    payload = JSON.parse(bytes) as unknown;
+    // Bound chunked uploads as well as advertised Content-Length.
+    if (!request.body) throw new Error("empty body");
+    const reader = request.body.getReader();
+    const parts: Uint8Array[] = [];
+    let received = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > 512) throw new Error("too long");
+        parts.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    payload = JSON.parse(Buffer.concat(parts).toString("utf8")) as unknown;
   } catch {
     return NextResponse.json(
       { ok: false, code: "invalid_request" },
