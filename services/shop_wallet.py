@@ -22,8 +22,9 @@ from services.shop_cart import CartRejected, validate_coupon
 from services.shop_channel_features import get_features
 from services.shop_payment_rails import rail_enabled
 from services.shop_bot_catalog_acl import (
-    allowed_for_legacy, lock_legacy_catalog_policy,
+    allowed_for_bot, lock_bot_catalog_policy,
 )
+from models.shop_scope import legacy_id
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -36,13 +37,15 @@ class ShopWalletService:
 
     @staticmethod
     async def find_identity(
-        session: AsyncSession, platform: Platform, user_id: int
+        session: AsyncSession, platform: Platform, user_id: int,
+        *, bot_id: str | None = None,
     ) -> ShopIdentity | None:
         """Find the exact messaging identity; never merge numeric IDs."""
         if type(user_id) is not int or user_id <= 0:
             return None
         return await session.scalar(
             select(ShopIdentity).where(
+                ShopIdentity.bot_id == (bot_id or legacy_id(platform.value)),
                 ShopIdentity.platform == platform.value,
                 ShopIdentity.platform_user_id == user_id,
             )
@@ -68,7 +71,10 @@ class ShopWalletService:
         try:
             async with session.begin_nested():
                 session.add(
-                    ShopWalletAccount(identity_id=identity_id, balance_irr=0)
+                    ShopWalletAccount(
+                        bot_id=identity.bot_id,
+                        identity_id=identity_id, balance_irr=0,
+                    )
                 )
                 await session.flush()
         except IntegrityError:
@@ -80,11 +86,12 @@ class ShopWalletService:
 
     @staticmethod
     async def balance(
-        session: AsyncSession, platform: Platform, user_id: int
+        session: AsyncSession, platform: Platform, user_id: int,
+        *, bot_id: str | None = None,
     ) -> int:
         """Return merchant store credit only, not external Bale wallet funds."""
         identity = await ShopWalletService.find_identity(
-            session, platform, user_id
+            session, platform, user_id, bot_id=bot_id,
         )
         if identity is None:
             return 0
@@ -150,6 +157,9 @@ class ShopWalletService:
             raise StoreCreditRejected("موجودی اعتبار کافی نیست یا سقف آن پر شده است.")
         account.balance_irr = balance_after
         entry = ShopWalletEntry(
+            bot_id=identity.bot_id if (identity := await session.get(
+                ShopIdentity, identity_id,
+            )) is not None else None,
             account_id=account.id,
             operation_key=operation_key,
             delta_irr=delta_irr,
@@ -168,6 +178,7 @@ class ShopWalletService:
         platform: Platform,
         user_id: int,
         order_id: int,
+        bot_id: str | None = None,
     ) -> tuple[ShopOrder, bool]:
         """Pay an approved shared order fully from shop credit, exactly once.
 
@@ -177,6 +188,7 @@ class ShopWalletService:
         result = await session.execute(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
+                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
                 ShopOrder.platform == platform.value,
                 ShopOrder.platform_user_id == user_id,
             ).with_for_update()
@@ -199,7 +211,7 @@ class ShopWalletService:
             raise StoreCreditRejected("این سفارش آماده پرداخت با اعتبار نیست.")
 
         identity = await ShopWalletService.find_identity(
-            session, platform, user_id
+            session, platform, user_id, bot_id=bot_id,
         )
         if identity is None:
             raise StoreCreditRejected("ابتدا حساب فروشگاه را فعال کنید.")
@@ -223,9 +235,11 @@ class ShopWalletService:
         )
         pairs = result.all()
         if pairs:
-            await lock_legacy_catalog_policy(session, platform.value)
-        if not pairs or not await allowed_for_legacy(
-            session, platform.value,
+            await lock_bot_catalog_policy(
+                session, bot_id or legacy_id(platform.value),
+            )
+        if not pairs or not await allowed_for_bot(
+            session, bot_id or legacy_id(platform.value),
             [product.id for _, product in pairs],
         ):
             raise StoreCreditRejected(
@@ -279,6 +293,7 @@ class ShopWalletService:
         session.add(
             ShopPaymentAttempt(
                 order_id=order.id,
+                bot_id=bot_id or legacy_id(platform.value),
                 platform=platform.value,
                 provider="store_credit",
                 currency="IRR",
@@ -333,6 +348,7 @@ class ShopWalletService:
             session,
             Platform(order.platform),
             order.platform_user_id,
+            bot_id=order.bot_id,
         )
         if identity is None:
             raise StoreCreditRejected("هویت گیرنده یافت نشد.")
