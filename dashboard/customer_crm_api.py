@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.next_api import database, signed_staff
 from models.shop_content import ShopIdentity, ShopOrder
+from models.shop_customer_links import ShopCustomerIdentityLink
 from models.shop_customer_crm import (
     ShopCustomerAudit,
     ShopCustomerConsentEvent,
@@ -178,6 +179,17 @@ async def customer_case(
     if identity is None:
         raise security.SecurityRejected("customer_not_found", 404)
     profile = await db.get(ShopCustomerProfile, identity.id)
+    linked = await db.scalar(select(ShopCustomerIdentityLink).where(or_(
+        ShopCustomerIdentityLink.source_id == identity.id,
+        ShopCustomerIdentityLink.target_id == identity.id,
+    )))
+    linked_peer = None
+    if linked:
+        peer_id = (
+            linked.target_id if linked.source_id == identity.id
+            else linked.source_id
+        )
+        linked_peer = await db.get(ShopIdentity, peer_id)
     orders = (await db.scalars(select(ShopOrder).where(
         ShopOrder.platform == identity.platform,
         ShopOrder.platform_user_id == identity.platform_user_id,
@@ -200,6 +212,11 @@ async def customer_case(
 
     return {
         "customer": basic_profile(identity, profile),
+        "verified_other_platform": ({
+            "id": linked_peer.id, "platform": linked_peer.platform,
+            "user_id": str(linked_peer.platform_user_id),
+            "approved_at": safe_time(linked.approved_at),
+        } if linked_peer else None),
         "wallet_balance_irr": str(wallet.balance_irr) if wallet else "0",
         "orders": [{
             "id": item.id, "status": item.status,
