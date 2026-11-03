@@ -41,13 +41,17 @@ def _id(store_id: str, value: str) -> str:
 
 def seed_store_units(db: Session, store_id: str) -> None:
     """Create base catalog units for a new Store without network activity."""
+    categories_seen: set[str] = set()
     for category_code, label, code, name, symbol, num, den, reference in _SEED:
         category_id = _id(store_id, f"category:{category_code}")
-        if db.get(ShopUomCategory, category_id) is None:
+        if category_id not in categories_seen and db.get(
+            ShopUomCategory, category_id,
+        ) is None:
             db.add(ShopUomCategory(
                 id=category_id, store_id=store_id,
                 code=category_code, name=label,
             ))
+        categories_seen.add(category_id)
         unit_id = default_unit_id(store_id) if code == "piece" else _id(
             store_id, f"unit:{code}",
         )
