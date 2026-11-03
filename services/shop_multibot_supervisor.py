@@ -238,7 +238,9 @@ class MultiBotSupervisor:
         success = False
         result = None
         try:
-            async with provider_client(context.platform.value, token) as provider:
+            async with provider_client(
+                context.platform.value, token, bot_id=bot_id,
+            ) as provider:
                 result = await dispatch(context, provider, payload)
                 success = True
         finally:
@@ -266,7 +268,9 @@ class MultiBotSupervisor:
                 context, token, mode, offset = await self._identity(bot_id)
                 if mode != "polling":
                     return
-                async with provider_client(context.platform.value, token) as client:
+                async with provider_client(
+                    context.platform.value, token, bot_id=bot_id,
+                ) as client:
                     if context.platform == Platform.TELEGRAM:
                         info = await asyncio.wait_for(
                             client.get_webhook_info(), 12,
