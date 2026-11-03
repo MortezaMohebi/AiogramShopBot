@@ -28,12 +28,14 @@ export async function saveProduct(form: FormData) {
     is_published: form.has("is_published"),
   };
   let failed = false;
+  let savedId: number | null = null;
   try {
-    await adminFetch<{ id: number }>(
+    const result = await adminFetch<{ id: number }>(
       id ? `/products/${encodeURIComponent(id)}` : "/products",
       id ? "PATCH" : "POST",
       payload,
     );
+    savedId = result.id;
   } catch (error) {
     // Do not echo raw server exceptions or secret values into a URL.
     failed = true;
@@ -42,5 +44,6 @@ export async function saveProduct(form: FormData) {
   if (failed) redirect(id ? `/products/${id}/edit?error=1` : "/products/new?error=1");
   revalidatePath("/products");
   revalidatePath("/dashboard");
-  redirect("/products?saved=1");
+  // Keep the editor open so newly created products can receive their media.
+  redirect(savedId && Number.isSafeInteger(savedId) && savedId > 0 ? `/products/${savedId}/edit?saved=1` : "/products?saved=1");
 }
