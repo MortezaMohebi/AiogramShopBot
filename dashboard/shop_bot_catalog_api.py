@@ -54,10 +54,11 @@ class BotRulesChange(StrictPayload):
 
 
 class ProductBotAssignment(StrictPayload):
-    """One bot's explicit product entitlement."""
+    """One version-checked bot/product entitlement change."""
 
     bot_id: UUID
     effect: Literal["allow", "deny", "inherit"]
+    expected_version: int = Field(ge=1)
 
 
 class ProductRulesChange(StrictPayload):
@@ -200,6 +201,7 @@ async def product_bot_policy(
             "name": bot.name,
             "platform": bot.platform,
             "status": bot.status,
+            "version": bot.version,
             "effect": existing.get(bot.id, "inherit"),
             "default_effect": (
                 "allow" if bot.runtime_owner == "legacy" else "deny"
@@ -220,7 +222,7 @@ async def change_product_bot_rules(
         lambda sync: catalog_acl.update_product_bot_rules(
             sync, product_id=product_id, actor_id=actor.id,
             assignments=[
-                (str(item.bot_id), item.effect)
+                (str(item.bot_id), item.effect, item.expected_version)
                 for item in payload.assignments
             ],
         )
