@@ -304,3 +304,40 @@ bash scripts/setup_codespace.sh status
 
 اگر شکست خورد، فقط **آخرین خطای خروجی Build** را ارسال کن؛ مقادیر
 `.codespaces/live.env`، رمز مدیر یا توکن‌های پیام‌رسان را کپی نکن.
+
+
+## راه‌اندازی Gateway و پورت Webhook در Codespaces
+
+برای هر دو پیام‌رسان تنها یک درگاه عمومی، **8080**، کافی است.
+Codespaces اتصال خارجی HTTPS را خاتمه می‌دهد و Nginx داخلی
+در Docker روی HTTP:8080 گوش می‌دهد. پورت Dashboard یعنی **3000**
+باید Private باشد. FastAPI و PostgreSQL/Redis هیچ Port عمومی ندارند.
+
+اگر خروجی `start` نشان داد که `webhook-gateway` Unhealthy است، اول
+خود Gateway را بررسی کن؛ عمومی‌کردن پورت مشکل سلامت Nginx را حل
+نمی‌کند:
+
+```bash
+git pull --ff-only origin feat/codespaces-live-stack-20261103
+bash scripts/setup_codespace.sh start
+bash scripts/setup_codespace.sh status
+
+docker compose --env-file .codespaces/live.env \\
+  -f compose.codespaces.yml logs --tail=80 webhook-gateway
+
+curl -i http://127.0.0.1:8080/_edge/health
+```
+
+خروجی درست Healthcheck، HTTP 200 و بدنه `ready` است. Nginx روی
+UID/GID غیرروت 101:101 و بدون Linux Capability اجرا می‌شود؛
+برای این کار مسیرهای موقت به `/tmp` انتقال یافته‌اند.
+
+وقتی Gateway سالم شد، در تب **PORTS**، در صورت نبودن پورت
+`8080` گزینه **Add Port** را بزن، شماره `8080` را اضافه کن، سپس
+روی آن راست‌کلیک کن و **Port Visibility → Public** را انتخاب کن.
+پروتکل Forwarding داخلی HTTP باشد؛ Codespaces دامنهٔ خارجی را
+با HTTPS ارائه می‌کند. پورت `3000` را Private نگه دار.
+
+**قبل از موفق‌شدن Healthcheck و عمومی‌بودن پورت 8080،
+دستور `connect` را اجرا نکن.** پس از آماده‌شدن Gateway،
+`doctor` و سپس `connect` را اجرا کن.
