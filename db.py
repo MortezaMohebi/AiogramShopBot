@@ -29,6 +29,9 @@ from models.shop_bot_profile import ShopBotProfile
 from models.shop_payment_rail import ShopPaymentRail
 from models.shop_customer_links import ShopCustomerLinkRequest, ShopCustomerIdentityLink
 from models.shop_staff_state import ShopStaffState
+from models.shop_multibot import (
+    ShopStore, ShopBot, ShopBotCredential, ShopBotRegistryEvent,
+)
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )
