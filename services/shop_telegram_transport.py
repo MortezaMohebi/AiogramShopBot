@@ -82,7 +82,9 @@ def proxy_origin(\n    raw_url: str, *, permit_userinfo: bool = False,\n    perm
         ))
     ):
         raise security.SecurityRejected("invalid_proxy_endpoint", 422)
-    return f"{value.scheme}://{host.lower()}:{port}"
+    # RFC 3986 requires brackets around IPv6 address literals in URLs.
+    formatted = f"[{host.lower()}]" if ":" in host else host.lower()
+    return f"{value.scheme}://{formatted}:{port}"
 
 
 def _worker_origin(value: str) -> str:
@@ -153,7 +155,11 @@ def validate(spec: TelegramTransportSpec) -> TelegramTransportSpec:
             bool(spec.proxy_username) != bool(spec.proxy_password)
             or len(spec.proxy_username) > 128
             or len(spec.proxy_password) > _SECRET_MAX
-            or any(not c.isprintable() for c in spec.proxy_username + spec.proxy_password)
+            or ":" in spec.proxy_username
+            or any(
+                ord(c) < 32 or ord(c) > 126
+                for c in spec.proxy_username + spec.proxy_password
+            )
         ):
             raise security.SecurityRejected("invalid_proxy_credentials", 422)
         return TelegramTransportSpec(
@@ -170,7 +176,7 @@ def validate(spec: TelegramTransportSpec) -> TelegramTransportSpec:
         raise security.SecurityRejected("invalid_request", 422)
     if (
         not 32 <= len(spec.worker_secret) <= _SECRET_MAX
-        or any(not c.isprintable() for c in spec.worker_secret)
+        or any(ord(c) < 33 or ord(c) > 126 for c in spec.worker_secret)
     ):
         raise security.SecurityRejected("invalid_worker_secret", 422)
     return TelegramTransportSpec(
