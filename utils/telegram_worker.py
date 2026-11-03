@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, cast
+from uuid import UUID
 from urllib.parse import urlsplit
 
 from aiohttp import ClientError
@@ -61,17 +62,44 @@ def validate_worker_origin(raw_url: str) -> str:
 class CloudflareWorkerSession(AiohttpSession):
     """Make authenticated Telegram API requests through one Worker origin."""
 
-    def __init__(self, worker_url: str, relay_secret: str) -> None:
-        """Validate credentials and configure Aiogram's API/file URLs."""
+    def __init__(
+        self, worker_url: str, relay_secret: str, *,
+        bot_id: str | None = None, credential_version: int | None = None,
+    ) -> None:
+        """Bind each modern relay session to one bot and key version."""
         if not isinstance(relay_secret, str) or len(relay_secret) < 32:
             raise ValueError(
                 "TELEGRAM_WORKER_SECRET must contain at least 32 characters."
             )
+        if bot_id is not None:
+            try:
+                bot_id = str(UUID(bot_id))
+            except (ValueError, TypeError):
+                raise ValueError("Invalid relay bot identity.") from None
+            if (
+                type(credential_version) is not int
+                or credential_version <= 0
+            ):
+                raise ValueError("Invalid relay credential version.")
+        elif credential_version is not None:
+            raise ValueError("Legacy relay has no credential version.")
         self.worker_origin = validate_worker_origin(worker_url)
         self._relay_secret = relay_secret
+        self._bot_id = bot_id
+        self._credential_version = credential_version
         super().__init__(
             api=TelegramAPIServer.from_base(self.worker_origin)
         )
+
+    def _relay_headers(self) -> dict[str, str]:
+        """Return the bound Worker credentials, never both auth schemes."""
+        if self._bot_id is None:
+            return {RELAY_AUTH_HEADER: self._relay_secret}
+        return {
+            "X-Relay-Bot-ID": self._bot_id,
+            "X-Relay-Key": self._relay_secret,
+            "X-Relay-Version": str(self._credential_version),
+        }
 
     async def make_request(
         self,
@@ -94,7 +122,7 @@ class CloudflareWorkerSession(AiohttpSession):
                 url,
                 data=form,
                 timeout=self.timeout if timeout is None else timeout,
-                headers={RELAY_AUTH_HEADER: self._relay_secret},
+                headers=self._relay_headers(),
                 allow_redirects=False,
             ) as response:
                 if 300 <= response.status < 400:
@@ -163,7 +191,7 @@ class CloudflareWorkerSession(AiohttpSession):
             return
 
         request_headers = dict(headers or {})
-        request_headers[RELAY_AUTH_HEADER] = self._relay_secret
+        request_headers.update(self._relay_headers())
         session = await self.create_session()
 
         try:

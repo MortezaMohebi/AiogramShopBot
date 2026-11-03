@@ -20,5 +20,6 @@ export const navigation: NavigationItem[] = [
   { title: "مدیران و دسترسی‌ها", href: "/staff", icon: UserCog, roles: ["superadmin"] },
   { title: "ربات‌ها", href: "/bots", icon: Bot, roles: ["superadmin"] },
   { title: "زیرساخت اتصال", href: "/bot-connections", icon: Webhook, roles: ["superadmin"] },
+  { title: "Relay Worker Pool", href: "/relay-workers", icon: Webhook, roles: ["superadmin"] },
   { title: "تنظیمات", href: "/settings", icon: Settings2, roles: ["superadmin"] },
 ];

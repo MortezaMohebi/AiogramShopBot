@@ -13,6 +13,11 @@ MULTIBOT_V2_RUNTIME_ENABLED = (
     os.environ.get("MULTIBOT_V2_RUNTIME_ENABLED", "false")
     .strip().lower() == "true"
 )
+# Outbound relay pool changes no traffic unless an operator explicitly opts in.
+SHOP_RELAY_POOL_ENABLED = (
+    os.environ.get("SHOP_RELAY_POOL_ENABLED", "false")
+    .strip().lower() == "true"
+)
 TELEGRAM_UPDATE_MODE = os.environ.get("TELEGRAM_UPDATE_MODE", "webhook").strip().lower()
 if TELEGRAM_UPDATE_MODE not in {"webhook", "polling"}:
     raise ValueError("TELEGRAM_UPDATE_MODE must be webhook or polling.")

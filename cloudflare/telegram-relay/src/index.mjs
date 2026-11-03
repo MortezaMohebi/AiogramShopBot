@@ -6,6 +6,9 @@
  * The relay secret is an encrypted Worker binding, not a committed variable.
  */
 
+import { authorizePool, reserveQuota, releaseQuota } from "./pool-auth.mjs";
+export { RelayQuota } from "./pool-auth.mjs";
+
 const AUTH_HEADER = "x-telegram-relay-key";
 const BOT_API_PATH = /^\/bot[0-9]+:[A-Za-z0-9_-]{20,}\/[A-Za-z][A-Za-z0-9_]*$/;
 const BOT_FILE_PATH = /^\/file\/bot[0-9]+:[A-Za-z0-9_-]{20,}\/.+$/;
@@ -60,17 +63,19 @@ function reject(status, message) {
  * @param {{ RELAY_SHARED_SECRET: string }} env - Secret bindings.
  * @returns {Promise<Response>} Upstream response or sanitized error.
  */
-async function handleRequest(request, env) {
-  if (
-    !env ||
-    typeof env.RELAY_SHARED_SECRET !== "string" ||
-    env.RELAY_SHARED_SECRET.length < 32
-  ) {
-    return reject(503, "Relay is not configured.");
-  }
-
-  if (!await authorized(request.headers.get(AUTH_HEADER), env.RELAY_SHARED_SECRET)) {
-    return reject(401, "Unauthorized.");
+async function handleRequest(request, env, ctx) {
+  const poolMode = env && Object.prototype.hasOwnProperty.call(
+    env, "RELAY_CLIENTS_JSON",
+  );
+  if (!poolMode) {
+    // Existing v1 deployment remains compatible until explicit migration.
+    if (!env || typeof env.RELAY_SHARED_SECRET !== "string"
+      || env.RELAY_SHARED_SECRET.length < 32) {
+      return reject(503, "Relay is not configured.");
+    }
+    if (!await authorized(request.headers.get(AUTH_HEADER), env.RELAY_SHARED_SECRET)) {
+      return reject(401, "Unauthorized.");
+    }
   }
 
   const incoming = new URL(request.url);
@@ -88,6 +93,20 @@ async function handleRequest(request, env) {
     return reject(405, "Method not allowed.");
   }
 
+  // A v2 Worker must have an authenticated per-bot mapping and a global
+  // Durable Object quota before it can issue ANY Telegram API request.
+  let reservation = null;
+  if (poolMode) {
+    const policy = await authorizePool(request, env, incoming.pathname);
+    if (!policy.ok) {
+      return reject(policy.status, "Relay authentication unavailable.");
+    }
+    reservation = await reserveQuota(env, policy);
+    if (!reservation.ok) {
+      return reject(reservation.status, "Relay quota unavailable.");
+    }
+  }
+
   // This is the only permitted upstream. The inbound Host and query never
   // determine the destination hostname, preventing an open/SSRF proxy.
   const upstream = new URL(incoming.pathname + incoming.search, "https://api.telegram.org");
@@ -96,6 +115,9 @@ async function handleRequest(request, env) {
   const outbound = new Request(upstream.toString(), request);
   for (const name of [
     AUTH_HEADER,
+    "x-relay-bot-id",
+    "x-relay-key",
+    "x-relay-version",
     "authorization",
     "cookie",
     "host",
@@ -119,6 +141,22 @@ async function handleRequest(request, env) {
     responseHeaders.set("x-content-type-options", "nosniff");
 
     const noBody = [204, 205, 304].includes(response.status);
+    if (reservation && !noBody && response.body) {
+      // A Worker must hold its capacity lease for the entire streamed
+      // response, not just until the upstream sends HTTP headers.
+      const bridge = new TransformStream();
+      const heldReservation = reservation;
+      const pending = response.body.pipeTo(bridge.writable)
+        .finally(() => releaseQuota(heldReservation));
+      if (ctx?.waitUntil) ctx.waitUntil(pending.catch(() => undefined));
+      else void pending.catch(() => undefined);
+      reservation = null;
+      return new Response(bridge.readable, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
+    }
     return new Response(noBody ? null : response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -127,6 +165,8 @@ async function handleRequest(request, env) {
   } catch {
     // No URL, token, or upstream exception text is sent back or logged.
     return reject(502, "Telegram upstream is unavailable.");
+  } finally {
+    await releaseQuota(reservation);
   }
 }
 

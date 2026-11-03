@@ -6,5 +6,20 @@ main = "src/index.mjs"
 compatibility_date = "2026-10-01"
 workers_dev = true
 
+# Optional P5: apply this binding at deployment and create the Worker-side
+# RELAY_CLIENTS_JSON secret only after the audited bot credentials are staged.
+# Keep RELAY_SHARED_SECRET in place for unmodified v1 Workers until cutover.
+[vars]
+RELAY_GLOBAL_RPS = "20"
+RELAY_GLOBAL_INFLIGHT = "20"
+
+[[durable_objects.bindings]]
+name = "RELAY_QUOTA"
+class_name = "RelayQuota"
+
+[[migrations]]
+tag = "v2-relay-pool"
+new_sqlite_classes = ["RelayQuota"]
+
 [observability]
 enabled = false

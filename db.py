@@ -39,6 +39,9 @@ from models.shop_bot_catalog_acl import (
 from models.shop_multibot_receiver import (
     ShopBotReceiver, ShopBotReceiverEvent,
 )
+from models.shop_relay_pool import (
+    ShopRelayWorker, ShopBotRelayRoute, ShopRelayCredential, ShopRelayEvent,
+)
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )
