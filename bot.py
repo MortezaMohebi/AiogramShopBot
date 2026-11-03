@@ -7,11 +7,10 @@ import os
 from hmac import compare_digest
 
 from aiohttp import ClientSession, ClientTimeout
-import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile, Update
+from aiogram.types import Update
 from redis.asyncio import Redis
 from dashboard.secure_admin import SecureShopAdmin as Admin
 from dashboard.next_api import router as next_admin_router
