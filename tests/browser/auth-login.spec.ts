@@ -8,6 +8,18 @@ test.beforeEach(async ({}, testInfo) => {
   );
 });
 
+test("Login never advertises a real administrator identity", async ({ page }) => {
+  await page.goto("/login");
+
+  // A visible label replaces placeholder examples. Browsers may still
+  // autofill an account explicitly saved by the current person.
+  const username = page.getByRole("textbox", { name: "نام کاربری" });
+  await expect(username).toBeVisible();
+  expect(await username.getAttribute("placeholder")).toBeNull();
+  await expect(page.locator("main")).not.toContainText("shopadmin");
+  await expect(page.locator("main")).not.toContainText("رمز اولیه");
+});
+
 test("Rejected credentials stay on the Persian login page", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "ورود به داشبورد" }))
