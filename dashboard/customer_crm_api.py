@@ -66,7 +66,7 @@ def basic_profile(
         ),
         "restriction_reason": profile.restriction_reason if profile else None,
         "restriction_until": safe_time(profile.restriction_until) if profile else None,
-        "bot_blocked_by_customer": bool(profile.bot_blocked_at) if profile else None,
+        "bot_blocked_by_customer": True if profile and profile.bot_blocked_at else None,
         "tags": crm.tags_from_json(profile.tags_json) if profile else [],
         "owner_staff_id": profile.owner_staff_id if profile else None,
         "support_status": profile.support_status if profile else "open",
@@ -287,9 +287,17 @@ async def export_customer(
     case = await customer_case(customer_id, actor, db)
     # Support notes and CRM audit remain private and are not exported as
     # customer-owned content. The financial ledger and orders are included.
+    public_customer = dict(case["customer"])
+    public_customer.pop("restriction_reason", None)
+    public_customer.pop("owner_staff_id", None)
+    public_customer.pop("tags", None)
+    public_customer.pop("support_status", None)
     payload = {
-        key: value for key, value in case.items()
-        if key in {"customer", "orders", "ledger", "consent", "wallet_balance_irr"}
+        "customer": public_customer,
+        "orders": case["orders"],
+        "ledger": case["ledger"],
+        "consent": case["consent"],
+        "wallet_balance_irr": case["wallet_balance_irr"],
     }
     await db.run_sync(lambda sync: crm.audit_export(
         sync, customer_id, member.id,
