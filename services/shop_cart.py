@@ -23,8 +23,10 @@ from models.shop_content import Product, ShopOrder
 from services.shop_money import MAX_RIALS, format_rials, to_rials
 from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
-    allowed_for_legacy, lock_legacy_catalog_policy,
+    allowed_for_bot, lock_bot_catalog_policy,
 )
+from services.shop_bot_context import BotContext
+from models.shop_scope import legacy_id
 
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
@@ -95,9 +97,21 @@ def validate_coupon(coupon: ShopCoupon, subtotal: int) -> int:
 class ShopCartFlow:
     """Shared cart navigation, quote and nonpaying order request workflow."""
 
-    def __init__(self, display_unit: str = "IRR") -> None:
-        """Configure text formatting only; stored amounts always remain IRR."""
+    def __init__(
+        self, display_unit: str = "IRR",
+        *, bot_context: BotContext | None = None,
+    ) -> None:
+        """Bind only a server-authenticated bot; never trust callback bot IDs."""
         self.display_unit = display_unit
+        self.bot_context = bot_context
+
+    def _bot_id(self, platform: Platform) -> str:
+        """Resolve the immutable owner of the current shopping context."""
+        if self.bot_context is None:
+            return legacy_id(platform.value)
+        if self.bot_context.platform != platform:
+            raise CartRejected("هویت بات با درخواست مطابقت ندارد.")
+        return self.bot_context.bot_id
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
@@ -176,7 +190,9 @@ class ShopCartFlow:
         """Find the correct platform-scoped cart and optionally lock it."""
         if event.user_id <= 0 or event.chat_id <= 0:
             raise CartRejected("شناسه خریدار معتبر نیست.")
+        owner = self._bot_id(event.platform)
         stmt = select(ShopCart).where(
+            ShopCart.bot_id == owner,
             ShopCart.platform == event.platform.value,
             ShopCart.platform_user_id == event.user_id,
         )
@@ -185,6 +201,7 @@ class ShopCartFlow:
         cart = await session.scalar(stmt)
         if cart is None and create:
             cart = ShopCart(
+                bot_id=owner,
                 platform=event.platform.value,
                 platform_user_id=event.user_id,
                 chat_id=event.chat_id,
@@ -207,6 +224,7 @@ class ShopCartFlow:
         return await session.scalar(
             select(ShopOrder)
             .where(
+                ShopOrder.bot_id == cart.bot_id,
                 ShopOrder.platform == cart.platform,
                 ShopOrder.platform_user_id == cart.platform_user_id,
                 # Unpaid wallet invoices must be reconciled before reordering.
@@ -243,8 +261,8 @@ class ShopCartFlow:
                 line.quantity -= 1
         elif action in ("add", "inc"):
             # Stale add/inc callbacks cannot bypass a newly denied product.
-            if not await allowed_for_legacy(
-                session, event.platform.value, [product_id],
+            if not await allowed_for_bot(
+                session, self._bot_id(event.platform), [product_id],
             ):
                 raise CartRejected("این کالا در این بات قابل خرید نیست.")
             product = await session.get(Product, product_id)
@@ -293,8 +311,8 @@ class ShopCartFlow:
         # All cart routes including checkout and place_order re-evaluate the
         # current entitlements. No price or customer-facing name is exposed
         # after a product has been removed from this bot's catalog.
-        if not await allowed_for_legacy(
-            session, cart.platform, [product.id for _, product in rows],
+        if not await allowed_for_bot(
+            session, cart.bot_id, [product.id for _, product in rows],
         ):
             raise CartRejected("یک یا چند کالای سبد دیگر در این بات مجاز نیستند.")
         lines: list[QuoteLine] = []
@@ -555,7 +573,7 @@ class ShopCartFlow:
         if cart is None or cart.id != cart_id:
             raise CartRejected("این سبد خرید به حساب شما تعلق ندارد.")
         checkout_key = (
-            f"{event.platform.value}:{event.user_id}:{cart_id}:{expected_revision}"
+            f"{self._bot_id(event.platform)}:{event.user_id}:{cart_id}:{expected_revision}"
         )
         existing = await session.scalar(
             select(ShopOrder).where(ShopOrder.checkout_key == checkout_key)
@@ -568,7 +586,7 @@ class ShopCartFlow:
             raise CartRejected("محتوای سبد تغییر کرده؛ دوباره سفارش را بررسی کنید.")
         if await self._existing_pending(session, cart) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
-        await lock_legacy_catalog_policy(session, event.platform.value)
+        await lock_bot_catalog_policy(session, cart.bot_id)
         quote = await self._quote(cart, session)
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
@@ -577,6 +595,7 @@ class ShopCartFlow:
 
         first = quote.lines[0]
         order = ShopOrder(
+            bot_id=cart.bot_id,
             platform=event.platform.value,
             platform_user_id=event.user_id,
             chat_id=event.chat_id,
