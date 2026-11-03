@@ -26,6 +26,7 @@ from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
+from services.shop_bot_profiles import get_bot_options
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.bale_wallet import BaleWalletService, CheckoutRejected
@@ -462,6 +463,15 @@ async def _process_bale_update(request: Request, payload: dict):
             platform_user_id=event.user_id,
         ):
             return {"status": "blocked"}
+        options = await get_bot_options(session, Platform.BALE.value)
+        if options.maintenance_enabled:
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            await transport.send(
+                event.chat_id,
+                BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید."),
+            )
+            return {"status": "maintenance"}
         if event.callback_data and event.callback_data.startswith("shop:pay:"):
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)
