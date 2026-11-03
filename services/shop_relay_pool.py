@@ -396,8 +396,9 @@ async def activate_route(
     secret = decrypt_secret(credential)
     token = await _verified_bot_token(db, bot)
     expected_provider_id = bot.provider_bot_id
-    # Revert the read transaction before any remote I/O.
-    await db.rollback()
+    # Persist the verified admin MFA/replay receipt before remote I/O.
+    # Rollback here would allow reusing the same one-time proof.
+    await db.commit()
     relay = CloudflareWorkerSession(
         worker_url=origin, relay_secret=secret, bot_id=bot_id,
         credential_version=credential_version,
