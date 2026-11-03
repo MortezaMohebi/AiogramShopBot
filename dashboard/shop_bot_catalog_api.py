@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.next_api import database, signed_staff
 from models.shop_bot_catalog_acl import (
-    ShopBotCatalogAudit, ShopBotCategoryRule, ShopBotProductRule,
+    ShopBotCatalogAudit, ShopBotProductRule,
 )
-from models.shop_content import Product, ShopCategory
+from models.shop_content import Product
 from models.shop_multibot import DEFAULT_STORE_ID, ShopBot
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
