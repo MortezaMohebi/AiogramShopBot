@@ -17,6 +17,7 @@ from models.shop_engagement import ShopReferralPolicy, ShopWalletEntry
 from services.shop_money import format_rials
 from services.shop_referrals import ReferralRejected, ShopReferralService
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
+from services.shop_channel_features import get_features
 
 
 _CREDIT_PREVIEW = re.compile(r"shop:creditpay:([1-9][0-9]{0,18})\Z")
@@ -41,6 +42,17 @@ class ShopEngagementFlow:
         """Resolve only commands owned by the shared engagement service."""
         callback = event.callback_data or ""
         text = (event.text or "").strip()
+        if (
+            callback in {"shop:wallet"} or text in ("/wallet", "💳 اعتبار من")
+            or _CREDIT_PREVIEW.fullmatch(callback)
+            or _CREDIT_CONFIRM.fullmatch(callback)
+        ):
+            features = await get_features(session, event.platform.value)
+            if not features.store_credit_enabled:
+                return BotReply(
+                    "اعتبار داخلی فروشگاه برای این پیام‌رسان غیرفعال شده است.",
+                    (_home_button(),),
+                )
 
         match = _CREDIT_PREVIEW.fullmatch(callback)
         if match:
