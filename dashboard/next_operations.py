@@ -39,6 +39,7 @@ from services.shop_refunds import ShopRefundService
 from services.shop_campaigns import ShopCampaignService
 from services.shop_broadcast_control import CampaignRejected
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
+from services.shop_channel_features import get_features
 from utils.utils import hash_password
 
 router = APIRouter()
@@ -481,6 +482,8 @@ async def wallet_adjust(
 ) -> dict:
     """Apply a reviewable manual ledger operation under the existing cap."""
     operator = require_staff(staff, "finance")
+    if not (await get_features(session, payload.platform.value)).store_credit_enabled:
+        raise HTTPException(status_code=409, detail="Store credit is disabled for provider")
     ceiling = config.SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR
     if ceiling <= 0:
         raise HTTPException(status_code=409, detail="Manual credit adjustment disabled")
