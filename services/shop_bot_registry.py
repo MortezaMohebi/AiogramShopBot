@@ -22,6 +22,9 @@ from models.shop_multibot import (
 from services import shop_admin_security as security
 from services.shop_bot_secrets import credential_status
 from services.shop_bot_operations import operation_data
+from services.shop_store_context import (
+    current_context, grant_new_store_creator,
+)
 
 _SLUG = re.compile(r"^[a-z][a-z0-9-]{2,63}$")
 _ALLOWED_PLATFORMS = frozenset({"telegram", "bale"})
@@ -59,6 +62,8 @@ def create_store(
         id=str(uuid4()), slug=slug, name=name, state="paused",
     )
     db.add(store)
+    # Only the creator gets manager access. Other users require explicit grants.
+    grant_new_store_creator(db, staff_id=actor_id, store_id=store.id)
     security.audit(db, actor_id, "store.created", store.id)
     db.flush()
     return store
@@ -145,6 +150,13 @@ def registry_snapshot(
 
     store_stmt = select(ShopStore).order_by(ShopStore.slug).limit(100)
     conditions = []
+    scope = current_context()
+    if scope is not None:
+        # A superadmin's global role never overrides explicit Store grants.
+        store_stmt = store_stmt.where(
+            ShopStore.id.in_(scope.allowed_store_ids),
+        )
+        conditions.append(ShopBot.store_id.in_(scope.active_store_ids))
     if store_id is not None:
         store_stmt = store_stmt.where(ShopStore.id == store_id)
         conditions.append(ShopBot.store_id == store_id)

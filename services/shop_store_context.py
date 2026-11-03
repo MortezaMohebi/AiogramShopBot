@@ -311,17 +311,18 @@ async def update_staff_permissions(
         or any(level not in LEVELS for level in desired.values())
     ):
         raise security.SecurityRejected("invalid_store_grants", 422)
-    for store_id in desired:
-        actor.require(store_id, manage=True)
+    manageable = {
+        store.id for store in actor.allowed_stores
+        if store.id in actor.active_store_ids
+        and store.access_level == "manager"
+    }
+    if not set(desired) <= manageable:
+        raise security.SecurityRejected("store_permission_denied", 403)
     target = await db.get(ShopStaff, target_id, with_for_update=True)
     if target is None:
         raise security.SecurityRejected("staff_not_found", 404)
 
     # Reconfiguration may remove only grants under this manager's authority.
-    manageable = {
-        store.id for store in actor.allowed_stores
-        if store.access_level == "manager"
-    }
     old = (await db.scalars(select(ShopStaffStoreAccess).where(
         ShopStaffStoreAccess.staff_id == target_id,
         ShopStaffStoreAccess.store_id.in_(manageable),
