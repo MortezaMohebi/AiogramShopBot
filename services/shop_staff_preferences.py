@@ -14,7 +14,11 @@ def for_user(db: Session, staff_id: int) -> ShopStaffPreferences:
     row = db.scalar(select(ShopStaffPreferences).where(
         ShopStaffPreferences.staff_id == staff_id,
     ))
-    return row or ShopStaffPreferences(staff_id=staff_id)
+    return row or ShopStaffPreferences(
+        staff_id=staff_id, language="fa", calendar="auto",
+        notify_orders=True, notify_campaigns=True,
+        notify_finance=True, notify_system=True,
+    )
 
 
 def update(
