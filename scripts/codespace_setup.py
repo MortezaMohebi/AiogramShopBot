@@ -199,9 +199,16 @@ def compose(*args: str) -> int:
         "-f", str(COMPOSE_FILE),
         *args,
     ]
+    # Always show raw build logs: compact Bake progress can hide npm errors.
+    # Explicitly disable Compose Bake for reproducible Codespaces diagnosis.
+    process_env = os.environ.copy()
+    if "build" in args:
+        process_env["COMPOSE_BAKE"] = "false"
+        process_env["BUILDKIT_PROGRESS"] = "plain"
+        process_env["COMPOSE_PROGRESS"] = "plain"
     try:
         return subprocess.run(
-            command, check=False, cwd=ROOT
+            command, check=False, cwd=ROOT, env=process_env
         ).returncode
     except FileNotFoundError:
         raise RuntimeError(
@@ -315,7 +322,7 @@ def main() -> int:
     parser.add_argument(
         "command",
         choices=(
-            "info", "init", "config", "start", "ports", "connect",
+            "info", "init", "config", "start", "build-dashboard", "ports", "connect",
             "disconnect",
             "doctor", "credentials", "demo", "status", "logs", "test",
             "stop", "reset",
@@ -330,6 +337,7 @@ def main() -> int:
         print("Live Codespaces Telegram+Bale setup:")
         print("  python3 scripts/codespace_setup.py init")
         print("  python3 scripts/codespace_setup.py start")
+        print("  python3 scripts/codespace_setup.py build-dashboard")
         print("  python3 scripts/codespace_setup.py ports")
         print("  python3 scripts/codespace_setup.py connect")
         print("  python3 scripts/codespace_setup.py doctor")
@@ -345,6 +353,9 @@ def main() -> int:
         return 0
     if args.command == "config":
         return compose("config", "--quiet")
+    if args.command == "build-dashboard":
+        # Reuse already-cached npm layers; print which BuildKit stage fails.
+        return compose("build", "dashboard")
     if args.command == "start":
         # Build sequentially to avoid exhausting 2-core/8GB Codespaces.
         backend = compose("build", "migrate")
