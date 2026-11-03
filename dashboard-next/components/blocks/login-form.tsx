@@ -215,7 +215,9 @@ export function LoginForm({ initialError }: LoginFormProps) {
         <label htmlFor="password" className="text-sm font-medium">
           رمز عبور
         </label>
-        <div className="relative">
+        {/* Keep the password field and its inline controls in one LTR
+            coordinate system; the surrounding label remains Persian RTL. */}
+        <div className="relative" dir="ltr">
           <Input
             id="password"
             name="password"
@@ -224,7 +226,7 @@ export function LoginForm({ initialError }: LoginFormProps) {
             autoComplete="current-password"
             minLength={1}
             maxLength={256}
-            className="pe-11 text-start"
+            className="ps-12 text-start"
             disabled={working}
             required
           />
@@ -232,7 +234,7 @@ export function LoginForm({ initialError }: LoginFormProps) {
             type="button"
             aria-label={showPassword ? "مخفی‌کردن رمز عبور" : "نمایش رمز عبور"}
             aria-pressed={showPassword}
-            className="absolute end-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+            className="absolute start-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
             onClick={() => setShowPassword((value) => !value)}
             disabled={working}
           >
