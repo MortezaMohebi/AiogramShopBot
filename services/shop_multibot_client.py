@@ -17,7 +17,9 @@ from utils.telegram import create_bot
 
 
 @asynccontextmanager
-async def provider_client(platform: str, token: str):
+async def provider_client(
+    platform: str, token: str, *, bot_id: str | None = None,
+):
     """Yield one authenticated provider connection and always close it."""
     if platform == "telegram":
         # Each active bot has an independent session; the P5 egress router
@@ -33,6 +35,6 @@ async def provider_client(platform: str, token: str):
         async with ClientSession(
             timeout=ClientTimeout(total=20), trust_env=False,
         ) as http:
-            yield BaleTransport(token, http)
+            yield BaleTransport(token, http, bot_id=bot_id)
         return
     raise ValueError("Unsupported bot provider")
