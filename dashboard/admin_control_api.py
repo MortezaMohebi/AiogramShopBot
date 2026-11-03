@@ -18,6 +18,7 @@ from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
 from models.shop_admin_control import AdminEvent, AdminSession, ConnectionChange, ConnectionConfig
 from models.shop_staff_security import ShopStaffInvitation, ShopStaffPasswordReset
+from models.shop_staff_state import ShopStaffState
 from models.shop_channel_features import ShopChannelFeature
 from services.shop_channel_features import get_features, to_data, PLATFORMS
 from services import shop_staff_lifecycle as lifecycle
@@ -554,9 +555,11 @@ class InvitationCancel(StrictPayload):
 
 
 class StaffUpdate(StrictPayload):
-    """Only role or status are editable by a manager; passwords are private."""
+    """Role, suspension and activation; administrator cannot assign passwords."""
 
     role: Literal["superadmin", "viewer", "content", "sales", "marketing", "finance"] | None = None
+    status: Literal["active", "suspended", "disabled"] | None = None
+    reason: str = Field(default="", max_length=500)
     is_active: bool | None = None
 
 
@@ -682,35 +685,77 @@ async def set_staff_password_policy(payload: PasswordPolicyPatch, staff: Staff, 
 
 
 @router.patch("/staff/{member_id}")
-async def change_staff(member_id: int, payload: StaffUpdate, staff: Staff, db: Db) -> dict:
-    """Serialize last-admin protection and invalidate sessions on role changes."""
-    member = required(staff, "staff.manage")
+async def change_staff(
+    member_id: int, payload: StaffUpdate, staff: Staff, db: Db,
+) -> dict:
+    """Serialize role/status changes, revocation and last-admin protection."""
+    actor = required(staff, "staff.manage")
     admins = (await db.scalars(select(ShopStaff).where(
-        ShopStaff.role == "superadmin", ShopStaff.is_active.is_(True)
+        ShopStaff.role == "superadmin",
+        ShopStaff.is_active.is_(True),
     ).order_by(ShopStaff.id).with_for_update())).all()
-    target = await db.scalar(select(ShopStaff).where(ShopStaff.id == member_id).with_for_update())
+    target = await db.scalar(select(ShopStaff).where(
+        ShopStaff.id == member_id,
+    ).with_for_update())
     if target is None:
         raise security.SecurityRejected("staff_not_found", 404)
-    if target.id == member.id and (payload.is_active is False
-            or (payload.role is not None and payload.role != target.role)):
-        raise security.SecurityRejected("use_my_account", 409)
+
+    current = await db.scalar(select(ShopStaffState).where(
+        ShopStaffState.staff_id == member_id,
+    ).with_for_update())
+    state_now = (
+        current.status if current else
+        "active" if target.is_active else "disabled"
+    )
+    requested = payload.status
+    if requested is None and payload.is_active is not None:
+        requested = "active" if payload.is_active else "disabled"
+    if requested is not None and payload.is_active is not None:
+        if (requested == "active") != payload.is_active:
+            raise security.SecurityRejected("invalid_request", 422)
+
     demoting = payload.role is not None and payload.role != "superadmin"
-    if (target.role == "superadmin" and target.is_active
-            and (demoting or payload.is_active is False) and len(admins) <= 1):
+    deactivating = requested is not None and requested != "active"
+    if target.id == actor.id and (demoting or deactivating):
+        raise security.SecurityRejected("use_my_account", 409)
+    if (
+        target.role == "superadmin" and target.is_active
+        and (demoting or deactivating) and len(admins) <= 1
+    ):
         raise security.SecurityRejected("last_admin_protected", 409)
+
+    if requested == "suspended" and len(payload.reason.strip()) < 8:
+        raise security.SecurityRejected("restriction_reason_required", 422)
+
     changed = False
-    for field in ("role", "is_active"):
-        value = getattr(payload, field)
-        if value is not None and getattr(target, field) != value:
-            setattr(target, field, value)
-            changed = True
+    if payload.role is not None and target.role != payload.role:
+        target.role = payload.role
+        changed = True
+    if requested is not None and requested != state_now:
+        if current is None:
+            current = ShopStaffState(staff_id=member_id)
+            db.add(current)
+        current.status = requested
+        current.changed_by = actor.id
+        current.reason = payload.reason.strip() if requested == "suspended" else ""
+        changed = True
+    if requested is not None and target.is_active != (requested == "active"):
+        target.is_active = requested == "active"
+        changed = True
     if not changed:
         raise security.SecurityRejected("invalid_request", 422)
     target.session_version += 1
-    await db.run_sync(lambda sync: security.revoke_others(sync, target.id, None))
-    await db.run_sync(lambda sync: security.audit(sync, member.id, "staff.changed", str(target.id)))
+    await db.run_sync(lambda sync: security.revoke_others(
+        sync, target.id, None,
+    ))
+    await db.run_sync(lambda sync: security.audit(
+        sync, actor.id, "staff.changed", str(target.id),
+    ))
     await db.commit()
-    return {"id": member_id, "sessions_revoked": True}
+    return {
+        "id": member_id, "status": requested or state_now,
+        "sessions_revoked": True,
+    }
 
 
 @router.get("/account/audit")
