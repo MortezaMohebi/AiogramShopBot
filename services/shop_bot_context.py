@@ -43,6 +43,7 @@ async def resolve_bot_context(
     authenticated_bot_id: str,
     authenticated_platform: Platform,
     authenticated_provider_bot_id: int | None = None,
+    allow_settlement: bool = False,
 ) -> BotContext:
     """Resolve only a bot already authenticated by the transport boundary.
 
@@ -66,7 +67,14 @@ async def resolve_bot_context(
         raise SecurityRejected("store_not_active", 409)
     if not (
         (bot.status == "legacy" and bot.runtime_owner == "legacy")
-        or (bot.status == "active" and bot.runtime_owner == "registry")
+        or (
+            bot.runtime_owner == "registry"
+            and bot.status in (
+                {"active", "paused", "maintenance", "disabled"}
+                if allow_settlement else {"active"}
+            )
+            and bot.credential_version is not None
+        )
     ):
         raise SecurityRejected("bot_not_active", 409)
     return BotContext(
