@@ -39,6 +39,7 @@ async def main() -> None:
     from models.shop_multibot import MULTIBOT_FOUNDATION_TABLES
     from models.shop_bot_operations import BOT_OPERATIONS_TABLES
     from services.shop_multibot_bootstrap import adopt_legacy_codespace
+    from services.shop_bot_operations_bootstrap import upgrade_codespace_bot_operations
     async with engine.begin() as connection:
         if await connection.scalar(text("SELECT current_database()")) != "shop_codespace":
             raise RuntimeError("Only the Codespaces database may be bootstrapped")
@@ -55,10 +56,17 @@ async def main() -> None:
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,
                 tables=[Base.metadata.tables[name] for name in missing], checkfirst=False))
-        await verify_codespace_schema(connection)
+        # The registered registry credential tables from Phase 1 predate the
+        # four nullable Phase 2 fields. Apply the safe additive SQL first.
+        # The full schema is verified after the upgrade and seeded state.
+        # await verify_codespace_schema(connection)
         # Idempotently register the existing env-backed Telegram/Bale bots.
         # All business rows remain untouched within the same DDL transaction.
         await adopt_legacy_codespace(connection)
+        # Nullable credential verification receipts and legacy status rows
+        # migrate in-place; Codespace volumes and customer data are preserved.
+        await upgrade_codespace_bot_operations(connection)
+        await verify_codespace_schema(connection)
     await create_admin()
     print("Security schema verified; existing accounts, orders and media preserved.")
 
