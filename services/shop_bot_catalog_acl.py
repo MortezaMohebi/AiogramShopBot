@@ -261,7 +261,7 @@ def update_bot_rules(
 
 def update_product_bot_rules(
     db: Session, *, product_id: int, actor_id: int,
-    assignments: list[tuple[str, str]],
+    assignments: list[tuple[str, str, int]],
 ) -> int:
     """Apply M2M assignments from the Product Editor in one transaction.
 
@@ -274,14 +274,15 @@ def update_product_bot_rules(
         or any(
             effect not in RULE_EFFECTS
             or not isinstance(bot_id, str)
-            for bot_id, effect in assignments
+            or type(version) is not int or version <= 0
+            for bot_id, effect, version in assignments
         )
-        or len(set(bot_id for bot_id, _ in assignments)) != len(assignments)
+        or len(set(bot_id for bot_id, _, _ in assignments)) != len(assignments)
     ):
         raise security.SecurityRejected("invalid_catalog_rule", 422)
     if db.get(Product, product_id) is None:
         raise security.SecurityRejected("catalog_target_not_found", 404)
-    bot_ids = [bot_id for bot_id, _ in assignments]
+    bot_ids = [bot_id for bot_id, _, _ in assignments]
     bots = {
         bot.id: bot for bot in db.scalars(select(ShopBot).where(
             ShopBot.id.in_(bot_ids),
@@ -290,8 +291,10 @@ def update_product_bot_rules(
     if len(bots) != len(assignments):
         raise security.SecurityRejected("bot_not_found", 404)
     total = 0
-    for bot_id, effect in sorted(assignments):
+    for bot_id, effect, expected_version in sorted(assignments):
         bot = bots[bot_id]
+        if bot.version != expected_version:
+            raise security.SecurityRejected("configuration_changed", 409)
         if bot.store_id != DEFAULT_STORE_ID:
             raise security.SecurityRejected("catalog_store_not_ready", 409)
         total += _apply_changes(
