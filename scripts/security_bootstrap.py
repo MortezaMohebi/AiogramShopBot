@@ -5,7 +5,8 @@ A partial legacy schema still fails closed instead of being silently repaired.
 """
 from __future__ import annotations
 import asyncio
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, select
+from sqlalchemy.orm import Session
 
 
 def permitted_missing(existing: set[str], expected: set[str], additions: set[str]) -> set[str]:
@@ -46,6 +47,8 @@ async def main() -> None:
     from models.shop_uom import ShopUom, ShopUomCategory
     from services.shop_multibot_bootstrap import adopt_legacy_codespace
     from services.shop_bot_operations_bootstrap import upgrade_codespace_bot_operations
+    from services.shop_uom import seed_store_units
+    from models.shop_multibot import ShopStore
     async with engine.begin() as connection:
         if await connection.scalar(text("SELECT current_database()")) != "shop_codespace":
             raise RuntimeError("Only the Codespaces database may be bootstrapped")
@@ -71,6 +74,15 @@ async def main() -> None:
         # Nullable credential verification receipts and legacy status rows
         # migrate in-place; Codespace volumes and customer data are preserved.
         await upgrade_codespace_bot_operations(connection)
+        # Fresh-schema mode does not run Alembic data backfills. Seed
+        # deterministic Store-owned units inside the same locked transaction.
+        def ensure_uoms(sync_connection) -> None:
+            with Session(bind=sync_connection) as session:
+                ids = session.scalars(select(ShopStore.id)).all()
+                for store_id in ids:
+                    seed_store_units(session, store_id)
+                session.flush()
+        await connection.run_sync(ensure_uoms)
         await verify_codespace_schema(connection)
     await create_admin()
     print("Security schema verified; existing accounts, orders and media preserved.")
