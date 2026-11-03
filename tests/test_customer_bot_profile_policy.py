@@ -30,6 +30,9 @@ from models.shop_customer_links import (
 )
 from models.shop_payment_rail import ShopPaymentRail
 from models.shop_staff import ShopStaff
+from models.shop_staff_state import ShopStaffState
+from models.shop_admin_control import AdminSession
+from services import shop_admin_security as security
 from services import shop_customer_crm as crm
 from services import shop_identity_links as linking
 from services import shop_payment_rails as rails
@@ -53,12 +56,18 @@ def session():
         ShopBotProfile.__table__,
         ShopChannelFeature.__table__,
         ShopPaymentRail.__table__,
+        ShopStaffState.__table__,
+        AdminSession.__table__,
     ])
     with Session(engine) as db:
         db.add_all([
             ShopStaff(
                 id=10, username="operator", password_hash="test-hash",
                 role="superadmin", is_active=True, session_version=1,
+            ),
+            ShopStaff(
+                id=11, username="salesagent", password_hash="test-hash",
+                role="sales", is_active=True, session_version=1,
             ),
             ShopIdentity(
                 id=101, platform="telegram", platform_user_id=5001,
@@ -103,6 +112,10 @@ class AsyncSessionAdapter:
     async def commit(self):
         """Commit the current isolated transaction."""
         self.db.commit()
+
+    async def run_sync(self, operation):
+        """Execute the production transactional helper on the test session."""
+        return operation(self.db)
 
     def add(self, item):
         """Attach a mapped record."""
@@ -211,3 +224,36 @@ def test_bot_profile_persisted_maintenance_and_allowed_updates(session):
     assert "TOKEN" not in str(profile)
     with pytest.raises(ValueError):
         validate_allowed_updates(["message", "message"])
+
+
+@pytest.mark.asyncio
+async def test_staff_suspension_revokes_login_and_preserves_last_admin(session):
+    """Separate suspended status from disabled with live session revocation."""
+    from dashboard.admin_control_api import StaffUpdate, change_staff
+
+    actor = session.get(ShopStaff, 10)
+    employee = session.get(ShopStaff, 11)
+    assert employee.is_active is True
+    adapter = AsyncSessionAdapter(session)
+    result = await change_staff(
+        member_id=employee.id,
+        payload=StaffUpdate(
+            status="suspended", reason="Pending internal security review",
+        ),
+        staff=actor,
+        db=adapter,
+    )
+    assert result["status"] == "suspended"
+    assert session.get(ShopStaffState, employee.id).status == "suspended"
+    assert employee.is_active is False
+    assert employee.session_version == 2
+
+    with pytest.raises(security.SecurityRejected) as refused:
+        await change_staff(
+            member_id=actor.id,
+            payload=StaffUpdate(status="disabled"),
+            staff=actor,
+            db=adapter,
+        )
+    assert refused.value.code == "use_my_account"
+    assert actor.is_active is True
