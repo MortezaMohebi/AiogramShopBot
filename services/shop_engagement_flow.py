@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_content import ShopIdentity, ShopOrder
+from models.shop_customer_crm import ShopCustomerConsentEvent
 from models.shop_engagement import ShopReferralPolicy, ShopWalletEntry
 from services.shop_money import format_rials
 from services.shop_referrals import ReferralRejected, ShopReferralService
@@ -173,7 +174,15 @@ class ShopEngagementFlow:
         )
         if identity is None:
             return BotReply("ابتدا /start را ارسال کنید.")
+        # Consent changes are initiated by the authenticated Bot API user,
+        # never set by a manager or inferred from a broadcast delivery.
         identity.allow_announcements = enable
+        session.add(ShopCustomerConsentEvent(
+            identity_id=identity.id,
+            allowed=enable,
+            source=f"{event.platform.value}_command",
+            topic="shop_announcements",
+        ))
         await session.commit()
         return BotReply(
             "✅ دریافت اطلاعیه‌های فروشگاه فعال شد."
