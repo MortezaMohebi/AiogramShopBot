@@ -200,6 +200,7 @@ def product_data(item: Product) -> dict:
     """Serialize explicit safe product fields; preserve large IRR as string."""
     return {
         "id": item.id,
+        "store_id": item.store_id,
         "sku": item.sku,
         "category_id": item.category_id,
         "name": item.name,
@@ -649,6 +650,7 @@ async def orders(staff: Staff, session: Db, page: int = 1) -> dict:
         "items": [
             {
                 "id": order.id, "platform": order.platform,
+                "store_id": order.store_id,
                 "user_id": str(order.platform_user_id),
                 "name": order.product_name_snapshot,
                 "status": order.status, "provider": order.provider,
@@ -678,6 +680,8 @@ async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
         "items": [
             {
                 "id": entry.id, "platform": entry.platform,
+                "store_id": entry.store_id,
+                "bot_id": entry.bot_id,
                 "user_id": str(entry.platform_user_id),
                 "name": entry.first_name, "username": entry.username,
                 "is_blocked": entry.is_blocked,
@@ -891,9 +895,13 @@ async def media(staff: Staff, session: Db, page: int = 1) -> dict:
     require_staff(staff, "content")
     if not 1 <= page <= 100_000:
         raise HTTPException(status_code=400, detail="Invalid page")
-    total = int(await session.scalar(
-        select(func.count()).select_from(ProductMedia)
-    ) or 0)
+    scope = current_context()
+    count_query = select(func.count()).select_from(ProductMedia)
+    if scope is not None:
+        count_query = count_query.join(
+            Product, Product.id == ProductMedia.product_id,
+        ).where(Product.store_id.in_(scope.active_store_ids))
+    total = int(await session.scalar(count_query) or 0)
     entries = (await session.execute(
         select(ProductMedia, Product.name)
         .join(Product, Product.id == ProductMedia.product_id)
@@ -923,9 +931,13 @@ async def testimonials(staff: Staff, session: Db, page: int = 1) -> dict:
     require_staff(staff, "content")
     if not 1 <= page <= 100_000:
         raise HTTPException(status_code=400, detail="Invalid page")
-    total = int(await session.scalar(
-        select(func.count()).select_from(Testimonial)
-    ) or 0)
+    scope = current_context()
+    count_query = select(func.count()).select_from(Testimonial)
+    if scope is not None:
+        count_query = count_query.join(
+            Product, Product.id == Testimonial.product_id,
+        ).where(Product.store_id.in_(scope.active_store_ids))
+    total = int(await session.scalar(count_query) or 0)
     entries = (await session.execute(
         select(Testimonial, Product.name)
         .join(Product, Product.id == Testimonial.product_id)
@@ -974,10 +986,15 @@ async def coupons(staff: Staff, session: Db) -> list[dict]:
 async def refunds(staff: Staff, session: Db) -> list[dict]:
     """Review financial cases, never expose unverified refund confirmation."""
     require_staff(staff, "finance")
+    scope = current_context()
+    query = select(
+        ShopRefundCase, ShopOrder.platform,
+        ShopOrder.total_irr, ShopOrder.provider,
+    ).join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
+    if scope is not None:
+        query = query.where(ShopOrder.store_id.in_(scope.active_store_ids))
     records = (await session.execute(
-        select(ShopRefundCase, ShopOrder.platform, ShopOrder.total_irr, ShopOrder.provider)
-        .join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
-        .order_by(ShopRefundCase.id.desc()).limit(200)
+        query.order_by(ShopRefundCase.id.desc()).limit(200)
     )).all()
     return [
         {
@@ -994,26 +1011,35 @@ async def refunds(staff: Staff, session: Db) -> list[dict]:
 async def wallets(staff: Staff, session: Db) -> dict:
     """Show merchant store-credit balances, separate from Bale native wallet."""
     require_staff(staff, "finance")
-    result = await session.execute(
-        select(
-            ShopWalletAccount.balance_irr,
-            ShopIdentity.platform,
-            ShopIdentity.platform_user_id,
-        )
-        .join(ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id)
-        .order_by(ShopWalletAccount.id.desc()).limit(100)
+    scope = current_context()
+    query = select(
+        ShopWalletAccount.balance_irr,
+        ShopIdentity.platform,
+        ShopIdentity.platform_user_id,
+        ShopWalletAccount.customer_id,
+        ShopWalletAccount.scope,
+        ShopWalletAccount.store_id,
+    ).outerjoin(
+        ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id,
     )
-    accounts = [
-        {
-            "balance_irr": str(balance),
-            "platform": platform,
-            "user_id": str(user_id),
-        }
-        for balance, platform, user_id in result.all()
-    ]
-    count = int(await session.scalar(
-        select(func.count()).select_from(ShopWalletAccount)
-    ) or 0)
+    count_query = select(func.count()).select_from(ShopWalletAccount)
+    if scope is not None:
+        query = query.where(
+            ShopWalletAccount.store_id.in_(scope.active_store_ids)
+        )
+        count_query = count_query.where(
+            ShopWalletAccount.store_id.in_(scope.active_store_ids)
+        )
+    result = await session.execute(
+        query.order_by(ShopWalletAccount.id.desc()).limit(100)
+    )
+    accounts = [{
+        "balance_irr": str(balance),
+        "platform": platform or "store",
+        "user_id": str(user_id) if user_id is not None else f"Customer #{customer_id}",
+        "scope": credit_scope, "store_id": store_id,
+    } for balance, platform, user_id, customer_id, credit_scope, store_id in result.all()]
+    count = int(await session.scalar(count_query) or 0)
     return {"items": accounts, "total": count}
 
 
