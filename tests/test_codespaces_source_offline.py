@@ -92,14 +92,19 @@ def test_compose_ports_and_paid_flags_are_explicitly_bounded() -> None:
         assert path in gateway
 
 
-def test_admin_password_never_has_a_public_api_route() -> None:
-    """Initial credentials must be retrieved from the Codespace terminal."""
-    root = Path(__file__).resolve().parent.parent
-    login = (
-        root / "dashboard-next/app/(auth)/login/page.tsx"
-    ).read_text("utf-8")
-    assert "codespace_setup.py credentials" in login
-    assert "LIVE_ADMIN_PASSWORD" not in login
+def test_admin_identity_is_not_disclosed_by_public_login() -> None:
+    """The login form must not reveal a provisioned administrator account."""
+    root = Path(__file__).resolve().parent.parent / "dashboard-next"
+    page = (root / "app/(auth)/login/page.tsx").read_text("utf-8")
+    form = (root / "components/blocks/login-form.tsx").read_text("utf-8")
+
+    # This is a regression test for an actual leaked account identifier.
+    assert "shopadmin" not in page
+    assert "shopadmin" not in form
+    assert 'placeholder="shopadmin"' not in form
+    assert 'autoComplete="username"' in form
+    assert "LIVE_ADMIN_PASSWORD" not in page
+    assert "LIVE_ADMIN_PASSWORD" not in form
 
 
 
