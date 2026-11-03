@@ -16,6 +16,7 @@ from channels.contracts import InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from models.shop_content import ShopSettings
 from services.shop_identity import register_customer
+from services.shop_bot_profiles import get_bot_options
 from services.shop_referrals import (
     ShopReferralService, ReferralRejected,
 )
@@ -63,6 +64,13 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
     )
+    options = await get_bot_options(session, Platform.TELEGRAM.value)
+    if options.maintenance_enabled:
+        await message.answer(
+            "فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید.",
+            parse_mode=None,
+        )
+        return
     referral_arg = (
         command.args.strip()
         if command.args and command.args.strip().upper().startswith("R-")
