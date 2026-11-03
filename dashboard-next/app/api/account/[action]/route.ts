@@ -12,6 +12,8 @@ const WRITES: Record<string, string> = {
   "revoke-session": "/account/revoke-session", "revoke-others": "/account/revoke-others",
   "mfa-setup": "/account/mfa-setup", "mfa-confirm": "/account/mfa-confirm", "mfa-disable": "/account/mfa-disable",
   "connection-stage": "/connection-changes", "connection-action": "/connection-changes/action",
+  "staff-invite": "/staff/invitations", "staff-invite-cancel": "/staff/invitations/cancel",
+  "staff-reset": "/staff/password-reset", "password-policy": "/staff/password-policy",
 };
 function fail(code: string, status: number): NextResponse {
   return NextResponse.json({ ok: false, code, requestId: randomUUID() }, { status, headers: { "Cache-Control": "no-store" } });
