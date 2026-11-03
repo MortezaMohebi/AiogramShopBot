@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict
@@ -240,9 +241,9 @@ class ProductPayload(BaseModel):
     """A new product with exact IRR price and optional independent Stars price."""
 
     model_config = ConfigDict(extra="forbid")
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(default="", max_length=64)
     name: str = Field(min_length=1, max_length=255)
-    description: str = Field(min_length=1, max_length=40_000)
+    description: str = Field(default="", max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int = Field(ge=0, le=PRICE_LIMIT)
     stock_quantity: int = Field(default=0, ge=0, le=100_000_000)
@@ -257,9 +258,9 @@ class ProductPatch(BaseModel):
     """Patch without silently resetting values omitted by the editor."""
 
     model_config = ConfigDict(extra="forbid")
-    sku: str | None = Field(default=None, min_length=1, max_length=64)
+    sku: str | None = Field(default=None, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, min_length=1, max_length=40_000)
+    description: str | None = Field(default=None, max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int | None = Field(default=None, ge=0, le=PRICE_LIMIT)
     stock_quantity: int | None = Field(default=None, ge=0, le=100_000_000)
@@ -518,6 +519,8 @@ async def create_product(
     """Create a product with a unique SKU and safe unpublished default."""
     require_staff(staff, "content")
     fields = validated_product_values(payload.model_dump())
+    # Preserve the database unique/non-null guarantee without forcing manual SKUs.
+    fields["sku"] = fields["sku"].strip() or f"AUTO-{secrets.token_hex(10).upper()}"
     category_id = fields.get("category_id")
     if category_id is not None and not await session.get(
         ShopCategory, category_id
@@ -551,6 +554,9 @@ async def edit_product(
         if required in fields and fields[required] is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
     fields = validated_product_values(fields, current=record)
+    # An emptied SKU on edit retains the stable internal product code.
+    if fields.get("sku") == "":
+        fields.pop("sku")
     category_id = fields.get("category_id")
     if category_id is not None and not await session.get(
         ShopCategory, category_id
