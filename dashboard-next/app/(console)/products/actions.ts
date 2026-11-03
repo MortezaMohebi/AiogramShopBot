@@ -27,7 +27,8 @@ export async function saveProduct(form: FormData) {
     requires_shipping: productType === "digital" ? false : form.has("requires_shipping"),
     is_published: form.has("is_published"),
   };
-  let failed = false;
+  let errorCode: string | null = null;
+  let requestId: string | null = null;
   let savedId: number | null = null;
   try {
     const result = await adminFetch<{ id: number }>(
@@ -37,11 +38,21 @@ export async function saveProduct(form: FormData) {
     );
     savedId = result.id;
   } catch (error) {
-    // Do not echo raw server exceptions or secret values into a URL.
-    failed = true;
+    // Only allowlisted reason codes and correlation IDs reach browser URLs.
     if (!(error instanceof ApiError)) throw error;
+    errorCode = error.code === "mfa_enrollment_required" ? "mfa" :
+      error.status === 409 ? "conflict" :
+      error.status === 422 ? "validation" :
+      error.status === 403 ? "permission" :
+      error.status === 503 || error.status === 504 ? "service" : "unknown";
+    requestId = error.requestId && /^[a-f0-9-]{36}$/i.test(error.requestId)
+      ? error.requestId : null;
   }
-  if (failed) redirect(id ? `/products/${id}/edit?error=1` : "/products/new?error=1");
+  if (errorCode) {
+    const query = new URLSearchParams({ error: errorCode });
+    if (requestId) query.set("ref", requestId);
+    redirect(id ? `/products/${id}/edit?${query}` : `/products/new?${query}`);
+  }
   revalidatePath("/products");
   revalidatePath("/dashboard");
   // Keep the editor open so newly created products can receive their media.
