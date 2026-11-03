@@ -11,15 +11,18 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import (
-    ShopCart, ShopCartItem, ShopCoupon, ShopOrderLine, ShopShippingMethod,
+    ShopCart, ShopCartInputSession, ShopCartItem, ShopCoupon,
+    ShopOrderLine, ShopShippingMethod,
 )
-from models.shop_content import Product, ShopOrder
+from models.shop_content import Product, ShopIdentity, ShopOrder
+from models.shop_multibot import DEFAULT_STORE_ID
+from services.shop_store_commerce import policy_for
 from services.shop_money import MAX_RIALS, format_rials, to_rials
 from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
@@ -121,7 +124,10 @@ class ShopCartFlow:
         text = (event.text or "").strip()
         # A disabled provider cart refuses both current and stale callback buttons.
         # Existing orders remain accessible through the separate order service.
-        features = await get_features(session, event.platform.value)
+        features = await get_features(
+            session, event.platform.value,
+            bot_id=self._bot_id(event.platform),
+        )
         if not features.cart_enabled:
             cart_actions = {
                 "shop:cart", "shop:shipping", "shop:clear_coupon",
@@ -174,8 +180,11 @@ class ShopCartFlow:
                 return await self._checkout_preview(event, session)
 
             cart = await self._get_cart(event, session, create=False)
-            if cart is not None and cart.awaiting_input and text and not text.startswith("/"):
-                return await self._accept_input(cart, text, session)
+            if (
+                cart is not None and text and not text.startswith("/")
+                and await self._input_state(cart, event, session)
+            ):
+                return await self._accept_input(cart, text, session, event)
             return None
         except CartRejected as error:
             # No write on validation errors. DB session rolls back at exit.
