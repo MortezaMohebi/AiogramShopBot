@@ -1,6 +1,7 @@
 "use client";
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +27,10 @@ const eventLabels: Record<string, string> = {
 export function AccountPanel({ initial }: { initial: AccountData }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  const [enrollment, setEnrollment] = useState<string | null>(null), [recovery, setRecovery] = useState<string[]>([]);
+  const [enrollment, setEnrollment] = useState<{
+    secret: string;
+    qrDataUri: string;
+  } | null>(null), [recovery, setRecovery] = useState<string[]>([]);
   function date(value: string) { return new Date(value).toLocaleString("fa-IR", { timeZone: initial.time_zone }); }
   async function perform(action: string, payload: unknown, form?: HTMLFormElement) {
     if (busy) return;
@@ -34,7 +38,18 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     try {
       const result = await controlAction(action, payload);
       if (result.login_required) { router.replace("/login?expired=1"); router.refresh(); return; }
-      if (result.secret) setEnrollment(result.secret);
+      if (action === "mfa-setup") {
+        if (
+          !result.secret ||
+          !result.qr_data_uri?.startsWith("data:image/png;base64,")
+        ) {
+          throw new Error("کد QR دریافت نشد. دوباره فعال‌سازی را شروع کنید.");
+        }
+        setEnrollment({
+          secret: result.secret,
+          qrDataUri: result.qr_data_uri,
+        });
+      }
       if (result.recovery_codes) { setRecovery(result.recovery_codes); setEnrollment(null); }
       setNotice({ ok: true, text: "عملیات ثبت شد و وضعیت حساب به‌روز شد." });
       if (action !== "profile") form?.reset();
@@ -73,9 +88,34 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
         <Button type="button" variant="outline" onClick={() => setRecovery([])}>کدها ذخیره شدند؛ پنهان کن</Button>
       </div> : null}
-      {enrollment ? <div className="space-y-3">
-        <p className="text-sm leading-7">این کلید را در برنامهٔ Authenticator با حالت TOTP وارد کنید و سپس کد شش‌رقمی را بنویسید.</p>
-        <code dir="ltr" className="block break-all rounded-lg bg-muted p-3">{enrollment}</code>
+      {enrollment ? <div className="space-y-4">
+        <p className="text-sm leading-7">
+          در برنامهٔ Authenticator گزینهٔ افزودن حساب و اسکن QR Code را
+          انتخاب کنید. سپس کد شش‌رقمی برنامه را برای فعال‌سازی وارد کنید.
+        </p>
+        {/* QR generation happens in our Backend; the TOTP secret is never
+            sent to a third-party image service or CDN. */}
+        <div className="mx-auto w-fit rounded-xl border bg-white p-3 shadow-sm">
+          <Image
+            src={enrollment.qrDataUri}
+            alt="QR Code فعال‌سازی احراز هویت دومرحله‌ای"
+            width={260}
+            height={260}
+            unoptimized
+            className="h-auto max-w-[260px]"
+          />
+        </div>
+        <details className="rounded-lg border p-3 text-sm">
+          <summary className="cursor-pointer font-medium">
+            امکان اسکن ندارم؛ نمایش کلید برای ورود دستی
+          </summary>
+          <p className="mt-3 text-xs leading-6 text-muted-foreground">
+            این کلید محرمانه است. آن را با دیگران به اشتراک نگذارید.
+          </p>
+          <code dir="ltr" className="mt-2 block select-all break-all rounded-md bg-muted p-3 text-xs">
+            {enrollment.secret}
+          </code>
+        </details>
         <form onSubmit={(event) => submit(event, "mfa-confirm")} className="flex flex-wrap items-end gap-3">
           <label className="space-y-1 text-sm">کد تأیید<Input name="code" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="one-time-code" inputMode="numeric" required dir="ltr" disabled={busy} /></label>
           <Button type="submit" disabled={busy}>تأیید و فعال‌سازی</Button>

@@ -6,7 +6,6 @@ import hashlib
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated, Literal
-from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,6 +18,7 @@ from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
 from models.shop_admin_control import AdminEvent, AdminSession, ConnectionChange, ConnectionConfig
 from services import shop_admin_security as security
+from services.shop_mfa_qr import make_mfa_qr_data_uri, make_otpauth_uri
 from services.shop_connection_control import stage_change, transition
 from utils.utils import hash_password, verify_password
 
@@ -282,9 +282,15 @@ async def mfa_setup(payload: Proof, staff: Staff, db: Db) -> dict:
         return security.begin_mfa(sync, security.profile_for(sync, member.id))
     secret = await db.run_sync(start)
     await db.commit()
-    return {"ok": True, "secret": secret,
-            "uri": "otpauth://totp/Shop:" + quote(member.username, safe="")
-                   + "?secret=" + secret + "&issuer=Shop&algorithm=SHA1&digits=6&period=30"}
+    uri = make_otpauth_uri(secret, member.username)
+    return {
+        "ok": True,
+        "secret": secret,
+        "uri": uri,
+        # This QR is generated in-process; never send TOTP seeds to a
+        # third-party image service or public CDN.
+        "qr_data_uri": make_mfa_qr_data_uri(uri),
+    }
 
 
 @router.post("/account/mfa-confirm")

@@ -22,7 +22,7 @@ const errors: Record<string, string> = {
   invalid_operation_state: "وضعیت عملیات تغییر کرده است؛ فهرست را تازه‌سازی کنید.",
   configuration_changed: "تنظیم فعال تغییر کرده است؛ درخواست تازه‌ای ایجاد کنید.",
 };
-export interface ControlResult { ok?: boolean; code?: string; login_required?: boolean; secret?: string; recovery_codes?: string[] }
+export interface ControlResult { ok?: boolean; code?: string; login_required?: boolean; secret?: string; qr_data_uri?: string; recovery_codes?: string[] }
 /** Exact allowlisted route names are enforced again by the server. */
 export async function controlAction(action: string, data: unknown): Promise<ControlResult> {
   const token = await requestBrowserChallenge();
