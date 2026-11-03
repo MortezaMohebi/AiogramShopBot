@@ -61,7 +61,7 @@ def require_current_store_for_writes(
     if ctx is None:
         return
     models = STORE_OWNED_MODELS
-    for item in list(session.new) + list(session.dirty):
+    for item in list(session.new) + list(session.dirty) + list(session.deleted):
         if not isinstance(item, models):
             continue
         owner = getattr(item, "store_id", None)
