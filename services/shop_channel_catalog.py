@@ -25,6 +25,8 @@ from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
     CatalogScope, legacy_bot_id, permitted_product_clause, resolve_scope,
 )
+from services.shop_bot_context import BotContext
+from services.shop_admin_security import SecurityRejected
 from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_bot_operations import ShopBotOperations
 
@@ -56,22 +58,28 @@ class CatalogFlow:
     """Resolve catalog and review navigation using one shared SQL schema."""
 
     def __init__(
-        self, currency_label: str = "ریال", display_unit: str = "IRR"
+        self, currency_label: str = "ریال", display_unit: str = "IRR",
+        *, bot_context: BotContext | None = None,
     ) -> None:
-        """Display canonical IRR in rials or tomans without float conversion."""
+        """Bind optional trusted BotContext without a client-supplied bot ID."""
         self.currency_label = currency_label
         self.display_unit = display_unit
-        # A non-legacy ID may only be provided by an authenticated receiver.
-        # The current two adapters derive their immutable IDs from Platform.
-        self.bot_id: str | None = None
+        # Future receivers supply only contexts resolved after authentication.
+        self.bot_context = bot_context
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
     ) -> BotReply | None:
         """Resolve recognized commands or buttons; ignore other bot features."""
+        if self.bot_context is not None and (
+            self.bot_context.platform != event.platform
+        ):
+            raise SecurityRejected("bot_identity_mismatch", 403)
         scope = await resolve_scope(
-            session,
-            bot_id=self.bot_id or legacy_bot_id(event.platform.value),
+            session, bot_id=(
+                self.bot_context.bot_id if self.bot_context
+                else legacy_bot_id(event.platform.value)
+            ),
         )
         if event.callback_data is not None:
             data = event.callback_data
