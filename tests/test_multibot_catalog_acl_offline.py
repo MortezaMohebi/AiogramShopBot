@@ -392,3 +392,52 @@ def test_new_invoice_blocked_after_access_revocation(db):
     with pytest.raises(PaymentRejected):
         asyncio.run(try_begin())
     assert db.scalars(select(ShopPaymentAttempt)).all() == []
+
+
+def test_category_listing_hides_unauthorized_categories(db):
+    """Category pages and stale category callbacks respect the same ACL."""
+    acl.update_bot_rules(
+        db, bot_id=LEGACY_BOT_IDS["telegram"],
+        actor_id=1, expected_version=1,
+        object_type="category", target_ids=[10], effect="deny",
+    )
+    db.commit()
+    flow = CatalogFlow()
+    adapter = AsyncDb(db)
+    listing = asyncio.run(flow.reply(InboundEvent(
+        platform=Platform.TELEGRAM, chat_id=456, user_id=456,
+        text="/catalog",
+    ), adapter))
+    labels = [action.label for row in listing.rows for action in row]
+    assert "Category A" not in labels
+    assert "Category B" in labels
+    stale = asyncio.run(flow.reply(InboundEvent(
+        platform=Platform.TELEGRAM, chat_id=456, user_id=456,
+        callback_data="shop:category:10:0", callback_query_id="cb",
+    ), adapter))
+    assert "Product Alpha" not in str(stale.rows)
+    assert "Product Beta" not in str(stale.rows)
+
+
+def test_product_catalog_write_is_not_granted_to_content_role():
+    """Content editors cannot mutate cross-bot access through the API."""
+    assert security.has_permission("superadmin", "bots.configure")
+    assert not security.has_permission("content", "bots.configure")
+    assert not security.has_permission("viewer", "bots.read")
+
+
+def test_product_many2many_stale_version_is_rejected(db):
+    """Product-side multi-bot edits cannot overwrite a newer bot policy."""
+    telegram = LEGACY_BOT_IDS["telegram"]
+    acl.update_bot_rules(
+        db, bot_id=telegram, actor_id=1, expected_version=1,
+        object_type="product", target_ids=[100], effect="deny",
+    )
+    db.commit()
+    with pytest.raises(security.SecurityRejected) as failed:
+        acl.update_product_bot_rules(
+            db, product_id=101, actor_id=1,
+            assignments=[(telegram, "allow", 1)],
+        )
+    assert failed.value.code == "configuration_changed"
+    assert db.get(ShopBotProductRule, (telegram, 101)) is None
