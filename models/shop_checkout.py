@@ -154,6 +154,30 @@ class ShopCart(Base):
     )
 
 
+class ShopCartInputSession(Base):
+    """Independent chat-form state for a Customer-shared Cart per bot/user."""
+
+    __tablename__ = "shop_cart_input_sessions"
+
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    platform_user_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True,
+    )
+    cart_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_carts.id", ondelete="CASCADE"), nullable=False,
+    )
+    awaiting_input: Mapped[str | None] = mapped_column(String(12))
+    __table_args__ = (
+        CheckConstraint(
+            "awaiting_input IS NULL OR awaiting_input IN ('address','coupon')",
+            name="ck_shop_cart_session_input",
+        ),
+    )
+
+
 class ShopCartItem(Base):
     """A quantity of an editable product in a customer's basket."""
 

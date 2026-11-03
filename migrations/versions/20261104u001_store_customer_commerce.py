@@ -175,6 +175,22 @@ def upgrade() -> None:
         "NOT is_shared OR customer_id IS NOT NULL",
     )
 
+    op.create_table(
+        "shop_cart_input_sessions",
+        sa.Column("bot_id", sa.String(36), sa.ForeignKey(
+            "shop_bots.id", ondelete="RESTRICT",
+        ), primary_key=True),
+        sa.Column("platform_user_id", sa.BigInteger(), primary_key=True),
+        sa.Column("cart_id", sa.Integer(), sa.ForeignKey(
+            "shop_carts.id", ondelete="CASCADE",
+        ), nullable=False),
+        sa.Column("awaiting_input", sa.String(12)),
+        sa.CheckConstraint(
+            "awaiting_input IS NULL OR awaiting_input IN ('address','coupon')",
+            name="ck_shop_cart_session_input",
+        ),
+    )
+
     # Payment attempts have an immutable Store inherited from their order.
     _store_fk(
         "shop_payment_attempts",
