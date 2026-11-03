@@ -50,6 +50,13 @@ const SAFE_CODES = new Set([
   "webhook_url_invalid", "webhook_owned_elsewhere",
   "receiver_needs_review", "receiver_capacity_reached",
   "provider_outcome_unknown",
+  "invalid_relay_worker", "relay_worker_exists",
+  "relay_worker_not_found", "relay_worker_not_verified",
+  "relay_route_not_supported", "invalid_relay_priority",
+  "relay_route_must_pause", "relay_activation_not_ready",
+  "relay_pool_disabled", "relay_probe_failed",
+  "relay_route_unavailable", "relay_secret_unreadable",
+  "relay_secret_binding_mismatch", "duplicate_relay_credential",
   "confirmation_required",
 ]);
 export class ApiError extends Error {
