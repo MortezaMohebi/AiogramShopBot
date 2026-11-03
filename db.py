@@ -46,6 +46,9 @@ from models.shop_store_commerce import (
     ShopStoreCustomer, ShopStoreCommercePolicy, ShopBotCommercePolicy,
     ShopPaymentAccount, ShopBotPaymentAccess,
 )
+from models.shop_staff_store import (
+    ShopStaffStoreAccess, ShopStaffStorePreference, ShopAdminSessionStore,
+)
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )

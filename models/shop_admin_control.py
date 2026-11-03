@@ -35,7 +35,20 @@ class AdminSession(Base):
     reauthenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoke_reason: Mapped[str | None] = mapped_column(String(40))
-    __table_args__ = (CheckConstraint("version > 0", name="ck_admin_session_version"),)
+    # The active Store set belongs to this device's revocable session.
+    current_store_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+    )
+    store_context_version: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False, server_default="1",
+    )
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_admin_session_version"),
+        CheckConstraint(
+            "store_context_version > 0",
+            name="ck_admin_session_store_context_version",
+        ),
+    )
 
 
 class AdminEvent(Base):
