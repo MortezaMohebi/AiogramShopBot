@@ -98,7 +98,11 @@ async def serialize_rows(
                 value = values.get(field.key)
             else:
                 value = None
-            record[field.key] = safe_value(value)
+            # Never round large IRR amounts through JavaScript Number.
+            record[field.key] = (
+                str(value) if field.kind == "money" and value is not None
+                else safe_value(value)
+            )
         result.append(record)
     return result
 
