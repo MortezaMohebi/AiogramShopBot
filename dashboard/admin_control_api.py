@@ -56,7 +56,7 @@ class Proof(StrictPayload):
 
 class PasswordChange(Proof):
     """Preserve all entered password characters, including whitespace."""
-    new_password: str = Field(min_length=14, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
 
 
 class ProfileChange(StrictPayload):
