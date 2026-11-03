@@ -71,10 +71,8 @@ export default async function LoginPage({
             <CardContent>
               <LoginForm initialError={initialError} />
               <p className="mt-5 text-xs leading-7 text-muted-foreground">
-                ثبت‌نام عمومی غیرفعال است. در محیط Codespaces، نام کاربری اولیه
-                <code dir="ltr" className="mx-1">shopadmin</code>
-                است. برای مدیریت رمز اولیه از ترمینال خصوصی Codespace
-                استفاده کنید؛ رمز هرگز در صفحه نمایش داده نمی‌شود.
+                ورود فقط برای کاربران مجاز امکان‌پذیر است.
+                برای دریافت یا بازیابی اطلاعات حساب، با مدیر سامانه تماس بگیرید.
               </p>
             </CardContent>
           </Card>
