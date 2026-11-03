@@ -42,7 +42,7 @@ class ShopChannelFeature(Base):
     __table_args__ = (
         CheckConstraint("platform IN ('telegram','bale')", name="ck_shop_feature_provider"),
         CheckConstraint(
-            "char_length(store_credit_label) BETWEEN 1 AND 80",
+            "length(store_credit_label) BETWEEN 1 AND 80",
             name="ck_shop_feature_credit_label",
         ),
     )
