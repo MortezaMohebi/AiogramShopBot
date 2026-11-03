@@ -322,7 +322,7 @@ git pull --ff-only origin feat/codespaces-live-stack-20261103
 bash scripts/setup_codespace.sh start
 bash scripts/setup_codespace.sh status
 
-docker compose --env-file .codespaces/live.env \\
+docker compose --env-file .codespaces/live.env \
   -f compose.codespaces.yml logs --tail=80 webhook-gateway
 
 curl -i http://127.0.0.1:8080/_edge/health
