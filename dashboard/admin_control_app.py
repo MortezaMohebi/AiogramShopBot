@@ -209,6 +209,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "store-context", "staff", "stores", "store-customers",
                         "payment-accounts", "bot-registry", "bot-catalog",
                         "products", "categories", "orders", "customers",
+                        "overview", "reports",
                         "shipping", "coupons",
                     }
                     if resource not in multi_safe and (
