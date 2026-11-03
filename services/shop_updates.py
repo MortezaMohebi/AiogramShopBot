@@ -32,6 +32,7 @@ async def claim_update(
 
     owner = bot_id or legacy_id(platform.value)
     scope = (
+        ShopInboundUpdate.bot_id == owner,
         ShopInboundUpdate.platform == platform.value,
         ShopInboundUpdate.bot_fingerprint == fingerprint,
         ShopInboundUpdate.update_id == update_id,
