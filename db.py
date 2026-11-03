@@ -93,6 +93,12 @@ url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:
 engine = create_async_engine(url, echo=config.DB_SQL_ECHO)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
+# Register Store record rules once for every SQLAlchemy Session. The rules
+# activate only while a verified admin request binds a StoreContext; provider
+# webhook/worker sessions remain independently authenticated by BotContext.
+import services.shop_store_orm  # noqa: F401, E402
+
+
 
 @asynccontextmanager
 async def get_db_session() -> AsyncSession | Session:
