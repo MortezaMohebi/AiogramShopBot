@@ -43,6 +43,14 @@ async def get_features(
     )
 
 
+def inline_credit_label(features: ChannelFeatures) -> str:
+    """Truncate safely to the common 64-byte Bot API callback label limit."""
+    label = features.store_credit_label.strip()
+    while len(label.encode("utf-8")) > 64:
+        label = label[:-1]
+    return label or "اعتبار فروشگاه"
+
+
 def to_data(features: ChannelFeatures) -> dict:
     """Expose only allowlisted settings, never financial ledger data."""
     return {
