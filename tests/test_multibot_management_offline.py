@@ -337,3 +337,29 @@ def test_legacy_owner_can_verify_existing_env_credential(
     assert bot.status == "legacy"
     assert bot.credential_version == 1
     assert bot.version == 2
+
+
+def test_revoked_token_can_be_staged_again_without_active_duplication(
+    db: Session,
+) -> None:
+    """A revoked proposal does not permanently forbid a later safe restage."""
+    bot = registry.register_bot(
+        db, store_id=DEFAULT_STORE_ID, platform="telegram",
+        slug="restage-telegram", name="Restage", actor_id=1,
+    )
+    previous = vault.stage_bot_token(
+        db, bot_id=bot.id, token=TOKEN_A, actor_id=1,
+    )
+    db.commit()
+    vault.revoke_staged_token(
+        db, bot_id=bot.id, version=previous.version, actor_id=1,
+    )
+    db.commit()
+    fresh = vault.stage_bot_token(
+        db, bot_id=bot.id, token=TOKEN_A, actor_id=1,
+    )
+    db.commit()
+    assert previous.state == "revoked"
+    assert fresh.state == "staged"
+    assert fresh.version == previous.version + 1
+    assert bot.credential_version is None
