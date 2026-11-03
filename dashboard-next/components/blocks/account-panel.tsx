@@ -31,6 +31,12 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     secret: string;
     qrDataUri: string;
   } | null>(null), [recovery, setRecovery] = useState<string[]>([]);
+  // The browser supplies a searchable, official list of IANA time zones.
+  const zones = typeof Intl.supportedValuesOf === "function"
+    ? Intl.supportedValuesOf("timeZone")
+    : ["Asia/Tehran", "Asia/Tokyo", "Europe/London", "UTC"];
+  if (!zones.includes(initial.time_zone)) zones.push(initial.time_zone);
+  zones.sort((a, b) => a.localeCompare(b));
   function date(value: string) { return new Date(value).toLocaleString("fa-IR", { timeZone: initial.time_zone }); }
   async function perform(action: string, payload: unknown, form?: HTMLFormElement) {
     if (busy) return;
@@ -66,10 +72,14 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
   return <div className="space-y-5" aria-busy={busy}>
     {notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null}
     <Card><CardHeader><CardTitle>مشخصات من</CardTitle></CardHeader><CardContent>
-      <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b dir="ltr">{initial.role}</b></p>
+      <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b>{({superadmin:"مدیر اصلی",finance:"مالی",sales:"فروش",content:"محتوا",marketing:"بازاریابی",viewer:"مشاهده"} as Record<string,string>)[initial.role] ?? initial.role}</b></p>
       <form onSubmit={(event) => submit(event, "profile")} className="grid gap-4 md:grid-cols-2">
-        <label className="space-y-1 text-sm">نام نمایشی<Input name="display_name" defaultValue={initial.display_name} maxLength={120} disabled={busy} /></label>
-        <label className="space-y-1 text-sm">منطقهٔ زمانی<Input name="time_zone" defaultValue={initial.time_zone} maxLength={80} dir="ltr" required disabled={busy} /></label>
+        <label className="block space-y-2 text-sm">نام نمایشی<Input className="h-10 w-full" name="display_name" defaultValue={initial.display_name} maxLength={120} disabled={busy} /></label>
+        <label className="block space-y-2 text-sm">منطقهٔ زمانی
+          <select name="time_zone" defaultValue={initial.time_zone} required disabled={busy} dir="ltr" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+            {zones.map((zone) => <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>)}
+          </select>
+        </label>
         <Button type="submit" disabled={busy}>ذخیره مشخصات</Button>
       </form>
     </CardContent></Card>
