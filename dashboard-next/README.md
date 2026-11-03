@@ -145,3 +145,17 @@ Sensitive Server Actions (orders, wallet, refund, staff, campaigns)
 PostgreSQL credentials or merchant financial secrets.** The HMAC bridge is
 opt-in, request-limited and checks each database staff role/version. No server
 component should bypass the authoritative Python services.
+
+
+## Telegram API outbound transport
+
+The Bot Connections page now stages Direct / HTTP or SOCKS5 Proxy /
+Cloudflare Worker routes, probes them with `getMe`, requires a fresh
+password and MFA to activate, persists the encrypted verified settings in
+PostgreSQL, and offers separate, explicit rollback staging. Outbound
+configuration is independent of Webhook/getUpdates and Bale.
+Only deployment-allowlisted destinations may receive the Telegram token.
+
+See [the Persian admin transport runbook](../docs/TELEGRAM_TRANSPORT_DASHBOARD.fa.md).
+This PR remains Draft until Codespaces Docker/PostgreSQL/Next.js/browser and
+real-provider acceptance tests pass.
