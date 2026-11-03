@@ -621,8 +621,11 @@ async def list_staff(staff: Staff, session: Db) -> list[dict]:
             "role": member.role, "is_active": member.is_active,
             "created_at": member.created_at.isoformat(),
             "status": (
-                states[member.id].status if member.id in states
-                else "active" if member.is_active else "disabled"
+                "active" if member.is_active
+                else "suspended" if (
+                    member.id in states
+                    and states[member.id].status == "suspended"
+                ) else "disabled"
             ),
             "mfa_enabled": mfa.get(member.id, False),
             "last_login_at": (
