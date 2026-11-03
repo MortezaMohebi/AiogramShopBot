@@ -22,7 +22,9 @@ from models.shop_checkout import (
 from models.shop_content import Product, ShopOrder
 from services.shop_money import MAX_RIALS, format_rials, to_rials
 from services.shop_channel_features import get_features
-from services.shop_bot_catalog_acl import allowed_for_legacy
+from services.shop_bot_catalog_acl import (
+    allowed_for_legacy, lock_legacy_catalog_policy,
+)
 
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
@@ -566,6 +568,7 @@ class ShopCartFlow:
             raise CartRejected("محتوای سبد تغییر کرده؛ دوباره سفارش را بررسی کنید.")
         if await self._existing_pending(session, cart) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
+        await lock_legacy_catalog_policy(session, event.platform.value)
         quote = await self._quote(cart, session)
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
