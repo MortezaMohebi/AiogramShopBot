@@ -52,10 +52,12 @@ class BroadcastWorker:
         *,
         telegram: TelegramTransport | None,
         bale_session,
+        telegram_transport_sync=None,
     ) -> None:
         """Reuse one Telegram Bot and one optional Bale aiohttp client."""
         self.telegram = telegram
         self.bale_session = bale_session
+        self.telegram_transport_sync = telegram_transport_sync
         self.worker_id = secrets.token_hex(16)
 
     async def heartbeat(self) -> None:
@@ -386,6 +388,12 @@ class BroadcastWorker:
         )
         all_steps = (None, *attachments)
         for step in all_steps:
+            if (
+                claim.platform == Platform.TELEGRAM
+                and self.telegram_transport_sync is not None
+            ):
+                # Fail closed before any external delivery using stale config.
+                await self.telegram_transport_sync()
             allowed, progress = await self._step_allowed(claim)
             if not allowed:
                 await self._complete(
@@ -436,6 +444,9 @@ class BroadcastWorker:
         ):
             return False
 
+        if self.telegram is not None and self.telegram_transport_sync is not None:
+            # Validate the committed transport before claiming any recipient.
+            await self.telegram_transport_sync()
         claim = await self._claim_one()
         if claim is None:
             return False
