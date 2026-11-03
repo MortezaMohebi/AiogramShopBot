@@ -21,7 +21,7 @@
     }
   },
   "remoteUser": "vscode",
-  "postCreateCommand": "python3 scripts/codespace_setup.py info",
+  "postCreateCommand": "python3 scripts/codespace_setup.py info && bash scripts/install_agent_skills.sh",
   "customizations": {
     "vscode": {
       "extensions": [
