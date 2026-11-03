@@ -211,6 +211,7 @@ async def account(request: Request, staff: Staff, db: Db) -> dict:
         "display_name": profile.display_name, "time_zone": profile.time_zone,
         "mfa_enabled": bool(profile.mfa_secret),
         "mfa_required_by_role": member.role in security.MFA_REQUIRED_ROLES,
+        "password_policy": await db.run_sync(lambda sync: lifecycle.serialize_policy(lifecycle.policy_for(sync))),
         "permissions": sorted(security.ROLE_PERMISSIONS[member.role]),
         "sessions": [{"id": row.id, "label": row.label,
             "current": row.id == own_session(request), "created_at": row.created_at.isoformat(),
