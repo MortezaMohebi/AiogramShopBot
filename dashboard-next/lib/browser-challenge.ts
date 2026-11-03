@@ -8,14 +8,23 @@ export async function requestBrowserChallenge(): Promise<string> {
     signal: AbortSignal.timeout(15_000),
   });
 
-  if (
-    !response.ok ||
-    !(response.headers.get("content-type") ?? "").includes("application/json")
-  ) {
-    throw new Error("security_check_failed");
+  // Distinguish an actual security failure from a down/overloaded server.
+  if (!response.ok) {
+    throw new Error(
+      response.status >= 500 ? "service_unavailable" : "security_check_failed",
+    );
+  }
+  if (!(response.headers.get("content-type") ?? "").includes("application/json")) {
+    throw new Error("network_unavailable");
   }
 
-  const result: unknown = await response.json();
+  let result: unknown;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("service_unavailable");
+  }
+
   if (
     !result ||
     typeof result !== "object" ||
