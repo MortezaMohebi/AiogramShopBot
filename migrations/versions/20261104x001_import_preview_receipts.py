@@ -42,6 +42,7 @@ def upgrade() -> None:
         sa.Column("store_context_version", sa.Integer(), nullable=False),
         sa.Column("dataset_name", sa.String(32), nullable=False),
         sa.Column("file_sha256", sa.String(64), nullable=False),
+        sa.Column("snapshot_sha256", sa.String(64), nullable=False),
         sa.Column("rows", sa.Integer(), nullable=False),
         sa.Column("creates", sa.Integer(), nullable=False),
         sa.Column("updates", sa.Integer(), nullable=False),
@@ -62,6 +63,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "store_context_version > 0",
             name="ck_import_preview_context_version",
+        ),
+        sa.CheckConstraint(
+            "length(snapshot_sha256) = 64",
+            name="ck_import_preview_snapshot_sha256",
         ),
         sa.CheckConstraint(
             "length(file_sha256) = 64",

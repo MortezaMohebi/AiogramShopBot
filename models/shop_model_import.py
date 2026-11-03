@@ -40,6 +40,7 @@ class ShopModelImportPreview(Base):
     )
     dataset_name: Mapped[str] = mapped_column(String(32), nullable=False)
     file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     rows: Mapped[int] = mapped_column(Integer, nullable=False)
     creates: Mapped[int] = mapped_column(Integer, nullable=False)
     updates: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -64,6 +65,10 @@ class ShopModelImportPreview(Base):
         CheckConstraint(
             "store_context_version > 0",
             name="ck_import_preview_context_version",
+        ),
+        CheckConstraint(
+            "length(snapshot_sha256) = 64",
+            name="ck_import_preview_snapshot_sha256",
         ),
         CheckConstraint(
             "length(file_sha256) = 64",
