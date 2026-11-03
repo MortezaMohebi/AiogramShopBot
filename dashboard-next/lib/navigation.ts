@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Settings2,
+  Webhook,
   Truck,
   TicketPercent,
   MessagesSquare,
@@ -76,6 +77,10 @@ export const navigation: NavigationItem[] = [
   },
   {
     title: "مدیران و دسترسی‌ها", href: "/staff", icon: UserCog,
+    roles: ["superadmin"],
+  },
+  {
+    title: "اتصال ربات‌ها", href: "/bot-connections", icon: Webhook,
     roles: ["superadmin"],
   },
   {
