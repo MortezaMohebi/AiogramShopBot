@@ -33,6 +33,10 @@ def validate() -> None:
 async def check_provider(*, register: bool, unregister: bool) -> None:
     """Check both tokens; register only after a separate explicit request."""
     validate()
+    if register and config.TELEGRAM_UPDATE_MODE != "webhook":
+        raise RuntimeError(
+            "Cannot register Telegram webhook while getUpdates is active."
+        )
     tg_bot = create_bot(config.TOKEN, create_telegram_session())
     try:
         me = await tg_bot.get_me()
