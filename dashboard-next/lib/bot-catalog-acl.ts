@@ -28,6 +28,7 @@ export interface ProductBotCatalogCandidate {
   name: string;
   platform: "telegram" | "bale";
   status: string;
+  version: number;
   effect: CatalogEffect;
   default_effect: "allow" | "deny";
 }
