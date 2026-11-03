@@ -26,11 +26,13 @@ class BaleTransport:
     def __init__(
         self, token: str, session: ClientSession, *,
         business_mode: bool = False,
+        bot_id: str | None = None,
     ) -> None:
         """Bind one Bale bot to the normal or paid business API explicitly."""
         if not token or "/" in token or "?" in token or "#" in token:
             raise ValueError("Bale bot token is invalid.")
         self._bot_token = token
+        self.bot_id = bot_id
         self._business_mode = business_mode
         route = "business/bot" if business_mode else "bot"
         self._url_prefix = f"{self.BASE_URL}/{route}{token}"
@@ -90,6 +92,7 @@ class BaleTransport:
         cached = await cached_file_id(
             platform="bale",
             bot_key=bot_key,
+            bot_id=self.bot_id,
             storage_key=media.storage_key,
             kind=selected.kind,
         )
@@ -164,6 +167,7 @@ class BaleTransport:
                 await remember_file_id(
                     platform="bale",
                     bot_key=bot_key,
+                    bot_id=self.bot_id,
                     storage_key=media.storage_key,
                     kind=selected.kind,
                     file_id=remote_id,
