@@ -259,6 +259,10 @@ def operation_data(db: Session, bot: ShopBot) -> dict:
         )
     else:
         state = ops.desired_state
+    receiver = (
+        db.get(ShopBotReceiver, bot.id)
+        if bot.runtime_owner == "registry" else None
+    )
     return {
         "desired_state": state,
         "state_label": _OPS_TITLES[state],
@@ -267,7 +271,8 @@ def operation_data(db: Session, bot: ShopBot) -> dict:
             or (
                 bot.runtime_owner == "registry"
                 and bot.credential_version is not None
-                and db.get(ShopBotReceiver, bot.id) is not None
+                and receiver is not None
+                and receiver.state == "active"
             )
         ),
         "welcome_message": ops.welcome_message if ops else None,

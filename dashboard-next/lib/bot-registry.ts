@@ -70,10 +70,25 @@ export interface BotHealthSnapshot {
   provider_api: "not_probed";
   verified_identity_at: string | null;
   receiver_status: string;
+  receiver_mode: "webhook" | "polling" | null;
   received_last_at: string | null;
   processing_last_hour: number;
   needs_review_last_hour: number;
   has_live_credential: boolean;
+}
+
+/** No credential, opaque route binding or webhook secret is exposed. */
+export interface BotReceiverSnapshot {
+  configured: boolean;
+  state: "staged" | "applying" | "active" | "paused" | "disabled" | "needs_review";
+  mode: "webhook" | "polling" | null;
+  version: number | null;
+  credential_version: number | null;
+  next_update_id: number | null;
+  last_received_at: string | null;
+  last_error_code: string | null;
+  runtime_enabled: boolean;
+  worker_ready: boolean;
 }
 
 export interface BotRegistryDetail {
@@ -101,10 +116,18 @@ export function botPlatformLabel(platform: BotPlatform): string {
 }
 
 export function botRuntimeLabel(bot: BotRecord): string {
-  if (bot.runtime_owner !== "legacy") {
-    return "Draft — هنوز به Runtime متصل نشده";
+  if (bot.runtime_owner === "registry" && bot.status === "draft") {
+    return "Draft — بدون Receiver فعال";
   }
   const state = bot.operations.desired_state;
+  if (bot.runtime_owner === "registry") {
+    return ({
+      active: "فعال — Runtime مستقل",
+      paused: "متوقف — تسویه محفوظ",
+      maintenance: "نگهداری — تسویه محفوظ",
+      disabled: "غیرفعال — تسویه محفوظ",
+    } as const)[state];
+  }
   return ({
     active: "فعال در Runtime فعلی",
     paused: "متوقف؛ تسویه‌ها محفوظ‌اند",

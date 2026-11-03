@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import config
 from dashboard.admin_control_api import (
     Proof, StrictPayload, fresh_proof, throttle,
 )
@@ -48,10 +49,20 @@ class ReceiverApply(Proof):
 
 
 @router.get("/bot-registry/{bot_id}/receiver")
-async def receiver_info(bot_id: UUID, staff: Staff, db: Db) -> dict:
-    """Report whether the selected bot has an active receiver and offset."""
+async def receiver_info(
+    bot_id: UUID, request: Request, staff: Staff, db: Db,
+) -> dict:
+    """Return non-secret receiver state and actual activation prerequisites."""
     require(staff, "bots.read")
-    return await control.receiver_snapshot(db, str(bot_id))
+    snapshot = await control.receiver_snapshot(db, str(bot_id))
+    supervisor = getattr(request.app.state, "multi_bot_supervisor", None)
+    return {
+        **snapshot,
+        "runtime_enabled": bool(config.MULTIBOT_V2_RUNTIME_ENABLED),
+        "worker_ready": bool(
+            supervisor is not None and supervisor.owns_lease
+        ),
+    }
 
 
 @router.post("/bot-registry/{bot_id}/receiver/stage", status_code=201)

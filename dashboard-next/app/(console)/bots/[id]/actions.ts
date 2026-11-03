@@ -14,6 +14,11 @@ const SAFE_ERRORS = new Set([
   "bot_state_unchanged", "provider_state_unavailable", "bot_secret_key_unavailable",
   "bot_secret_unreadable", "legacy_bot_credential_locked", "mfa_enrollment_required",
   "bot_credential_stage_requires_draft", "permission_denied",
+  "invalid_receiver_mode", "receiver_worker_unavailable",
+  "receiver_lease_lost", "multibot_runtime_disabled",
+  "bot_credential_not_verified", "receiver_change_in_progress",
+  "webhook_url_invalid", "webhook_owned_elsewhere",
+  "receiver_needs_review", "invalid_operation_state",
 ]);
 
 /** Do not permit arbitrary URL paths to be constructed from form content. */

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
@@ -176,8 +176,8 @@ class BroadcastControl:
                     (ShopCampaignDelivery.bot_id != ShopIdentity.bot_id)
                     | ShopIdentity.bot_id.not_in(tuple(LEGACY_BOT_IDS.values()))
                     | (
-                        (campaign.bot_id is not None)
-                        & (ShopIdentity.bot_id != campaign.bot_id)
+                        ShopIdentity.bot_id != campaign.bot_id
+                        if campaign.bot_id is not None else false()
                     )
                 ),
             )
