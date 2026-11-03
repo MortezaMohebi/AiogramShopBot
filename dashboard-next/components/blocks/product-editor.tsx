@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Save, LoaderCircle, TriangleAlert, CheckCircle2 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { CategoryMany2One } from "@/components/blocks/category-many2one";
+import { ProductBotMany2ManyPanel } from "@/components/blocks/product-bot-many2many-panel";
+import type { ProductBotCatalogList } from "@/lib/bot-catalog-acl";
 import { FieldEye } from "@/components/blocks/field-eye";
 import {
   ProductMediaPanel,
@@ -37,6 +39,10 @@ interface ProductEditorProps {
   product?: Product;
   categories: Category[];
   media?: ProductFile[];
+  botAccess?: ProductBotCatalogList;
+  botAccessQuery?: string;
+  botAccessSaved?: boolean;
+  botAccessError?: boolean;
 }
 
 /** Real PostgreSQL-backed product editor with explicit public-field eyes. */
@@ -44,6 +50,10 @@ export function ProductEditor({
   product,
   categories,
   media = [],
+  botAccess,
+  botAccessQuery = "",
+  botAccessSaved = false,
+  botAccessError = false,
 }: ProductEditorProps) {
   const router = useRouter();
   const [kind, setKind] = useState<"physical" | "digital">(
@@ -288,6 +298,13 @@ export function ProductEditor({
             {notice.requestId ? <p dir="ltr">Request ID: {notice.requestId}</p> : null}
           </div>
         </div>
+      ) : null}
+
+      {product && botAccess ? (
+        <ProductBotMany2ManyPanel
+          data={botAccess} query={botAccessQuery}
+          saved={botAccessSaved} error={botAccessError}
+        />
       ) : null}
 
       {product ? (
