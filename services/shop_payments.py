@@ -21,8 +21,9 @@ from models.shop_content import Product, ShopOrder
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_cart import CartRejected, validate_coupon
 from services.shop_bot_catalog_acl import (
-    allowed_for_legacy, lock_legacy_catalog_policy,
+    allowed_for_bot, lock_bot_catalog_policy,
 )
+from models.shop_scope import legacy_id
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -56,6 +57,7 @@ class ShopPaymentService:
         platform_user_id: int,
         order_id: int,
         bale_enabled: bool,
+        bot_id: str | None = None,
         telegram_fiat_enabled: bool,
         telegram_stars_enabled: bool,
         telegram_minor_multiplier: int,
@@ -69,9 +71,11 @@ class ShopPaymentService:
             raise PaymentRejected("شناسه سفارش معتبر نیست.")
         if type(platform_user_id) is not int or platform_user_id <= 0:
             raise PaymentRejected("خریدار معتبر نیست.")
+        owner = bot_id or legacy_id(platform.value)
         result = await session.execute(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
+                ShopOrder.bot_id == owner,
                 ShopOrder.platform == platform.value,
                 ShopOrder.platform_user_id == platform_user_id,
             ).with_for_update()
@@ -102,9 +106,9 @@ class ShopPaymentService:
             raise PaymentRejected("اقلام این سفارش وجود ندارند.")
         # Only creation of a NEW payment intent is gated; already-paid
         # receipts remain reconcilable by settle() after policy changes.
-        await lock_legacy_catalog_policy(session, platform.value)
-        if not await allowed_for_legacy(
-            session, platform.value,
+        await lock_bot_catalog_policy(session, owner)
+        if not await allowed_for_bot(
+            session, owner,
             [product.id for _, product in pairs],
         ):
             raise PaymentRejected(
@@ -198,6 +202,7 @@ class ShopPaymentService:
         # The original checkout payload is random and uniquely indexed.
         intent = ShopPaymentAttempt(
             order_id=order.id,
+            bot_id=owner,
             platform=platform.value,
             provider=provider,
             currency=currency,
@@ -247,6 +252,7 @@ class ShopPaymentService:
         payload: str,
         currency: str,
         amount: int,
+        bot_id: str | None = None,
     ) -> tuple[bool, str | None]:
         """Validate immutable payment data before acknowledging the provider."""
         if (
@@ -260,6 +266,8 @@ class ShopPaymentService:
             .join(ShopOrder, ShopOrder.id == ShopPaymentAttempt.order_id)
             .where(
                 ShopPaymentAttempt.payload == payload,
+                ShopPaymentAttempt.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
                 ShopPaymentAttempt.platform == platform.value,
             )
         )
@@ -285,8 +293,8 @@ class ShopPaymentService:
             .where(ShopOrderLine.order_id == order.id)
         )
         pairs = lines_result.all()
-        if not pairs or not await allowed_for_legacy(
-            session, platform.value,
+        if not pairs or not await allowed_for_bot(
+            session, bot_id or legacy_id(platform.value),
             [product.id for _, product in pairs],
         ):
             return False, "یک یا چند کالای سفارش در این بات غیرمجاز شده‌اند."
@@ -319,6 +327,7 @@ class ShopPaymentService:
         amount: int,
         charge_id: str,
         provider_charge_id: str | None,
+        bot_id: str | None = None,
     ) -> tuple[ShopOrder, bool]:
         """Persist one verified receipt and allocate *all* available stock.
 
@@ -348,6 +357,8 @@ class ShopPaymentService:
             .join(ShopOrder, ShopOrder.id == ShopPaymentAttempt.order_id)
             .where(
                 ShopPaymentAttempt.payload == payload,
+                ShopPaymentAttempt.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
                 ShopPaymentAttempt.platform == platform.value,
             )
             .with_for_update(of=(ShopPaymentAttempt, ShopOrder))
