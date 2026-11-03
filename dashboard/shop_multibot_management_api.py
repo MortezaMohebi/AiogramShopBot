@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from dashboard.admin_control_api import throttle
 from dashboard.next_api import database, signed_staff
-from models.shop_bot_operations import ShopBotOperations
+from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
 from models.shop_bot_profile import ShopBotProfile
 from models.shop_delivery import ShopInboundUpdate
 from models.shop_multibot import ShopBot, ShopBotRegistryEvent
@@ -163,9 +163,22 @@ async def read_bot(
     events = (await db.scalars(select(ShopBotRegistryEvent).where(
         ShopBotRegistryEvent.bot_id == bot.id,
     ).order_by(ShopBotRegistryEvent.created_at.desc()).limit(30))).all()
+    state_events = (await db.scalars(select(ShopBotOperationsEvent).where(
+        ShopBotOperationsEvent.bot_id == bot.id,
+    ).order_by(ShopBotOperationsEvent.created_at.desc()).limit(30))).all()
     return {
         "bot": detail,
         "health": await bot_health_data(db, bot),
+        "state_events": [{
+            "id": entry.id,
+            "actor_id": entry.actor_id,
+            "previous_state": entry.previous_state,
+            "next_state": entry.next_state,
+            "reason": entry.reason,
+            "created_at": (
+                entry.created_at.isoformat() if entry.created_at else None
+            ),
+        } for entry in state_events],
         "events": [{
             "id": entry.id,
             "actor_id": entry.actor_id,
