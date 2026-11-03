@@ -1,4 +1,4 @@
-# Live Telegram/Bale Codespaces Docker stack; separate from production and lab.
+# Codespaces live stack. No production volumes and no implicit provider mutation.
 name: telegram-bale-codespace
 x-backend-env: &backend-env
   RUNTIME_ENVIRONMENT: "PROD"
@@ -7,6 +7,7 @@ x-backend-env: &backend-env
   WEBHOOK_SECRET_TOKEN: "${LIVE_TELEGRAM_WEBHOOK_SECRET:?Run setup}"
   CODESPACE_MANUAL_WEBHOOK: "true"
   CODESPACE_FRESH_SCHEMA: "true"
+  SHOP_SECURITY_ENCRYPTION_KEY: "${LIVE_SECURITY_ENCRYPTION_KEY:?Run setup config to initialize security}"
   TELEGRAM_UPDATE_MODE: "${LIVE_TELEGRAM_UPDATE_MODE:-webhook}"
   TELEGRAM_API_MODE: "${LIVE_TELEGRAM_API_MODE:-direct}"
   TELEGRAM_WORKER_URL: "${LIVE_TELEGRAM_WORKER_URL:-}"
@@ -55,7 +56,6 @@ x-backend-env: &backend-env
   MULTIBOT: "false"
   SUPPORT_LINK: ""
 x-backend-service: &backend-service
-  # All Python roles share a single built image: lower Codespace disk/RAM.
   image: telegram-bale-codespace-backend:local
   build: {context: ., dockerfile: Dockerfile.codespaces}
   environment: *backend-env
@@ -96,15 +96,15 @@ services:
       <<: *backend-env
       LIVE_ADMIN_PASSWORD: "${LIVE_ADMIN_PASSWORD:?Initialize admin password}"
     depends_on: {postgres: {condition: service_healthy}}
-    # New Codespaces DB: create fresh SQLAlchemy schema, never Alembic replay.
-    command: ["python", "-m", "scripts.codespace_bootstrap"]
+    # Adds the five new security tables; never deletes existing business data.
+    command: ["python", "-m", "scripts.security_bootstrap"]
     restart: "no"
   app:
     <<: *backend-service
     depends_on:
       bootstrap: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
-    command: ["python", "-u", "run.py"]
+    command: ["python", "-m", "uvicorn", "scripts.secure_app:app", "--host", "0.0.0.0", "--port", "5000", "--no-access-log"]
     volumes: ["codespace_media:/bot/media_data", "codespace_static:/bot/static"]
     expose: ["5000"]
     healthcheck:
@@ -144,8 +144,6 @@ services:
     restart: unless-stopped
   webhook-gateway:
     image: nginx:1.29-alpine
-    # Run master/worker without root and retain cap_drop ALL.
-    # Avoid nginx's privileged setuid/setgid worker transition.
     user: "101:101"
     depends_on: {app: {condition: service_healthy}}
     ports: ["127.0.0.1:8080:8080"]
@@ -174,7 +172,6 @@ services:
   pytest:
     <<: *backend-service
     profiles: ["qa"]
-    # The offline regression runner must not possess any real bot credentials.
     environment:
       <<: *backend-env
       TOKEN: ""

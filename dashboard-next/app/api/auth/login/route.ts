@@ -3,228 +3,57 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
 import { serverCaptchaConfig } from "@/lib/captcha-config";
 import { verifyCaptchaToken } from "@/lib/captcha-verification";
-import {
-  loginChallengeCookieName,
-  safeLoginFetchMetadata,
-  verifyLoginChallenge,
-} from "@/lib/login-challenge";
-import { type LoginErrorCode } from "@/lib/login-errors";
+import { loginChallengeCookieName, safeLoginFetchMetadata, verifyLoginChallenge } from "@/lib/login-challenge";
 import { publicOrigin } from "@/lib/public-origin";
 import { createSession, sessionCookieName } from "@/lib/session";
+import { controlJson } from "@/lib/control-request";
 
 export const runtime = "nodejs";
-// reCAPTCHA responses may be longer than the original credential-only body.
-const MAX_LOGIN_BODY_BYTES = 10_240;
-
-interface StaffLogin {
-  id: number;
-  username: string;
-  session_version: number;
-}
-
-/** Use a configured origin for safe redirects, not a proxy-derived Host. */
-function isHtmlNavigation(request: NextRequest): boolean {
-  const accept = request.headers.get("accept") ?? "";
-  return accept.includes("text/html") && !accept.includes("application/json");
-}
-
-/** Always return a structured error, or a safe legacy-form redirect. */
-function failure(
-  request: NextRequest,
-  code: LoginErrorCode,
-  status: number,
-): NextResponse {
+interface StaffLogin { id: number; session_version: number; session_token: string }
+function failure(request: NextRequest, code: string, status: number): NextResponse {
   const requestId = randomUUID();
-  // Server logs retain only the safe diagnostic code, never credentials.
   console.warn("[shop-admin/auth]", { requestId, code, status });
-  const origin = publicOrigin(request);
-
-  // Existing browser tabs might still submit the old native HTML form.
-  // Keep them out of a raw Forbidden response; tell them to reload login.
-  if (isHtmlNavigation(request) && origin) {
-    const target = new URL("/login", origin);
-    target.searchParams.set("error", code);
-    return NextResponse.redirect(target, 303);
+  const origin = publicOrigin(request), accept = request.headers.get("accept") ?? "";
+  if (origin && accept.includes("text/html") && !accept.includes("application/json")) {
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(code)}`, origin), 303);
   }
-
-  return NextResponse.json(
-    { ok: false, code, requestId },
-    {
-      status,
-      headers: {
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-        "X-Request-ID": requestId,
-      },
-    },
-  );
+  return NextResponse.json({ ok: false, code, requestId }, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
-
-/** Enforce a small body limit even when Content-Length is absent. */
-async function boundedLoginJson(request: NextRequest): Promise<unknown> {
-  const length = request.headers.get("content-length");
-  if (length && (!/^\d+$/.test(length) || Number(length) > MAX_LOGIN_BODY_BYTES)) {
-    throw new Error("invalid_request");
-  }
-  if (!request.body) {
-    throw new Error("invalid_request");
-  }
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_LOGIN_BODY_BYTES) {
-        await reader.cancel();
-        throw new Error("invalid_request");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  try {
-    const text = Buffer.concat(chunks).toString("utf8");
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new Error("invalid_request");
-  }
-}
-
-/** Perform authentication only after a verified, host-bound CSRF challenge. */
+/** Password, optional CAPTCHA and optional MFA are all verified server-side. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const origin = publicOrigin(request);
-  if (!origin) return failure(request, "service_unavailable", 503);
-
-  // Codespaces may change/drop Origin; never disable CSRF to compensate.
-  // Same-origin JS proves intent with an unpredictable HttpOnly cookie pair.
-  if (
-    !safeLoginFetchMetadata(request) ||
-    !verifyLoginChallenge(request)
-  ) {
-    return failure(request, "security_check_failed", 403);
-  }
-
-  // Do not check an untrusted/rewritten proxy Origin a second time.
-  // A host-only, unpredictable double-submit cookie + custom request header
-  // and Fetch Metadata are the CSRF authority for this browser flow.
-  if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
-    return failure(request, "invalid_request", 415);
-  }
-
-  let payload: unknown;
-  try {
-    payload = await boundedLoginJson(request);
-  } catch {
-    return failure(request, "invalid_request", 422);
-  }
-
-  if (!payload || typeof payload !== "object") {
-    return failure(request, "invalid_request", 422);
-  }
-
-  const credentials = payload as Record<string, unknown>;
-  const username = typeof credentials.username === "string"
-    ? credentials.username.trim().toLowerCase()
-    : "";
-  const password = credentials.password;
-  if (
-    !/^[a-z0-9][a-z0-9_.-]{2,79}$/.test(username) ||
-    typeof password !== "string" ||
-    password.length < 1 ||
-    password.length > 256
-  ) {
-    return failure(request, "invalid_request", 422);
-  }
-
-  // The browser challenge is not evidence of a human: verify the CAPTCHA
-  // with its provider before attempting staff authentication.
+  if (!publicOrigin(request)) return failure(request, "service_unavailable", 503);
+  if (!safeLoginFetchMetadata(request) || !verifyLoginChallenge(request)) return failure(request, "security_check_failed", 403);
+  let raw: unknown;
+  try { raw = await controlJson(request, 10_240); }
+  catch { return failure(request, "invalid_request", 422); }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return failure(request, "invalid_request", 422);
+  const credentials = raw as Record<string, unknown>;
+  const username = typeof credentials.username === "string" ? credentials.username.trim().toLowerCase() : "";
+  const password = credentials.password, factor = credentials.second_factor ?? "";
+  if (!/^[a-z0-9][a-z0-9_.-]{2,79}$/.test(username) || typeof password !== "string" || !password || password.length > 256 || typeof factor !== "string" || factor.length > 64) return failure(request, "invalid_request", 422);
   let captchaConfig;
+  try { captchaConfig = serverCaptchaConfig(); } catch { return failure(request, "captcha_unavailable", 503); }
+  const verdict = await verifyCaptchaToken(captchaConfig, credentials.captchaToken);
+  if (verdict !== "ok") return failure(request, verdict === "required" ? "captcha_required" : verdict === "unavailable" ? "captcha_unavailable" : "captcha_failed", verdict === "unavailable" ? 503 : verdict === "required" ? 422 : 403);
   try {
-    captchaConfig = serverCaptchaConfig();
-  } catch {
-    return failure(request, "captcha_unavailable", 503);
-  }
-  const captchaVerdict = await verifyCaptchaToken(
-    captchaConfig,
-    credentials.captchaToken,
-  );
-  if (captchaVerdict !== "ok") {
-    if (captchaVerdict === "required") {
-      return failure(request, "captcha_required", 422);
-    }
-    if (captchaVerdict === "unavailable") {
-      return failure(request, "captcha_unavailable", 503);
-    }
-    return failure(request, "captcha_failed", 403);
-  }
-
-  let account: StaffLogin;
-  try {
-    account = await bridgeFetch<StaffLogin>(
-      "/auth/login", "POST", { username, password }, null,
-    );
+    const account = await bridgeFetch<StaffLogin>("/auth/login", "POST", {
+      username, password, second_factor: factor,
+      device: (request.headers.get("user-agent") ?? "Browser").slice(0, 160),
+    }, null);
+    if (!account || !Number.isSafeInteger(account.id) || account.id < 1 || !Number.isSafeInteger(account.session_version) || account.session_version < 1 || !/^[A-Za-z0-9_-]{43}$/.test(account.session_token)) return failure(request, "service_unavailable", 503);
+    const response = NextResponse.json({ ok: true, redirect: "/dashboard" }, { headers: { "Cache-Control": "no-store" } });
+    response.cookies.set(sessionCookieName(), createSession(account.id, account.session_version, account.session_token), { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 8 * 60 * 60 });
+    response.cookies.set(loginChallengeCookieName(), "", { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
+    return response;
   } catch (error) {
     if (error instanceof ApiError) {
-      if (error.status === 401) {
-        return failure(request, "invalid_credentials", 401);
-      }
-      if (error.status === 429) {
-        return failure(request, "temporarily_locked", 429);
-      }
+      if (error.status === 428) return failure(request, "mfa_required", 428);
+      if (error.status === 401) return failure(request, error.code === "invalid_verification" ? "invalid_verification" : "invalid_credentials", 401);
+      if (error.status === 429) return failure(request, "temporarily_locked", 429);
     }
-    // Do not reveal internal endpoints, provider tokens or authentication
-    // exception messages in a browser response.
     return failure(request, "service_unavailable", 503);
   }
-
-  if (
-    !account ||
-    typeof account !== "object" ||
-    !Number.isSafeInteger(account.id) ||
-    account.id < 1 ||
-    !Number.isSafeInteger(account.session_version) ||
-    account.session_version < 1
-  ) {
-    return failure(request, "service_unavailable", 503);
-  }
-
-  const response = NextResponse.json(
-    { ok: true, redirect: "/dashboard" },
-    { headers: { "Cache-Control": "no-store" } },
-  );
-  response.cookies.set(
-    sessionCookieName(),
-    createSession(account.id, account.session_version),
-    {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 8 * 60 * 60,
-    },
-  );
-  response.cookies.set(loginChallengeCookieName(), "", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
-  return response;
 }
-
-/** An opened API URL goes back to the login page, never a raw 405 screen. */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const target = new URL(
-    "/login",
-    publicOrigin(request) ?? request.url,
-  );
-  return NextResponse.redirect(target, 303);
+  return NextResponse.redirect(new URL("/login", publicOrigin(request) ?? request.url), 303);
 }

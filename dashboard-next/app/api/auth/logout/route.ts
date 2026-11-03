@@ -1,75 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
-import {
-  loginChallengeCookieName,
-  safeLoginFetchMetadata,
-  verifyLoginChallenge,
-} from "@/lib/login-challenge";
+import { ApiError, bridgeFetch } from "@/lib/bridge";
+import { loginChallengeCookieName, safeLoginFetchMetadata, verifyLoginChallenge } from "@/lib/login-challenge";
 import { publicOrigin } from "@/lib/public-origin";
-import { sessionCookieName } from "@/lib/session";
-
+import { readSession, sessionCookieName } from "@/lib/session";
 export const runtime = "nodejs";
-
-/** Keep obsolete native forms out of a raw Forbidden page. */
-function securityError(request: NextRequest): NextResponse {
-  const origin = publicOrigin(request);
-  const accept = request.headers.get("accept") ?? "";
-  if (origin && accept.includes("text/html") && !accept.includes("application/json")) {
-    return NextResponse.redirect(
-      new URL("/login?error=security_check_failed", origin),
-      303,
-    );
-  }
-  return NextResponse.json(
-    { ok: false, code: "security_check_failed" },
-    { status: 403, headers: { "Cache-Control": "no-store" } },
-  );
-}
-
-/** Invalidate the host-only session after verifying same-origin intent. */
+/** Revoke the server session before telling the browser that logout succeeded. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const expected = publicOrigin(request);
-  if (!expected) {
-    return NextResponse.json(
-      { ok: false, code: "service_unavailable" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
-  }
-
   if (!safeLoginFetchMetadata(request) || !verifyLoginChallenge(request)) {
-    return securityError(request);
+    return NextResponse.json({ ok: false, code: "security_check_failed" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
-
-  // No further Origin comparison: Codespaces may rewrite or strip it.
-  // The host-only double-submit cookie and Fetch Metadata already protect
-  // this mutation against cross-site browser requests.
-
-  const response = NextResponse.json(
-    { ok: true, redirect: "/login" },
-    { headers: { "Cache-Control": "no-store" } },
-  );
-
-  // Host-only, Secure in production; do not rely on browser-side clearing.
-  response.cookies.set(sessionCookieName(), "", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
-  response.cookies.set(loginChallengeCookieName(), "", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
+  const session = await readSession();
+  if (session) {
+    try { await bridgeFetch("/auth/logout", "POST", {}, session); }
+    catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) return NextResponse.json({ ok: false, code: "service_unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    }
+  }
+  const response = NextResponse.json({ ok: true, redirect: "/login" }, { headers: { "Cache-Control": "no-store" } });
+  for (const name of [sessionCookieName(), loginChallengeCookieName()]) response.cookies.set(name, "", { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
   return response;
 }
-
-/** Show the login screen when users open the endpoint in the address bar. */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  return NextResponse.redirect(
-    new URL("/login", publicOrigin(request) ?? request.url),
-    303,
-  );
+  return NextResponse.redirect(new URL("/login", publicOrigin(request) ?? request.url), 303);
 }
