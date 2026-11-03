@@ -97,7 +97,7 @@ services:
       LIVE_ADMIN_PASSWORD: "${LIVE_ADMIN_PASSWORD:?Initialize admin password}"
     depends_on: {postgres: {condition: service_healthy}}
     # New Codespaces DB: create fresh SQLAlchemy schema, never Alembic replay.
-    command: ["python", "-m", "scripts.codespace_migrate"]
+    command: ["python", "-m", "scripts.codespace_bootstrap"]
     restart: "no"
   app:
     <<: *backend-service
