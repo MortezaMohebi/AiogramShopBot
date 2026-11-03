@@ -31,6 +31,7 @@ async def send_order_invoice(
     platform: Platform,
     user_id: int,
     order_id: int,
+    bot_id: str | None = None,
     telegram_bot: Bot | None = None,
     bale_transport: BaleTransport | None = None,
 ) -> InvoicePlan:
@@ -54,6 +55,7 @@ async def send_order_invoice(
         platform=platform,
         platform_user_id=user_id,
         order_id=order_id,
+        bot_id=bot_id,
         bale_enabled=config.BALE_WALLET_CHECKOUT_ENABLED and await rail_enabled(session, "bale", "bale_wallet"),
         telegram_fiat_enabled=config.TELEGRAM_FIAT_CHECKOUT_ENABLED and await rail_enabled(session, "telegram", "telegram_fiat"),
         telegram_stars_enabled=config.TELEGRAM_STARS_CHECKOUT_ENABLED and await rail_enabled(session, "telegram", "telegram_stars"),
