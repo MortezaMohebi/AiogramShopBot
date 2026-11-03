@@ -1,3 +1,5 @@
+> **Live Telegram + Bale + Next.js on GitHub Codespaces:** [Docker Compose](compose.codespaces.yml) · [Persian setup guide](docs/CODESPACES_LIVE_SETUP.fa.md). Use dedicated test bots, keep port 3000 private, and explicitly register real webhooks only after checking port 8080.
+
 > **Isolated Telegram + Bale / Next.js integration lab:**
 > [Docker Compose test stack](compose.test.yml) ·
 > [Persian setup, QA and reset guide](docs/TEST_DOCKER_COMPOSE.fa.md).
