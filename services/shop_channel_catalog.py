@@ -19,6 +19,8 @@ from models.shop_content import (
     Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
 )
 from services.shop_money import format_rials
+from models.shop_product_visibility import ShopProductVisibility
+from services.shop_presentation import product_message
 
 _PAGE_SIZE = 6
 _CATEGORY_PAGE_SIZE = 6
@@ -262,29 +264,31 @@ class CatalogFlow:
                 ((_button("بازگشت به محصولات", "shop:list:0"),),),
             )
 
-        stock = (
-            f"موجودی: {product.stock_quantity}"
-            if product.stock_quantity > 0
-            else "ناموجود"
+        visibility = await session.get(ShopProductVisibility, product.id)
+        show_description = visibility.show_description if visibility else True
+        show_stock = visibility.show_stock if visibility else True
+        show_media = visibility.show_media if visibility else True
+        show_reviews = visibility.show_reviews if visibility else True
+        body = product_message(
+            product,
+            price_label=format_rials(product.price, self.display_unit),
+            show_description=show_description,
+            show_stock=show_stock,
         )
-        description = product.description[:2800]
-        if len(product.description) > 2800:
-            description += "…"
-        body = (
-            f"{product.name}\n\n{description}\n\n"
-            f"قیمت: {format_rials(product.price, self.display_unit)}\n{stock}"
-        )
-        return BotReply(
-            text=body,
-            rows=(
-                (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),),
-                (_button("🛒 مشاهده سبد", "shop:cart"),),
-                (_button("📦 سفارش‌های من", "shop:orders"),),
-                (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
-                (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
-                (_button("بازگشت به محصولات", "shop:list:0"),),
-            ),
-        )
+        rows = []
+        if product.stock_quantity > 0:
+            rows.append((_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),))
+        rows.extend((
+            (_button("🛒 مشاهده سبد", "shop:cart"),),
+            (_button("📦 سفارش‌های من", "shop:orders"),),
+        ))
+        # Hide the navigation controls as well as the underlying data.
+        if show_media:
+            rows.append((_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),))
+        if show_reviews:
+            rows.append((_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),))
+        rows.append((_button("بازگشت به محصولات", "shop:list:0"),))
+        return BotReply(text=body, rows=tuple(rows))
 
     async def _media(
         self, session: AsyncSession, product_id: int, requested_page: int
@@ -297,6 +301,9 @@ class CatalogFlow:
         )
         if published is None:
             return BotReply("این محصول در حال حاضر قابل نمایش نیست.")
+        policy = await session.get(ShopProductVisibility, product_id)
+        if policy is not None and not policy.show_media:
+            return BotReply("رسانه‌های این محصول برای نمایش فعال نیستند.")
         condition = (
             ProductMedia.product_id == product_id,
             ProductMedia.is_published.is_(True),
@@ -355,6 +362,9 @@ class CatalogFlow:
                 "این محصول در حال حاضر قابل نمایش نیست.",
                 ((_button("بازگشت به محصولات", "shop:list:0"),),),
             )
+        policy = await session.get(ShopProductVisibility, product_id)
+        if policy is not None and not policy.show_reviews:
+            return BotReply("رضایت‌های این محصول برای نمایش فعال نیستند.")
 
         condition = (
             Testimonial.product_id == product_id,
