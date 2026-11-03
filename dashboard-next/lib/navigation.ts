@@ -1,5 +1,5 @@
 import type { StaffRole } from "@/lib/types";
-import { BarChart3, Bot, Boxes, ClipboardList, ContactRound, Store, Wallet, Users, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, Image as ImageIcon, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Boxes, Ruler, Database, ClipboardList, ContactRound, Store, Wallet, Users, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, Image as ImageIcon, type LucideIcon } from "lucide-react";
 export interface NavigationItem { title: string; href: string; icon: LucideIcon; roles: StaffRole[] }
 const all: StaffRole[] = ["superadmin", "sales", "content", "finance", "marketing", "viewer"];
 /** Navigation reflects fixed server roles; never replaces server authorization. */
@@ -8,6 +8,8 @@ export const navigation: NavigationItem[] = [
   { title: "حساب من", href: "/account", icon: UserRound, roles: all },
   { title: "مجوزها و نقش‌ها", href: "/permissions", icon: KeyRound, roles: all },
   { title: "محصولات", href: "/products", icon: Boxes, roles: ["superadmin", "content"] },
+  { title: "واحدهای اندازه‌گیری (UoM)", href: "/uoms", icon: Ruler, roles: ["superadmin"] },
+  { title: "مرور داده و Import/Export", href: "/data-models/products", icon: Database, roles: ["superadmin", "content"] },
   { title: "دسته‌بندی‌ها", href: "/categories", icon: FolderTree, roles: ["superadmin", "content"] },
   { title: "سفارش‌ها", href: "/orders", icon: ClipboardList, roles: ["superadmin", "sales", "finance"] },
   { title: "مشتریان", href: "/customers", icon: ContactRound, roles: ["superadmin", "sales"] },
