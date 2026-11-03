@@ -20,6 +20,7 @@ from models.shop_checkout import ShopCoupon, ShopOrderLine
 from models.shop_content import Product, ShopOrder
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_cart import CartRejected, validate_coupon
+from services.shop_bot_catalog_acl import allowed_for_legacy
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -97,6 +98,15 @@ class ShopPaymentService:
         pairs = rows.all()
         if not pairs:
             raise PaymentRejected("اقلام این سفارش وجود ندارند.")
+        # Only creation of a NEW payment intent is gated; already-paid
+        # receipts remain reconcilable by settle() after policy changes.
+        if not await allowed_for_legacy(
+            session, platform.value,
+            [product.id for _, product in pairs],
+        ):
+            raise PaymentRejected(
+                "یک یا چند کالای سفارش در این بات دیگر قابل خرید نیستند."
+            )
         subtotal = sum(line.total_irr for line, _ in pairs)
         if (
             type(order.total_irr) is not int or order.total_irr <= 0
@@ -272,7 +282,12 @@ class ShopPaymentService:
             .where(ShopOrderLine.order_id == order.id)
         )
         pairs = lines_result.all()
-        if not pairs or any(
+        if not pairs or not await allowed_for_legacy(
+            session, platform.value,
+            [product.id for _, product in pairs],
+        ):
+            return False, "یک یا چند کالای سفارش در این بات غیرمجاز شده‌اند."
+        if any(
             product.stock_quantity < line.quantity
             or not product.is_published
             for line, product in pairs
