@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict
@@ -38,6 +39,8 @@ from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
 from models.shop_staff import ShopStaff
+from models.shop_product_visibility import ShopProductVisibility
+from services.shop_sequence import next_display_position
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
@@ -223,7 +226,6 @@ class CategoryPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=255)
-    position: int = Field(default=0, ge=0, le=1_000_000)
     is_published: bool = False
 
 
@@ -237,29 +239,32 @@ class CategoryPatch(BaseModel):
 
 
 class ProductPayload(BaseModel):
-    """A new product with exact IRR price and optional independent Stars price."""
+    """Create a product; merchant SKU and optional description may be blank."""
 
     model_config = ConfigDict(extra="forbid")
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(default="", max_length=64)
     name: str = Field(min_length=1, max_length=255)
-    description: str = Field(min_length=1, max_length=40_000)
+    description: str = Field(default="", max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int = Field(ge=0, le=PRICE_LIMIT)
     stock_quantity: int = Field(default=0, ge=0, le=100_000_000)
-    position: int = Field(default=0, ge=0, le=1_000_000)
     product_type: Literal["physical", "digital"] = "physical"
     requires_shipping: bool = True
     price_stars: int | None = Field(default=None, ge=1)
     is_published: bool = False
+    show_description: bool = True
+    show_stock: bool = True
+    show_media: bool = True
+    show_reviews: bool = True
 
 
 class ProductPatch(BaseModel):
-    """Patch without silently resetting values omitted by the editor."""
+    """Allow explicit visibility changes without changing archived orders."""
 
     model_config = ConfigDict(extra="forbid")
-    sku: str | None = Field(default=None, min_length=1, max_length=64)
+    sku: str | None = Field(default=None, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, min_length=1, max_length=40_000)
+    description: str | None = Field(default=None, max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int | None = Field(default=None, ge=0, le=PRICE_LIMIT)
     stock_quantity: int | None = Field(default=None, ge=0, le=100_000_000)
@@ -268,6 +273,23 @@ class ProductPatch(BaseModel):
     requires_shipping: bool | None = None
     price_stars: int | None = Field(default=None, ge=1)
     is_published: bool | None = None
+    show_description: bool | None = None
+    show_stock: bool | None = None
+    show_media: bool | None = None
+    show_reviews: bool | None = None
+
+
+PUBLIC_OPTIONAL_FIELDS = (
+    "show_description", "show_stock", "show_media", "show_reviews",
+)
+
+
+def public_field_values(row: ShopProductVisibility | None) -> dict[str, bool]:
+    """Apply backwards-compatible visible defaults for existing products."""
+    return {
+        name: getattr(row, name) if row is not None else True
+        for name in PUBLIC_OPTIONAL_FIELDS
+    }
 
 
 class CampaignPayload(BaseModel):
@@ -420,7 +442,11 @@ async def create_category(
 ) -> dict:
     """Create a database-backed category, never hardcode navigation content."""
     require_staff(staff, "content")
-    record = ShopCategory(**payload.model_dump())
+    fields = payload.model_dump()
+    fields["position"] = await session.run_sync(
+        lambda sync: next_display_position(sync, ShopCategory)
+    )
+    record = ShopCategory(**fields)
     session.add(record)
     try:
         await session.commit()
@@ -490,7 +516,8 @@ async def product(product_id: int, staff: Staff, session: Db) -> dict:
     item = await session.get(Product, product_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return product_data(item)
+    visibility = await session.get(ShopProductVisibility, product_id)
+    return {**product_data(item), **public_field_values(visibility)}
 
 
 def validated_product_values(
@@ -517,7 +544,16 @@ async def create_product(
 ) -> dict:
     """Create a product with a unique SKU and safe unpublished default."""
     require_staff(staff, "content")
-    fields = validated_product_values(payload.model_dump())
+    fields = payload.model_dump()
+    visibility = {name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS}
+    # Keep historic NOT NULL and UNIQUE constraints without forcing the
+    # merchant to invent an SKU for every new product.
+    fields["sku"] = fields["sku"].strip() or f"AUTO-{secrets.token_hex(8).upper()}"
+    fields["description"] = fields["description"].strip()
+    fields["position"] = await session.run_sync(
+        lambda sync: next_display_position(sync, Product)
+    )
+    fields = validated_product_values(fields)
     category_id = fields.get("category_id")
     if category_id is not None and not await session.get(
         ShopCategory, category_id
@@ -526,11 +562,12 @@ async def create_product(
     record = Product(**fields)
     session.add(record)
     try:
+        await session.flush()
+        session.add(ShopProductVisibility(product_id=record.id, **visibility))
         await session.commit()
     except IntegrityError:
         await session.rollback()
         raise HTTPException(status_code=409, detail="SKU already exists") from None
-    await session.refresh(record)
     return {"id": record.id}
 
 
@@ -544,12 +581,21 @@ async def edit_product(
     if record is None:
         raise HTTPException(status_code=404, detail="Product not found")
     fields = payload.model_dump(exclude_unset=True)
+    visibility = {
+        name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS
+        if name in fields
+    }
+    for name, value in visibility.items():
+        if value is None:
+            raise HTTPException(status_code=422, detail=f"{name} must be boolean")
     for required in (
-        "sku", "name", "description", "price_irr", "stock_quantity",
+        "name", "description", "price_irr", "stock_quantity",
         "position", "product_type", "requires_shipping", "is_published",
     ):
         if required in fields and fields[required] is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
+    if "sku" in fields:
+        fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields = validated_product_values(fields, current=record)
     category_id = fields.get("category_id")
     if category_id is not None and not await session.get(
@@ -558,6 +604,15 @@ async def edit_product(
         raise HTTPException(status_code=422, detail="Category not found")
     for key, value in fields.items():
         setattr(record, key, value)
+    if visibility:
+        existing_policy = await session.get(ShopProductVisibility, product_id)
+        if existing_policy is None:
+            session.add(ShopProductVisibility(
+                product_id=product_id, **visibility,
+            ))
+        else:
+            for key, value in visibility.items():
+                setattr(existing_policy, key, value)
     try:
         await session.commit()
     except IntegrityError:
