@@ -17,6 +17,7 @@ from markupsafe import Markup, escape
 
 from models.base import Base
 from models.shop_scope import legacy_bot_default
+from models.shop_multibot import DEFAULT_STORE_ID
 
 
 class ShopSettings(Base):
@@ -44,6 +45,10 @@ class ShopCategory(Base):
 
     __tablename__ = "shop_categories"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -62,6 +67,10 @@ class Product(Base):
 
     __tablename__ = "shop_products"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sku: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     category_id: Mapped[int | None] = mapped_column(
@@ -176,6 +185,14 @@ class ShopIdentity(Base):
 
     __tablename__ = "shop_identities"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
+    customer_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("shop_store_customers.id", ondelete="RESTRICT"),
+        index=True,
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
@@ -216,6 +233,14 @@ class ShopOrder(Base):
 
     __tablename__ = "shop_orders"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
+    customer_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("shop_store_customers.id", ondelete="RESTRICT"),
+        index=True,
+    )
     # PostgreSQL uses BIGINT IDENTITY; SQLite tests use INTEGER PRIMARY KEY.
     id: Mapped[int] = mapped_column(
         BigInteger().with_variant(Integer, "sqlite"),
