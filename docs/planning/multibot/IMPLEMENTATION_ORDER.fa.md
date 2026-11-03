@@ -3,6 +3,7 @@
 **Repository:** MortezaMohebi/AiogramShopBot  
 **Foundation branch:** `feat/multibot-foundation-20261103`  
 **Bot Management (P2):** `feat/multibot-management-20261103`  
+**Bot Catalog ACL (P3):** `feat/multibot-catalog-acl-20261103`  
 **Parent branch:** `feat/staff-security-invites-mfa-audit-20261103` (PR #5، هنوز Draft)  
 **اصل معماری:** One Store → Many Bots؛ Shared Product Catalog با دسترسی اختصاصی هر بات؛ Many Bots → Many outbound Worker/Proxy Routes.
 
@@ -25,13 +26,22 @@
 |---|---|---|
 | P1 Foundation | در PR #6 ثبت شده | PostgreSQL / Codespace / Pytest تأیید نشده |
 | P2 Bot Management & Operations | مدل، API، RTL UI، Legacy Gates، Credential Verification و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
-| P3 Bot Catalog Access | شروع نشده | شروع نشده |
+| P3 Bot Catalog Access | سه جدول ACL، Predicate مشترک، کنترل Catalog/Callback/Cart/Checkout، پنل Many2many بات و محصول و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
 | P4 Multi-Bot Runtime & Commerce | شروع نشده | شروع نشده |
 | P5 Shared Relay Worker Pool | شروع نشده | شروع نشده |
 | P6 Migration & Final Acceptance | شروع نشده | شروع نشده |
 
+جزئیات فاز سوم و شرط پذیرش آن در
+[`P3_CATALOG_ACL.fa.md`](./P3_CATALOG_ACL.fa.md) ثبت شده‌اند.
+
 جزئیات دقیق و آزمون‌های موردنیاز فاز دوم در
 [`P2_BOT_MANAGEMENT.fa.md`](./P2_BOT_MANAGEMENT.fa.md) ثبت شده‌اند.
+
+**مرز P3:** تنظیم Rule برای بات جدید به معنی فعال‌شدن آن نیست؛
+فروشگاه‌های تازه نیز تا ایجاد Tenant Catalog مستقل در P4 نمی‌توانند
+محصول فروشگاه اصلی را نمایش دهند. Product/Category ACL فقط در کاتالوگ
+`shop_products` جاری اعمال شده و مجموعهٔ Legacy `Item` نیازمند
+برنامهٔ Migration مستقل است.
 
 **مرز عمدی:** روشن/خاموش‌کردن در P2 فقط برای دو Bot Legacy واقعاً به مسیر فروش/پیام‌های عادی اعمال می‌شود. Botهای جدید همچنان Draft و بدون Webhook/Dispatcher/Payment هستند تا P4 تکمیل شود. هیچ حالت آماده‌بودن زنده‌ای برای آن‌ها ادعا نمی‌شود.
 
