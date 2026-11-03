@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func,
+    BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,7 +24,7 @@ class ShopTelegramTransport(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     config_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
-    verified_bot_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    verified_bot_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_by: Mapped[int] = mapped_column(
         ForeignKey("shop_staff.id"), nullable=False,
@@ -55,7 +55,7 @@ class ShopTelegramTransportChange(Base):
         String(20), nullable=False, default="pending",
     )
     error_code: Mapped[str | None] = mapped_column(String(64))
-    verified_bot_id: Mapped[int | None] = mapped_column(Integer)
+    verified_bot_id: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
     )
