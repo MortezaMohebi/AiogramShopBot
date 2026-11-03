@@ -15,6 +15,7 @@ from channels.media_policy import MediaLimitError, bale_media_method
 from dashboard.media_storage import safe_media_path
 import config
 from models.shop_content import ShopIdentity
+from models.shop_multibot import LEGACY_BOT_IDS, ShopBot
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
@@ -95,15 +96,33 @@ class ShopCampaignService:
             ShopIdentity.allow_announcements.is_(True),
             ShopIdentity.is_blocked.is_(False),
         ]
+        if campaign.bot_id is not None:
+            bot = await session.get(ShopBot, campaign.bot_id)
+            if (
+                bot is None or bot.runtime_owner != "registry"
+                or bot.status != "active"
+                or campaign.audience not in ("all", bot.platform)
+            ):
+                raise CampaignRejected(
+                    "بات مقصد فعال نیست یا کانال کمپین نامعتبر است."
+                )
+            clause.append(ShopIdentity.bot_id == bot.id)
+        else:
+            # An old cross-provider campaign must NEVER consume the opt-ins
+            # of newly registered bots and deliver via legacy credentials.
+            clause.append(
+                ShopIdentity.bot_id.in_(tuple(LEGACY_BOT_IDS.values()))
+            )
         if campaign.audience != "all":
             clause.append(
                 ShopIdentity.platform == campaign.audience
             )
         stmt = insert(ShopCampaignDelivery).from_select(
-            ["campaign_id", "identity_id", "status"],
+            ["campaign_id", "identity_id", "bot_id", "status"],
             select(
                 literal(campaign.id),
                 ShopIdentity.id,
+                ShopIdentity.bot_id,
                 literal("queued"),
             ).where(*clause)
         )
