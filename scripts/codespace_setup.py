@@ -348,7 +348,7 @@ def main() -> int:
         choices=(
             "info", "init", "config", "start", "build-dashboard", "ports", "connect",
             "disconnect",
-            "doctor", "auth-smoke", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
+            "doctor", "auth-smoke", "dashboard-probe", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -366,6 +366,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py connect")
         print("  python3 scripts/codespace_setup.py doctor")
         print("  python3 scripts/codespace_setup.py auth-smoke")
+        print("  python3 scripts/codespace_setup.py dashboard-probe")
         print("  python3 scripts/codespace_setup.py disconnect")
         print("  python3 scripts/codespace_setup.py credentials")
         print("  python3 scripts/codespace_setup.py new-bootstrap-password")
@@ -427,6 +428,12 @@ def main() -> int:
             [sys.executable, "-m", "scripts.codespace_auth_smoke"],
             cwd=ROOT, check=False,
         ).returncode
+    if args.command == "dashboard-probe":
+        # Only reads database and signed admin API; never checks real payments.
+        return compose(
+            "exec", "-T", "app", "python", "-m",
+            "scripts.codespace_dashboard_probe",
+        )
     if args.command == "doctor":
         code = compose(
             "exec", "-T", "app", "python", "-m", "scripts.codespace_connect"
