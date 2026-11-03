@@ -30,6 +30,7 @@ from services.shop_broadcast_control import (
     _business_media_ready, delivery_counts, record_audit,
 )
 from services.shop_broadcast_rate import reserve_message_slot
+from services.shop_bot_operations import legacy_state
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
 
 
@@ -142,14 +143,27 @@ class BroadcastWorker:
         from db import session_maker
 
         async with session_maker() as session:
+            # Do not consume queued deliveries for a paused/disabled bot.
+            # Each legacy platform remains independent until bot_id migration.
+            available_platforms = [
+                platform for platform in ("telegram", "bale")
+                if (await legacy_state(session, platform)).state == "active"
+            ]
+            if not available_platforms:
+                return None
             active = await session.scalar(
                 select(ShopCampaign)
                 .where(
                     ShopCampaign.status == "sending",
                     select(ShopCampaignDelivery.id)
+                    .join(
+                        ShopIdentity,
+                        ShopIdentity.id == ShopCampaignDelivery.identity_id,
+                    )
                     .where(
                         ShopCampaignDelivery.campaign_id == ShopCampaign.id,
                         ShopCampaignDelivery.status == "queued",
+                        ShopIdentity.platform.in_(available_platforms),
                     )
                     .exists(),
                 )
@@ -168,6 +182,7 @@ class BroadcastWorker:
                 .where(
                     ShopCampaignDelivery.campaign_id == active.id,
                     ShopCampaignDelivery.status == "queued",
+                    ShopIdentity.platform.in_(available_platforms),
                 )
                 .order_by(ShopCampaignDelivery.id)
                 .limit(1)
@@ -226,8 +241,10 @@ class BroadcastWorker:
             if row is None:
                 return False, 0
             delivery, identity, campaign = row
+            operations = await legacy_state(session, identity.platform)
             return (
-                campaign.status == "sending"
+                operations.state == "active"
+                and campaign.status == "sending"
                 and identity.is_blocked is False
                 and identity.allow_announcements is True,
                 delivery.completed_steps,
