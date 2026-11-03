@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Menu, MessageCircle, X } from "lucide-react";
+import { Menu, MessageCircle, X } from "lucide-react";
+import { LogoutControl } from "@/components/blocks/logout-control";
 import type { Staff } from "@/lib/types";
 import { navigation } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -87,11 +88,7 @@ export function Sidebar({ staff }: { staff: Staff }) {
             <p className="text-sm font-semibold">{staff.username}</p>
             <p className="text-xs text-muted-foreground">نقش: {staff.role}</p>
           </div>
-          <form action="/api/auth/logout" method="post">
-            <button type="submit" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-              <LogOut className="size-4" /> خروج امن
-            </button>
-          </form>
+          <LogoutControl />
         </div>
       </aside>
     </>
