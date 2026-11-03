@@ -48,6 +48,15 @@ class ShopStoreCustomer(Base):
     )
     display_name: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(32))
+    external_ref: Mapped[str | None] = mapped_column(String(80))
+    __table_args__ = (
+        Index(
+            "uq_shop_customer_store_external_ref",
+            "store_id", "external_ref", unique=True,
+            postgresql_where=text("external_ref IS NOT NULL"),
+            sqlite_where=text("external_ref IS NOT NULL"),
+        ),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
     )
