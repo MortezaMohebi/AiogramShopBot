@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopCoupon, ShopOrderLine, ShopShippingMethod,
 )
