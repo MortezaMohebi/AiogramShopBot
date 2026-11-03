@@ -140,8 +140,13 @@ async def create_admin() -> None:
     from utils.utils import hash_password
 
     async with session_maker() as session:
+        # A renamed administrator remains the same real account. Never
+        # silently recreate the original bootstrap username on restart.
         account = await session.scalar(
-            select(ShopStaff).where(ShopStaff.username == "shopadmin")
+            select(ShopStaff).where(
+                ShopStaff.role == "superadmin",
+                ShopStaff.is_active.is_(True),
+            ).order_by(ShopStaff.id).limit(1)
         )
         if account is not None:
             print("Existing administrator preserved; password not changed.")
