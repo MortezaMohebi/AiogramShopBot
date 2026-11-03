@@ -33,6 +33,7 @@ from models.shop_engagement import (
 from models.shop_checkout import ShopOrderLine, ShopOrderReviewAudit
 from models.shop_content import ShopOrder
 from models.shop_staff import ShopStaff
+from models.shop_staff_state import ShopStaffState
 from services.shop_payments import PaymentRejected
 from services.shop_refunds import ShopRefundService
 from services.shop_campaigns import ShopCampaignService
@@ -612,11 +613,17 @@ async def list_staff(staff: Staff, session: Db) -> list[dict]:
         .group_by(AdminSession.staff_id)
     )).all()
     last_login = dict(recent)
+    state_rows = (await session.scalars(select(ShopStaffState))).all()
+    states = {row.staff_id: row for row in state_rows}
     return [
         {
             "id": member.id, "username": member.username,
             "role": member.role, "is_active": member.is_active,
             "created_at": member.created_at.isoformat(),
+            "status": (
+                states[member.id].status if member.id in states
+                else "active" if member.is_active else "disabled"
+            ),
             "mfa_enabled": mfa.get(member.id, False),
             "last_login_at": (
                 last_login[member.id].isoformat()
