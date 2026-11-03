@@ -68,7 +68,7 @@ test("Rejected credentials stay on the Persian login page", async ({ page }, tes
   // Random never-provisioned staff identity; no real admin credential used.
   const username = "invalid_smoke_" + Math.random().toString(36).slice(2, 12);
   await page.getByLabel("نام کاربری").fill(username);
-  await page.getByLabel("رمز عبور").fill("invalid-smoke-password");
+  await page.locator("#password").fill("invalid-smoke-password");
   await page.getByRole("button", { name: /ورود امن/ }).click();
 
   const alert = page.getByRole("alert");
@@ -76,7 +76,7 @@ test("Rejected credentials stay on the Persian login page", async ({ page }, tes
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
   await expect(page.getByRole("heading", { name: "ورود به داشبورد" }))
     .toBeVisible();
-  await expect(page.getByLabel("رمز عبور")).toHaveValue("");
+  await expect(page.locator("#password")).toHaveValue("");
 });
 
 test("POST without CSRF challenge gives a JSON error, not Forbidden HTML", async ({
@@ -113,7 +113,7 @@ test("Unavailable auth endpoint shows an inline recoverable error", async ({
 
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("exampleadmin");
-  await page.getByLabel("رمز عبور").fill("not-a-real-password");
+  await page.locator("#password").fill("not-a-real-password");
   await page.getByRole("button", { name: /ورود امن/ }).click();
 
   await expect(page.getByRole("alert"))
