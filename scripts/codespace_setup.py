@@ -342,7 +342,7 @@ def main() -> int:
         choices=(
             "info", "init", "config", "start", "build-dashboard", "ports", "connect",
             "disconnect",
-            "doctor", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
+            "doctor", "auth-smoke", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -359,6 +359,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py ports")
         print("  python3 scripts/codespace_setup.py connect")
         print("  python3 scripts/codespace_setup.py doctor")
+        print("  python3 scripts/codespace_setup.py auth-smoke")
         print("  python3 scripts/codespace_setup.py disconnect")
         print("  python3 scripts/codespace_setup.py credentials")
         print("  python3 scripts/codespace_setup.py new-bootstrap-password")
@@ -413,6 +414,13 @@ def main() -> int:
         return compose(
             "exec", "-T", "app", "python", "-m", "scripts.codespace_demo"
         )
+    if args.command == "auth-smoke":
+        # This test does not read private credentials, contact providers or
+        # require a public Codespaces port; it calls loopback Next.js only.
+        return subprocess.run(
+            [sys.executable, "-m", "scripts.codespace_auth_smoke"],
+            cwd=ROOT, check=False,
+        ).returncode
     if args.command == "doctor":
         code = compose(
             "exec", "-T", "app", "python", "-m", "scripts.codespace_connect"
