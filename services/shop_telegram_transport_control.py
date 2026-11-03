@@ -27,6 +27,7 @@ from services.shop_telegram_transport import (
     approved_worker_origins,
     decrypted,
     encrypted,
+    config_fingerprint,
     env_spec,
     from_submission,
     make_session,
@@ -211,10 +212,13 @@ async def load_verified_on_boot(bot) -> int | None:
         await mark_interrupted_on_boot(db)
         active, spec, _ = await _current(db)
         if active is None:
+            bot.session._fingerprint = config_fingerprint(spec)
             return None
         candidate = make_session(spec)
         try:
-            previous = await bot.session.replace(candidate)
+            previous = await bot.session.replace(
+                candidate, fingerprint=config_fingerprint(spec),
+            )
         except BaseException:
             await candidate.close()
             raise
@@ -222,7 +226,10 @@ async def load_verified_on_boot(bot) -> int | None:
         return active.verified_bot_id
 
 
-async def _record_error(change_id: str, *, uncertain: bool) -> None:
+async def _record_error(
+    change_id: str, *, uncertain: bool,
+    error_code: str = "transport_probe_failed",
+) -> None:
     """Store a safe failure code after a provider failure or ambiguous swap."""
     from db import session_maker
 
@@ -236,7 +243,7 @@ async def _record_error(change_id: str, *, uncertain: bool) -> None:
                 row.status = "needs_review" if uncertain else "failed"
                 row.error_code = (
                     "transport_reconciliation_required" if uncertain
-                    else "transport_probe_failed"
+                    else error_code
                 )
                 row.updated_at = security.clock()
                 await db.commit()
@@ -307,8 +314,12 @@ async def apply(
 
             # Snapshot replacement does not close the old session until the
             # persisted optimistic-version update is durably committed.
+            old_fingerprint = bot.session.fingerprint
             old_session = await asyncio.wait_for(
-                bot.session.replace(candidate), timeout=30,
+                bot.session.replace(
+                    candidate, fingerprint=config_fingerprint(spec),
+                ),
+                timeout=30,
             )
             swapped = True
 
@@ -343,16 +354,27 @@ async def apply(
                 sync, actor_id, "transport.succeeded", change_id,
             ))
             await db.commit()
-            await old_session.close()
+            try:
+                await old_session.close()
+            except Exception:
+                # Once the new row is verified and committed, cleanup cannot
+                # change the business outcome or roll back the active route.
+                pass
             return {
                 "ok": True, "status": "succeeded",
                 "version": active.version, "verified_bot_id": str(result.id),
             }
-        except BaseException:
+        except BaseException as error:
+            reason = (
+                error.code if isinstance(error, security.SecurityRejected)
+                else "transport_probe_failed"
+            )
             uncertain = swapped
             if swapped and old_session is not None:
                 try:
-                    replaced = await bot.session.replace(old_session)
+                    replaced = await bot.session.replace(
+                        old_session, fingerprint=old_fingerprint,
+                    )
                     await replaced.close()
                     uncertain = False
                 except BaseException:
@@ -360,11 +382,56 @@ async def apply(
             elif candidate is not None:
                 await candidate.close()
             await db.rollback()
-            await _record_error(change_id, uncertain=uncertain)
+            await _record_error(
+                change_id, uncertain=uncertain, error_code=reason,
+            )
             if uncertain:
                 raise security.SecurityRejected(
                     "transport_reconciliation_required", 503,
                 ) from None
             raise security.SecurityRejected(
-                "transport_probe_failed", 503,
+                reason,
+                error.status if isinstance(error, security.SecurityRejected)
+                else 503,
             ) from None
+
+
+async def reconcile(
+    db: AsyncSession, *, actor_id: int, change_id: str, bot,
+) -> dict:
+    """Resolve an uncertain receipt only when the verified old route is active.
+
+    The operation NEVER sends the staged transport through a new probe.
+    It compares the live session fingerprint against the durable configuration
+    and verifies the current bot identity through that already active route.
+    """
+    if not isinstance(bot.session, RotatingTelegramSession):
+        raise security.SecurityRejected("transport_worker_unavailable", 503)
+    await _lease(db)
+    row = await db.get(
+        ShopTelegramTransportChange, change_id, with_for_update=True,
+    )
+    if row is None or row.status != "needs_review":
+        raise security.SecurityRejected("invalid_operation_state", 409)
+    active, current, _ = await _current(db, lock=True)
+    if bot.session.fingerprint != config_fingerprint(current):
+        raise security.SecurityRejected(
+            "transport_reconciliation_required", 409,
+        )
+    try:
+        observed = await asyncio.wait_for(bot.get_me(), timeout=12)
+    except Exception:
+        raise security.SecurityRejected(
+            "transport_reconciliation_required", 503,
+        ) from None
+    if active and observed.id != active.verified_bot_id:
+        raise security.SecurityRejected("bot_identity_mismatch", 409)
+
+    row.status = "failed"
+    row.error_code = "transport_restored_to_verified"
+    row.updated_at = security.clock()
+    await db.run_sync(lambda sync: security.audit(
+        sync, actor_id, "transport.reconciled", change_id,
+    ))
+    await db.commit()
+    return {"ok": True, "status": "failed", "current_verified": True}
