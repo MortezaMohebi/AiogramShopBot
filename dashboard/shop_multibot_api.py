@@ -104,11 +104,14 @@ async def create_store(
 @router.get("/bot-registry")
 async def list_bots(
     staff: Staff, db: Db, store_id: UUID | None = None,
+    platform: Literal["telegram", "bale"] | None = None,
+    page: int = 1, page_size: int = 50,
 ) -> dict:
-    """Return an authenticated redacted registry snapshot."""
+    """Return paginated redacted bots without an artificial 300-bot limit."""
     require(staff, "bots.read")
     return await db.run_sync(lambda sync: registry.registry_snapshot(
         sync, store_id=str(store_id) if store_id else None,
+        platform=platform, page=page, page_size=page_size,
     ))
 
 
