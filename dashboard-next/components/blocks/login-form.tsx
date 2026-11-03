@@ -8,6 +8,11 @@ import {
 } from "react";
 import { AlertCircle, ArrowLeft, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  CaptchaChallenge,
+  type CaptchaChallengeHandle,
+} from "@/components/blocks/captcha-challenge";
+import type { PublicCaptchaConfig } from "@/lib/captcha-types";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +23,7 @@ import {
 
 interface LoginFormProps {
   initialError?: string | null;
+  captcha: PublicCaptchaConfig;
 }
 
 interface LoginIssue {
@@ -65,7 +71,7 @@ function loginIssue(data: LoginResponse, status: number): LoginIssue {
 }
 
 /** Persian, accessible login with host-bound CSRF and inline errors. */
-export function LoginForm({ initialError }: LoginFormProps) {
+export function LoginForm({ initialError, captcha }: LoginFormProps) {
   const [issue, setIssue] = useState<LoginIssue | null>(
     initialError ? { code: normalizeLoginError(initialError) } : null,
   );
@@ -73,6 +79,7 @@ export function LoginForm({ initialError }: LoginFormProps) {
   const [phase, setPhase] = useState<"security" | "login">("security");
   const [showPassword, setShowPassword] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
+  const captchaRef = useRef<CaptchaChallengeHandle>(null);
 
   useEffect(() => {
     if (issue) errorRef.current?.focus();
@@ -103,6 +110,10 @@ export function LoginForm({ initialError }: LoginFormProps) {
     try {
       // Browser GET sets a host-only HttpOnly cookie before submitting.
       const challenge = await requestBrowserChallenge();
+      const captchaToken = await captchaRef.current?.getToken();
+      if (captcha.provider !== "none" && !captchaToken) {
+        throw new Error("captcha_unavailable");
+      }
 
       setPhase("login");
       const response = await fetch("/api/auth/login", {
@@ -115,13 +126,15 @@ export function LoginForm({ initialError }: LoginFormProps) {
           Accept: "application/json",
           "X-Shop-Login-Challenge": challenge,
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, captchaToken }),
         signal: AbortSignal.timeout(25_000),
       });
 
       const result = await readJson(response);
       if (!response.ok || result.ok !== true) {
         setIssue(loginIssue(result, response.status));
+        // Single-use CAPTCHA tokens must be refreshed after a failed request.
+        captchaRef.current?.reset();
         // Never keep a rejected password in the rendered form.
         if (response.status === 401) {
           const input = form.elements.namedItem("password");
@@ -138,8 +151,13 @@ export function LoginForm({ initialError }: LoginFormProps) {
       // when the App Router has a cached unauthenticated server component.
       window.location.replace("/dashboard");
     } catch (error) {
+      captchaRef.current?.reset();
       const code: LoginErrorCode =
-        error instanceof Error && error.message === "security_check_failed"
+        error instanceof Error && error.message === "captcha_required"
+          ? "captcha_required"
+          : error instanceof Error && error.message === "captcha_unavailable"
+            ? "captcha_unavailable"
+            : error instanceof Error && error.message === "security_check_failed"
           ? "security_check_failed"
           : error instanceof Error && error.message === "service_unavailable"
             ? "service_unavailable"
@@ -242,7 +260,14 @@ export function LoginForm({ initialError }: LoginFormProps) {
         </div>
       </div>
 
-      <Button type="submit" size="lg" className="w-full" disabled={working}>
+      <CaptchaChallenge ref={captchaRef} config={captcha} />
+
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full"
+        disabled={working || captcha.provider === "unavailable"}
+      >
         {working ? (
           <>
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
+import { serverCaptchaConfig } from "@/lib/captcha-config";
+import { verifyCaptchaToken } from "@/lib/captcha-verification";
 import {
   loginChallengeCookieName,
   safeLoginFetchMetadata,
@@ -11,7 +13,8 @@ import { publicOrigin } from "@/lib/public-origin";
 import { createSession, sessionCookieName } from "@/lib/session";
 
 export const runtime = "nodejs";
-const MAX_LOGIN_BODY_BYTES = 4096;
+// reCAPTCHA responses may be longer than the original credential-only body.
+const MAX_LOGIN_BODY_BYTES = 10_240;
 
 interface StaffLogin {
   id: number;
@@ -138,6 +141,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     password.length > 256
   ) {
     return failure(request, "invalid_request", 422);
+  }
+
+  // The browser challenge is not evidence of a human: verify the CAPTCHA
+  // with its provider before attempting staff authentication.
+  let captchaConfig;
+  try {
+    captchaConfig = serverCaptchaConfig();
+  } catch {
+    return failure(request, "captcha_unavailable", 503);
+  }
+  const captchaVerdict = await verifyCaptchaToken(
+    captchaConfig,
+    credentials.captchaToken,
+  );
+  if (captchaVerdict !== "ok") {
+    if (captchaVerdict === "required") {
+      return failure(request, "captcha_required", 422);
+    }
+    if (captchaVerdict === "unavailable") {
+      return failure(request, "captcha_unavailable", 503);
+    }
+    return failure(request, "captcha_failed", 403);
   }
 
   let account: StaffLogin;

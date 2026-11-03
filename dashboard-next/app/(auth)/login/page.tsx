@@ -7,6 +7,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LoginForm } from "@/components/blocks/login-form";
+import { publicCaptchaConfig } from "@/lib/captcha-config";
+
+export const dynamic = "force-dynamic";
 
 type Params = Promise<{ error?: string; expired?: string }>;
 
@@ -69,7 +72,7 @@ export default async function LoginPage({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <LoginForm initialError={initialError} />
+              <LoginForm initialError={initialError} captcha={publicCaptchaConfig()} />
               <p className="mt-5 text-xs leading-7 text-muted-foreground">
                 ورود فقط برای کاربران مجاز امکان‌پذیر است.
                 برای دریافت یا بازیابی اطلاعات حساب، با مدیر سامانه تماس بگیرید.

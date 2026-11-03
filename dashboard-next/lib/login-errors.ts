@@ -5,6 +5,9 @@ export type LoginErrorCode =
   | "service_unavailable"
   | "security_check_failed"
   | "invalid_request"
+  | "captcha_required"
+  | "captcha_failed"
+  | "captcha_unavailable"
   | "network_unavailable"
   | "session_expired";
 
@@ -39,6 +42,21 @@ export const loginErrorMessages: Record<LoginErrorCode, LoginErrorMessage> = {
   invalid_request: {
     title: "اطلاعات ورود ناقص است",
     description: "نام کاربری و رمز عبور را کامل و با قالب صحیح وارد کنید.",
+    canRetry: true,
+  },
+  captcha_required: {
+    title: "تأیید امنیتی لازم است",
+    description: "بررسی امنیتی را کامل کنید و دوباره برای ورود تلاش کنید.",
+    canRetry: true,
+  },
+  captcha_failed: {
+    title: "تأیید امنیتی پذیرفته نشد",
+    description: "بررسی امنیتی منقضی یا نامعتبر است. آن را دوباره انجام دهید.",
+    canRetry: true,
+  },
+  captcha_unavailable: {
+    title: "بررسی امنیتی در دسترس نیست",
+    description: "سرویس تأیید امنیتی بارگذاری یا پاسخ‌دهی نشد. اتصال را بررسی کنید؛ در صورت تداوم با مدیر سامانه تماس بگیرید.",
     canRetry: true,
   },
   network_unavailable: {
