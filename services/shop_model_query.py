@@ -24,6 +24,7 @@ from services.shop_store_context import StoreContext, current_context
 MAX_FILTERS = 10
 MAX_PAGE_SIZE = 100
 MAX_EXPORT_ROWS = 5_000
+MAX_EXPORT_BYTES = 16 * 1024 * 1024
 
 
 def trusted_context() -> StoreContext:
@@ -200,6 +201,22 @@ async def export_records(
     )) or 0)
     if total > MAX_EXPORT_ROWS:
         raise security.SecurityRejected("model_export_too_large", 409)
+    # Reject oversized text sets BEFORE materializing thousands of Product
+    # descriptions into Python memory. The encoder also checks real UTF-8
+    # output bytes, including Farsi multibyte characters and CSV quoting.
+    long_texts = [
+        field for field in dataset.fields
+        if field.exportable and field.max_length > 1000
+        and isinstance(field.column, InstrumentedAttribute)
+    ]
+    for field in long_texts:
+        total_chars = int(await db.scalar(select(
+            func.coalesce(func.sum(func.length(field.column)), 0),
+        ).where(
+            dataset.model.store_id.in_(ctx.active_store_ids),
+        )) or 0)
+        if total_chars > MAX_EXPORT_BYTES:
+            raise security.SecurityRejected("model_export_too_large", 409)
     records = (await db.scalars(
         select(dataset.model).where(
             dataset.model.store_id.in_(ctx.active_store_ids),
