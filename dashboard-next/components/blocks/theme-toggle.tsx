@@ -1,15 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 
-/** Switch themes without changing content or layout direction. */
+/**
+ * Detect client hydration without setting state inside a React effect.
+ *
+ * useSyncExternalStore provides a stable server snapshot and avoids
+ * React 19's set-state-in-effect lint rule and hydration mismatches.
+ */
+const subscribe = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
+
+/** Switch accessible color themes while preserving SSR and Persian RTL. */
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(
+    subscribe,
+    clientSnapshot,
+    serverSnapshot,
+  );
+
   return (
     <Button
       type="button"
