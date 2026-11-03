@@ -151,6 +151,23 @@ async def visible_product_ids(
     return set(result.all())
 
 
+async def lock_legacy_catalog_policy(
+    db: AsyncSession, platform: str,
+) -> None:
+    """Serialize final order/payment creation against ACL policy edits.
+
+    All administrative rule updates lock the ShopBot row first. Locking the
+    same row in the transaction that creates an order or invoice ensures the
+    policy cannot be changed between the final eligibility check and commit.
+    """
+    bot_id = legacy_bot_id(platform)
+    existing = await db.scalar(select(ShopBot.id).where(
+        ShopBot.id == bot_id,
+    ).with_for_update())
+    if existing is None:
+        raise security.SecurityRejected("bot_not_found", 404)
+
+
 async def allowed_for_legacy(
     db: AsyncSession, platform: str, product_ids: list[int] | set[int],
 ) -> bool:
