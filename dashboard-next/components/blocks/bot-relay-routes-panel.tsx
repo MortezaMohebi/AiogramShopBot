@@ -34,8 +34,10 @@ function RouteControls({
   bot, route, enabled,
 }: { bot: BotRecord; route: BotRelayRoute; enabled: boolean }) {
   const canActivate = Boolean(
-    enabled && route.credential_state === "staged" &&
-    route.credential_version && route.worker_status !== "disabled",
+    enabled && (
+      route.credential_state === "staged" ||
+      (route.status === "paused" && route.credential_state === "active")
+    ) && route.credential_version && route.worker_status !== "disabled",
   );
   return <div className="space-y-4 rounded-xl border p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -81,7 +83,7 @@ function RouteControls({
       <input type="hidden" name="expected_version" value={route.version} />
       <input type="hidden" name="credential_version" value={route.credential_version ?? ""} />
       <CredentialProof />
-      <Button type="submit">تأیید getMe و فعال‌سازی مسیر</Button>
+      <Button type="submit">تأیید getMe و فعال‌سازی / Resume مسیر</Button>
     </form> : null}
     {route.status === "active" ? <form action={pauseRelayRoute}
       className="space-y-3 rounded-lg border p-3">
