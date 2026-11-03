@@ -63,7 +63,7 @@ function reject(status, message) {
  * @param {{ RELAY_SHARED_SECRET: string }} env - Secret bindings.
  * @returns {Promise<Response>} Upstream response or sanitized error.
  */
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   const poolMode = env && Object.prototype.hasOwnProperty.call(
     env, "RELAY_CLIENTS_JSON",
   );
@@ -141,6 +141,21 @@ async function handleRequest(request, env) {
     responseHeaders.set("x-content-type-options", "nosniff");
 
     const noBody = [204, 205, 304].includes(response.status);
+    if (reservation && !noBody && response.body) {
+      // A Worker must hold its capacity lease for the entire streamed
+      // response, not just until the upstream sends HTTP headers.
+      const bridge = new TransformStream();
+      const pending = response.body.pipeTo(bridge.writable)
+        .finally(() => releaseQuota(reservation));
+      if (ctx?.waitUntil) ctx.waitUntil(pending.catch(() => undefined));
+      else void pending.catch(() => undefined);
+      reservation = null;
+      return new Response(bridge.readable, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
+    }
     return new Response(noBody ? null : response.body, {
       status: response.status,
       statusText: response.statusText,
