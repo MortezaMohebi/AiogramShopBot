@@ -61,6 +61,7 @@ export function ProductBotMany2ManyPanel({
             className="flex cursor-pointer flex-wrap items-center gap-3 border-b p-3 text-sm hover:bg-muted/40">
             <input type="checkbox" name="bot_ids" value={bot.id}
               className="size-4 accent-primary" />
+            <input type="hidden" name={`version_${bot.id}`} value={bot.version} />
             <span className="min-w-[130px] flex-1">
               <strong>{bot.name}</strong>
               <span className="ms-2 text-xs text-muted-foreground">
