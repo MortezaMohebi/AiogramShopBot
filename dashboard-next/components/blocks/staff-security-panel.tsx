@@ -14,6 +14,7 @@ export interface StaffMember {
   username: string;
   role: string;
   is_active: boolean;
+  status: "active" | "suspended" | "disabled";
   mfa_enabled: boolean;
   last_login_at: string | null;
   created_at: string;
@@ -189,9 +190,19 @@ export function StaffSecurityPanel({
                     <select name="role" defaultValue={member.role} aria-label={`نقش ${member.username}`} className="h-9 w-full rounded-md border border-input bg-background px-2">
                       {roles.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                     </select>
-                    <label className="flex items-center gap-2 text-xs"><input name="is_active" type="checkbox" defaultChecked={member.is_active} /> حساب فعال</label>
+                    <label className="block space-y-1 text-xs">وضعیت حساب
+                      <select name="status" defaultValue={member.status} className="h-9 w-full rounded-md border bg-background px-2">
+                        <option value="active">فعال</option>
+                        <option value="suspended">معلق</option>
+                        <option value="disabled">غیرفعال</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-1 text-xs">دلیل تعلیق (فقط برای وضعیت معلق)
+                      <input name="reason" maxLength={500} placeholder="دلیل تعلیق را بنویسید"
+                        className="h-9 w-full rounded-md border bg-background px-2" />
+                    </label>
                   </form>}
-                <p className="mt-1 text-xs text-muted-foreground">{member.is_active ? "فعال" : "غیرفعال"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{member.status === "active" ? "فعال" : member.status === "suspended" ? "معلق" : "غیرفعال"}</p>
               </td>
               <td className="p-3">{member.mfa_enabled ? "فعال" : ["superadmin", "finance"].includes(member.role) ? "الزامی؛ در انتظار فعال‌سازی" : "غیرفعال"}</td>
               <td className="p-3 text-xs">{member.last_login_at ? new Date(member.last_login_at).toLocaleString("fa-IR") : "هنوز وارد نشده"}</td>
