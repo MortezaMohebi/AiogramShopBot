@@ -281,9 +281,10 @@ def update_product_bot_rules(
         raise security.SecurityRejected("invalid_catalog_rule", 422)
     if db.get(Product, product_id) is None:
         raise security.SecurityRejected("catalog_target_not_found", 404)
+    bot_ids = [bot_id for bot_id, _ in assignments]
     bots = {
         bot.id: bot for bot in db.scalars(select(ShopBot).where(
-            ShopBot.id.in_(bot_id for bot_id, _ in assignments),
+            ShopBot.id.in_(bot_ids),
         ).order_by(ShopBot.id).with_for_update()).all()
     }
     if len(bots) != len(assignments):
