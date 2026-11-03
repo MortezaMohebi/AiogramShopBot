@@ -240,3 +240,31 @@ GitHub Codespaces ممکن است پس از Restart یا Recreate، پورت Pub
 نداشته و `docker compose up`، Migration واقعی، Build و تست
 پیام‌رسان هنوز اجرا نشده‌اند. تا PASS شدن چرخهٔ تست/دیباگ،
 این شاخه برای Production تأیید نمی‌شود.
+
+
+## عیب‌یابی Build در Codespaces کوچک
+
+اگر `start` به خطای `failed to execute bake: exit status 1` رسید، تا
+زمان مشخص‌شدن خطا سراغ `ports` یا `connect` نرو. ابتدا کد جدید را
+بگیر و فقط Dashboard را با خروجی کامل بساز:
+
+```bash
+git pull --ff-only origin feat/codespaces-live-stack-20261103
+bash scripts/setup_codespace.sh build-dashboard
+```
+
+این فرمان `COMPOSE_BAKE=false` و `BUILDKIT_PROGRESS=plain` را اعمال می‌کند.
+در Dockerfile جدید، `typecheck`، `lint` و `next build` سه مرحلهٔ
+جداگانه‌اند؛ خطای هر مرحله از هم تفکیک می‌شود. در فضای Codespaces کوچک،
+سقف Heap هر Node process برابر ۲ GiB در مرحلهٔ Build قرار داده شده است.
+هیچ بررسی امنیتی یا TypeScript برای عبور از Build غیرفعال نشده است.
+
+اگر Build موفق شد:
+
+```bash
+bash scripts/setup_codespace.sh start
+bash scripts/setup_codespace.sh status
+```
+
+اگر شکست خورد، فقط **آخرین خطای خروجی Build** را ارسال کن؛ مقادیر
+`.codespaces/live.env`، رمز مدیر یا توکن‌های پیام‌رسان را کپی نکن.
