@@ -26,6 +26,7 @@ from models.shop_customer_crm import (
 )
 from models.shop_staff_preferences import ShopStaffPreferences
 from models.shop_bot_profile import ShopBotProfile
+from models.shop_payment_rail import ShopPaymentRail
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
