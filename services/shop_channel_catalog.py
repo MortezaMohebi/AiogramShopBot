@@ -106,7 +106,7 @@ class CatalogFlow:
         if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
             return await self._categories_or_products(session)
         if text.split(" ", 1)[0] == "/start":
-            return await self._home(session)
+            return await self._home(session, event.platform.value)
         if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
             return await self._settings_text(session, key="support")
         if text in ("❓ پرسش‌های متداول", "/faq"):
@@ -135,7 +135,6 @@ class CatalogFlow:
         return BotReply(
             text=welcome[:4096],
             rows=tuple(rows),
-            # Fixed copy is still stored in ShopSettings and not duplicated here.
         )
 
 
@@ -291,9 +290,9 @@ class CatalogFlow:
             ])
         rows.extend([
             (_button("📦 سفارش‌های من", "shop:orders"),),
-                (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
-                (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
-                (_button("بازگشت به محصولات", "shop:list:0"),),
+            (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
+            (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
+            (_button("بازگشت به محصولات", "shop:list:0"),),
         ])
         return BotReply(text=body, rows=tuple(rows))
 
