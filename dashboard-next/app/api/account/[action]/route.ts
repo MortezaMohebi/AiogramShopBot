@@ -9,6 +9,7 @@ type Context = { params: Promise<{ action: string }> };
 const READS: Record<string, string> = { summary: "/account", permissions: "/account/permissions", connections: "/connection-changes" };
 const WRITES: Record<string, string> = {
   profile: "/account/profile", password: "/account/password", reauthenticate: "/account/reauthenticate",
+  preferences: "/account/preferences", username: "/account/username",
   "revoke-session": "/account/revoke-session", "revoke-others": "/account/revoke-others",
   "mfa-setup": "/account/mfa-setup", "mfa-confirm": "/account/mfa-confirm", "mfa-disable": "/account/mfa-disable",
   "connection-stage": "/connection-changes", "connection-action": "/connection-changes/action",
