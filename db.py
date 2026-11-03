@@ -44,7 +44,10 @@ from models.shop_relay_pool import (
 )
 from models.shop_store_commerce import (
     ShopStoreCustomer, ShopStoreCommercePolicy, ShopBotCommercePolicy,
-    ShopPaymentAccount, ShopBotPaymentAccess,
+    ShopPaymentAccount, ShopBotPaymentAccess, ShopStoreSettings,
+)
+from models.shop_staff_store import (
+    ShopStaffStoreAccess, ShopStaffStorePreference, ShopAdminSessionStore,
 )
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
@@ -89,6 +92,12 @@ url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:
 # Do not log SQL parameters containing orders and private customer data.
 engine = create_async_engine(url, echo=config.DB_SQL_ECHO)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+# Register Store record rules once for every SQLAlchemy Session. The rules
+# activate only while a verified admin request binds a StoreContext; provider
+# webhook/worker sessions remain independently authenticated by BotContext.
+import services.shop_store_orm  # noqa: F401, E402
+
 
 
 @asynccontextmanager

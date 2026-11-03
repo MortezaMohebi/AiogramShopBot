@@ -18,6 +18,21 @@ from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base
 
 
+class ShopStoreSettings(Base):
+    """One optional brand/content configuration per nonlegacy Store."""
+
+    __tablename__ = "shop_store_settings"
+
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    brand_name: Mapped[str | None] = mapped_column(String(255))
+    welcome_message: Mapped[str | None] = mapped_column(Text)
+    faq_text: Mapped[str | None] = mapped_column(Text)
+    support_url: Mapped[str | None] = mapped_column(String(500))
+
+
 class ShopStoreCustomer(Base):
     """One verified merchant customer; provider user IDs are not primary keys."""
 
@@ -211,6 +226,7 @@ class ShopBotPaymentAccess(Base):
 
 
 STORE_COMMERCE_TABLES = frozenset({
+    ShopStoreSettings.__tablename__,
     ShopStoreCustomer.__tablename__,
     ShopStoreCommercePolicy.__tablename__,
     ShopStoreCustomerLinkEvent.__tablename__,

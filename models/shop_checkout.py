@@ -26,12 +26,15 @@ class ShopShippingMethod(Base):
         nullable=False, default=DEFAULT_STORE_ID, index=True,
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
     price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
+        UniqueConstraint(
+            "store_id", "name", name="uq_shop_shipping_store_name",
+        ),
         CheckConstraint("price_irr >= 0", name="ck_shop_shipping_price"),
     )
 
@@ -50,7 +53,7 @@ class ShopCoupon(Base):
         nullable=False, default=DEFAULT_STORE_ID, index=True,
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
     discount_type: Mapped[str] = mapped_column(String(12), nullable=False)
     value: Mapped[int] = mapped_column(BigInteger, nullable=False)
     minimum_subtotal_irr: Mapped[int] = mapped_column(
@@ -74,7 +77,10 @@ class ShopCoupon(Base):
             "minimum_subtotal_irr >= 0", name="ck_shop_coupon_minimum"
         ),
         CheckConstraint("used_count >= 0", name="ck_shop_coupon_usage"),
-        Index("uq_shop_coupon_code_casefold", func.upper(code), unique=True),
+        Index(
+            "uq_shop_coupon_store_code_casefold",
+            "store_id", func.upper(code), unique=True,
+        ),
         CheckConstraint(
             "max_uses IS NULL OR max_uses > 0", name="ck_shop_coupon_max_uses"
         ),

@@ -19,7 +19,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, or_, select, text, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,9 @@ from models.shop_engagement import (
 from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
+from services.shop_store_context import current_context
+from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
@@ -195,10 +198,17 @@ def require_staff(staff: ShopStaff | None, *roles: str) -> ShopStaff:
     return staff
 
 
+def _store_rows(model):
+    """Restrict every signed admin list/count to the active Store set."""
+    ctx = current_context()
+    return model.store_id.in_(ctx.active_store_ids) if ctx else true()
+
+
 def product_data(item: Product) -> dict:
     """Serialize explicit safe product fields; preserve large IRR as string."""
     return {
         "id": item.id,
+        "store_id": item.store_id,
         "sku": item.sku,
         "category_id": item.category_id,
         "name": item.name,
@@ -379,16 +389,18 @@ async def overview(staff: Staff, session: Db) -> dict:
     report = await build_shop_analytics(session, days=30)
     products = int(await session.scalar(
         select(func.count()).select_from(Product)
+        .where(_store_rows(Product))
     ) or 0)
     published = int(await session.scalar(
         select(func.count()).select_from(Product)
-        .where(Product.is_published.is_(True))
+        .where(Product.is_published.is_(True), _store_rows(Product))
     ) or 0)
     # Viewer and content/marketing roles may see aggregates, not individual
     # customer orders. Sales/finance can inspect explicit operational records.
     orders = (
         (await session.execute(
-            select(ShopOrder).order_by(ShopOrder.id.desc()).limit(8)
+            select(ShopOrder).where(_store_rows(ShopOrder))
+            .order_by(ShopOrder.id.desc()).limit(8)
         )).scalars().all()
         if staff and staff.role in ("superadmin", "sales", "finance")
         else []
@@ -423,13 +435,13 @@ async def categories(staff: Staff, session: Db) -> list[dict]:
     """Show actual category records in admin-defined order."""
     require_staff(staff, "content")
     items = (await session.execute(
-        select(ShopCategory)
+        select(ShopCategory).where(_store_rows(ShopCategory))
         .order_by(ShopCategory.position, ShopCategory.id)
         .limit(2000)
     )).scalars().all()
     return [
         {
-            "id": row.id, "name": row.name,
+            "id": row.id, "name": row.name, "store_id": row.store_id,
             "position": row.position, "is_published": row.is_published,
         }
         for row in items
@@ -493,8 +505,10 @@ async def products(
         )
         if search else None
     )
-    count_statement = select(func.count()).select_from(Product)
-    list_statement = select(Product)
+    count_statement = select(func.count()).select_from(Product).where(
+        _store_rows(Product),
+    )
+    list_statement = select(Product).where(_store_rows(Product))
     if predicate is not None:
         count_statement = count_statement.where(predicate)
         list_statement = list_statement.where(predicate)
@@ -555,10 +569,15 @@ async def create_product(
     )
     fields = validated_product_values(fields)
     category_id = fields.get("category_id")
-    if category_id is not None and not await session.get(
-        ShopCategory, category_id
-    ):
-        raise HTTPException(status_code=422, detail="Category not found")
+    if category_id is not None:
+        category = await session.get(ShopCategory, category_id)
+        scope = current_context()
+        if category is None or (
+            scope is not None and category.store_id != scope.current_store_id
+        ):
+            raise HTTPException(
+                status_code=422, detail="Category belongs to another Store",
+            )
     record = Product(**fields)
     session.add(record)
     try:
@@ -598,10 +617,15 @@ async def edit_product(
         fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields = validated_product_values(fields, current=record)
     category_id = fields.get("category_id")
-    if category_id is not None and not await session.get(
-        ShopCategory, category_id
-    ):
-        raise HTTPException(status_code=422, detail="Category not found")
+    if category_id is not None:
+        category = await session.get(ShopCategory, category_id)
+        scope = current_context()
+        if category is None or (
+            scope is not None and category.store_id != scope.current_store_id
+        ):
+            raise HTTPException(
+                status_code=422, detail="Category belongs to another Store",
+            )
     for key, value in fields.items():
         setattr(record, key, value)
     if visibility:
@@ -629,15 +653,18 @@ async def orders(staff: Staff, session: Db, page: int = 1) -> dict:
         raise HTTPException(status_code=400, detail="Invalid page")
     total = int(await session.scalar(
         select(func.count()).select_from(ShopOrder)
+        .where(_store_rows(ShopOrder))
     ) or 0)
     items = (await session.execute(
-        select(ShopOrder).order_by(ShopOrder.id.desc())
+        select(ShopOrder).where(_store_rows(ShopOrder))
+        .order_by(ShopOrder.id.desc())
         .offset((page - 1) * 20).limit(20)
     )).scalars().all()
     return {
         "items": [
             {
                 "id": order.id, "platform": order.platform,
+                "store_id": order.store_id,
                 "user_id": str(order.platform_user_id),
                 "name": order.product_name_snapshot,
                 "status": order.status, "provider": order.provider,
@@ -658,15 +685,19 @@ async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
         raise HTTPException(status_code=400, detail="Invalid page")
     total = int(await session.scalar(
         select(func.count()).select_from(ShopIdentity)
+        .where(_store_rows(ShopIdentity))
     ) or 0)
     records = (await session.execute(
-        select(ShopIdentity).order_by(ShopIdentity.id.desc())
+        select(ShopIdentity).where(_store_rows(ShopIdentity))
+        .order_by(ShopIdentity.id.desc())
         .offset((page - 1) * 20).limit(20)
     )).scalars().all()
     return {
         "items": [
             {
                 "id": entry.id, "platform": entry.platform,
+                "store_id": entry.store_id,
+                "bot_id": entry.bot_id,
                 "user_id": str(entry.platform_user_id),
                 "name": entry.first_name, "username": entry.username,
                 "is_blocked": entry.is_blocked,
@@ -791,7 +822,13 @@ async def change_campaign(
 async def settings(staff: Staff, session: Db) -> dict:
     """Return editable brand and help text without exposing bot tokens."""
     require_staff(staff, "superadmin")
-    row = await session.get(ShopSettings, 1)
+    scope = current_context()
+    current_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    row = (
+        await session.get(ShopSettings, 1)
+        if current_id == DEFAULT_STORE_ID
+        else await session.get(ShopStoreSettings, current_id)
+    )
     return {
         "brand_name": row.brand_name if row else "",
         "welcome_message": row.welcome_message if row else "",
@@ -806,10 +843,18 @@ async def change_settings(
 ) -> dict:
     """Write merchant text settings; never allow application environment edits."""
     require_staff(staff, "superadmin")
-    row = await session.get(ShopSettings, 1)
-    if row is None:
-        row = ShopSettings(id=1)
-        session.add(row)
+    scope = current_context()
+    current_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    if current_id == DEFAULT_STORE_ID:
+        row = await session.get(ShopSettings, 1)
+        if row is None:
+            row = ShopSettings(id=1)
+            session.add(row)
+    else:
+        row = await session.get(ShopStoreSettings, current_id)
+        if row is None:
+            row = ShopStoreSettings(store_id=current_id)
+            session.add(row)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, key, value)
     await session.commit()
@@ -880,9 +925,13 @@ async def media(staff: Staff, session: Db, page: int = 1) -> dict:
     require_staff(staff, "content")
     if not 1 <= page <= 100_000:
         raise HTTPException(status_code=400, detail="Invalid page")
-    total = int(await session.scalar(
-        select(func.count()).select_from(ProductMedia)
-    ) or 0)
+    scope = current_context()
+    count_query = select(func.count()).select_from(ProductMedia)
+    if scope is not None:
+        count_query = count_query.join(
+            Product, Product.id == ProductMedia.product_id,
+        ).where(Product.store_id.in_(scope.active_store_ids))
+    total = int(await session.scalar(count_query) or 0)
     entries = (await session.execute(
         select(ProductMedia, Product.name)
         .join(Product, Product.id == ProductMedia.product_id)
@@ -912,9 +961,13 @@ async def testimonials(staff: Staff, session: Db, page: int = 1) -> dict:
     require_staff(staff, "content")
     if not 1 <= page <= 100_000:
         raise HTTPException(status_code=400, detail="Invalid page")
-    total = int(await session.scalar(
-        select(func.count()).select_from(Testimonial)
-    ) or 0)
+    scope = current_context()
+    count_query = select(func.count()).select_from(Testimonial)
+    if scope is not None:
+        count_query = count_query.join(
+            Product, Product.id == Testimonial.product_id,
+        ).where(Product.store_id.in_(scope.active_store_ids))
+    total = int(await session.scalar(count_query) or 0)
     entries = (await session.execute(
         select(Testimonial, Product.name)
         .join(Product, Product.id == Testimonial.product_id)
@@ -963,10 +1016,15 @@ async def coupons(staff: Staff, session: Db) -> list[dict]:
 async def refunds(staff: Staff, session: Db) -> list[dict]:
     """Review financial cases, never expose unverified refund confirmation."""
     require_staff(staff, "finance")
+    scope = current_context()
+    query = select(
+        ShopRefundCase, ShopOrder.platform,
+        ShopOrder.total_irr, ShopOrder.provider,
+    ).join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
+    if scope is not None:
+        query = query.where(ShopOrder.store_id.in_(scope.active_store_ids))
     records = (await session.execute(
-        select(ShopRefundCase, ShopOrder.platform, ShopOrder.total_irr, ShopOrder.provider)
-        .join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
-        .order_by(ShopRefundCase.id.desc()).limit(200)
+        query.order_by(ShopRefundCase.id.desc()).limit(200)
     )).all()
     return [
         {
@@ -983,26 +1041,35 @@ async def refunds(staff: Staff, session: Db) -> list[dict]:
 async def wallets(staff: Staff, session: Db) -> dict:
     """Show merchant store-credit balances, separate from Bale native wallet."""
     require_staff(staff, "finance")
-    result = await session.execute(
-        select(
-            ShopWalletAccount.balance_irr,
-            ShopIdentity.platform,
-            ShopIdentity.platform_user_id,
-        )
-        .join(ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id)
-        .order_by(ShopWalletAccount.id.desc()).limit(100)
+    scope = current_context()
+    query = select(
+        ShopWalletAccount.balance_irr,
+        ShopIdentity.platform,
+        ShopIdentity.platform_user_id,
+        ShopWalletAccount.customer_id,
+        ShopWalletAccount.scope,
+        ShopWalletAccount.store_id,
+    ).outerjoin(
+        ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id,
     )
-    accounts = [
-        {
-            "balance_irr": str(balance),
-            "platform": platform,
-            "user_id": str(user_id),
-        }
-        for balance, platform, user_id in result.all()
-    ]
-    count = int(await session.scalar(
-        select(func.count()).select_from(ShopWalletAccount)
-    ) or 0)
+    count_query = select(func.count()).select_from(ShopWalletAccount)
+    if scope is not None:
+        query = query.where(
+            ShopWalletAccount.store_id.in_(scope.active_store_ids)
+        )
+        count_query = count_query.where(
+            ShopWalletAccount.store_id.in_(scope.active_store_ids)
+        )
+    result = await session.execute(
+        query.order_by(ShopWalletAccount.id.desc()).limit(100)
+    )
+    accounts = [{
+        "balance_irr": str(balance),
+        "platform": platform or "store",
+        "user_id": str(user_id) if user_id is not None else f"Customer #{customer_id}",
+        "scope": credit_scope, "store_id": store_id,
+    } for balance, platform, user_id, customer_id, credit_scope, store_id in result.all()]
+    count = int(await session.scalar(count_query) or 0)
     return {"items": accounts, "total": count}
 
 

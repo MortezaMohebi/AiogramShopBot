@@ -22,6 +22,8 @@ from services.shop_admin_security import (
     SecurityRejected, has_permission, require_recent, validate_session,
 )
 from services import shop_admin_security as security
+from services.shop_store_context import bind_context, resolve_context
+from models.shop_multibot import DEFAULT_STORE_ID
 from dashboard.admin_control_api import router
 from dashboard.customer_crm_api import router as customer_router
 from dashboard.bot_profile_api import router as bot_profile_router
@@ -33,6 +35,7 @@ from dashboard.shop_bot_catalog_api import router as bot_catalog_router
 from dashboard.shop_multibot_receiver_api import router as multi_receiver_router
 from dashboard.shop_relay_pool_api import router as relay_pool_router
 from dashboard.shop_store_commerce_api import router as store_commerce_router
+from dashboard.shop_store_context_api import router as store_context_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -42,6 +45,8 @@ PREFIX = "/internal/admin/v1"
 def permission_for(path: str, method: str) -> str | None:
     """Map server-owned route families to fixed capabilities; fail closed."""
     resource = path.removeprefix(PREFIX).strip("/").split("/")[0]
+    if resource == "store-context":
+        return "dashboard.read"
     if resource in {"auth", "account", "capabilities", "overview"}:
         return "account.manage_self" if resource in {"auth", "account"} else "dashboard.read"
     if resource == "telegram-transport" and path.endswith("/apply"):
@@ -190,8 +195,56 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
+                # Only session-authenticated requests can acquire StoreContext.
+                # A user's allowed set is always re-read from active grants;
+                # no browser header, Cookie or query can widen it.
+                scope = None
+                resource = path.removeprefix(PREFIX).strip("/").split("/")[0]
+                if resource not in {"auth", "account"}:
+                    scope = await resolve_context(
+                        db, staff_id=staff.id, session_id=row.id,
+                    )
+                    request.state.store_context = scope
+                    multi_safe = {
+                        "store-context", "staff", "stores", "store-customers",
+                        "payment-accounts", "bot-registry", "bot-catalog",
+                        "products", "categories", "orders", "customers",
+                        "overview", "reports", "settings",
+                        "shipping", "coupons",
+                    }
+                    # Read-only legacy views have explicit Store joins and
+                    # may aggregate safely. Mutation handlers stay unavailable
+                    # in a multi-Store selection until independently audited.
+                    if request.method == "GET":
+                        multi_safe.update({
+                            "media", "testimonials", "refunds", "wallets",
+                        })
+                    if resource not in multi_safe and (
+                        scope.current_store_id != DEFAULT_STORE_ID
+                        or set(scope.active_store_ids) != {DEFAULT_STORE_ID}
+                    ):
+                        raise SecurityRejected("store_scope_not_supported", 409)
+                    if request.method not in {"GET", "HEAD"} and resource not in {
+                        "store-context",
+                    }:
+                        scope.require(
+                            scope.current_store_id,
+                            write=True,
+                            manage=resource in {"stores", "staff"},
+                        )
+                    if resource == "stores" and path.count("/") >= 5:
+                        # A targeted Store policy cannot use another Store
+                        # merely because both are selected for reads.
+                        target = path.split("/")[5] if len(path.split("/")) > 5 else ""
+                        if target and target not in {"commerce", "payment-accounts"}:
+                            scope.require(
+                                target, write=request.method != "GET",
+                            )
                 await db.commit()
-            return await call_next(request)
+            if scope is None:
+                return await call_next(request)
+            with bind_context(scope):
+                return await call_next(request)
         except SecurityRejected as error:
             return JSONResponse({"detail": error.code}, status_code=error.status,
                                 headers={"Cache-Control": "no-store"})
@@ -208,6 +261,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(multi_receiver_router)
     app.include_router(relay_pool_router)
     app.include_router(store_commerce_router)
+    app.include_router(store_context_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
     app.mount("/", legacy)
