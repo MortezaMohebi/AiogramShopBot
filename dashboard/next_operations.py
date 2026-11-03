@@ -6,7 +6,6 @@ staff RBAC and wallet accounting. Public Next.js routes never expose keys.
 
 from __future__ import annotations
 
-import re
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
@@ -40,12 +39,9 @@ from services.shop_campaigns import ShopCampaignService
 from services.shop_broadcast_control import CampaignRejected
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 from services.shop_channel_features import get_features
-from utils.utils import hash_password
 
 router = APIRouter()
-USER_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{2,79}\Z")
 MAX_UPLOAD_REQUEST = 50_100_000
-STAFF_ROLES = ("superadmin", "sales", "content", "finance", "marketing", "viewer")
 
 
 def positive_id(raw: object) -> int:
@@ -584,26 +580,6 @@ async def resolve_refund(
     return {"ok": True}
 
 
-class StaffCreate(BaseModel):
-    """New staff account with no default password or leaked credential."""
-
-    model_config = ConfigDict(extra="forbid")
-    username: str = Field(min_length=3, max_length=80)
-    password: str = Field(min_length=14, max_length=256)
-    role: str
-    confirmation: str
-
-
-class StaffUpdate(BaseModel):
-    """Role, revocation and password rotation are explicitly requested."""
-
-    model_config = ConfigDict(extra="forbid")
-    role: str | None = None
-    is_active: bool | None = None
-    password: str | None = Field(default=None, min_length=14, max_length=256)
-    confirmation: str
-
-
 @router.get("/staff")
 async def list_staff(staff: Staff, session: Db) -> list[dict]:
     """Return only safe staff metadata, not password hashes."""
@@ -634,86 +610,6 @@ async def list_staff(staff: Staff, session: Db) -> list[dict]:
         }
         for member in members
     ]
-
-
-@router.post("/staff", status_code=201)
-async def create_staff(
-    payload: StaffCreate, staff: Staff, session: Db,
-) -> dict:
-    """Provision one real account after an explicit superadmin decision."""
-    require_staff(staff, "superadmin")
-    username = payload.username.strip().casefold()
-    if (
-        payload.confirmation != "CREATE_STAFF"
-        or payload.role not in STAFF_ROLES
-        or not USER_RE.fullmatch(username)
-    ):
-        raise HTTPException(status_code=422, detail="Invalid staff account")
-    member = ShopStaff(
-        username=username,
-        role=payload.role,
-        password_hash=hash_password(payload.password),
-        is_active=True,
-    )
-    session.add(member)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(status_code=409, detail="Staff username already exists") from None
-    await session.refresh(member)
-    return {"id": member.id}
-
-
-@router.patch("/staff/{member_id}")
-async def change_staff(
-    member_id: int, payload: StaffUpdate, staff: Staff, session: Db,
-) -> dict:
-    """Revoke sessions on changes and protect the last live superadmin."""
-    operator = require_staff(staff, "superadmin")
-    if payload.confirmation != "UPDATE_STAFF":
-        raise HTTPException(status_code=422, detail="Explicit confirmation required")
-    if payload.role is not None and payload.role not in STAFF_ROLES:
-        raise HTTPException(status_code=422, detail="Invalid staff role")
-    # Lock active administrators in stable order to serialize last-admin checks.
-    admins = (await session.execute(
-        select(ShopStaff).where(
-            ShopStaff.role == "superadmin",
-            ShopStaff.is_active.is_(True),
-        ).order_by(ShopStaff.id).with_for_update()
-    )).scalars().all()
-    member = await session.scalar(
-        select(ShopStaff).where(ShopStaff.id == member_id).with_for_update()
-    )
-    if member is None:
-        raise HTTPException(status_code=404, detail="Staff not found")
-    if member.id == operator.id and (
-        (payload.role is not None and payload.role != member.role)
-        or payload.is_active is False
-    ):
-        raise HTTPException(status_code=409, detail="Cannot revoke own access")
-    demoting = payload.role is not None and payload.role != "superadmin"
-    disabling = payload.is_active is False
-    if (
-        member.role == "superadmin" and member.is_active
-        and (demoting or disabling) and len(admins) < 2
-    ):
-        raise HTTPException(status_code=409, detail="Last superadmin protected")
-    changed = False
-    if payload.role is not None and member.role != payload.role:
-        member.role = payload.role
-        changed = True
-    if payload.is_active is not None and member.is_active != payload.is_active:
-        member.is_active = payload.is_active
-        changed = True
-    if payload.password is not None:
-        member.password_hash = hash_password(payload.password)
-        changed = True
-    if not changed:
-        raise HTTPException(status_code=422, detail="No staff changes submitted")
-    member.session_version += 1
-    await session.commit()
-    return {"id": member.id, "sessions_revoked": True}
 
 
 class ReferralPolicyPatch(BaseModel):
