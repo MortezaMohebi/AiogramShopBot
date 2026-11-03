@@ -21,6 +21,7 @@ from models.shop_checkout import (
     ShopOrderLine, ShopShippingMethod,
 )
 from models.shop_content import Product, ShopIdentity, ShopOrder
+from models.shop_uom import ShopUom
 from models.shop_multibot import DEFAULT_STORE_ID
 from services.shop_store_commerce import policy_for
 from services.shop_money import MAX_RIALS, format_rials, to_rials
@@ -736,6 +737,17 @@ class ShopCartFlow:
         )
         session.add(order)
         await session.flush()
+        # Snapshot the unit code on every immutable line. A later Product
+        # unit edit must never change the meaning of a paid historical qty.
+        selected_units = {line.product.uom_id for line in quote.lines}
+        unit_codes = dict((await session.execute(select(
+            ShopUom.id, ShopUom.code,
+        ).where(
+            ShopUom.id.in_(selected_units),
+            ShopUom.store_id == cart.store_id,
+        ))).all())
+        if len(unit_codes) != len(selected_units):
+            raise CartRejected("واحد اندازه‌گیری یکی از اقلام معتبر نیست.")
         for line in quote.lines:
             session.add(
                 ShopOrderLine(
@@ -743,6 +755,7 @@ class ShopCartFlow:
                     product_id=line.product.id,
                     product_name_snapshot=line.product.name,
                     sku_snapshot=line.product.sku,
+                    uom_code_snapshot=unit_codes[line.product.uom_id],
                     unit_price_irr=to_rials(line.product.price),
                     quantity=line.quantity,
                     total_irr=line.line_total,
