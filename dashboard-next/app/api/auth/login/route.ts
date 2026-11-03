@@ -32,6 +32,8 @@ function failure(
   status: number,
 ): NextResponse {
   const requestId = randomUUID();
+  // Server logs retain only the safe diagnostic code, never credentials.
+  console.warn("[shop-admin/auth]", { requestId, code, status });
   const origin = publicOrigin(request);
 
   // Existing browser tabs might still submit the old native HTML form.
@@ -168,6 +170,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (
+    !account ||
+    typeof account !== "object" ||
     !Number.isSafeInteger(account.id) ||
     account.id < 1 ||
     !Number.isSafeInteger(account.session_version) ||
