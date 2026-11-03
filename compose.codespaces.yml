@@ -54,6 +54,8 @@ x-backend-env: &backend-env
   MULTIBOT: "false"
   SUPPORT_LINK: ""
 x-backend-service: &backend-service
+  # All Python roles share a single built image: lower Codespace disk/RAM.
+  image: telegram-bale-codespace-backend:local
   build: {context: ., dockerfile: Dockerfile.codespaces}
   environment: *backend-env
   networks: [private]
