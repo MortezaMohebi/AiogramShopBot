@@ -121,6 +121,7 @@ def upgrade() -> None:
             "state", sa.String(12), nullable=False, server_default="staged",
         ),
         sa.Column("ciphertext", sa.Text(), nullable=False),
+        sa.Column("key_fingerprint", sa.String(64), nullable=False),
         sa.Column("verified_at", sa.DateTime(timezone=True)),
         sa.Column(
             "created_by", sa.Integer(),
@@ -141,6 +142,11 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "version >= 1", name="ck_shop_relay_cred_version",
         ),
+    )
+    op.create_index(
+        "uq_shop_relay_nonrevoked_key", "shop_relay_credentials",
+        ["key_fingerprint"], unique=True,
+        postgresql_where=sa.text("state <> 'revoked'"),
     )
     op.create_index(
         "uq_shop_relay_active_credential", "shop_relay_credentials",

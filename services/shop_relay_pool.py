@@ -13,6 +13,8 @@ import hashlib
 import hmac
 import json
 import re
+
+import config
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -148,7 +150,7 @@ async def list_workers(db: AsyncSession) -> dict:
         "items": [{**_safe_worker(row), "bot_count": int(
             mapped.get(row.id, 0),
         )} for row in rows],
-        "enabled": False,  # Deployment flag is added only by the API.
+        "enabled": bool(config.SHOP_RELAY_POOL_ENABLED),
         "approved_origins": list(approved_worker_origins()),
     }
 
@@ -299,6 +301,16 @@ async def stage_credential(
         raise security.SecurityRejected("relay_route_not_supported", 409)
     if not isinstance(secret, str) or not _RELAY_KEY.fullmatch(secret):
         raise security.SecurityRejected("invalid_worker_secret", 422)
+    key_fingerprint = hmac.new(
+        _key_bytes(), ("relay-auth:v2:" + secret).encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
+    duplicate = await db.scalar(select(ShopRelayCredential.id).where(
+        ShopRelayCredential.key_fingerprint == key_fingerprint,
+        ShopRelayCredential.state != "revoked",
+    ).limit(1))
+    if duplicate is not None:
+        raise security.SecurityRejected("duplicate_relay_credential", 409)
     version = int(await db.scalar(
         select(func.max(ShopRelayCredential.version)).where(
             ShopRelayCredential.bot_id == bot_id,
@@ -315,6 +327,7 @@ async def stage_credential(
     row = ShopRelayCredential(
         id=str(uuid4()), bot_id=bot_id, worker_id=worker_id,
         version=version, state="staged",
+        key_fingerprint=key_fingerprint,
         ciphertext=_encrypt_secret(
             worker_id=worker_id, bot_id=bot_id,
             version=version, secret=secret,
@@ -357,6 +370,8 @@ async def activate_route(
     Provider network calls are made outside a transaction. Two simultaneous
     probes are harmless; the post-probe version check serializes promotion.
     """
+    if not config.SHOP_RELAY_POOL_ENABLED:
+        raise security.SecurityRejected("relay_pool_disabled", 409)
     worker = await db.get(ShopRelayWorker, worker_id)
     bot = await db.get(ShopBot, bot_id)
     route = await db.get(
@@ -380,6 +395,7 @@ async def activate_route(
     origin = _origin(worker.origin)
     secret = decrypt_secret(credential)
     token = await _verified_bot_token(db, bot)
+    expected_provider_id = bot.provider_bot_id
     # Revert the read transaction before any remote I/O.
     await db.rollback()
     relay = CloudflareWorkerSession(
@@ -397,7 +413,7 @@ async def activate_route(
             ) from None
     finally:
         await client.session.close()
-    if identity.id != bot.provider_bot_id:
+    if identity.id != expected_provider_id:
         raise security.SecurityRejected("bot_identity_mismatch", 409)
 
     # Recheck every security-critical record after the network probe.

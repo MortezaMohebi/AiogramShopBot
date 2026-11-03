@@ -126,6 +126,7 @@ class ShopRelayCredential(Base):
         server_default="staged",
     )
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    key_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("shop_staff.id", ondelete="SET NULL"),
@@ -143,6 +144,10 @@ class ShopRelayCredential(Base):
             name="ck_shop_relay_credential_state",
         ),
         CheckConstraint("version >= 1", name="ck_shop_relay_cred_version"),
+        Index(
+            "uq_shop_relay_nonrevoked_key", "key_fingerprint", unique=True,
+            postgresql_where=text("state <> 'revoked'"),
+        ),
         Index(
             "uq_shop_relay_active_credential",
             "bot_id", "worker_id", unique=True,
