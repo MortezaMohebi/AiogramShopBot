@@ -13,9 +13,10 @@ if TYPE_CHECKING:
 class TelegramTransport:
     """Deliver normalized shop replies through the existing Aiogram bot."""
 
-    def __init__(self, bot: Bot) -> None:
-        """Reuse the owning bot's configured session and credentials."""
+    def __init__(self, bot: Bot, *, bot_id: str | None = None) -> None:
+        """Keep each bot's remote-file cache and session isolated."""
         self.bot = bot
+        self.bot_id = bot_id
 
     async def send_media(self, chat_id: int, attachment) -> None:
         """Send one original shop asset or its own bot-scoped cached file ID."""
@@ -51,6 +52,7 @@ class TelegramTransport:
         cached = await cached_file_id(
             platform="telegram",
             bot_key=bot_key,
+            bot_id=self.bot_id,
             storage_key=attachment.storage_key,
             kind=kind,
         )
@@ -89,6 +91,7 @@ class TelegramTransport:
             try:
                 await remember_file_id(
                     platform="telegram", bot_key=bot_key,
+                    bot_id=self.bot_id,
                     storage_key=attachment.storage_key,
                     kind=kind, file_id=remote_id,
                 )
