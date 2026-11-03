@@ -108,32 +108,47 @@ async def _startup() -> None:
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
-    me = await bot.get_me()
-    if expected_bot_id is not None and me.id != expected_bot_id:
-        raise RuntimeError(
-            "Configured Telegram token identifies a different verified bot."
-        )
-    photos = await bot.get_user_profile_photos(me.id)
-    # No hardcoded product or placeholder image and no external stock-photo URL.
-    # The legacy upstream views require a Telegram file_id for their navigation.
-    bot_photo_id = (
-        photos.photos[0][-1].file_id
-        if photos.total_count > 0
-        else config.DEFAULT_MEDIA_FILE_ID
-    )
-    if not bot_photo_id:
-        # Codespaces can start a brand-new bot without a profile photo.
-        # The shared shop uses text fallback; legacy photo-only screens
-        # remain unavailable until the bot receives a photo/file ID.
+    # An inaccessible Proxy or Worker must not take down the admin panel:
+    # the operator needs the panel to stage a verified recovery route.
+    # A genuinely different authenticated Bot ID remains a hard failure.
+    profile_available = False
+    bot_photo_id = config.DEFAULT_MEDIA_FILE_ID
+    try:
+        me = await asyncio.wait_for(bot.get_me(), timeout=12)
+        if expected_bot_id is not None and me.id != expected_bot_id:
+            raise RuntimeError(
+                "Configured Telegram token identifies a different verified bot."
+            )
+        profile_available = True
+    except RuntimeError:
+        raise
+    except Exception:
         logging.warning(
-            "Telegram bot has no profile photo; add one for legacy media menus."
+            "Telegram API startup probe unavailable; admin recovery remains "
+            "available, outbound messages may be interrupted."
         )
-    with open("static/no_image.jpeg", "w") as f:
-        f.write(bot_photo_id)
-    if bot_photo_id:
+    if profile_available:
+        try:
+            photos = await asyncio.wait_for(
+                bot.get_user_profile_photos(me.id), timeout=12,
+            )
+            if photos.total_count > 0:
+                bot_photo_id = photos.photos[0][-1].file_id
+        except Exception:
+            logging.warning(
+                "Telegram profile photo unavailable; using text fallback."
+            )
+    if not bot_photo_id:
+        logging.warning(
+            "Telegram bot has no profile photo; legacy photo-only "
+            "navigation will be unavailable until configured."
+        )
+    with open("static/no_image.jpeg", "w") as destination:
+        destination.write(bot_photo_id)
+    if bot_photo_id and profile_available:
         await MediaService.update_inaccessible_media(bot)
     validate_i18n()
-    if bot_photo_id:
+    if bot_photo_id and profile_available:
         await ButtonMediaRepository.init_buttons_media()
     if config.CRYPTO_FORWARDING_MODE:
         for cryptocurrency in Cryptocurrency:
@@ -149,8 +164,8 @@ async def _startup() -> None:
     for admin in config.ADMIN_ID_LIST:
         try:
             await bot.send_message(admin, 'Bot is working')
-        except Exception as e:
-            logging.warning(e)
+        except Exception:
+            logging.warning("Telegram admin startup notification unavailable.")
 
     if config.TELEGRAM_UPDATE_MODE == "webhook" and (
         os.environ.get("CODESPACE_MANUAL_WEBHOOK") == "true"
