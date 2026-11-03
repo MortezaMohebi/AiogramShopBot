@@ -8,6 +8,8 @@ cannot be activated until the later isolated multi-bot runtime is accepted.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_address
+import re
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -60,9 +62,18 @@ def _public_https_url(value: str) -> str:
         or url.username is not None or url.password is not None
         or port not in (None, 443)
         or url.fragment
-        or host == "localhost" or host.endswith((".local", ".internal"))
+        or host == "localhost"
+        or host.endswith((".local", ".internal", ".test", ".invalid"))
+        or not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,251}[a-z0-9]", host)
+        or ".." in host or "." not in host
     ):
         raise security.SecurityRejected("invalid_support_url", 422)
+    try:
+        if not ip_address(host).is_global:
+            raise security.SecurityRejected("invalid_support_url", 422)
+    except ValueError:
+        # Non-IP hostnames were validated above; no network request is sent.
+        pass
     return raw
 
 
