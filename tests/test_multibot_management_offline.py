@@ -363,3 +363,63 @@ def test_revoked_token_can_be_staged_again_without_active_duplication(
     assert fresh.state == "staged"
     assert fresh.version == previous.version + 1
     assert bot.credential_version is None
+
+
+def test_superseded_token_cannot_be_verified(
+    db: Session,
+) -> None:
+    """A previous credential loses authority immediately after replacement."""
+    bot = registry.register_bot(
+        db, store_id=DEFAULT_STORE_ID, platform="telegram",
+        slug="superseded-bot", name="Superseded", actor_id=1,
+    )
+    old = vault.stage_bot_token(
+        db, bot_id=bot.id, token=TOKEN_A, actor_id=1,
+    )
+    newer = vault.stage_bot_token(
+        db, bot_id=bot.id, token=TOKEN_B, actor_id=1,
+    )
+    db.commit()
+    assert old.state == "revoked"
+    assert newer.state == "staged"
+
+    async def must_not_probe(platform: str, token: str):
+        """A stale credential must not reach the Telegram provider."""
+        raise AssertionError("getMe must not be called with revoked Token")
+
+    with pytest.raises(security.SecurityRejected) as refused:
+        asyncio.run(verification.verify_bot(
+            AsyncDb(db), bot_id=bot.id, actor_id=1,
+            version=old.version, probe=must_not_probe,
+        ))
+    assert refused.value.code == "invalid_credential_state"
+    assert bot.provider_bot_id is None
+
+
+def test_provider_failure_cannot_leak_secret_or_activate(
+    db: Session,
+) -> None:
+    """Provider errors are redacted and leave all bot state unchanged."""
+    bot = registry.register_bot(
+        db, store_id=DEFAULT_STORE_ID, platform="telegram",
+        slug="broken-provider", name="Broken", actor_id=1,
+    )
+    cred = vault.stage_bot_token(
+        db, bot_id=bot.id, token=TOKEN_A, actor_id=1,
+    )
+    db.commit()
+
+    async def failing_get_me(platform: str, token: str):
+        """Simulate an exception containing sensitive upstream URL material."""
+        raise RuntimeError(f"https://api.telegram.org/bot{token}/getMe")
+
+    with pytest.raises(security.SecurityRejected) as refused:
+        asyncio.run(verification.verify_bot(
+            AsyncDb(db), bot_id=bot.id, actor_id=1,
+            version=cred.version, probe=failing_get_me,
+        ))
+    assert refused.value.code == "provider_state_unavailable"
+    assert TOKEN_A not in str(refused.value)
+    assert bot.status == "draft"
+    assert bot.verified_at is None
+    assert cred.state == "staged"
