@@ -19,6 +19,7 @@ from models.shop_content import Product, ShopIdentity, ShopOrder
 from models.shop_engagement import ShopWalletAccount, ShopWalletEntry
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_cart import CartRejected, validate_coupon
+from services.shop_channel_features import get_features
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -181,6 +182,11 @@ class ShopWalletService:
             raise StoreCreditRejected("سفارش متعلق به این حساب نیست.")
         if order.provider == "store_credit" and order.status == "paid":
             return order, False
+        features = await get_features(session, platform.value)
+        if not features.store_credit_enabled:
+            raise StoreCreditRejected(
+                "پرداخت با اعتبار داخلی برای این پیام‌رسان غیرفعال است."
+            )
         if order.provider != "manual_review" or order.status != "approved_unpaid":
             raise StoreCreditRejected("این سفارش آماده پرداخت با اعتبار نیست.")
 
