@@ -5,6 +5,7 @@
 **Bot Management (P2):** `feat/multibot-management-20261103`  
 **Bot Catalog ACL (P3):** `feat/multibot-catalog-acl-20261103`  
 **Multi-Bot Runtime & Commerce (P4):** `feat/multibot-runtime-commerce-20261103`  
+**Relay Worker Pool (P5):** `feat/multibot-relay-worker-pool-20261104`  
 **Parent branch:** `feat/staff-security-invites-mfa-audit-20261103` (PR #5، هنوز Draft)  
 **اصل معماری:** One Store → Many Bots؛ Shared Product Catalog با دسترسی اختصاصی هر بات؛ Many Bots → Many outbound Worker/Proxy Routes.
 
@@ -29,8 +30,11 @@
 | P2 Bot Management & Operations | مدل، API، RTL UI، Legacy Gates، Credential Verification و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
 | P3 Bot Catalog Access | سه جدول ACL، Predicate مشترک، کنترل Catalog/Callback/Cart/Checkout، پنل Many2many بات و محصول و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
 | P4 Multi-Bot Runtime & Commerce | Receiver مستقل، Dispatcher، Migration، اسکوپ مالی، UI فعال‌سازی MFA و محدودیت Broadcast ثبت شد | محیط تست در دسترس نیست؛ PostgreSQL، Provider، Next.js و E2E اجرا نشده‌اند |
-| P5 Shared Relay Worker Pool | شروع نشده | شروع نشده |
+| P5 Shared Relay Worker Pool | Registry چند Worker، Many2many Bot/Worker، Credential مستقل و Rotation، مدیریت Next.js، Cloudflare Durable Object quota و Safe Read-only Failover در سورس ثبت شده | تست‌ها اجرا نشده؛ Cloudflare و Provider و PostgreSQL هنوز تأیید نشده‌اند |
 | P6 Migration & Final Acceptance | شروع نشده | شروع نشده |
+
+جزئیات P5، مراحل Provision کلید هر بات، قوانین Failover و QA معوق در
+[`P5_RELAY_WORKER_POOL.fa.md`](./P5_RELAY_WORKER_POOL.fa.md) ثبت شده‌اند.
 
 جزئیات پیاده‌سازی P4 و آزمون‌های معوق در
 [`P4_RUNTIME_COMMERCE.fa.md`](./P4_RUNTIME_COMMERCE.fa.md) ثبت شده‌اند.
@@ -47,7 +51,9 @@
 `shop_products` جاری اعمال شده و مجموعهٔ Legacy `Item` نیازمند
 برنامهٔ Migration مستقل است.
 
-**مرز P4:** سورس Receiver و Dispatcher و تنظیم وضعیت Botهای Registry پیاده‌سازی شده است، اما Runtime همچنان Feature Flag خاموش دارد. هیچ Bot جدیدی به Provider وصل نشده و بدون تست و تأیید دستی فعال نخواهد شد. Broadcast بات‌های Registry تا P5 عمداً در Worker قدیمی مسدود است؛ بازتست و پذیرش Production مربوط به P6 خواهد بود.
+**مرز P4:** سورس Receiver و Dispatcher و تنظیم وضعیت Botهای Registry پیاده‌سازی شده است، اما Runtime همچنان Feature Flag خاموش دارد. هیچ Bot جدیدی به Provider وصل نشده و بدون تست و تأیید دستی فعال نخواهد شد.
+
+**مرز P5:** Pool برای ارسال Outbound تلگرام پیاده‌سازی شده است؛ بله همچنان Transport مستقیم خودش را دارد. انتشار Worker و Secretهای Cloudflare دستی و خارج از این PR است. پخش کمپین با Token بات‌های Registry همچنان Fail-Closed است تا فرآیند Broadcast اختصاصی با QA واقعی در P6 پذیرش شود. Feature Flagهای P4 و P5 پیش‌فرض خاموش‌اند.
 
 ## نکات ثابت در تمام فازها
 
