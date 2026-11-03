@@ -155,7 +155,9 @@ export const CaptchaChallenge = forwardRef<
       if (!api) {
         setFailed(true);
       } else {
-        api.ready(() => {
+        // Google v2 exposes render after loading; some deployments do not
+        // expose ready(), so support direct rendering as well.
+        const renderWidget = () => {
           if (disposed) return;
           try {
             widgetRef.current = api.render(target, {
@@ -165,7 +167,13 @@ export const CaptchaChallenge = forwardRef<
           } catch {
             setFailed(true);
           }
-        });
+        };
+        try {
+          if (typeof api.ready === "function") api.ready(renderWidget);
+          else renderWidget();
+        } catch {
+          setFailed(true);
+        }
       }
     }
 

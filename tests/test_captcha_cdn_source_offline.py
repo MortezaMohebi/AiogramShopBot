@@ -52,7 +52,7 @@ def test_cdn_is_opt_in_and_excludes_private_media() -> None:
     compose = source(ROOT / "compose.codespaces.yml")
     preview = source(NEXT / "app/api/admin/preview/[kind]/[id]/route.ts")
     assert "assetPrefix: assetCdnOrigin()" in config
-    assert "if (!value) return undefined" in config
+    assert 'process.env.NODE_ENV === "development"' in config
     assert '"https:"' in config
     assert "LIVE_ADMIN_CDN_URL:-" in compose
     assert '"Cache-Control": "private, no-store"' in preview

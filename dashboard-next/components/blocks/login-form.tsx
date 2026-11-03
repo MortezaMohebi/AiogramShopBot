@@ -152,16 +152,16 @@ export function LoginForm({ initialError, captcha }: LoginFormProps) {
       window.location.replace("/dashboard");
     } catch (error) {
       captchaRef.current?.reset();
-      const code: LoginErrorCode =
-        error instanceof Error && error.message === "captcha_required"
-          ? "captcha_required"
-          : error instanceof Error && error.message === "captcha_unavailable"
-            ? "captcha_unavailable"
-            : error instanceof Error && error.message === "security_check_failed"
-          ? "security_check_failed"
-          : error instanceof Error && error.message === "service_unavailable"
-            ? "service_unavailable"
-            : "network_unavailable";
+      const knownFailures: readonly LoginErrorCode[] = [
+        "captcha_required",
+        "captcha_unavailable",
+        "security_check_failed",
+        "service_unavailable",
+      ];
+      const code = error instanceof Error &&
+        knownFailures.some((value) => value === error.message)
+        ? (error.message as LoginErrorCode)
+        : "network_unavailable";
       setIssue({ code });
     } finally {
       setWorking(false);

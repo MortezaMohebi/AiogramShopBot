@@ -6,7 +6,7 @@ import type { NextConfig } from "next";
  */
 function assetCdnOrigin(): string | undefined {
   const value = process.env.NEXT_ADMIN_CDN_URL?.trim();
-  if (!value) return undefined;
+  if (!value || process.env.NODE_ENV === "development") return undefined;
 
   let url: URL;
   try {
