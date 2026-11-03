@@ -4,6 +4,14 @@ import { KeyRound, ShieldAlert, ShieldCheck, Settings2 } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
 import type { BotCatalogRuleList } from "@/lib/bot-catalog-acl";
+type CatalogAuditRow = {
+  object_type: "product" | "category";
+  object_id: number;
+  old_effect: string;
+  new_effect: string;
+  actor_id: number;
+  created_at: string | null;
+};
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,10 +76,13 @@ export default async function BotDetailPage({
   const aclSearch = new URLSearchParams({
     kind: aclKind, q: aclQ, page: String(aclPage), page_size: "20",
   });
-  const [detail, members, acl] = await Promise.all([
+  const [detail, members, acl, aclAudit] = await Promise.all([
     adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
     adminFetch<BotCatalogRuleList>(`/bot-catalog/bots/${id}?${aclSearch}`),
+    adminFetch<{ items: CatalogAuditRow[] }>(
+      `/bot-catalog/bots/${id}/audit?page=1`,
+    ),
   ]);
   const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
@@ -260,6 +271,24 @@ export default async function BotDetailPage({
     <BotCatalogAccessPanel
       botId={bot.id} version={bot.version} data={acl} query={aclQ}
     />
+    <Card><CardHeader><CardTitle>تاریخچهٔ قوانین دسترسی</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        {aclAudit.items.slice(0, 12).map((row, index) =>
+          <div key={`${row.object_type}-${row.object_id}-${row.created_at}-${index}`}
+            className="flex flex-wrap justify-between gap-2 border-b py-2 text-xs">
+            <span>
+              {row.object_type === "product" ? "محصول" : "دسته‌بندی"} #{row.object_id}:
+              {" "}{row.old_effect} ← {row.new_effect}
+            </span>
+            <span className="text-muted-foreground">
+              مدیر #{row.actor_id} · {date(row.created_at)}
+            </span>
+          </div>)}
+        {!aclAudit.items.length ? <p className="text-sm text-muted-foreground">
+          هنوز تغییر مستقیمی برای این بات ثبت نشده است.
+        </p> : null}
+      </CardContent>
+    </Card>
 
     <div className="grid gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>سلامت و پردازش پیام‌ها</CardTitle></CardHeader>
