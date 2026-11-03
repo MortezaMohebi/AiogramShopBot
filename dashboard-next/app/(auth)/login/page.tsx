@@ -89,6 +89,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Params
               </form>
               <p className="mt-5 text-xs leading-6 text-muted-foreground">
                 حساب‌های مدیر از قبل در سرور تعریف می‌شوند؛ ثبت‌نام عمومی وجود ندارد.
+                برای Codespaces، نام کاربری اولیه <code dir="ltr">shopadmin</code> است.
+                رمز اولیه را فقط در ترمینال خصوصی با دستور
+                <code dir="ltr">python3 scripts/codespace_setup.py credentials</code>
+                مشاهده کنید.
               </p>
             </CardContent>
           </Card>
