@@ -116,8 +116,21 @@ async def bounded_bridge_body(request: Request) -> bytes:
     Starlette's cached request body is restored for its multipart parser.
     Enforcing a bound before signature verification avoids unbounded memory.
     """
-    upload = request.url.path.startswith("/internal/admin/v1/upload/")
-    limit = 50_100_000 if upload else 256 * 1024
+    path = request.url.path
+    upload = path.startswith("/internal/admin/v1/upload/")
+    # Only the signed, typed model import endpoint may accept an 8 MiB
+    # spreadsheet. All other admin API requests keep their previous limits.
+    data_import = (
+        request.method == "POST"
+        and path.startswith("/internal/admin/v1/data-models/")
+        and path.endswith("/import")
+        and len(path.split("/")) == 7
+    )
+    limit = (
+        50_100_000 if upload else
+        8 * 1024 * 1024 if data_import else
+        256 * 1024
+    )
     header = request.headers.get("content-length")
     if header is not None:
         try:
