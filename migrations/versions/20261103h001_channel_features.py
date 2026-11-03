@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("changed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.CheckConstraint("platform IN ('telegram','bale')", name="ck_shop_feature_provider"),
         sa.CheckConstraint(
-            "char_length(store_credit_label) BETWEEN 1 AND 80",
+            "length(store_credit_label) BETWEEN 1 AND 80",
             name="ck_shop_feature_credit_label",
         ),
     )
