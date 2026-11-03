@@ -37,7 +37,16 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     : ["Asia/Tehran", "Asia/Tokyo", "Europe/London", "UTC"];
   if (!zones.includes(initial.time_zone)) zones.push(initial.time_zone);
   zones.sort((a, b) => a.localeCompare(b));
-  function date(value: string) { return new Date(value).toLocaleString("fa-IR", { timeZone: initial.time_zone }); }
+  const calendarLocale =
+    initial.preferences.calendar === "gregorian" ? "fa-IR-u-ca-gregory" :
+    initial.preferences.calendar === "jalali" ? "fa-IR-u-ca-persian" :
+    initial.preferences.language === "en" ? "en-US-u-ca-gregory" :
+    "fa-IR-u-ca-persian";
+  function date(value: string) {
+    return new Date(value).toLocaleString(calendarLocale, {
+      timeZone: initial.time_zone,
+    });
+  }
   async function perform(action: string, payload: unknown, form?: HTMLFormElement) {
     if (busy) return;
     setBusy(true); setNotice(null);
@@ -58,7 +67,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       }
       if (result.recovery_codes) { setRecovery(result.recovery_codes); setEnrollment(null); }
       setNotice({ ok: true, text: "عملیات ثبت شد و وضعیت حساب به‌روز شد." });
-      if (action !== "profile") form?.reset();
+      if (action !== "profile" && action !== "preferences") form?.reset();
       router.refresh();
     } catch (error) { setNotice({ ok: false, text: error instanceof Error ? error.message : "عملیات انجام نشد." }); }
     finally { setBusy(false); }
@@ -81,6 +90,67 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
           </select>
         </label>
         <Button type="submit" disabled={busy}>ذخیره مشخصات</Button>
+      </form>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>زبان، تقویم و اعلان‌های کاری</CardTitle></CardHeader><CardContent>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        void perform("preferences", {
+          language: String(data.get("language") ?? "fa"),
+          calendar: String(data.get("calendar") ?? "auto"),
+          notify_orders: data.has("notify_orders"),
+          notify_campaigns: data.has("notify_campaigns"),
+          notify_finance: data.has("notify_finance"),
+          notify_system: data.has("notify_system"),
+        }, form);
+      }} className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block space-y-2 text-sm">زبان ترجیحی پنل
+            <select name="language" defaultValue={initial.preferences.language} disabled={busy}
+              className="h-10 w-full rounded-md border bg-background px-3">
+              <option value="fa">فارسی</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label className="block space-y-2 text-sm">نمایش تاریخ در حساب من
+            <select name="calendar" defaultValue={initial.preferences.calendar} disabled={busy}
+              className="h-10 w-full rounded-md border bg-background px-3">
+              <option value="auto">خودکار</option>
+              <option value="jalali">جلالی</option>
+              <option value="gregorian">میلادی</option>
+            </select>
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">زبان ترجیحی برای سرویس‌های آینده ذخیره می‌شود؛ ترجمهٔ کامل همهٔ صفحات پنل هنوز ارائه نشده است. تغییر تقویم در تاریخ‌های حساب من اعمال می‌شود.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([
+            ["notify_orders", "اعلان سفارش‌ها"],
+            ["notify_campaigns", "اعلان کمپین‌ها"],
+            ["notify_finance", "اعلان مالی"],
+            ["notify_system", "اعلان کارهای سیستمی"],
+          ] as const).map(([field, title]) =>
+            <label key={field} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name={field} defaultChecked={initial.preferences[field]}
+                disabled={busy} className="size-4 accent-primary" />{title}
+            </label>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">اعلان‌های امنیتی ضروری از این تنظیمات تأثیر نمی‌گیرند.</p>
+        <Button type="submit" variant="outline" disabled={busy}>ذخیره ترجیحات</Button>
+      </form>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>تغییر نام کاربری</CardTitle></CardHeader><CardContent>
+      <form onSubmit={(event) => submit(event, "username")} className="space-y-4">
+        <p className="text-xs text-muted-foreground">تغییر نام کاربری نیازمند رمز فعلی و MFA است. پس از تغییر، تمام دستگاه‌ها خارج خواهند شد.</p>
+        <label className="block space-y-2 text-sm">نام کاربری جدید
+          <Input name="username" dir="ltr" minLength={3} maxLength={80}
+            pattern="[a-z0-9][a-z0-9_.-]{2,79}" required disabled={busy}
+            autoCapitalize="none" autoCorrect="off" />
+        </label>
+        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
+        <Button type="submit" variant="outline" disabled={busy}>تغییر نام کاربری و خروج از نشست‌ها</Button>
       </form>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>تغییر رمز عبور</CardTitle></CardHeader><CardContent>
