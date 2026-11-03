@@ -21,6 +21,7 @@ from models.shop_staff import ShopStaff
 from services.shop_admin_security import (
     SecurityRejected, has_permission, require_recent, validate_session,
 )
+from services import shop_admin_security as security
 from dashboard.admin_control_api import router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -95,7 +96,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
         # The old password-only SQLAdmin must not bypass MFA/session revocation.
         if path == "/admin" or path.startswith("/admin/"):
             return JSONResponse({"detail": "Use the Next.js administration panel"}, status_code=404)
-        if not path.startswith(PREFIX + "/") or path == PREFIX + "/auth/login":
+        if not path.startswith(PREFIX + "/") or path in {PREFIX + "/auth/login", PREFIX + "/auth/redeem"}:
             return await call_next(request)
         try:
             if not config.NEXT_ADMIN_BRIDGE_ENABLED or len(config.NEXT_ADMIN_BRIDGE_SECRET) < 32:
@@ -128,6 +129,19 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 if staff is None or staff.session_version != version:
                     raise SecurityRejected("session_expired", 401)
                 row = await db.run_sync(lambda sync: validate_session(sync, staff, token))
+                # Sensitive roles are confined to first-login enrollment until MFA
+                # is verified; an existing password-only administrator is not locked out.
+                if staff.role in security.MFA_REQUIRED_ROLES:
+                    enrolled = await db.run_sync(
+                        lambda sync: bool(security.profile_for(sync, staff.id).mfa_secret)
+                    )
+                    enrollment_routes = {
+                        PREFIX + "/auth/me", PREFIX + "/auth/logout",
+                        PREFIX + "/account", PREFIX + "/account/mfa-setup",
+                        PREFIX + "/account/mfa-confirm",
+                    }
+                    if not enrolled and path not in enrollment_routes:
+                        raise SecurityRejected("mfa_enrollment_required", 428)
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
