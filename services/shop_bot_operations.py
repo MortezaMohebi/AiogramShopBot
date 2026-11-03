@@ -7,7 +7,6 @@ cannot be activated until the later isolated multi-bot runtime is accepted.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 from uuid import uuid4
