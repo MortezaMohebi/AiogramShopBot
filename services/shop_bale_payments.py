@@ -58,6 +58,8 @@ async def validate_bale_precheckout(
             amount=query.get("total_amount"),
             bot_id=bot_id,
         )
+    if bot_id is not None and bot_id != legacy_id("bale"):
+        return False, "فاکتور متعلق به این بات نیست."
     # Old direct-item invoices issued before migration may still be payable;
     # preserve their settlement path without mixing their order models.
     return await BaleWalletService.validate_pre_checkout(session, query)
@@ -76,6 +78,8 @@ async def settle_bale_payment(
     if not await _is_new_intent(
         session, payment.get("invoice_payload"), bot_id=bot_id,
     ):
+        if bot_id is not None and bot_id != legacy_id("bale"):
+            raise PaymentRejected("رسید متعلق به این بات نیست.")
         return await BaleWalletService.confirm_success(
             session,
             transport,
