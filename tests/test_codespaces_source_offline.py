@@ -93,7 +93,7 @@ def test_admin_password_never_has_a_public_api_route() -> None:
 
 def test_fresh_schema_classification_requires_empty_database() -> None:
     """Create a schema only from an empty test DB, not over actual records."""
-    from scripts.codespace_migrate import classify_schema
+    from scripts.codespace_bootstrap import classify_schema
 
     expected = {"shop_staff", "shop_products", "shop_orders"}
 
@@ -117,7 +117,7 @@ def test_fresh_schema_classification_requires_empty_database() -> None:
 def test_fresh_schema_bootstrap_never_stamps_migrations() -> None:
     """Prevent reintroducing legacy SQLite Alembic history on fresh PG."""
     root = Path(__file__).resolve().parent.parent
-    bootstrap = (root / "scripts/codespace_migrate.py").read_text("utf-8")
+    bootstrap = (root / "scripts/codespace_bootstrap.py").read_text("utf-8")
     assert "Base.metadata.create_all" in bootstrap
     assert "command.stamp(" not in bootstrap
     assert "command.upgrade(" not in bootstrap
