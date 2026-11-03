@@ -34,6 +34,7 @@ from models.base import Base
 from models.shop_checkout import ShopCoupon, ShopOrderLine, ShopOrderReviewAudit
 from models.shop_content import Product, ShopCategory, ShopOrder
 from models.shop_staff import ShopStaff
+from models.shop_staff_state import ShopStaffState
 
 
 class OfflineDB:
@@ -78,6 +79,7 @@ def db():
             ShopOrderLine.__table__,
             ShopOrderReviewAudit.__table__,
             ShopStaff.__table__,
+            ShopStaffState.__table__,
         ],
     )
     with Session(engine) as session:
