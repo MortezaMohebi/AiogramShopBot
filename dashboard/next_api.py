@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1137,3 +1137,133 @@ async def edit_coupon(
 from dashboard.next_operations import router as next_operations_router  # noqa: E402
 
 router.include_router(next_operations_router)
+
+
+@router.get("/bot-connections")
+async def bot_connections(staff: Staff, session: Db) -> dict:
+    """Expose actual Bot API deployment modes without secrets or side effects.
+
+    Configuration is server-owned, so the dashboard cannot silently move a
+    webhook to a malicious external destination or start a second poller.
+    """
+    require_staff(staff, "superadmin")
+    await session.execute(text("SELECT 1"))
+
+    from urllib.parse import urlsplit
+
+    provider_origin = config.WEBHOOK_HOST
+    if provider_origin:
+        parsed = urlsplit(provider_origin)
+        provider_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    return {
+        "database": "connected",
+        "telegram": {
+            "configured": bool(config.TOKEN),
+            "update_mode": config.TELEGRAM_UPDATE_MODE,
+            "api_transport": config.TELEGRAM_API_MODE,
+            "webhook_url": (
+                config.WEBHOOK_URL if config.TELEGRAM_UPDATE_MODE == "webhook"
+                else None
+            ),
+            "worker_configured": bool(config.TELEGRAM_WORKER_URL),
+            "proxy_configured": bool(config.TELEGRAM_PROXY_URL),
+            "supported_update_modes": ["webhook", "getUpdates"],
+        },
+        "bale": {
+            "configured": bool(config.BALE_BOT_TOKEN),
+            "update_mode": "webhook",
+            # Never expose Bale's secret path or provider token to the UI.
+            "webhook_url_label": (
+                f"{provider_origin}/webhooks/bale/[private-secret]"
+                if provider_origin and config.BALE_BOT_TOKEN
+                else None
+            ),
+            "supported_update_modes": ["webhook"],
+        },
+        "runtime_note": (
+            "Transport mode and host are deployment settings. "
+            "Changing them requires an explicit controlled restart; "
+            "saving storefront text does not alter provider webhooks."
+        ),
+    }
+
+
+@router.get("/bot-connections/probe")
+async def bot_connection_probe(staff: Staff) -> dict:
+    """Check provider getMe/getWebhookInfo without modifying any webhook.
+
+    Provider failures are represented as statuses instead of crashing
+    the complete administration dashboard.
+    """
+    require_staff(staff, "superadmin")
+    from aiohttp import ClientSession, ClientTimeout
+    from channels.bale import BaleTransport
+    from utils.telegram import create_bot, create_telegram_session
+
+    telegram: dict = {"status": "not_configured"}
+    bale: dict = {"status": "not_configured"}
+
+    if config.TOKEN:
+        telegram_bot = None
+        try:
+            telegram_bot = create_bot(
+                config.TOKEN, create_telegram_session()
+            )
+            info = await telegram_bot.get_webhook_info(
+                request_timeout=8,
+            )
+            account = await telegram_bot.get_me(request_timeout=8)
+            telegram = {
+                "status": "connected",
+                "username": account.username,
+                "pending_updates": info.pending_update_count or 0,
+                "webhook_matches": (
+                    info.url == config.WEBHOOK_URL
+                    if config.TELEGRAM_UPDATE_MODE == "webhook"
+                    else not bool(info.url)
+                ),
+                "provider_mode": (
+                    "webhook" if info.url else "getUpdates"
+                ),
+            }
+        except Exception:
+            telegram = {"status": "unavailable"}
+        finally:
+            if telegram_bot is not None:
+                await telegram_bot.session.close()
+
+    if config.BALE_BOT_TOKEN:
+        try:
+            async with ClientSession(
+                timeout=ClientTimeout(total=8),
+                trust_env=False,
+            ) as http:
+                transport = BaleTransport(config.BALE_BOT_TOKEN, http)
+                identity = await transport._call("getMe", {})
+                bale = {
+                    "status": "connected",
+                    "username": (
+                        identity.get("username")
+                        if isinstance(identity, dict)
+                        else None
+                    ),
+                }
+                try:
+                    info = await transport._call("getWebhookInfo", {})
+                except Exception:
+                    bale["webhook_status"] = "unsupported_or_unavailable"
+                else:
+                    expected = (
+                        f"{config.WEBHOOK_HOST}/webhooks/bale/"
+                        f"{config.BALE_WEBHOOK_SECRET}"
+                    )
+                    bale["webhook_status"] = (
+                        "matching" if isinstance(info, dict)
+                        and info.get("url") == expected
+                        else "different"
+                    )
+        except Exception:
+            bale = {"status": "unavailable"}
+
+    return {"telegram": telegram, "bale": bale}
