@@ -56,10 +56,9 @@ async def main() -> None:
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,
                 tables=[Base.metadata.tables[name] for name in missing], checkfirst=False))
-        # The registered registry credential tables from Phase 1 predate the
-        # four nullable Phase 2 fields. Apply the safe additive SQL first.
-        # The full schema is verified after the upgrade and seeded state.
-        # await verify_codespace_schema(connection)
+        # Phase 1 credentials lack the four nullable Phase 2 verification
+        # fields. Adopt existing bots, apply allowlisted additive SQL, and
+        # verify the complete schema before committing the transaction.
         # Idempotently register the existing env-backed Telegram/Bale bots.
         # All business rows remain untouched within the same DDL transaction.
         await adopt_legacy_codespace(connection)
