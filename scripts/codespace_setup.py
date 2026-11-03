@@ -322,6 +322,11 @@ def set_ports() -> None:
 def connect(*, yes: bool) -> int:
     """Register genuine webhooks only after user approval and public health."""
     data = read_env()
+    if data.get("LIVE_TELEGRAM_UPDATE_MODE", "webhook") != "webhook":
+        raise RuntimeError(
+            "Telegram is in getUpdates mode. Stage and apply webhook mode "
+            "before trying to register provider webhooks."
+        )
     check_public_gateway(data)
     print(
         "WARNING: Registering a webhook moves BOTH bot tokens' incoming "
