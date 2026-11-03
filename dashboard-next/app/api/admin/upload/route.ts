@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch, bridgeResponse } from "@/lib/bridge";
 import { readSession } from "@/lib/session";
 import type { Staff } from "@/lib/types";
-import { trustedBrowserOrigin } from "@/lib/public-origin";
+import { publicOrigin, trustedBrowserOrigin } from "@/lib/public-origin";
 
 export const runtime = "nodejs";
 const MAX_BODY_BYTES = 50_100_000;
@@ -40,26 +40,37 @@ async function boundedBytes(request: NextRequest): Promise<Uint8Array> {
 
 /** Browser POST -> same-origin BFF -> signed FastAPI private storage. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const origin = trustedBrowserOrigin(request);
-  if (!origin) return new NextResponse("Forbidden", { status: 403 });
   const target = request.nextUrl.searchParams.get("target") as UploadTarget | null;
   if (!target || !["product", "testimonial", "campaign"].includes(target)) {
     return new NextResponse("Not found", { status: 404 });
   }
   const fallback = target === "campaign" ? "/campaigns" :
     target === "testimonial" ? "/reviews" : "/media";
+  const origin = trustedBrowserOrigin(request);
+  if (!origin) {
+    // Older/native forms should never leave a user on an opaque 403 screen.
+    const configured = publicOrigin(request);
+    return configured
+      ? NextResponse.redirect(new URL(`${fallback}?error=security`, configured), 303)
+      : NextResponse.json(
+          { ok: false, code: "security_check_failed" },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+  }
   const type = request.headers.get("content-type") ?? "";
   if (!/^multipart\/form-data;\s*boundary=[a-zA-Z0-9'()+_,.\/=:?-]{1,200}$/i.test(type)) {
     return new NextResponse("Expected multipart form", { status: 415 });
   }
   const session = await readSession();
-  if (!session) return new NextResponse("Unauthorized", { status: 401 });
+  if (!session) {
+    return NextResponse.redirect(new URL("/login?expired=1", origin), 303);
+  }
   try {
     // Revalidate the role BEFORE accepting the potentially large upload.
     const staff = await bridgeFetch<Staff>("/auth/me", "GET", null, session);
     const allowed = target === "campaign" ? "marketing" : "content";
     if (staff.role !== "superadmin" && staff.role !== allowed) {
-      return new NextResponse("Forbidden", { status: 403 });
+      return NextResponse.redirect(new URL(`${fallback}?error=permission`, origin), 303);
     }
     const body = await boundedBytes(request);
     const response = await bridgeResponse(
