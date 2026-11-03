@@ -355,10 +355,10 @@ async def apply(
             ))
             await db.commit()
             try:
-                await old_session.close()
-            except Exception:
-                # Once the new row is verified and committed, cleanup cannot
-                # change the business outcome or roll back the active route.
+                await asyncio.shield(old_session.close())
+            except BaseException:
+                # Committed state is authoritative. A cancellation of the
+                # HTTP request must not revert a successfully committed route.
                 pass
             return {
                 "ok": True, "status": "succeeded",
