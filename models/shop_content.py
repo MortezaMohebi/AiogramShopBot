@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from sqlalchemy import (
-    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
-    String, Text, UniqueConstraint, func, Index, text,
+    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey,
+    ForeignKeyConstraint, Integer, String, Text, UniqueConstraint,
+    func, Index, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
@@ -118,6 +119,16 @@ class Product(Base):
     __table_args__ = (
         UniqueConstraint(
             "store_id", "sku", name="uq_shop_product_store_sku",
+        ),
+        ForeignKeyConstraint(
+            ["store_id", "uom_id"],
+            ["shop_uoms.store_id", "shop_uoms.id"],
+            name="fk_shop_product_unit_store", ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["store_id", "purchase_uom_id"],
+            ["shop_uoms.store_id", "shop_uoms.id"],
+            name="fk_shop_product_purchase_unit_store", ondelete="RESTRICT",
         ),
         Index(
             "uq_shop_product_store_external_ref",

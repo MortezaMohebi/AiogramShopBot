@@ -11,8 +11,8 @@ from decimal import Decimal, InvalidOperation
 from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, ForeignKey, Index, Integer, Numeric, String,
-    UniqueConstraint, text,
+    Boolean, CheckConstraint, ForeignKey, ForeignKeyConstraint, Index,
+    Integer, Numeric, String, UniqueConstraint, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,9 @@ class ShopUomCategory(Base):
     __table_args__ = (
         UniqueConstraint(
             "store_id", "code", name="uq_shop_uom_category_store_code",
+        ),
+        UniqueConstraint(
+            "store_id", "id", name="uq_shop_uom_category_store_id",
         ),
     )
 
@@ -83,6 +86,12 @@ class ShopUom(Base):
 
     __table_args__ = (
         UniqueConstraint("store_id", "code", name="uq_shop_uom_store_code"),
+        UniqueConstraint("store_id", "id", name="uq_shop_uom_store_id"),
+        ForeignKeyConstraint(
+            ["store_id", "category_id"],
+            ["shop_uom_categories.store_id", "shop_uom_categories.id"],
+            name="fk_shop_uom_category_store", ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "ratio_num BETWEEN 1 AND 1000000000",
             name="ck_shop_uom_ratio_num",
