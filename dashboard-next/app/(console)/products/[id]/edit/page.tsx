@@ -3,6 +3,7 @@ import { ProductEditor } from "@/components/blocks/product-editor";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Category, Product } from "@/lib/types";
+import type { ProductFile } from "@/components/blocks/product-media-panel";
 
 type Params = Promise<{ id: string }>;
 type Search = Promise<{ error?: string }>;
@@ -19,16 +20,17 @@ export default async function EditProductPage({
   if (!["superadmin", "content"].includes(staff.role)) notFound();
   const { id } = await params;
   if (!/^\d+$/.test(id)) notFound();
-  const [product, categories, query] = await Promise.all([
+  const [product, categories, media, query] = await Promise.all([
     adminFetch<Product>(`/products/${id}`),
     adminFetch<Category[]>("/categories"),
+    adminFetch<{ items: ProductFile[] }>(`/products/${id}/media`),
     searchParams,
   ]);
   return (
     <div>
       <PageHeading title={`ویرایش «${product.name}»`} description="تغییرات محصولات در هر دو ربات اعمال می‌شود؛ مبالغ سفارش‌های گذشته ثابت می‌مانند." />
       {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ویرایش ذخیره نشد. داده‌ها یا تکراری‌بودن SKU را بررسی کنید.</p> : null}
-      <ProductEditor product={product} categories={categories} />
+      <ProductEditor product={product} categories={categories} media={media.items} />
     </div>
   );
 }
