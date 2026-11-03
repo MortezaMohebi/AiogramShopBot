@@ -79,6 +79,14 @@ export interface BotHealthSnapshot {
 export interface BotRegistryDetail {
   bot: BotRecord;
   health: BotHealthSnapshot;
+  state_events: {
+    id: string;
+    actor_id: number;
+    previous_state: BotDesiredState;
+    next_state: BotDesiredState;
+    reason: string | null;
+    created_at: string | null;
+  }[];
   events: {
     id: string;
     actor_id: number | null;
