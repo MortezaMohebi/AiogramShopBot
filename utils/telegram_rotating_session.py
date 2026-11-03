@@ -66,8 +66,10 @@ class RotatingTelegramSession(BaseSession):
         async with self._condition:
             if self._closed:
                 raise RuntimeError("Telegram session has been closed")
-            while self._replacing:
+            while self._replacing and not self._closed:
                 await self._condition.wait()
+            if self._closed:
+                raise RuntimeError("Telegram session has been closed")
             self._replacing = True
             try:
                 while self._inflight:
