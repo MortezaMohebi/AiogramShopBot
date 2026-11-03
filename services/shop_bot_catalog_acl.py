@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
-from sqlalchemy import and_, false, func, literal, not_, or_, select
+from sqlalchemy import and_, false, literal, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
