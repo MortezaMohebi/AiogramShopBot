@@ -6,8 +6,8 @@
 **Bot Catalog ACL (P3):** `feat/multibot-catalog-acl-20261103`  
 **Multi-Bot Runtime & Commerce (P4):** `feat/multibot-runtime-commerce-20261103`  
 **Relay Worker Pool (P5):** `feat/multibot-relay-worker-pool-20261104`  
-**Store/Customer ownership & StoreContext:** `feat/store-customer-commerce-ownership-20261104` → `feat/multistore-context-user-access-20261104`  
-**UoM & generic data access:** `feat/uom-generic-data-io-search-20261104`  
+**Store/Customer ownership & StoreContext:** PR #11 `feat/store-customer-commerce-ownership-20261104` → PR #12 `feat/multistore-context-user-access-20261104` (Draft؛ QA معوق)  
+**UoM & generic data access:** PR #13 `feat/uom-generic-data-io-search-20261104` (Preview یک‌بارمصرف، Migrationها تا `20261104y001`، Draft؛ QA معوق)  
 **Parent branch:** `feat/staff-security-invites-mfa-audit-20261103` (PR #5، هنوز Draft)  
 **اصل معماری:** One Store → Many Bots؛ Shared Product Catalog با دسترسی اختصاصی هر بات؛ Many Bots → Many outbound Worker/Proxy Routes.
 
