@@ -111,6 +111,10 @@ async def receiver_snapshot(db: AsyncSession, bot_id: str) -> dict:
         return {
             "configured": False, "state": "disabled",
             "mode": None, "version": None,
+            "credential_version": None,
+            "next_update_id": None,
+            "last_received_at": None,
+            "last_error_code": None,
         }
     return {
         "configured": True, "state": row.state,

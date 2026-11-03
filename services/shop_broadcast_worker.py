@@ -14,7 +14,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -175,6 +175,10 @@ class BroadcastWorker:
                         ShopIdentity.platform.in_(available_platforms),
                         ShopIdentity.bot_id.in_(eligible_bot_ids),
                         ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
+                        (
+                            ShopCampaign.bot_id.is_(None)
+                            | (ShopCampaign.bot_id == ShopIdentity.bot_id)
+                        ),
                     )
                     .exists(),
                 )
@@ -196,6 +200,10 @@ class BroadcastWorker:
                     ShopIdentity.platform.in_(available_platforms),
                     ShopIdentity.bot_id.in_(eligible_bot_ids),
                     ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
+                    (
+                        ShopIdentity.bot_id == active.bot_id
+                        if active.bot_id is not None else true()
+                    ),
                 )
                 .order_by(ShopCampaignDelivery.id)
                 .limit(1)
