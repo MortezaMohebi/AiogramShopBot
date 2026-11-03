@@ -88,6 +88,9 @@ services:
     restart: unless-stopped
   migrate:
     <<: *backend-service
+    environment:
+      <<: *backend-env
+      LIVE_ADMIN_PASSWORD: "${LIVE_ADMIN_PASSWORD:?Initialize admin password}"
     depends_on: {postgres: {condition: service_healthy}}
     command: ["python", "-m", "scripts.codespace_migrate"]
     restart: "no"
