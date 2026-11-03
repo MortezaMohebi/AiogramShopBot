@@ -61,6 +61,10 @@ def permission_for(path: str, method: str) -> str | None:
         ("/activate", "/pause", "/revoke")
     ):
         return "bots.apply"
+    if resource == "stores" and path.endswith(
+        ("/uoms", "/uom-categories")
+    ):
+        return "catalog.read" if method == "GET" else "catalog.write"
     if resource in {"products", "categories"}:
         return "catalog.read" if method == "GET" else "catalog.write"
     return {
