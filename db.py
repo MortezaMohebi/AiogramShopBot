@@ -29,6 +29,9 @@ from models.shop_bot_profile import ShopBotProfile
 from models.shop_payment_rail import ShopPaymentRail
 from models.shop_customer_links import ShopCustomerLinkRequest, ShopCustomerIdentityLink
 from models.shop_staff_state import ShopStaffState
+from models.shop_telegram_transport import (
+    ShopTelegramTransport, ShopTelegramTransportChange,
+)
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
