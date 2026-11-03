@@ -60,7 +60,11 @@ export function BotCatalogAccessPanel({
             placeholder={category ? "نام دسته‌بندی…" : "نام محصول…"} />
         </label>
         <Button type="submit" variant="outline">جست‌وجو</Button>
-        <Button asChild variant="outline"><Link href={href(1)}>پاک‌کردن</Link></Button>
+        <Button asChild variant="outline">
+          <Link href={`/bots/${botId}?acl_kind=${data.kind}#catalog-access`}>
+            پاک‌کردن
+          </Link>
+        </Button>
       </form>
 
       <form action={setBotCatalogRules} className="space-y-4">
