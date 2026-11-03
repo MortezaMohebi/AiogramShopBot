@@ -15,6 +15,8 @@ const errors: Record<string, string> = {
   reconciliation_required: "نتیجه نامشخص است؛ ابتدا وضعیت Provider را تطبیق دهید.",
   invalid_request: "اطلاعات فرم معتبر نیست؛ فیلدها را بررسی کنید.",
   invalid_timezone: "منطقهٔ زمانی معتبر نیست؛ نمونه: Asia/Tehran.",
+  username_unchanged: "نام کاربری جدید با نام فعلی یکسان است.",
+  staff_username_exists: "این نام کاربری قبلاً ثبت شده است.",
   password_policy_failed: "رمز عبور با سیاست امنیتی فعلی مطابقت ندارد.",
   mfa_enrollment_required: "برای استفاده از این نقش ابتدا احراز هویت دومرحله‌ای را در حساب من فعال کنید.",
   mfa_required_by_role: "احراز هویت دومرحله‌ای برای این نقش اجباری است و قابل غیرفعال‌سازی نیست.",
@@ -46,6 +48,14 @@ export async function controlAction(action: string, data: unknown): Promise<Cont
 }
 export interface AccountData {
   username: string; role: string; display_name: string; time_zone: string; mfa_enabled: boolean; mfa_required_by_role: boolean; password_policy: { min_length: number; require_upper: boolean; require_lower: boolean; require_digit: boolean; require_symbol: boolean };
+  preferences: {
+    language: "fa" | "en";
+    calendar: "auto" | "jalali" | "gregorian";
+    notify_orders: boolean;
+    notify_campaigns: boolean;
+    notify_finance: boolean;
+    notify_system: boolean;
+  };
   permissions: string[];
   sessions: { id: string; label: string; current: boolean; created_at: string; last_seen_at: string; expires_at: string; revoked: boolean; active: boolean }[];
   events: { id: string; action: string; created_at: string }[];
