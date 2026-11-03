@@ -18,6 +18,8 @@ from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
 from models.shop_admin_control import AdminEvent, AdminSession, ConnectionChange, ConnectionConfig
 from models.shop_staff_security import ShopStaffInvitation, ShopStaffPasswordReset
+from models.shop_channel_features import ShopChannelFeature
+from services.shop_channel_features import get_features, to_data, PLATFORMS
 from services import shop_staff_lifecycle as lifecycle
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -399,6 +401,70 @@ async def retired_mode_request(staff: Staff) -> dict:
     """Do not permit old Redis-only staging to bypass durable apply/audit."""
     required(staff, "bots.configure")
     raise security.SecurityRejected("legacy_endpoint_retired", 409)
+
+
+class ChannelFeatureItem(StrictPayload):
+    """One provider's shopping and internal-credit controls."""
+
+    platform: Literal["telegram", "bale"]
+    cart_enabled: bool
+    store_credit_enabled: bool
+    store_credit_label: str = Field(min_length=1, max_length=80)
+
+
+class ChannelFeaturesUpdate(StrictPayload):
+    """Replace the two provider policies in one atomic transaction."""
+
+    items: list[ChannelFeatureItem] = Field(min_length=2, max_length=2)
+
+
+@router.get("/channel-features")
+async def channel_features(staff: Staff, db: Db) -> dict:
+    """Return the current effective flags for both Telegram and Bale."""
+    required(staff, "settings.manage")
+    rows = [to_data(await get_features(db, platform)) for platform in PLATFORMS]
+    return {"items": rows}
+
+
+@router.post("/channel-features")
+async def update_channel_features(
+    payload: ChannelFeaturesUpdate, staff: Staff, db: Db,
+) -> dict:
+    """Toggle provider features atomically; preserve all carts and ledgers."""
+    actor = required(staff, "settings.manage")
+    options = {item.platform: item for item in payload.items}
+    if set(options) != set(PLATFORMS):
+        raise security.SecurityRejected("invalid_request", 422)
+
+    for platform in PLATFORMS:
+        item = options[platform]
+        name = item.store_credit_label.strip()
+        if not name or len(name) > 80:
+            raise security.SecurityRejected("invalid_request", 422)
+        record = await db.scalar(
+            select(ShopChannelFeature)
+            .where(ShopChannelFeature.platform == platform)
+            .with_for_update()
+        )
+        if record is None:
+            record = ShopChannelFeature(platform=platform)
+            db.add(record)
+        record.cart_enabled = item.cart_enabled
+        record.store_credit_enabled = item.store_credit_enabled
+        record.store_credit_label = name
+        record.changed_by = actor.id
+
+    await db.run_sync(lambda sync: security.audit(
+        sync, actor.id, "settings.channel_features_changed",
+    ))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise security.SecurityRejected("configuration_changed", 409) from None
+    return {"ok": True, "items": [
+        to_data(await get_features(db, platform)) for platform in PLATFORMS
+    ]}
 
 
 class StaffInvite(StrictPayload):
