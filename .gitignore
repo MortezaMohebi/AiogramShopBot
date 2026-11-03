@@ -17,7 +17,3 @@ __pycache__/
 
 # Private real Codespaces provider tokens and first-login administrator password.
 .codespaces/
-
-# Agent Skills are downloaded from pinned upstream Git revisions, not committed.
-.agent-skill-vendors/
-.agents/skills/
