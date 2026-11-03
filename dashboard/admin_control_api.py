@@ -704,8 +704,9 @@ async def change_staff(
         ShopStaffState.staff_id == member_id,
     ).with_for_update())
     state_now = (
-        current.status if current else
-        "active" if target.is_active else "disabled"
+        "active" if target.is_active
+        else "suspended" if current and current.status == "suspended"
+        else "disabled"
     )
     requested = payload.status
     if requested is None and payload.is_active is not None:
