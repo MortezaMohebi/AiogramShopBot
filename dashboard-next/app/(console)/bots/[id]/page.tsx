@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { KeyRound, ShieldAlert, ShieldCheck, Settings2 } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
+import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
+import type { BotCatalogRuleList } from "@/lib/bot-catalog-acl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +19,11 @@ import {
 } from "@/app/(console)/bots/[id]/actions";
 
 type Params = Promise<{ id: string }>;
-type Query = Promise<{ saved?: string; error?: string }>;
+type Query = Promise<{
+  saved?: string; error?: string; acl_saved?: string;
+  acl_error?: string; acl_q?: string;
+  acl_kind?: string; acl_page?: string;
+}>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const errors: Record<string, string> = {
   validation: "فیلدها را بررسی کنید؛ دلیل توقف باید حداقل ۸ نویسه داشته باشد.",
@@ -53,10 +59,19 @@ export default async function BotDetailPage({
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
-  const [detail, members, query] = await Promise.all([
+  const query = await searchParams;
+  const aclKind = query.acl_kind === "category" ? "category" : "product";
+  const aclQ = (query.acl_q ?? "").trim().slice(0, 100);
+  const aclPage = Math.min(
+    100000, Math.max(1, Number.parseInt(query.acl_page ?? "1", 10) || 1),
+  );
+  const aclSearch = new URLSearchParams({
+    kind: aclKind, q: aclQ, page: String(aclPage), page_size: "20",
+  });
+  const [detail, members, acl] = await Promise.all([
     adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
-    searchParams,
+    adminFetch<BotCatalogRuleList>(`/bot-catalog/bots/${id}?${aclSearch}`),
   ]);
   const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
@@ -230,6 +245,21 @@ export default async function BotDetailPage({
         {pending && !legacy ? <p className="text-xs text-muted-foreground">نسخهٔ Staged: {pending.version} · آخرین تأیید: {date(pending.verified_at)}</p> : null}
       </CardContent>
     </Card>
+
+    {query.acl_saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">
+      قانون دسترسی بات به محصولات/دسته‌بندی‌ها با ثبت Audit ذخیره شد.
+    </p> : null}
+    {query.acl_error ? <p role="alert"
+      className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+      {query.acl_error === "reauth" ? "برای تغییر ACL در حساب من هویت خود را دوباره تأیید کنید." :
+        query.acl_error === "version" ? "نسخهٔ تنظیمات تغییر کرده است؛ صفحه را تازه‌سازی کنید." :
+        query.acl_error === "validation" ? "حداقل یک مورد را انتخاب کنید و قانون را بررسی کنید." :
+        query.acl_error === "permission" ? "مجوز تغییر دسترسی محصولات را ندارید." :
+        "ذخیرهٔ دسترسی انجام نشد."}
+    </p> : null}
+    <BotCatalogAccessPanel
+      botId={bot.id} version={bot.version} data={acl} query={aclQ}
+    />
 
     <div className="grid gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>سلامت و پردازش پیام‌ها</CardTitle></CardHeader>
