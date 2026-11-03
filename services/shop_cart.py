@@ -323,7 +323,10 @@ class ShopCartFlow:
             ):
                 raise CartRejected("این کالا در این بات قابل خرید نیست.")
             product = await session.get(Product, product_id)
-            if product is None or not product.is_published:
+            if (
+                product is None or not product.is_published
+                or product.store_id != cart.store_id
+            ):
                 raise CartRejected("این کالا برای خرید موجود نیست.")
             current = line.quantity if line is not None else 0
             new_quantity = current + 1
@@ -368,6 +371,8 @@ class ShopCartFlow:
         # All cart routes including checkout and place_order re-evaluate the
         # current entitlements. No price or customer-facing name is exposed
         # after a product has been removed from this bot's catalog.
+        if any(product.store_id != cart.store_id for _, product in rows):
+            raise CartRejected("کالای سبد به فروشگاه دیگری تعلق دارد.")
         if not await allowed_for_bot(
             session, bot_id or cart.bot_id, [product.id for _, product in rows],
         ):
@@ -573,7 +578,14 @@ class ShopCartFlow:
         requested_page: int = 0
     ) -> BotReply:
         """Paginate arbitrary administrator-defined shipping methods."""
-        clause = ShopShippingMethod.is_active.is_(True)
+        store_id = (
+            self.bot_context.store_id if self.bot_context
+            else DEFAULT_STORE_ID
+        )
+        clause = (
+            ShopShippingMethod.is_active.is_(True)
+            & (ShopShippingMethod.store_id == store_id)
+        )
         count = await session.scalar(
             select(func.count()).select_from(ShopShippingMethod).where(clause)
         )
@@ -613,7 +625,13 @@ class ShopCartFlow:
     ) -> BotReply:
         """Save the selected active shipping option."""
         shipping = await session.get(ShopShippingMethod, method_id)
-        if shipping is None or not shipping.is_active:
+        if (
+            shipping is None or not shipping.is_active
+            or shipping.store_id != (
+                self.bot_context.store_id if self.bot_context
+                else DEFAULT_STORE_ID
+            )
+        ):
             raise CartRejected("روش ارسال فعلی غیرفعال است.")
         cart = await self._get_cart(event, session, create=True, lock=True)
         cart.shipping_method_id = shipping.id
