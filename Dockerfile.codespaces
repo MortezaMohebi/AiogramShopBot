@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+# Catch import-free syntax issues during Codespaces image construction.
+RUN python -m compileall -q /bot
 RUN groupadd --system --gid 10001 shop && useradd --system --uid 10001 --gid shop --home /bot shop     && mkdir -p /bot/static /bot/media_data && chown shop:shop /bot/static /bot/media_data
 USER shop
 EXPOSE 5000
