@@ -22,6 +22,7 @@ from models.shop_checkout import (
 from models.shop_content import Product, ShopOrder
 from services.shop_money import MAX_RIALS, format_rials, to_rials
 from services.shop_channel_features import get_features
+from services.shop_bot_catalog_acl import allowed_for_legacy
 
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
@@ -239,6 +240,11 @@ class ShopCartFlow:
             else:
                 line.quantity -= 1
         elif action in ("add", "inc"):
+            # Stale add/inc callbacks cannot bypass a newly denied product.
+            if not await allowed_for_legacy(
+                session, event.platform.value, [product_id],
+            ):
+                raise CartRejected("این کالا در این بات قابل خرید نیست.")
             product = await session.get(Product, product_id)
             if product is None or not product.is_published:
                 raise CartRejected("این کالا برای خرید موجود نیست.")
@@ -282,6 +288,13 @@ class ShopCartFlow:
         rows = result.all()
         if not rows:
             raise CartRejected("سبد خرید خالی است.")
+        # All cart routes including checkout and place_order re-evaluate the
+        # current entitlements. No price or customer-facing name is exposed
+        # after a product has been removed from this bot's catalog.
+        if not await allowed_for_legacy(
+            session, cart.platform, [product.id for _, product in rows],
+        ):
+            raise CartRejected("یک یا چند کالای سبد دیگر در این بات مجاز نیستند.")
         lines: list[QuoteLine] = []
         subtotal = 0
         needs_shipping = False
@@ -343,7 +356,7 @@ class ShopCartFlow:
             )
             rows = [
                 (button(
-                    f"🗑 حذف {product.name[:36]}",
+                    "🗑 حذف کالای غیرقابل خرید",
                     f"shop:remove:{item.product_id}",
                 ),)
                 for item, product in result.all()
