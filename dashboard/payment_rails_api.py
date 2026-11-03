@@ -15,6 +15,7 @@ from models.shop_payment_rail import ShopPaymentRail
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 from services.shop_payment_rails import SUPPORTED, list_rails
+from services.shop_channel_features import get_features
 
 router = APIRouter(prefix="/internal/admin/v1", tags=["Payment controls"])
 Db = Annotated[AsyncSession, Depends(database)]
@@ -74,12 +75,12 @@ async def get_payment_rails(staff: Actor, db: Db) -> dict:
     authorize(staff)
     rows = await list_rails(db)
     for row in rows:
-        row["runtime_ready"] = runtime_ready(
-            row["platform"], row["rail_type"],
-        )
-        row["effective_enabled"] = (
-            row["enabled"] and row["runtime_ready"]
-        )
+        ready = runtime_ready(row["platform"], row["rail_type"])
+        if row["rail_type"] == "store_credit":
+            features = await get_features(db, row["platform"])
+            ready = ready and features.store_credit_enabled
+        row["runtime_ready"] = ready
+        row["effective_enabled"] = row["enabled"] and ready
     return {"items": rows}
 
 
