@@ -22,6 +22,7 @@ from services.shop_referrals import (
 )
 from services.shop_channel_catalog import CatalogFlow
 from middleware.database import DBSessionMiddleware
+from middleware.shop_bot_gate import ShopBotOperationMiddleware
 from middleware.language import I18nMiddleware
 from middleware.throttling_middleware import ThrottlingMiddleware
 from models.user import UserDTO
@@ -190,6 +191,10 @@ main_router.message.middleware(DBSessionMiddleware())
 main_router.callback_query.middleware(DBSessionMiddleware())
 main_router.message.middleware(I18nMiddleware())
 main_router.callback_query.middleware(I18nMiddleware())
+
+# Outer update middleware also covers the legacy menus. Payment updates
+# bypass the gate so existing invoices can still be settled safely.
+dp.update.outer_middleware(ShopBotOperationMiddleware())
 
 
 @main_router.message(IsUserBannedFilter())
