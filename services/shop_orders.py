@@ -17,6 +17,7 @@ from models.shop_content import ShopOrder
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_payment_rails import rail_enabled
+from services.shop_bot_catalog_acl import resolve_legacy_scope, visible_product_ids
 import config
 from services.shop_refunds import ShopRefundService
 from services.shop_payments import PaymentRejected
@@ -101,6 +102,23 @@ class ShopOrdersFlow:
             .group_by(ShopOrderLine.order_id)
         )
         quantities = dict(counts_result.all())
+        # A payment button must not be offered when the current bot ACL
+        # denies an unpaid order. A customer's paid/refundable history remains
+        # visible, and cancellation of the unpaid request stays available.
+        order_items = await session.execute(
+            select(ShopOrderLine.order_id, ShopOrderLine.product_id)
+            .where(ShopOrderLine.order_id.in_(ids))
+        )
+        order_products: dict[int, set[int]] = {}
+        all_products: set[int] = set()
+        for order_id, product_id in order_items.all():
+            order_products.setdefault(order_id, set()).add(product_id)
+            all_products.add(product_id)
+        allowed_products = await visible_product_ids(
+            session,
+            await resolve_legacy_scope(session, event.platform.value),
+            all_products,
+        )
         features = await get_features(session, event.platform.value)
         credit_available = (
             features.store_credit_enabled and await rail_enabled(
@@ -137,6 +155,15 @@ class ShopOrdersFlow:
                     ),
                 ))
             if order.status == "approved_unpaid":
+                # Stale unpaid orders may not mint new invoices for products
+                # whose access was revoked after the review was approved.
+                available_ids = order_products.get(order.id, set())
+                if not available_ids or not available_ids <= allowed_products:
+                    lines.append(
+                        "دسترسی به یکی از کالاهای این سفارش تغییر کرده است؛ "
+                        "پرداخت جدید برای آن مجاز نیست."
+                    )
+                    continue
                 actions = []
                 if external_ready:
                     actions.append(InlineAction(
