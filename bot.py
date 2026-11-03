@@ -27,6 +27,7 @@ from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
+from services.shop_bot_operations import legacy_state
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.bale_wallet import BaleWalletService, CheckoutRejected
@@ -484,6 +485,16 @@ async def _process_bale_update(request: Request, payload: dict):
     source = payload.get("callback_query") or payload.get("message") or {}
     customer = source.get("from") if isinstance(source, dict) else {}
     async with get_db_session() as session:
+        status = await legacy_state(session, "bale")
+        if status.state != "active":
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            if status.state != "disabled":
+                await transport.send(
+                    event.chat_id,
+                    BotReply(status.message),
+                )
+            return {"status": status.state}
         await register_customer(
             session,
             platform=Platform.BALE,
