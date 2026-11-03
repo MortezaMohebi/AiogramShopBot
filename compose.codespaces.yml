@@ -1,0 +1,154 @@
+# Live Telegram/Bale Codespaces Docker stack; separate from production and lab.
+name: telegram-bale-codespace
+x-backend-env: &backend-env
+  RUNTIME_ENVIRONMENT: "PROD"
+  WEBHOOK_HOST: "${LIVE_WEBHOOK_BASE:?Run setup init}"
+  WEBHOOK_PATH: "/hooks/telegram"
+  WEBHOOK_SECRET_TOKEN: "${LIVE_TELEGRAM_WEBHOOK_SECRET:?Run setup}"
+  TELEGRAM_UPDATE_MODE: "webhook"
+  TELEGRAM_API_MODE: "${LIVE_TELEGRAM_API_MODE:-direct}"
+  TELEGRAM_WORKER_URL: "${LIVE_TELEGRAM_WORKER_URL:-}"
+  TELEGRAM_WORKER_SECRET: "${LIVE_TELEGRAM_WORKER_SECRET:-}"
+  TELEGRAM_PROXY_URL: "${LIVE_TELEGRAM_PROXY_URL:-}"
+  TOKEN: "${LIVE_TELEGRAM_TOKEN:?Configure Telegram token}"
+  BALE_BOT_TOKEN: "${LIVE_BALE_TOKEN:?Configure Bale token}"
+  BALE_WEBHOOK_SECRET: "${LIVE_BALE_WEBHOOK_SECRET:?Run setup}"
+  BALE_WALLET_PROVIDER_TOKEN: "${LIVE_BALE_PAYMENT_TOKEN:-}"
+  WEBAPP_HOST: "0.0.0.0"
+  WEBAPP_PORT: "5000"
+  ADMIN_ID_LIST: ""
+  DEFAULT_MEDIA_FILE_ID: "${LIVE_DEFAULT_MEDIA_FILE_ID:-}"
+  POSTGRES_USER: "shop_codespace"
+  POSTGRES_PASSWORD: "${LIVE_POSTGRES_PASSWORD:?Run setup}"
+  POSTGRES_DB: "shop_codespace"
+  DB_USER: "shop_codespace"
+  DB_PASS: "${LIVE_POSTGRES_PASSWORD:?Run setup}"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "shop_codespace"
+  DB_SQL_ECHO: "false"
+  REDIS_HOST: "redis"
+  REDIS_PASSWORD: "${LIVE_REDIS_PASSWORD:?Run setup}"
+  JWT_SECRET_KEY: "${LIVE_JWT_SECRET:?Run setup}"
+  NEXT_ADMIN_BRIDGE_ENABLED: "true"
+  NEXT_ADMIN_BRIDGE_SECRET: "${LIVE_BRIDGE_SECRET:?Run setup}"
+  SHOP_MEDIA_ROOT: "/bot/media_data"
+  SHOP_MEDIA_MAX_BYTES: "50000000"
+  SHOP_ADMIN_SECURE_COOKIES: "true"
+  SHOP_DISPLAY_UNIT: "IRR"
+  SHOP_CURRENCY_LABEL: "ریال"
+  CURRENCY: "USD"
+  TELEGRAM_FIAT_CHECKOUT_ENABLED: "false"
+  TELEGRAM_STARS_CHECKOUT_ENABLED: "false"
+  TELEGRAM_STARS_REFUNDS_ENABLED: "false"
+  BALE_WALLET_CHECKOUT_ENABLED: "false"
+  SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR: "0"
+  BALE_BROADCAST_MODE: "standard"
+  BALE_BROADCAST_PAID_ENABLED: "false"
+  BALE_BROADCAST_PREPARE_CHAT_ID: "0"
+  SHOP_CAMPAIGN_DISPATCH_ENABLED: "false"
+  SHOP_BROADCAST_WORKER_ENABLED: "false"
+  SHOP_BROADCAST_MAX_PAID_CALLS: "0"
+  CRYPTO_FORWARDING_MODE: "false"
+  MULTIBOT: "false"
+  SUPPORT_LINK: ""
+x-backend-service: &backend-service
+  build: {context: ., dockerfile: Dockerfile.codespaces}
+  environment: *backend-env
+  networks: [private]
+  init: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: "shop_codespace"
+      POSTGRES_PASSWORD: "${LIVE_POSTGRES_PASSWORD:?Run setup}"
+      POSTGRES_DB: "shop_codespace"
+    volumes: ["codespace_pg:/var/lib/postgresql"]
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$${POSTGRES_USER}\" -d \"$$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-alpine
+    environment: {REDIS_PASSWORD: "${LIVE_REDIS_PASSWORD:?Run setup}"}
+    command: ["/bin/sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$${REDIS_PASSWORD}\""]
+    volumes: ["codespace_redis:/data"]
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  migrate:
+    <<: *backend-service
+    depends_on: {postgres: {condition: service_healthy}}
+    command: ["python", "-m", "scripts.codespace_migrate"]
+    restart: "no"
+  app:
+    <<: *backend-service
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    command: ["python", "-u", "run.py"]
+    volumes: ["codespace_media:/bot/media_data", "codespace_static:/bot/static"]
+    expose: ["5000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:5000/healthz', timeout=4).status == 200"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 25s
+    restart: unless-stopped
+  dashboard:
+    build: {context: ./dashboard-next, dockerfile: Dockerfile.codespaces}
+    environment:
+      NODE_ENV: "production"
+      NEXT_TELEMETRY_DISABLED: "1"
+      SHOP_FASTAPI_INTERNAL_URL: "http://app:5000"
+      NEXT_ADMIN_PUBLIC_ORIGIN: "${LIVE_DASHBOARD_ORIGIN:?Run setup}"
+      NEXT_ADMIN_BRIDGE_SECRET: "${LIVE_BRIDGE_SECRET:?Run setup}"
+      NEXT_ADMIN_SESSION_SECRET: "${LIVE_SESSION_SECRET:?Run setup}"
+    depends_on: {app: {condition: service_healthy}}
+    networks: [private]
+    ports: ["127.0.0.1:3000:3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 20s
+    restart: unless-stopped
+  webhook-gateway:
+    image: nginx:1.29-alpine
+    depends_on: {app: {condition: service_healthy}}
+    ports: ["127.0.0.1:8080:8080"]
+    volumes: ["./deploy/codespaces/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    networks: [private]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/_edge/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  pytest:
+    <<: *backend-service
+    profiles: ["qa"]
+    command: ["python", "-m", "pytest", "-q", "tests"]
+    depends_on: {postgres: {condition: service_healthy}}
+    restart: "no"
+volumes:
+  codespace_pg:
+  codespace_redis:
+  codespace_media:
+  codespace_static:
+networks:
+  private: {driver: bridge}
