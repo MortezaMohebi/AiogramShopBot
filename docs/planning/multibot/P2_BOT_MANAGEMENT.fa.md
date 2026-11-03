@@ -11,6 +11,7 @@
 - دو بات قبلی به‌صورت مستقل وضعیت **Active / Maintenance / Paused / Disabled** دارند. هر تغییر با Version/Role/Recent Reauthentication و Audit انجام می‌شود.
 - حالت Pause/Disable در Telegram از Global Aiogram Update Middleware و در Bale از handler ایمن پس از بخش‌های پردازش مالی اعمال می‌شود؛ در Broadcast Worker نیز مانع Claim جدید و ارسال گام بعدی می‌شود.
 - پرداخت‌های قبلاً صادرشده، PreCheckout و Successful Payment در هر دو پیام‌رسان همچنان به کد تسویه می‌رسند.
+- Callback درخواست بازپرداخت سفارش‌های قبلی حتی هنگام Pause/Disable حفظ می‌شود؛ مالکیت سفارش همچنان در Backend بررسی می‌شود.
 - برای بات‌های جدید، Token فقط به‌صورت نسخه‌بندی‌شده و Fernet-encrypted ذخیره می‌شود. Token خام از مرورگر/Backend GET/Audit/Log بازگردانده نمی‌شود. Fingerprint با HMAC از کلید Secret برای تشخیص ثبت دوباره استفاده می‌شود.
 - `verify` فقط `getMe` را از Telegram/Bale اجرا می‌کند؛ `provider_bot_id` و `verified_at` را پس از تأیید و کنترل Version/Unique Identity ثبت می‌کند. **هیچ بات جدیدی فعال نمی‌شود.**
 - صفحهٔ اتصال قدیمی فقط برای تنظیم زیرساخت Worker/Proxy/Webhook/getUpdates دو Receiver فعلی نگه داشته شده و کنترل اختصاصی بات از آن جدا شده است.
