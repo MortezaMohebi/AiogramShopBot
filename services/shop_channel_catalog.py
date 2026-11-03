@@ -19,7 +19,8 @@ from models.shop_content import (
     Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
 )
 from services.shop_money import format_rials
-from services.shop_channel_features import get_features
+from models.shop_product_visibility import ShopProductVisibility
+from services.shop_presentation import product_message
 
 _PAGE_SIZE = 6
 _CATEGORY_PAGE_SIZE = 6
@@ -71,7 +72,7 @@ class CatalogFlow:
                 )
             match = _PRODUCT_PATTERN.fullmatch(data)
             if match:
-                return await self._product(session, int(match.group(1)), event.platform.value)
+                return await self._product(session, int(match.group(1)))
             match = _REVIEW_PATTERN.fullmatch(data)
             if match:
                 return await self._reviews(
@@ -83,7 +84,7 @@ class CatalogFlow:
                     session, int(match.group(1)), int(match.group(2))
                 )
             if data == "shop:home":
-                return await self._home(session, event.platform.value)
+                return await self._home(session)
             if data == "shop:help":
                 return await self._settings_text(session, key="support")
             if data == "shop:faq":
@@ -106,14 +107,14 @@ class CatalogFlow:
         if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
             return await self._categories_or_products(session)
         if text.split(" ", 1)[0] == "/start":
-            return await self._home(session, event.platform.value)
+            return await self._home(session)
         if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
             return await self._settings_text(session, key="support")
         if text in ("❓ پرسش‌های متداول", "/faq"):
             return await self._settings_text(session, key="faq")
         return None
 
-    async def _home(self, session: AsyncSession, platform: str) -> BotReply:
+    async def _home(self, session: AsyncSession) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
         settings = await session.get(ShopSettings, 1)
         welcome = (
@@ -121,22 +122,16 @@ class CatalogFlow:
             if settings and settings.welcome_message
             else "به فروشگاه خوش آمدید."
         )
-        features = await get_features(session, platform)
-        rows = [
-            (_button("🛍 محصولات", "shop:categories"),),
-            (_button("📦 سفارش‌های من", "shop:orders"),),
-        ]
-        if features.cart_enabled:
-            rows.append((_button("🛒 سبد خرید", "shop:cart"),))
-        rows.extend([
-            (_button("🆘 پشتیبانی", "shop:help"),),
-            (_button("❓ پرسش‌های متداول", "shop:faq"),),
-        ])
         return BotReply(
             text=welcome[:4096],
-            rows=tuple(rows),
+            rows=(
+                (_button("🛍 محصولات", "shop:categories"),),
+                (_button("📦 سفارش‌های من", "shop:orders"),),
+                (_button("🛒 سبد خرید", "shop:cart"),),
+                (_button("🆘 پشتیبانی", "shop:help"),),
+                (_button("❓ پرسش‌های متداول", "shop:faq"),),
+            ),
         )
-
 
     async def _settings_text(
         self, session: AsyncSession, *, key: str
@@ -254,7 +249,7 @@ class CatalogFlow:
             rows=tuple(rows),
         )
 
-    async def _product(self, session: AsyncSession, product_id: int, platform: str) -> BotReply:
+    async def _product(self, session: AsyncSession, product_id: int) -> BotReply:
         """Show an active product, never exposing an unpublished record."""
         result = await session.execute(
             select(Product).where(
@@ -269,31 +264,30 @@ class CatalogFlow:
                 ((_button("بازگشت به محصولات", "shop:list:0"),),),
             )
 
-        stock = (
-            f"موجودی: {product.stock_quantity}"
-            if product.stock_quantity > 0
-            else "ناموجود"
+        visibility = await session.get(ShopProductVisibility, product.id)
+        show_description = visibility.show_description if visibility else True
+        show_stock = visibility.show_stock if visibility else True
+        show_media = visibility.show_media if visibility else True
+        show_reviews = visibility.show_reviews if visibility else True
+        body = product_message(
+            product,
+            price_label=format_rials(product.price, self.display_unit),
+            show_description=show_description,
+            show_stock=show_stock,
         )
-        description = product.description[:2800]
-        if len(product.description) > 2800:
-            description += "…"
-        body = (
-            f"{product.name}\n\n{description}\n\n"
-            f"قیمت: {format_rials(product.price, self.display_unit)}\n{stock}"
-        )
-        features = await get_features(session, platform)
         rows = []
-        if features.cart_enabled:
-            rows.extend([
-                (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),),
-                (_button("🛒 مشاهده سبد", "shop:cart"),),
-            ])
-        rows.extend([
+        if product.stock_quantity > 0:
+            rows.append((_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),))
+        rows.extend((
+            (_button("🛒 مشاهده سبد", "shop:cart"),),
             (_button("📦 سفارش‌های من", "shop:orders"),),
-            (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
-            (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
-            (_button("بازگشت به محصولات", "shop:list:0"),),
-        ])
+        ))
+        # Hide the navigation controls as well as the underlying data.
+        if show_media:
+            rows.append((_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),))
+        if show_reviews:
+            rows.append((_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),))
+        rows.append((_button("بازگشت به محصولات", "shop:list:0"),))
         return BotReply(text=body, rows=tuple(rows))
 
     async def _media(
@@ -307,6 +301,9 @@ class CatalogFlow:
         )
         if published is None:
             return BotReply("این محصول در حال حاضر قابل نمایش نیست.")
+        policy = await session.get(ShopProductVisibility, product_id)
+        if policy is not None and not policy.show_media:
+            return BotReply("رسانه‌های این محصول برای نمایش فعال نیستند.")
         condition = (
             ProductMedia.product_id == product_id,
             ProductMedia.is_published.is_(True),
@@ -365,6 +362,9 @@ class CatalogFlow:
                 "این محصول در حال حاضر قابل نمایش نیست.",
                 ((_button("بازگشت به محصولات", "shop:list:0"),),),
             )
+        policy = await session.get(ShopProductVisibility, product_id)
+        if policy is not None and not policy.show_reviews:
+            return BotReply("رضایت‌های این محصول برای نمایش فعال نیستند.")
 
         condition = (
             Testimonial.product_id == product_id,

@@ -51,6 +51,10 @@ export interface Product {
   description: string;
   price_irr: string;
   price_stars: number | null;
+  show_description?: boolean;
+  show_stock?: boolean;
+  show_media?: boolean;
+  show_reviews?: boolean;
   stock_quantity: number;
   requires_shipping: boolean;
   product_type: "physical" | "digital";
