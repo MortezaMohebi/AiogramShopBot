@@ -15,16 +15,16 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from dashboard.admin_control_api import StaffUpdate, change_staff
+from services.shop_admin_security import SecurityRejected
 from dashboard.next_operations import (
     BaleMediaPrepareDecision,
     MediaPatch,
     OrderReviewDecision,
     ReferralPolicyPatch,
-    StaffUpdate,
     TestimonialPatch,
     WalletAdjustment,
     bounded_number,
-    change_staff,
     positive_id,
     prepare_bale_broadcast_media,
     review_unpaid_order,
@@ -50,6 +50,10 @@ class OfflineDB:
     async def execute(self, statement):
         """Execute one SQL statement."""
         return self.session.execute(statement)
+
+    async def scalars(self, statement):
+        """Return ORM scalar rows, preserving the backing SQLite session."""
+        return self.session.scalars(statement)
 
     async def commit(self):
         """Commit the disposable SQLite transaction."""
@@ -221,14 +225,14 @@ async def test_cannot_disable_last_superadmin(db: OfflineDB) -> None:
     )
     db.add(member)
     await db.commit()
-    with pytest.raises(HTTPException) as denied:
+    with pytest.raises(SecurityRejected) as denied:
         await change_staff(
             member.id,
             StaffUpdate(
-                is_active=False, confirmation="UPDATE_STAFF",
+                is_active=False,
             ),
             SimpleNamespace(id=member.id, role="superadmin"), db,
         )
-    assert denied.value.status_code == 409
+    assert denied.value.status == 409
     assert member.is_active is True
     assert member.session_version == 1
