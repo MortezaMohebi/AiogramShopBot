@@ -316,6 +316,7 @@ def main() -> int:
         "command",
         choices=(
             "info", "init", "config", "start", "ports", "connect",
+            "disconnect",
             "doctor", "credentials", "status", "logs", "test",
             "stop", "reset",
         ),
@@ -332,6 +333,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py ports")
         print("  python3 scripts/codespace_setup.py connect")
         print("  python3 scripts/codespace_setup.py doctor")
+        print("  python3 scripts/codespace_setup.py disconnect")
         print("  python3 scripts/codespace_setup.py credentials")
         return 0
     if args.command == "init":
@@ -353,6 +355,17 @@ def main() -> int:
         return 0
     if args.command == "connect":
         return connect(yes=args.yes)
+    if args.command == "disconnect":
+        if not args.yes:
+            if not sys.stdin.isatty():
+                raise RuntimeError("Type DISCONNECT interactively or pass --yes.")
+            print("Only callbacks currently targeting this Codespace may be removed.")
+            if input("Type DISCONNECT to unregister webhooks: ").strip() != "DISCONNECT":
+                return 1
+        return compose(
+            "exec", "-T", "app", "python", "-m",
+            "scripts.codespace_connect", "--unregister",
+        )
     if args.command == "doctor":
         code = compose(
             "exec", "-T", "app", "python", "-m", "scripts.codespace_connect"
