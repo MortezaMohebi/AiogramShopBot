@@ -40,13 +40,17 @@ def _cipher() -> Fernet:
     raw = os.environ.get("SHOP_BOT_SECRET_KEY")
     if raw:
         try:
-            secret = base64.urlsafe_b64decode(raw.encode("ascii"))
+            secret = base64.b64decode(
+                raw.encode("ascii"), altchars=b"-_", validate=True,
+            )
         except (ValueError, UnicodeError, binascii.Error):
             raise SecurityRejected("bot_secret_key_invalid", 503) from None
     else:
         base = os.environ.get("SHOP_SECURITY_ENCRYPTION_KEY", "")
         try:
-            decoded = base64.urlsafe_b64decode(base.encode("ascii"))
+            decoded = base64.b64decode(
+                base.encode("ascii"), altchars=b"-_", validate=True,
+            )
         except (ValueError, UnicodeError, binascii.Error):
             raise SecurityRejected("bot_secret_key_unavailable", 503) from None
         if len(decoded) != 32:
