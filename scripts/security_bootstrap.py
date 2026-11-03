@@ -28,6 +28,7 @@ async def main() -> None:
     from models.base import Base
     from models.shop_admin_control import CONTROL_TABLE_NAMES
     from models.shop_staff_security import STAFF_SECURITY_TABLE_NAMES
+    from models.shop_channel_features import SHOP_CHANNEL_FEATURE_TABLES
     async with engine.begin() as connection:
         if await connection.scalar(text("SELECT current_database()")) != "shop_codespace":
             raise RuntimeError("Only the Codespaces database may be bootstrapped")
@@ -39,7 +40,7 @@ async def main() -> None:
                 raise RuntimeError("Versioned databases must use their migrations")
         # These new tables are additive; neither existing product nor order
         # columns are changed. An existing Codespace keeps all its data.
-        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | {"shop_product_visibility"}
+        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | {"shop_product_visibility"}
         missing = permitted_missing(tables, set(Base.metadata.tables), additions)
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,
