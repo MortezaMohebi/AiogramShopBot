@@ -39,6 +39,7 @@ MAX_BYTES = 8 * 1024 * 1024
 MAX_UNPACKED = 32 * 1024 * 1024
 MAX_IMPORT_ROWS = 1_000
 MAX_EXPORT_ROWS = 5_000
+MAX_EXPORT_BYTES = 16 * 1024 * 1024
 REF_PATTERN = re.compile(r"^[a-zA-Z0-9_.:\-]{1,80}$")
 
 
@@ -76,16 +77,26 @@ def encode_table(
     if format_name not in {"csv", "xlsx"}:
         raise security.SecurityRejected("unsupported_data_format", 422)
     headers = _headers(dataset, template=template)
+    if len(rows) > MAX_EXPORT_ROWS:
+        raise security.SecurityRejected("model_export_too_large", 409)
+    # Reject oversized exports before allocating large XLSX worksheets.
+    # Descriptions may be 40k characters even for a small row count.
+    estimated = sum(
+        sum(len(str(record.get(key) or "").encode("utf-8")) for key in headers)
+        for record in rows
+    )
+    if estimated > MAX_EXPORT_BYTES:
+        raise security.SecurityRejected("model_export_too_large", 409)
     if format_name == "csv":
         output = io.StringIO(newline="")
         writer = csv.writer(output, lineterminator="\r\n")
         writer.writerow(headers)
         for record in rows:
             writer.writerow([_safe_cell(record.get(key)) for key in headers])
-        return (
-            b"\xef\xbb\xbf" + output.getvalue().encode("utf-8"),
-            "text/csv; charset=utf-8",
-        )
+        payload = b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
+        if len(payload) > MAX_EXPORT_BYTES:
+            raise security.SecurityRejected("model_export_too_large", 409)
+        return payload, "text/csv; charset=utf-8"
 
     workbook = Workbook()
     sheet = workbook.active
@@ -121,12 +132,16 @@ def encode_table(
         help_sheet.column_dimensions["D"].width = 20
         help_sheet.freeze_panes = "A2"
     output = io.BytesIO()
-    workbook.save(output)
-    workbook.close()
-    return (
-        output.getvalue(),
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    try:
+        workbook.save(output)
+        if output.tell() > MAX_EXPORT_BYTES:
+            raise security.SecurityRejected("model_export_too_large", 409)
+        return (
+            output.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    finally:
+        workbook.close()
 
 
 def cell_column(index: int) -> str:
