@@ -211,7 +211,15 @@ def resolve_active_token(db: Session, *, bot_id: str) -> str:
     Never call it directly from a public webhook using a client-supplied ID.
     """
     bot = db.get(ShopBot, bot_id)
-    if bot is None or bot.status not in {"legacy", "active"}:
+    if bot is None or not (
+        (bot.runtime_owner == "legacy" and bot.status == "legacy")
+        or (
+            bot.runtime_owner == "registry"
+            and bot.status in {
+                "active", "paused", "maintenance", "disabled",
+            }
+        )
+    ):
         raise SecurityRejected("bot_not_active", 409)
     if bot.credential_version is None:
         raise SecurityRejected("bot_credential_missing", 409)
