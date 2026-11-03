@@ -6,6 +6,7 @@ import {
 import {
   BotProfilePanel, type BotHealth, type BotProfile,
 } from "@/components/blocks/bot-profile-panel";
+import { TelegramTransportPanel, type TelegramTransportData } from "@/components/blocks/telegram-transport-panel";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 
 type Params = Promise<{ saved?: string; verified?: string; error?: string }>;
@@ -23,11 +24,12 @@ export default async function BotConnectionsPage({
 }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
-  const [operations, profiles, health, members, params] = await Promise.all([
+  const [operations, profiles, health, members, telegramTransport, params] = await Promise.all([
     adminFetch<ConnectionData>("/connection-changes"),
     adminFetch<{ items: BotProfile[] }>("/bot-profiles"),
     adminFetch<{ items: BotHealth[] }>("/bot-profiles/health"),
     adminFetch<{ id: number; username: string }[]>("/staff"),
+    adminFetch<TelegramTransportData>("/telegram-transport"),
     searchParams,
   ]);
   return <div className="space-y-6">
@@ -36,6 +38,7 @@ export default async function BotConnectionsPage({
     {params.verified ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">شناسهٔ Provider با getMe تأیید شد.</p> : null}
     {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[params.error] ?? "درخواست انجام نشد."}</p> : null}
     <BotProfilePanel initial={profiles.items} health={health.items} staff={members} />
+    <TelegramTransportPanel initial={telegramTransport} />
     <ConnectionControlPanel initial={operations} />
   </div>;
 }
