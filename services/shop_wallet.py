@@ -264,12 +264,18 @@ class ShopWalletService:
             raise StoreCreditRejected("سفارش متعلق به این حساب نیست.")
         if order.provider == "store_credit" and order.status == "paid":
             return order, False
-        features = await get_features(session, platform.value)
+        features = await get_features(
+            session, platform.value,
+            bot_id=bot_id or legacy_id(platform.value),
+        )
         if not features.store_credit_enabled:
             raise StoreCreditRejected(
                 "پرداخت با اعتبار داخلی برای این پیام‌رسان غیرفعال است."
             )
-        if not await rail_enabled(session, platform.value, "store_credit"):
+        if not await rail_enabled(
+            session, platform.value, "store_credit",
+            bot_id=bot_id or legacy_id(platform.value),
+        ):
             raise StoreCreditRejected(
                 "این روش پرداخت با اعتبار داخلی غیرفعال است."
             )
@@ -358,6 +364,7 @@ class ShopWalletService:
         now = datetime.now(timezone.utc)
         session.add(
             ShopPaymentAttempt(
+                store_id=order.store_id,
                 order_id=order.id,
                 bot_id=bot_id or legacy_id(platform.value),
                 platform=platform.value,
@@ -418,9 +425,15 @@ class ShopWalletService:
         )
         if identity is None:
             raise StoreCreditRejected("هویت گیرنده یافت نشد.")
+        debit = await session.scalar(select(ShopWalletEntry).where(
+            ShopWalletEntry.operation_key == f"store-credit-pay-order:{order.id}",
+        ))
+        if debit is None or debit.delta_irr != -to_rials(order.total_irr):
+            raise StoreCreditRejected("سند برداشت اعتبار اصلی پیدا نشد.")
         await ShopWalletService.apply(
             session,
             identity_id=identity.id,
+            forced_account_id=debit.account_id,
             delta_irr=to_rials(order.total_irr),
             operation_key=f"store-credit-refund-order:{order.id}",
             reason=f"Refund order #{order.id}",

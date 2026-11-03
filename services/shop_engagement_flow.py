@@ -120,7 +120,10 @@ class ShopEngagementFlow:
             or _CREDIT_PREVIEW.fullmatch(callback)
             or _CREDIT_CONFIRM.fullmatch(callback)
         ):
-            features = await get_features(session, event.platform.value)
+            features = await get_features(
+                session, event.platform.value,
+                bot_id=self._bot_id(event.platform),
+            )
             if not features.store_credit_enabled:
                 return BotReply(
                     "اعتبار داخلی فروشگاه برای این پیام‌رسان غیرفعال شده است.",
@@ -205,7 +208,10 @@ class ShopEngagementFlow:
             f" — {entry.reason[:60]}"
             for entry in entries
         )
-        features = await get_features(session, event.platform.value)
+        features = await get_features(
+                session, event.platform.value,
+                bot_id=self._bot_id(event.platform),
+            )
         return BotReply(
             f"💳 {features.store_credit_label}\n"
             f"موجودی: {format_rials(balance, self.display_unit)}\n\n"
