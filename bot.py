@@ -176,7 +176,7 @@ async def _shutdown() -> None:
             polling_task.cancel()
         with suppress(asyncio.CancelledError):
             await polling_task
-    elif __import__("os").environ.get("CODESPACE_MANUAL_WEBHOOK") != "true":
+    elif os.environ.get("CODESPACE_MANUAL_WEBHOOK") != "true":
         await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()
