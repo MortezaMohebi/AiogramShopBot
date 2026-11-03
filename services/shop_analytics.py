@@ -15,7 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import ShopIdentity, ShopOrder
 from models.shop_checkout import ShopOrderLine
-from models.shop_engagement import ShopCampaignDelivery, ShopWalletEntry
+from models.shop_engagement import (
+    ShopCampaign, ShopCampaignDelivery, ShopWalletAccount, ShopWalletEntry,
+)
+from services.shop_store_context import current_context
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 
 
@@ -89,10 +92,14 @@ async def build_shop_analytics(
         datetime.now(timezone.utc) - timedelta(days=days)
         if days else None
     )
+    ctx = current_context()
+    selected = ctx.active_store_ids if ctx is not None else None
 
     identities_clause = (
         [ShopIdentity.registered_at >= since] if since else []
     )
+    if selected is not None:
+        identities_clause.append(ShopIdentity.store_id.in_(selected))
     identities = await session.execute(
         select(
             ShopIdentity.platform,
@@ -116,6 +123,8 @@ async def build_shop_analytics(
     }
 
     order_clause = [ShopOrder.created_at >= since] if since else []
+    if selected is not None:
+        order_clause.append(ShopOrder.store_id.in_(selected))
     order_results = await session.execute(
         select(
             ShopOrder.platform, ShopOrder.status, func.count(ShopOrder.id)
@@ -130,6 +139,8 @@ async def build_shop_analytics(
         order_counts.setdefault(platform, {})[status] = int(count)
 
     revenue_clause = [ShopOrder.paid_at >= since] if since else []
+    if selected is not None:
+        revenue_clause.append(ShopOrder.store_id.in_(selected))
     payment_rows = await session.execute(
         select(
             ShopOrder.platform,
@@ -194,44 +205,58 @@ async def build_shop_analytics(
     # Campaign approval and sending are events without a `created_at`
     # on the recipient outbox; all pending states remain visible to prevent
     # old unresolved deliveries disappearing from operational reports.
+    campaign_query = select(
+        ShopCampaignDelivery.status,
+        func.count(ShopCampaignDelivery.id),
+    )
+    if selected is not None:
+        campaign_query = campaign_query.join(
+            ShopCampaign, ShopCampaign.id == ShopCampaignDelivery.campaign_id,
+        ).where(ShopCampaign.store_id.in_(selected))
     campaign_result = await session.execute(
-        select(
-            ShopCampaignDelivery.status,
-            func.count(ShopCampaignDelivery.id),
-        )
-        .group_by(ShopCampaignDelivery.status)
+        campaign_query.group_by(ShopCampaignDelivery.status)
     )
     campaign_counts = dict(campaign_result.all())
 
     refund_query = select(func.count()).select_from(ShopRefundCase).where(
         ShopRefundCase.status.in_(("requested", "provider_pending"))
     )
+    if selected is not None:
+        refund_query = refund_query.join(
+            ShopOrder, ShopOrder.id == ShopRefundCase.order_id,
+        ).where(ShopOrder.store_id.in_(selected))
     pending_refunds = int((await session.scalar(refund_query)) or 0)
 
     wallet_clause = (
         [ShopWalletEntry.created_at >= since] if since else []
     )
-    wallet_result = await session.execute(
-        select(
-            func.coalesce(func.sum(
-                case(
-                    (ShopWalletEntry.delta_irr > 0, ShopWalletEntry.delta_irr),
-                    else_=0,
-                )
-            ), 0),
-            func.coalesce(func.sum(
-                case(
-                    (ShopWalletEntry.delta_irr < 0, -ShopWalletEntry.delta_irr),
-                    else_=0,
-                )
-            ), 0),
-        ).where(*wallet_clause)
-    )
+    wallet_query = select(
+        func.coalesce(func.sum(
+            case(
+                (ShopWalletEntry.delta_irr > 0, ShopWalletEntry.delta_irr),
+                else_=0,
+            )
+        ), 0),
+        func.coalesce(func.sum(
+            case(
+                (ShopWalletEntry.delta_irr < 0, -ShopWalletEntry.delta_irr),
+                else_=0,
+            )
+        ), 0),
+    ).where(*wallet_clause)
+    if selected is not None:
+        wallet_query = wallet_query.join(
+            ShopWalletAccount,
+            ShopWalletAccount.id == ShopWalletEntry.account_id,
+        ).where(ShopWalletAccount.store_id.in_(selected))
+    wallet_result = await session.execute(wallet_query)
     issued, spent = wallet_result.one()
 
     line_clause = (
         [ShopOrder.paid_at >= since] if since else []
     )
+    if selected is not None:
+        line_clause.append(ShopOrder.store_id.in_(selected))
     best_products = await session.execute(
         select(
             ShopOrderLine.product_id,
