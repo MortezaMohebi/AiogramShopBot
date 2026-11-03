@@ -19,6 +19,7 @@ import config
 from dashboard.admin_control_api import throttle
 from dashboard.next_api import database, signed_staff
 from models.shop_bot_operations import ShopBotOperations
+from models.shop_bot_profile import ShopBotProfile
 from models.shop_delivery import ShopInboundUpdate
 from models.shop_multibot import ShopBot, ShopBotRegistryEvent
 from models.shop_staff import ShopStaff
@@ -76,8 +77,14 @@ class BotIdentityVerification(StrictPayload):
 async def bot_health_data(db: AsyncSession, bot: ShopBot) -> dict:
     """Distinguish verified identity from actual per-bot receiver observations."""
     operational = await db.get(ShopBotOperations, bot.id)
+    previous = (
+        await db.get(ShopBotProfile, bot.platform)
+        if operational is None and bot.runtime_owner == "legacy"
+        else None
+    )
     target_state = (
         operational.desired_state if operational is not None
+        else "maintenance" if previous and previous.maintenance_enabled
         else "active" if bot.runtime_owner == "legacy" else "disabled"
     )
     result = {
