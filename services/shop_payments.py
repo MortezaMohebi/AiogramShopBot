@@ -20,7 +20,9 @@ from models.shop_checkout import ShopCoupon, ShopOrderLine
 from models.shop_content import Product, ShopOrder
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_cart import CartRejected, validate_coupon
-from services.shop_bot_catalog_acl import allowed_for_legacy
+from services.shop_bot_catalog_acl import (
+    allowed_for_legacy, lock_legacy_catalog_policy,
+)
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -100,6 +102,7 @@ class ShopPaymentService:
             raise PaymentRejected("اقلام این سفارش وجود ندارند.")
         # Only creation of a NEW payment intent is gated; already-paid
         # receipts remain reconcilable by settle() after policy changes.
+        await lock_legacy_catalog_policy(session, platform.value)
         if not await allowed_for_legacy(
             session, platform.value,
             [product.id for _, product in pairs],
