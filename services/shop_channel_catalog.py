@@ -19,6 +19,7 @@ from models.shop_content import (
     Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
 )
 from services.shop_money import format_rials
+from services.shop_channel_features import get_features
 
 _PAGE_SIZE = 6
 _CATEGORY_PAGE_SIZE = 6
@@ -70,7 +71,7 @@ class CatalogFlow:
                 )
             match = _PRODUCT_PATTERN.fullmatch(data)
             if match:
-                return await self._product(session, int(match.group(1)))
+                return await self._product(session, int(match.group(1)), event.platform.value)
             match = _REVIEW_PATTERN.fullmatch(data)
             if match:
                 return await self._reviews(
@@ -82,7 +83,7 @@ class CatalogFlow:
                     session, int(match.group(1)), int(match.group(2))
                 )
             if data == "shop:home":
-                return await self._home(session)
+                return await self._home(session, event.platform.value)
             if data == "shop:help":
                 return await self._settings_text(session, key="support")
             if data == "shop:faq":
@@ -112,7 +113,7 @@ class CatalogFlow:
             return await self._settings_text(session, key="faq")
         return None
 
-    async def _home(self, session: AsyncSession) -> BotReply:
+    async def _home(self, session: AsyncSession, platform: str) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
         settings = await session.get(ShopSettings, 1)
         welcome = (
@@ -120,16 +121,23 @@ class CatalogFlow:
             if settings and settings.welcome_message
             else "به فروشگاه خوش آمدید."
         )
+        features = await get_features(session, platform)
+        rows = [
+            (_button("🛍 محصولات", "shop:categories"),),
+            (_button("📦 سفارش‌های من", "shop:orders"),),
+        ]
+        if features.cart_enabled:
+            rows.append((_button("🛒 سبد خرید", "shop:cart"),))
+        rows.extend([
+            (_button("🆘 پشتیبانی", "shop:help"),),
+            (_button("❓ پرسش‌های متداول", "shop:faq"),),
+        ])
         return BotReply(
             text=welcome[:4096],
-            rows=(
-                (_button("🛍 محصولات", "shop:categories"),),
-                (_button("📦 سفارش‌های من", "shop:orders"),),
-                (_button("🛒 سبد خرید", "shop:cart"),),
-                (_button("🆘 پشتیبانی", "shop:help"),),
-                (_button("❓ پرسش‌های متداول", "shop:faq"),),
-            ),
+            rows=tuple(rows),
+            # Fixed copy is still stored in ShopSettings and not duplicated here.
         )
+
 
     async def _settings_text(
         self, session: AsyncSession, *, key: str
@@ -247,7 +255,7 @@ class CatalogFlow:
             rows=tuple(rows),
         )
 
-    async def _product(self, session: AsyncSession, product_id: int) -> BotReply:
+    async def _product(self, session: AsyncSession, product_id: int, platform: str) -> BotReply:
         """Show an active product, never exposing an unpublished record."""
         result = await session.execute(
             select(Product).where(
@@ -274,17 +282,20 @@ class CatalogFlow:
             f"{product.name}\n\n{description}\n\n"
             f"قیمت: {format_rials(product.price, self.display_unit)}\n{stock}"
         )
-        return BotReply(
-            text=body,
-            rows=(
+        features = await get_features(session, platform)
+        rows = []
+        if features.cart_enabled:
+            rows.extend([
                 (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),),
                 (_button("🛒 مشاهده سبد", "shop:cart"),),
-                (_button("📦 سفارش‌های من", "shop:orders"),),
+            ])
+        rows.extend([
+            (_button("📦 سفارش‌های من", "shop:orders"),),
                 (_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),),
                 (_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),),
                 (_button("بازگشت به محصولات", "shop:list:0"),),
-            ),
-        )
+        ])
+        return BotReply(text=body, rows=tuple(rows))
 
     async def _media(
         self, session: AsyncSession, product_id: int, requested_page: int
