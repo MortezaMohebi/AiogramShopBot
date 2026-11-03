@@ -138,7 +138,11 @@ class CatalogFlow:
     async def _home(self, session: AsyncSession, platform: str) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
         settings = await session.get(ShopSettings, 1)
-        per_bot = await session.get(ShopBotOperations, LEGACY_BOT_IDS[platform])
+        per_bot = await session.get(
+            ShopBotOperations,
+            self.bot_context.bot_id if self.bot_context
+            else LEGACY_BOT_IDS[platform],
+        )
         welcome = (
             per_bot.welcome_message
             if per_bot and per_bot.welcome_message
@@ -164,7 +168,11 @@ class CatalogFlow:
     ) -> BotReply:
         """Read help and support information from editable admin settings."""
         settings = await session.get(ShopSettings, 1)
-        per_bot = await session.get(ShopBotOperations, LEGACY_BOT_IDS[platform])
+        per_bot = await session.get(
+            ShopBotOperations,
+            self.bot_context.bot_id if self.bot_context
+            else LEGACY_BOT_IDS[platform],
+        )
         if key == "faq":
             body = settings.faq_text if settings else None
         else:
