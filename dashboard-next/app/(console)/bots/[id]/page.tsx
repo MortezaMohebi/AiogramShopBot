@@ -58,7 +58,7 @@ export default async function BotDetailPage({
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
     searchParams,
   ]);
-  const { bot, health, events } = detail;
+  const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
   const pending = bot.credentials.find(item => item.state === "staged");
   const active = bot.operations.desired_state === "active";
@@ -244,6 +244,11 @@ export default async function BotDetailPage({
       </Card>
       <Card><CardHeader><CardTitle>تاریخچهٔ Audit بات</CardTitle></CardHeader>
         <CardContent className="space-y-2">
+          {state_events.map(entry => <div key={entry.id} className="rounded-lg border p-3 text-xs">
+            <p className="font-semibold">{entry.previous_state} ← {entry.next_state}</p>
+            <p className="mt-1 text-muted-foreground">{date(entry.created_at)} · مدیر #{entry.actor_id}</p>
+            {entry.reason ? <p className="mt-2 text-muted-foreground">دلیل: {entry.reason}</p> : null}
+          </div>)}
           {events.map(entry => <div key={entry.id} className="border-b py-2 text-xs">
             <p className="font-medium">{entry.action}</p>
             <p className="mt-1 text-muted-foreground">{date(entry.created_at)} · مدیر #{entry.actor_id ?? "سیستم"} {entry.credential_version ? `· نسخه ${entry.credential_version}` : ""}</p>
