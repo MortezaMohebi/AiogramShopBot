@@ -63,7 +63,7 @@ def _public_host(host: str) -> bool:
         return bool(_HOST_RE.fullmatch(host) and "." in host and ".." not in host)
 
 
-def proxy_origin(raw_url: str, *, permit_userinfo: bool = False) -> str:
+def proxy_origin(\n    raw_url: str, *, permit_userinfo: bool = False,\n    permit_private: bool = False,\n) -> str:
     """Normalize an HTTP CONNECT or SOCKS5 endpoint and its explicit TCP port."""
     try:
         value = urlsplit(raw_url.strip())
@@ -73,7 +73,7 @@ def proxy_origin(raw_url: str, *, permit_userinfo: bool = False) -> str:
         raise security.SecurityRejected("invalid_proxy_endpoint", 422) from None
     if (
         value.scheme not in _PROXY_SCHEMES
-        or not host or not _public_host(host)
+        or not host or (not permit_private and not _public_host(host))
         or port is None or not 1 <= port <= 65535
         or value.path not in ("", "/")
         or value.query or value.fragment
@@ -108,7 +108,7 @@ def approved_proxy_urls() -> tuple[str, ...]:
     for endpoint in entries:
         # A deployment misconfiguration does not accidentally widen policy.
         try:
-            approved.add(proxy_origin(endpoint, permit_userinfo=True))
+            approved.add(proxy_origin(\n                endpoint, permit_userinfo=True, permit_private=True,\n            ))
         except security.SecurityRejected:
             continue
     return tuple(sorted(approved))
@@ -144,7 +144,7 @@ def validate(spec: TelegramTransportSpec) -> TelegramTransportSpec:
         return spec
 
     if spec.mode == "http_proxy":
-        origin = proxy_origin(spec.proxy_url)
+        origin = proxy_origin(spec.proxy_url, permit_private=True)
         if origin not in approved_proxy_urls():
             raise security.SecurityRejected("transport_endpoint_not_approved", 422)
         if spec.worker_url or spec.worker_secret:
@@ -191,7 +191,7 @@ def from_submission(
         return validate(TelegramTransportSpec(mode="direct"))
     if mode == "http_proxy":
         endpoint = str(payload.get("proxy_url") or "").strip()
-        normalized = proxy_origin(endpoint)
+        normalized = proxy_origin(endpoint, permit_private=True)
         username = str(payload.get("proxy_username") or "").strip()
         password = str(payload.get("proxy_password") or "")
         if (
@@ -258,7 +258,7 @@ def env_spec() -> TelegramTransportSpec:
             raise security.SecurityRejected("invalid_proxy_endpoint", 503) from None
         return validate(TelegramTransportSpec(
             mode="http_proxy", proxy_url=proxy_origin(
-                raw, permit_userinfo=True,
+                raw, permit_userinfo=True, permit_private=True,
             ), proxy_username=username, proxy_password=password,
         ))
     if mode == "cloudflare_worker":
