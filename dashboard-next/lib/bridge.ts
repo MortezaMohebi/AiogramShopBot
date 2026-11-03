@@ -14,6 +14,9 @@ const SAFE_CODES = new Set([
   "operation_not_found", "invalid_operation_state", "idempotency_conflict",
   "connection_change_in_progress", "configuration_changed", "legacy_endpoint_retired",
   "connection_worker_unavailable", "reconciliation_required",
+  "invitation_only", "invalid_link", "password_policy_failed", "mfa_enrollment_required",
+  "mfa_required_by_role", "invitation_not_found", "staff_username_exists",
+  "staff_not_found", "last_admin_protected", "use_my_account",
 ]);
 export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly requestId?: string, readonly code?: string) {
