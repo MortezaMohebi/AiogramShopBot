@@ -14,7 +14,6 @@ export const navigation: NavigationItem[] = [
   { title: "ارسال کالا", href: "/shipping", icon: Truck, roles: ["superadmin", "sales"] },
   { title: "کد تخفیف", href: "/coupons", icon: TicketPercent, roles: ["superadmin", "marketing", "sales"] },
   { title: "رضایت مشتریان", href: "/reviews", icon: MessagesSquare, roles: ["superadmin", "content"] },
-  { title: "رسانه‌ها", href: "/media", icon: ImageIcon, roles: ["superadmin", "content"] },
   { title: "کمپین‌ها", href: "/campaigns", icon: Megaphone, roles: ["superadmin", "marketing"] },
   { title: "امور مالی", href: "/finance", icon: ShieldCheck, roles: ["superadmin", "finance"] },
   { title: "گزارش‌ها", href: "/reports", icon: BarChart3, roles: all },
