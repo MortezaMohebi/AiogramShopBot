@@ -128,6 +128,7 @@ async def verify_bot(
         lambda sync: _get_token(sync, bot, selected)
     )
     observed_version = bot.version
+    observed_state = selected.state
     try:
         identity = await (
             probe or provider_get_me
@@ -158,12 +159,12 @@ async def verify_bot(
     ).with_for_update())
     latest_credential = await db.scalar(select(ShopBotCredential).where(
         ShopBotCredential.id == selected.id,
-    ).with_for_update())
+    ).with_for_update().execution_options(populate_existing=True))
     if (
         locked is None
         or locked.version != observed_version
         or latest_credential is None
-        or latest_credential.state != selected.state
+        or latest_credential.state != observed_state
         or latest_credential.version != credential_version
     ):
         raise security.SecurityRejected("configuration_changed", 409)
