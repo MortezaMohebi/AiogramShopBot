@@ -81,6 +81,11 @@ async def check_provider(*, register: bool, unregister: bool) -> None:
                 try:
                     info_bale = await bale._call("getWebhookInfo", {})
                 except BaleApiError:
+                    if unregister:
+                        raise RuntimeError(
+                            "Cannot safely verify Bale webhook ownership; "
+                            "check it manually before disconnecting."
+                        ) from None
                     print("Bale webhook status: unsupported on this Bot API version")
                 else:
                     current = info_bale.get("url", "") if isinstance(
@@ -117,12 +122,13 @@ def main() -> None:
         asyncio.run(check_provider(
             register=args.register, unregister=args.unregister
         ))
-    except Exception:
+    except Exception as error:
         # Third-party error messages may contain provider URLs with tokens.
         # Never echo raw exception, headers or response bodies.
         raise SystemExit(
-            "Provider connection failed. Check token, network access, "
-            "webhook port visibility and container logs (without secrets)."
+            f"Provider check failed ({type(error).__name__}). "
+            "Check API credentials, network, Codespaces port visibility "
+            "and provider status without sharing secrets."
         ) from None
 
 
