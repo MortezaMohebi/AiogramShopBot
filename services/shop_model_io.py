@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import Product, ShopCategory
+from models.shop_checkout import ShopCartItem, ShopOrderLine
 from models.shop_store_commerce import ShopStoreCustomer
 from models.shop_uom import ShopUom, default_unit_id
 from services import shop_admin_security as security
@@ -306,6 +307,15 @@ async def _plan_product(
         db, store_id=store_id,
         uom_id=uom, purchase_uom_id=purchase_uom,
     )
+    if existing is not None and uom != existing.uom_id:
+        in_cart = await db.scalar(select(ShopCartItem.id).where(
+            ShopCartItem.product_id == existing.id,
+        ).limit(1))
+        in_order = await db.scalar(select(ShopOrderLine.id).where(
+            ShopOrderLine.product_id == existing.id,
+        ).limit(1))
+        if existing.stock_quantity or in_cart is not None or in_order is not None:
+            raise security.SecurityRejected("uom_locked", 409)
     values["uom_id"] = uom
     values["purchase_uom_id"] = purchase_uom
     values["price"] = values.pop("price_irr", existing.price if existing else 0)
