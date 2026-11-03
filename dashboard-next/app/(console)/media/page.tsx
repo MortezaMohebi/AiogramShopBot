@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Paginated } from "@/lib/types";
+import { uploadErrorMessage } from "@/lib/upload-errors";
 
 type Media = {
   id: number; product_id: number; product_name: string; kind: string;
@@ -33,7 +34,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
     <div className="space-y-6">
       <PageHeading title="رسانه‌های فروشگاه" description="بارگذاری مستقیم و تأیید انتشار؛ فایل اصلی خصوصی می‌ماند و در تلگرام و بله از همان منبع استفاده می‌شود." />
       {params.saved ? <p role="status" className="rounded-lg bg-accent px-4 py-3 text-sm">عملیات رسانه ثبت شد.</p> : null}
-      {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">ثبت انجام نشد. نوع فایل، حجم، شناسه محصول یا وضعیت انتشار را بررسی کنید.</p> : null}
+      {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{uploadErrorMessage(params.error, "ثبت انجام نشد. نوع فایل، حجم، شناسهٔ محصول یا وضعیت انتشار را بررسی کنید.")}</p> : null}
       <Card>
         <CardHeader><CardTitle>بارگذاری فایل جدید</CardTitle></CardHeader>
         <CardContent>
