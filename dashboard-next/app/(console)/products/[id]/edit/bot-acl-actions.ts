@@ -23,7 +23,15 @@ export async function setProductBotAccess(form: FormData): Promise<void> {
   ) {
     redirect(`/products/${productId}/edit?bot_acl_error=1#bot-access`);
   }
-  const assignments = botIds.map(bot_id => ({ bot_id, effect }));
+  const assignments = botIds.map(bot_id => ({
+    bot_id, effect,
+    expected_version: Number(form.get(`version_${bot_id}`)),
+  }));
+  if (assignments.some(item =>
+    !Number.isSafeInteger(item.expected_version) || item.expected_version <= 0
+  )) {
+    redirect(`/products/${productId}/edit?bot_acl_error=1#bot-access`);
+  }
   let denied = false;
   try {
     await adminFetch(
