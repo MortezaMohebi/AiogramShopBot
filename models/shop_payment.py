@@ -23,6 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqladmin import ModelView
 
 from models.base import Base
+from models.shop_scope import legacy_bot_default
 
 
 class ShopPaymentAttempt(Base):
@@ -37,6 +38,10 @@ class ShopPaymentAttempt(Base):
         unique=True,
     )
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     provider: Mapped[str] = mapped_column(String(24), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
