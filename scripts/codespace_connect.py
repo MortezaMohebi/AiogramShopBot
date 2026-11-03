@@ -70,14 +70,19 @@ async def check_provider(*, register: bool) -> None:
                 await bale._call("setWebhook", {"url": desired_bale})
                 print("Bale webhook: registration accepted by provider")
             else:
-                info_bale = await bale._call("getWebhookInfo", {})
-                current = info_bale.get("url", "") if isinstance(
-                    info_bale, dict
-                ) else ""
-                print(
-                    "Bale webhook: "
-                    + ("matching" if current == desired_bale else "not matching")
-                )
+                # Some Bale API versions do not expose getWebhookInfo.
+                try:
+                    info_bale = await bale._call("getWebhookInfo", {})
+                except BaleApiError:
+                    print("Bale webhook status: unsupported on this Bot API version")
+                else:
+                    current = info_bale.get("url", "") if isinstance(
+                        info_bale, dict
+                    ) else ""
+                    print(
+                        "Bale webhook: "
+                        + ("matching" if current == desired_bale else "not matching")
+                    )
     finally:
         await tg_bot.session.close()
 
