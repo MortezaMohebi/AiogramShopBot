@@ -90,20 +90,29 @@ from services.media import MediaService
 from services.notification import NotificationService
 from services.wallet import WalletService
 from utils.telegram import create_bot, create_telegram_session
+from utils.telegram_rotating_session import RotatingTelegramSession
+from services.shop_telegram_transport_control import load_verified_on_boot
 from utils.utils import validate_i18n
 
 redis = Redis(host=config.REDIS_HOST, password=config.REDIS_PASSWORD)
-session = create_telegram_session()
+session = RotatingTelegramSession(create_telegram_session())
 bot = create_bot(config.TOKEN, session)
 dp = Dispatcher(storage=RedisStorage(redis))
 
 
 async def _startup() -> None:
     await create_db_and_tables()
+    # Load only the last verified encrypted outbound transport before *any*
+    # Telegram Bot API call. Never fall back to a different route on failure.
+    expected_bot_id = await load_verified_on_boot(bot)
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
     me = await bot.get_me()
+    if expected_bot_id is not None and me.id != expected_bot_id:
+        raise RuntimeError(
+            "Configured Telegram token identifies a different verified bot."
+        )
     photos = await bot.get_user_profile_photos(me.id)
     # No hardcoded product or placeholder image and no external stock-photo URL.
     # The legacy upstream views require a Telegram file_id for their navigation.
