@@ -77,9 +77,11 @@ class ShopInboundUpdate(Base):
     )
 
     __table_args__ = (
+        # A bot's update offset survives token rotation without allowing
+        # a duplicate callback to re-run under a new token fingerprint.
         UniqueConstraint(
-            "platform", "bot_fingerprint", "update_id",
-            name="uq_shop_inbound_update",
+            "bot_id", "update_id",
+            name="uq_shop_inbound_bot_update",
         ),
         CheckConstraint(
             "status IN ('processing','processed','needs_review')",
