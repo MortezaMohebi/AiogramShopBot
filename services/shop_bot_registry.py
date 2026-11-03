@@ -129,20 +129,39 @@ def serialize_bot(db: Session, bot: ShopBot) -> dict:
     }
 
 
-def registry_snapshot(db: Session, *, store_id: str | None = None) -> dict:
-    """Bound read-only registry snapshot for the trusted superadmin UI."""
+def registry_snapshot(
+    db: Session, *, store_id: str | None = None,
+    platform: str | None = None, page: int = 1, page_size: int = 50,
+) -> dict:
+    """Return a paginated, provider-scoped registry without a hidden cap."""
+    if (
+        not 1 <= page <= 100_000
+        or not 1 <= page_size <= 100
+        or (platform is not None and platform not in _ALLOWED_PLATFORMS)
+    ):
+        raise security.SecurityRejected("invalid_request", 422)
+
     store_stmt = select(ShopStore).order_by(ShopStore.slug).limit(100)
-    bot_stmt = select(ShopBot).order_by(
-        ShopBot.store_id, ShopBot.slug,
-    ).limit(300)
+    conditions = []
     if store_id is not None:
         store_stmt = store_stmt.where(ShopStore.id == store_id)
-        bot_stmt = bot_stmt.where(ShopBot.store_id == store_id)
+        conditions.append(ShopBot.store_id == store_id)
+    if platform is not None:
+        conditions.append(ShopBot.platform == platform)
+
+    total = int(db.scalar(
+        select(func.count()).select_from(ShopBot).where(*conditions)
+    ) or 0)
+    bots = db.scalars(select(ShopBot).where(*conditions).order_by(
+        ShopBot.store_id, ShopBot.slug,
+    ).offset((page - 1) * page_size).limit(page_size)).all()
     stores = db.scalars(store_stmt).all()
-    bots = db.scalars(bot_stmt).all()
     return {
         "stores": [serialize_store(store) for store in stores],
         "bots": [serialize_bot(db, bot) for bot in bots],
+        "total_bots": total,
+        "page": page,
+        "page_size": page_size,
         "default_store_id": DEFAULT_STORE_ID,
         "runtime_migration_complete": False,
     }
