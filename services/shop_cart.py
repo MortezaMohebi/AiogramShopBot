@@ -194,55 +194,103 @@ class ShopCartFlow:
 
     async def _get_cart(
         self, event: InboundEvent, session: AsyncSession,
-        *, create: bool = False, lock: bool = False
+        *, create: bool = False, lock: bool = False,
     ) -> ShopCart | None:
-        """Find the correct platform-scoped cart and optionally lock it."""
+        """Select a bot-private or verified Customer cart by Store policy."""
         if event.user_id <= 0 or event.chat_id <= 0:
             raise CartRejected("شناسه خریدار معتبر نیست.")
         owner = self._bot_id(event.platform)
-        stmt = select(ShopCart).where(
-            ShopCart.bot_id == owner,
-            ShopCart.platform == event.platform.value,
-            ShopCart.platform_user_id == event.user_id,
+        identity = await session.scalar(select(ShopIdentity).where(
+            ShopIdentity.bot_id == owner,
+            ShopIdentity.platform == event.platform.value,
+            ShopIdentity.platform_user_id == event.user_id,
+        ))
+        store_id = (
+            self.bot_context.store_id if self.bot_context
+            else identity.store_id if identity else DEFAULT_STORE_ID
         )
+        if identity is not None and identity.store_id != store_id:
+            raise CartRejected("فروشگاه حساب با بات انتخاب‌شده مطابقت ندارد.")
+        if self.bot_context and self.bot_context.runtime_owner == "registry":
+            if identity is None or identity.customer_id is None:
+                raise CartRejected("ابتدا /start را در همین بات اجرا کنید.")
+
+        sharing = (
+            identity is not None and identity.customer_id is not None
+            and (await policy_for(session, store_id=store_id)).cart_scope
+            == "customer"
+        )
+        if sharing:
+            statement = select(ShopCart).where(
+                ShopCart.store_id == store_id,
+                ShopCart.customer_id == identity.customer_id,
+                ShopCart.is_shared.is_(True),
+            )
+        else:
+            statement = select(ShopCart).where(
+                ShopCart.bot_id == owner,
+                ShopCart.platform == event.platform.value,
+                ShopCart.platform_user_id == event.user_id,
+                ShopCart.is_shared.is_(False),
+            )
         if lock:
-            stmt = stmt.with_for_update()
-        cart = await session.scalar(stmt)
+            statement = statement.with_for_update()
+        cart = await session.scalar(statement)
         if cart is None and create:
+            # An already populated private cart is retained for a future
+            # migration decision; no automatic merge or stock mutation.
             cart = ShopCart(
-                bot_id=owner,
-                platform=event.platform.value,
-                platform_user_id=event.user_id,
-                chat_id=event.chat_id,
+                store_id=store_id,
+                customer_id=identity.customer_id if identity else None,
+                is_shared=sharing,
+                bot_id=owner, platform=event.platform.value,
+                platform_user_id=event.user_id, chat_id=event.chat_id,
                 revision=1,
             )
-            session.add(cart)
             try:
-                await session.flush()
+                async with session.begin_nested():
+                    session.add(cart)
+                    await session.flush()
             except IntegrityError:
-                await session.rollback()
-                cart = await session.scalar(stmt)
+                cart = await session.scalar(statement)
                 if cart is None:
-                    raise CartRejected("در حال حاضر امکان بازکردن سبد وجود ندارد.")
+                    raise CartRejected(
+                        "در حال حاضر امکان بازکردن سبد وجود ندارد."
+                    ) from None
         return cart
 
+    async def _input_state(
+        self, cart: ShopCart, event: InboundEvent, session: AsyncSession,
+    ) -> str | None:
+        """Read per-bot forms even when the purchased items are shared."""
+        if not cart.is_shared:
+            return cart.awaiting_input
+        return await session.scalar(select(
+            ShopCartInputSession.awaiting_input,
+        ).where(
+            ShopCartInputSession.bot_id == self._bot_id(event.platform),
+            ShopCartInputSession.platform_user_id == event.user_id,
+            ShopCartInputSession.cart_id == cart.id,
+        ))
+
     async def _existing_pending(
-        self, session: AsyncSession, cart: ShopCart
+        self, session: AsyncSession, cart: ShopCart, event: InboundEvent,
     ) -> ShopOrder | None:
-        """Find one still-active payment/review request for the customer."""
-        return await session.scalar(
-            select(ShopOrder)
-            .where(
-                ShopOrder.bot_id == cart.bot_id,
-                ShopOrder.platform == cart.platform,
-                ShopOrder.platform_user_id == cart.platform_user_id,
-                # Unpaid wallet invoices must be reconciled before reordering.
-                # Review-only requests never lock a customer's future baskets.
-                ShopOrder.status == "pending_payment",
+        """Prevent concurrent financial checkout across linked bot identities."""
+        if cart.is_shared:
+            condition = (
+                ShopOrder.store_id == cart.store_id,
+                ShopOrder.customer_id == cart.customer_id,
             )
-            .order_by(ShopOrder.id.desc())
-            .limit(1)
-        )
+        else:
+            condition = (
+                ShopOrder.bot_id == self._bot_id(event.platform),
+                ShopOrder.platform == event.platform.value,
+                ShopOrder.platform_user_id == event.user_id,
+            )
+        return await session.scalar(select(ShopOrder).where(
+            *condition, ShopOrder.status == "pending_payment",
+        ).order_by(ShopOrder.id.desc()).limit(1))
 
     async def _change_item(
         self, event: InboundEvent, session: AsyncSession,
