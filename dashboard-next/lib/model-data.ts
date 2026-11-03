@@ -60,6 +60,8 @@ export interface ModelImportPreview {
   creates: number;
   updates: number;
   sha256: string;
+  preview_id?: string;
+  preview_expires_at?: string;
   preview: { row: number; action: "create" | "update" }[];
   committed: boolean;
 }

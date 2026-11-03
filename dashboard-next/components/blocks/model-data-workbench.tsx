@@ -40,7 +40,8 @@ const ERRORS: Record<string, string> = {
   import_publish_requires_review: "انتشار محصول از طریق Import مجاز نیست.",
   uom_locked: "واحد فروش محصول دارای موجودی یا سابقهٔ خرید را نمی‌توان از طریق Import تغییر داد.",
   import_identity_conflict: "External Reference و SKU به دو رکورد متفاوت اشاره می‌کنند.",
-  import_preview_required: "فایل پس از Preview تغییر کرده است؛ دوباره Preview بگیرید.",
+  import_preview_required: "Preview منقضی، مصرف یا متعلق به Store/نشست دیگری است؛ دوباره Preview بگیرید.",
+  import_data_changed: "داده‌های پایگاه‌داده پس از Preview تغییر کرده‌اند؛ دوباره Preview بگیرید.",
   store_access_denied: "دسترسی این Store برای کاربر مجاز نیست.",
   import_failed: "عملیات Import اجرا نشد؛ نسخهٔ داده و دسترسی‌ها را بررسی کنید.",
 };
@@ -124,14 +125,16 @@ export function ModelDataWorkbench({ metadata }: Props) {
       setNotice(ERRORS.invalid_import_file);
       return;
     }
-    if (mode === "apply" && !preview?.sha256) return;
+    if (mode === "apply" && (!preview?.sha256 || !preview.preview_id)) return;
     setBusy(true);
     setNotice("");
     try {
       const challenge = await requestBrowserChallenge();
       const query = new URLSearchParams({
         format, mode,
-        ...(mode === "apply" && preview ? { hash: preview.sha256 } : {}),
+        ...(mode === "apply" && preview ? {
+          hash: preview.sha256, preview_id: preview.preview_id ?? "",
+        } : {}),
       });
       const response = await fetch(
         `/api/admin/data-models/${metadata.model}/import?${query}`,
@@ -357,7 +360,8 @@ export function ModelDataWorkbench({ metadata }: Props) {
             {preview.rows} ردیف · {preview.creates} ایجاد · {preview.updates} به‌روزرسانی
           </p>
           <p className="text-xs leading-6 text-muted-foreground">
-            در Apply، کل فایل دوباره بررسی می‌شود و Hash فایل Previewشده باید یکسان باشد.
+            در Apply، فایل و وضعیت پایگاه‌داده دوباره بررسی می‌شود و Receipt
+            تأییدشده فقط یک بار، برای همان کاربر، نشست و Store اعتبار دارد.
             وضعیت انتشار و تغییر موجودی محصولات قبلی نیازمند فرآیند جداگانه است.
           </p>
           <Button type="button" disabled={busy || !file}
