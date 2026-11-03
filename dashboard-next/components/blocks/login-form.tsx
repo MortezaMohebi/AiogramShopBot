@@ -9,6 +9,7 @@ import {
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { Input } from "@/components/ui/input";
 import {
   type LoginErrorCode,
@@ -98,24 +99,8 @@ export function LoginForm({ initialError }: LoginFormProps) {
     setPhase("security");
 
     try {
-      // Same-origin GET sets an HttpOnly, Secure, host-only cookie and returns
-      // its matching challenge. Browser JavaScript never reads the cookie.
-      const challengeResponse = await fetch("/api/auth/challenge", {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(15_000),
-      });
-      const challengeData = await readJson(challengeResponse);
-      if (
-        !challengeResponse.ok ||
-        !challengeData.ok ||
-        typeof challengeData.challenge !== "string" ||
-        !/^[A-Za-z0-9_-]{43}$/.test(challengeData.challenge)
-      ) {
-        throw new Error("security_check_failed");
-      }
+      // Browser GET sets a host-only HttpOnly cookie before submitting.
+      const challenge = await requestBrowserChallenge();
 
       setPhase("login");
       const response = await fetch("/api/auth/login", {
@@ -126,7 +111,7 @@ export function LoginForm({ initialError }: LoginFormProps) {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          "X-Shop-Login-Challenge": challengeData.challenge,
+          "X-Shop-Login-Challenge": challenge,
         },
         body: JSON.stringify({ username, password }),
         signal: AbortSignal.timeout(25_000),
