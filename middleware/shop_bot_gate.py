@@ -33,6 +33,10 @@ class ShopBotOperationMiddleware(BaseMiddleware):
         if event.pre_checkout_query is not None or (
             event.message is not None
             and event.message.successful_payment is not None
+        ) or (
+            event.callback_query is not None
+            and isinstance(event.callback_query.data, str)
+            and event.callback_query.data.startswith("shop:refundorder:")
         ):
             return await handler(event, data)
         message = event.message
