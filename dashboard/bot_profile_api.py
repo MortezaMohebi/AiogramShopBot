@@ -25,6 +25,8 @@ from models.shop_engagement import ShopBroadcastWorkerHeartbeat
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 from services import shop_bot_profiles as profiles
+from services.shop_telegram_transport import decrypted
+from models.shop_telegram_transport import ShopTelegramTransport
 
 router = APIRouter(prefix="/internal/admin/v1", tags=["Bot operations"])
 Db = Annotated[AsyncSession, Depends(database)]
@@ -61,6 +63,11 @@ async def bot_profiles(actor: Actor, db: Db) -> dict:
             await db.scalars(select(ConnectionConfig))
         ).all()
     }
+    active_transport = await db.get(ShopTelegramTransport, 1)
+    telegram_transport_mode = (
+        decrypted(active_transport.config_ciphertext).mode
+        if active_transport else config.TELEGRAM_API_MODE
+    )
     result = []
     for platform in profiles.SUPPORTED_PLATFORMS:
         options = await profiles.get_bot_options(db, platform)
@@ -71,7 +78,7 @@ async def bot_profiles(actor: Actor, db: Db) -> dict:
         )
         item["receiver_version"] = config_mode.version if config_mode else 1
         item["transport_active"] = (
-            config.TELEGRAM_API_MODE if platform == "telegram" else "direct"
+            telegram_transport_mode if platform == "telegram" else "direct"
         )
         item["credential_configured"] = bool(
             config.TOKEN if platform == "telegram" else config.BALE_BOT_TOKEN
