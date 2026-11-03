@@ -17,6 +17,7 @@ from channels.contracts import InboundEvent, Platform
 from models.base import Base
 from models.shop_admin_control import AdminEvent, AdminProfile, AdminSession
 from models.shop_channel_features import ShopChannelFeature
+from models.shop_content import ShopSettings
 from models.shop_staff import ShopStaff
 from models.shop_staff_security import (
     ShopPasswordPolicy,
@@ -41,6 +42,7 @@ def db():
         engine,
         tables=[
             ShopStaff.__table__,
+            ShopSettings.__table__,
             AdminProfile.__table__,
             AdminSession.__table__,
             AdminEvent.__table__,
