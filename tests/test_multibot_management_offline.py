@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from models.base import Base
 from models.shop_admin_control import AdminEvent
-from models.shop_bot_operations import ShopBotOperations
+from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
 from models.shop_bot_profile import ShopBotProfile
 from models.shop_multibot import (
     DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopBotCredential,
@@ -48,7 +48,8 @@ def db(monkeypatch):
         ShopStaff.__table__, AdminEvent.__table__,
         ShopStore.__table__, ShopBot.__table__,
         ShopBotCredential.__table__, ShopBotRegistryEvent.__table__,
-        ShopBotOperations.__table__, ShopBotProfile.__table__,
+        ShopBotOperations.__table__, ShopBotOperationsEvent.__table__,
+        ShopBotProfile.__table__,
     ])
     with Session(engine) as session:
         session.add(ShopStaff(
@@ -146,6 +147,12 @@ def test_legacy_pause_and_enable_are_independent(db: Session) -> None:
     assert telegram.status == "legacy"
     assert telegram.version == 2
     assert bale.version == 1
+    audit = db.scalars(select(ShopBotOperationsEvent).where(
+        ShopBotOperationsEvent.bot_id == telegram.id,
+    )).all()
+    assert len(audit) == 1
+    assert audit[0].previous_state == "active"
+    assert audit[0].next_state == "paused"
     assert asyncio.run(operations.legacy_state(
         AsyncDb(db), "telegram",
     )).state == "paused"
