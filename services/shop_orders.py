@@ -135,24 +135,41 @@ class ShopOrdersFlow:
             await resolve_scope(session, bot_id=self._bot_id(event.platform)),
             all_products,
         )
-        features = await get_features(session, event.platform.value)
+        owner = self._bot_id(event.platform)
+        features = await get_features(
+            session, event.platform.value, bot_id=owner,
+        )
+        from models.shop_multibot import ShopBot
+
+        bot = await session.get(ShopBot, owner)
+        legacy = bot is not None and bot.runtime_owner == "legacy"
         credit_available = (
-            features.store_credit_enabled and await rail_enabled(
+            features.store_credit_enabled
+            and await rail_enabled(
                 session, event.platform.value, "store_credit",
+                bot_id=owner,
             )
         )
         external_ready = (
             config.BALE_WALLET_CHECKOUT_ENABLED
-            and bool(config.BALE_WALLET_PROVIDER_TOKEN)
-            and await rail_enabled(session, "bale", "bale_wallet")
+            and (not legacy or bool(config.BALE_WALLET_PROVIDER_TOKEN))
+            and await rail_enabled(
+                session, "bale", "bale_wallet", bot_id=owner,
+            )
         ) if event.platform.value == "bale" else (
-            (config.TELEGRAM_STARS_CHECKOUT_ENABLED and
-             await rail_enabled(session, "telegram", "telegram_stars"))
-            or
-            (config.TELEGRAM_FIAT_CHECKOUT_ENABLED
-             and bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN)
-             and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
-             and await rail_enabled(session, "telegram", "telegram_fiat"))
+            (
+                config.TELEGRAM_STARS_CHECKOUT_ENABLED
+                and await rail_enabled(
+                    session, "telegram", "telegram_stars", bot_id=owner,
+                )
+            ) or (
+                config.TELEGRAM_FIAT_CHECKOUT_ENABLED
+                and (not legacy or bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN))
+                and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
+                and await rail_enabled(
+                    session, "telegram", "telegram_fiat", bot_id=owner,
+                )
+            )
         )
         lines = ["📦 سفارش‌های من"]
         rows: list[tuple[InlineAction, ...]] = []

@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import ShopIdentity
 from models.shop_scope import legacy_id
+from services import shop_admin_security as security
+from services.shop_store_commerce import link_confirmed_identities
 from models.shop_customer_links import (
     ShopCustomerIdentityLink, ShopCustomerLinkRequest,
 )
@@ -53,8 +55,8 @@ async def begin(
     ).with_for_update())
     if identity is None:
         raise LinkRejected("ابتدا /start را اجرا کنید.")
-    if await _linked(db, identity.id):
-        raise LinkRejected("این حساب قبلاً به حساب پیام‌رسان دیگر متصل شده است.")
+    # Multiple independently verified bot identities may belong to one
+    # StoreCustomer; an existing identity link does not grant others access.
     token = secrets.token_urlsafe(32)
     digest = hashlib.sha256(token.encode("ascii")).hexdigest()
     now = clock()
@@ -106,10 +108,12 @@ async def claim(
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
     source = await db.get(ShopIdentity, item.source_id)
-    if source is None or target is None or source.platform == target.platform:
-        raise LinkRejected("اتصال باید بین دو پیام‌رسان متفاوت انجام شود.")
-    if await _linked(db, target.id) or await _linked(db, source.id):
-        raise LinkRejected("یکی از حساب‌ها قبلاً به حساب دیگری متصل شده است.")
+    if (
+        source is None or target is None
+        or source.bot_id == target.bot_id
+        or source.store_id != target.store_id
+    ):
+        raise LinkRejected("اتصال فقط میان دو بات یک فروشگاه مجاز است.")
     item.target_id = target.id
     item.state = "awaiting_confirmation"
     await db.commit()
@@ -132,13 +136,26 @@ async def approve(
     target = await db.scalar(select(ShopIdentity).where(
         ShopIdentity.id == item.target_id,
     ).with_for_update())
-    if source is None or target is None or source.platform == target.platform:
-        raise LinkRejected("مالکیت حساب تأیید نشد.")
-    if await _linked(db, source.id) or await _linked(db, target.id):
-        raise LinkRejected("یکی از حساب‌ها قبلاً متصل شده است.")
-    db.add(ShopCustomerIdentityLink(
-        source_id=source.id, target_id=target.id, approved_at=clock(),
-    ))
+    if (
+        source is None or target is None
+        or source.bot_id == target.bot_id
+        or source.store_id != target.store_id
+    ):
+        raise LinkRejected("مالکیت حساب‌های این فروشگاه تأیید نشد.")
+    try:
+        await link_confirmed_identities(
+            db, source=source, target=target, request_id=item.id,
+        )
+    except security.SecurityRejected as error:
+        raise LinkRejected(
+            "اشتراک حساب نیازمند بررسی مالکیت یا ماندهٔ اعتبار است."
+        ) from None
+    # Preserve the original one-to-one link for older CRM readers only;
+    # the new immutable Store link event supports arbitrarily many accounts.
+    if not await _linked(db, source.id) and not await _linked(db, target.id):
+        db.add(ShopCustomerIdentityLink(
+            source_id=source.id, target_id=target.id, approved_at=clock(),
+        ))
     item.state = "confirmed"
     await db.commit()
 

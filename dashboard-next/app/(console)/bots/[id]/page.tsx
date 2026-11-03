@@ -4,9 +4,11 @@ import { KeyRound, ShieldAlert, ShieldCheck, Settings2 } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
 import { BotReceiverPanel } from "@/components/blocks/bot-receiver-panel";
+import { BotCommercePanel } from "@/components/blocks/bot-commerce-panel";
 import { BotRelayRoutesPanel } from "@/components/blocks/bot-relay-routes-panel";
 import type { BotCatalogRuleList } from "@/lib/bot-catalog-acl";
 import type { BotRelaySnapshot, RelayWorkersSnapshot } from "@/lib/relay-pool";
+import type { BotCommercePolicy, BotPaymentList } from "@/lib/store-commerce";
 type CatalogAuditRow = {
   object_type: "product" | "category";
   object_id: number;
@@ -34,6 +36,7 @@ type Params = Promise<{ id: string }>;
 type Query = Promise<{
   saved?: string; error?: string; acl_saved?: string;
   relay_saved?: string; relay_error?: string;
+  commerce_saved?: string; commerce_error?: string;
   acl_error?: string; acl_q?: string;
   acl_kind?: string; acl_page?: string;
 }>;
@@ -91,7 +94,10 @@ export default async function BotDetailPage({
   const aclSearch = new URLSearchParams({
     kind: aclKind, q: aclQ, page: String(aclPage), page_size: "20",
   });
-  const [detail, members, acl, aclAudit, receiver, workers, routes] = await Promise.all([
+  const [
+    detail, members, acl, aclAudit, receiver, workers, routes,
+    commercePolicy, paymentAccounts,
+  ] = await Promise.all([
     adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
     adminFetch<BotCatalogRuleList>(`/bot-catalog/bots/${id}?${aclSearch}`),
@@ -101,6 +107,8 @@ export default async function BotDetailPage({
     adminFetch<BotReceiverSnapshot>(`/bot-registry/${id}/receiver`),
     adminFetch<RelayWorkersSnapshot>("/relay-workers"),
     adminFetch<BotRelaySnapshot>(`/bot-registry/${id}/relay-routes`),
+    adminFetch<BotCommercePolicy>(`/bot-registry/${id}/commerce`),
+    adminFetch<BotPaymentList>(`/bot-registry/${id}/payment-accounts`),
   ]);
   const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
@@ -281,6 +289,15 @@ export default async function BotDetailPage({
     </Card>
 
     <BotReceiverPanel bot={bot} receiver={receiver} pending={pending} />
+    {query.commerce_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
+      مجوزهای مستقل این بات ثبت شدند؛ موجودی و پرداخت‌های سابق تغییر نکردند.
+    </p> : null}
+    {query.commerce_error ? <p role="alert"
+      className="rounded-lg border border-destructive p-3 text-sm text-destructive">
+      ذخیرهٔ تنظیمات مالی بات انجام نشد؛ نسخه، مجوزها و MFA را بررسی کنید.
+    </p> : null}
+    <BotCommercePanel bot={bot} policy={commercePolicy}
+      paymentAccounts={paymentAccounts} />
     {query.relay_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
       تغییر مسیر Relay ثبت شد؛ هیچ پیام یا پرداختی از این عملیات صادر نمی‌شود.
     </p> : null}

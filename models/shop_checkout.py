@@ -6,13 +6,14 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
-    Index, String, UniqueConstraint, func,
+    Index, String, UniqueConstraint, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
 
 from models.base import Base
 from models.shop_scope import legacy_bot_default
+from models.shop_multibot import DEFAULT_STORE_ID
 
 
 class ShopShippingMethod(Base):
@@ -20,6 +21,10 @@ class ShopShippingMethod(Base):
 
     __tablename__ = "shop_shipping_methods"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -40,6 +45,10 @@ class ShopCoupon(Base):
 
     __tablename__ = "shop_coupons"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     discount_type: Mapped[str] = mapped_column(String(12), nullable=False)
@@ -81,6 +90,17 @@ class ShopCart(Base):
 
     __tablename__ = "shop_carts"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
+    customer_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("shop_store_customers.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    is_shared: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
@@ -109,7 +129,20 @@ class ShopCart(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("bot_id", "platform_user_id", name="uq_shop_cart_bot_owner"),
+        Index(
+            "uq_shop_cart_private_owner", "bot_id", "platform_user_id",
+            unique=True, postgresql_where=text("is_shared = false"),
+            sqlite_where=text("is_shared = false"),
+        ),
+        Index(
+            "uq_shop_cart_shared_customer", "store_id", "customer_id",
+            unique=True, postgresql_where=text("is_shared = true"),
+            sqlite_where=text("is_shared = true"),
+        ),
+        CheckConstraint(
+            "NOT is_shared OR customer_id IS NOT NULL",
+            name="ck_shop_cart_shared_identity",
+        ),
         CheckConstraint(
             "platform IN ('telegram','bale')", name="ck_shop_cart_platform"
         ),
@@ -118,6 +151,30 @@ class ShopCart(Base):
             name="ck_shop_cart_input",
         ),
         CheckConstraint("revision > 0", name="ck_shop_cart_revision"),
+    )
+
+
+class ShopCartInputSession(Base):
+    """Independent chat-form state for a Customer-shared Cart per bot/user."""
+
+    __tablename__ = "shop_cart_input_sessions"
+
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    platform_user_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True,
+    )
+    cart_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_carts.id", ondelete="CASCADE"), nullable=False,
+    )
+    awaiting_input: Mapped[str | None] = mapped_column(String(12))
+    __table_args__ = (
+        CheckConstraint(
+            "awaiting_input IS NULL OR awaiting_input IN ('address','coupon')",
+            name="ck_shop_cart_session_input",
+        ),
     )
 
 

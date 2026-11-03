@@ -42,6 +42,10 @@ from models.shop_multibot_receiver import (
 from models.shop_relay_pool import (
     ShopRelayWorker, ShopBotRelayRoute, ShopRelayCredential, ShopRelayEvent,
 )
+from models.shop_store_commerce import (
+    ShopStoreCustomer, ShopStoreCommercePolicy, ShopBotCommercePolicy,
+    ShopPaymentAccount, ShopBotPaymentAccess,
+)
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )

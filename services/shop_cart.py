@@ -11,15 +11,18 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import (
-    ShopCart, ShopCartItem, ShopCoupon, ShopOrderLine, ShopShippingMethod,
+    ShopCart, ShopCartInputSession, ShopCartItem, ShopCoupon,
+    ShopOrderLine, ShopShippingMethod,
 )
-from models.shop_content import Product, ShopOrder
+from models.shop_content import Product, ShopIdentity, ShopOrder
+from models.shop_multibot import DEFAULT_STORE_ID
+from services.shop_store_commerce import policy_for
 from services.shop_money import MAX_RIALS, format_rials, to_rials
 from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
@@ -121,7 +124,10 @@ class ShopCartFlow:
         text = (event.text or "").strip()
         # A disabled provider cart refuses both current and stale callback buttons.
         # Existing orders remain accessible through the separate order service.
-        features = await get_features(session, event.platform.value)
+        features = await get_features(
+            session, event.platform.value,
+            bot_id=self._bot_id(event.platform),
+        )
         if not features.cart_enabled:
             cart_actions = {
                 "shop:cart", "shop:shipping", "shop:clear_coupon",
@@ -174,8 +180,11 @@ class ShopCartFlow:
                 return await self._checkout_preview(event, session)
 
             cart = await self._get_cart(event, session, create=False)
-            if cart is not None and cart.awaiting_input and text and not text.startswith("/"):
-                return await self._accept_input(cart, text, session)
+            if (
+                cart is not None and text and not text.startswith("/")
+                and await self._input_state(cart, event, session)
+            ):
+                return await self._accept_input(cart, text, session, event)
             return None
         except CartRejected as error:
             # No write on validation errors. DB session rolls back at exit.
@@ -185,55 +194,103 @@ class ShopCartFlow:
 
     async def _get_cart(
         self, event: InboundEvent, session: AsyncSession,
-        *, create: bool = False, lock: bool = False
+        *, create: bool = False, lock: bool = False,
     ) -> ShopCart | None:
-        """Find the correct platform-scoped cart and optionally lock it."""
+        """Select a bot-private or verified Customer cart by Store policy."""
         if event.user_id <= 0 or event.chat_id <= 0:
             raise CartRejected("شناسه خریدار معتبر نیست.")
         owner = self._bot_id(event.platform)
-        stmt = select(ShopCart).where(
-            ShopCart.bot_id == owner,
-            ShopCart.platform == event.platform.value,
-            ShopCart.platform_user_id == event.user_id,
+        identity = await session.scalar(select(ShopIdentity).where(
+            ShopIdentity.bot_id == owner,
+            ShopIdentity.platform == event.platform.value,
+            ShopIdentity.platform_user_id == event.user_id,
+        ))
+        store_id = (
+            self.bot_context.store_id if self.bot_context
+            else identity.store_id if identity else DEFAULT_STORE_ID
         )
+        if identity is not None and identity.store_id != store_id:
+            raise CartRejected("فروشگاه حساب با بات انتخاب‌شده مطابقت ندارد.")
+        if self.bot_context and self.bot_context.runtime_owner == "registry":
+            if identity is None or identity.customer_id is None:
+                raise CartRejected("ابتدا /start را در همین بات اجرا کنید.")
+
+        sharing = (
+            identity is not None and identity.customer_id is not None
+            and (await policy_for(session, store_id=store_id)).cart_scope
+            == "customer"
+        )
+        if sharing:
+            statement = select(ShopCart).where(
+                ShopCart.store_id == store_id,
+                ShopCart.customer_id == identity.customer_id,
+                ShopCart.is_shared.is_(True),
+            )
+        else:
+            statement = select(ShopCart).where(
+                ShopCart.bot_id == owner,
+                ShopCart.platform == event.platform.value,
+                ShopCart.platform_user_id == event.user_id,
+                ShopCart.is_shared.is_(False),
+            )
         if lock:
-            stmt = stmt.with_for_update()
-        cart = await session.scalar(stmt)
+            statement = statement.with_for_update()
+        cart = await session.scalar(statement)
         if cart is None and create:
+            # An already populated private cart is retained for a future
+            # migration decision; no automatic merge or stock mutation.
             cart = ShopCart(
-                bot_id=owner,
-                platform=event.platform.value,
-                platform_user_id=event.user_id,
-                chat_id=event.chat_id,
+                store_id=store_id,
+                customer_id=identity.customer_id if identity else None,
+                is_shared=sharing,
+                bot_id=owner, platform=event.platform.value,
+                platform_user_id=event.user_id, chat_id=event.chat_id,
                 revision=1,
             )
-            session.add(cart)
             try:
-                await session.flush()
+                async with session.begin_nested():
+                    session.add(cart)
+                    await session.flush()
             except IntegrityError:
-                await session.rollback()
-                cart = await session.scalar(stmt)
+                cart = await session.scalar(statement)
                 if cart is None:
-                    raise CartRejected("در حال حاضر امکان بازکردن سبد وجود ندارد.")
+                    raise CartRejected(
+                        "در حال حاضر امکان بازکردن سبد وجود ندارد."
+                    ) from None
         return cart
 
+    async def _input_state(
+        self, cart: ShopCart, event: InboundEvent, session: AsyncSession,
+    ) -> str | None:
+        """Read per-bot forms even when the purchased items are shared."""
+        if not cart.is_shared:
+            return cart.awaiting_input
+        return await session.scalar(select(
+            ShopCartInputSession.awaiting_input,
+        ).where(
+            ShopCartInputSession.bot_id == self._bot_id(event.platform),
+            ShopCartInputSession.platform_user_id == event.user_id,
+            ShopCartInputSession.cart_id == cart.id,
+        ))
+
     async def _existing_pending(
-        self, session: AsyncSession, cart: ShopCart
+        self, session: AsyncSession, cart: ShopCart, event: InboundEvent,
     ) -> ShopOrder | None:
-        """Find one still-active payment/review request for the customer."""
-        return await session.scalar(
-            select(ShopOrder)
-            .where(
-                ShopOrder.bot_id == cart.bot_id,
-                ShopOrder.platform == cart.platform,
-                ShopOrder.platform_user_id == cart.platform_user_id,
-                # Unpaid wallet invoices must be reconciled before reordering.
-                # Review-only requests never lock a customer's future baskets.
-                ShopOrder.status == "pending_payment",
+        """Prevent concurrent financial checkout across linked bot identities."""
+        if cart.is_shared:
+            condition = (
+                ShopOrder.store_id == cart.store_id,
+                ShopOrder.customer_id == cart.customer_id,
             )
-            .order_by(ShopOrder.id.desc())
-            .limit(1)
-        )
+        else:
+            condition = (
+                ShopOrder.bot_id == self._bot_id(event.platform),
+                ShopOrder.platform == event.platform.value,
+                ShopOrder.platform_user_id == event.user_id,
+            )
+        return await session.scalar(select(ShopOrder).where(
+            *condition, ShopOrder.status == "pending_payment",
+        ).order_by(ShopOrder.id.desc()).limit(1))
 
     async def _change_item(
         self, event: InboundEvent, session: AsyncSession,
@@ -241,7 +298,7 @@ class ShopCartFlow:
     ) -> BotReply:
         """Modify a cart line with quantity and stock limits."""
         cart = await self._get_cart(event, session, create=True, lock=True)
-        if await self._existing_pending(session, cart) is not None:
+        if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش در انتظار بررسی دارید؛ ابتدا وضعیت آن مشخص شود.")
         result = await session.execute(
             select(ShopCartItem).where(
@@ -266,7 +323,10 @@ class ShopCartFlow:
             ):
                 raise CartRejected("این کالا در این بات قابل خرید نیست.")
             product = await session.get(Product, product_id)
-            if product is None or not product.is_published:
+            if (
+                product is None or not product.is_published
+                or product.store_id != cart.store_id
+            ):
                 raise CartRejected("این کالا برای خرید موجود نیست.")
             current = line.quantity if line is not None else 0
             new_quantity = current + 1
@@ -296,7 +356,7 @@ class ShopCartFlow:
         return await self._cart_reply(event, session)
 
     async def _quote(
-        self, cart: ShopCart, session: AsyncSession
+        self, cart: ShopCart, session: AsyncSession, *, bot_id: str | None = None,
     ) -> CartQuote:
         """Calculate current product prices and optional shipping and coupon."""
         result = await session.execute(
@@ -311,8 +371,10 @@ class ShopCartFlow:
         # All cart routes including checkout and place_order re-evaluate the
         # current entitlements. No price or customer-facing name is exposed
         # after a product has been removed from this bot's catalog.
+        if any(product.store_id != cart.store_id for _, product in rows):
+            raise CartRejected("کالای سبد به فروشگاه دیگری تعلق دارد.")
         if not await allowed_for_bot(
-            session, cart.bot_id, [product.id for _, product in rows],
+            session, bot_id or cart.bot_id, [product.id for _, product in rows],
         ):
             raise CartRejected("یک یا چند کالای سبد دیگر در این بات مجاز نیستند.")
         lines: list[QuoteLine] = []
@@ -334,6 +396,8 @@ class ShopCartFlow:
             await session.get(ShopShippingMethod, cart.shipping_method_id)
             if cart.shipping_method_id is not None else None
         )
+        if method and method.store_id != cart.store_id:
+            raise CartRejected("روش ارسال به این فروشگاه تعلق ندارد.")
         if needs_shipping and method is not None and not method.is_active:
             raise CartRejected("روش ارسال انتخاب‌شده غیرفعال شده است.")
         shipping = to_rials(method.price_irr) if needs_shipping and method else 0
@@ -341,6 +405,8 @@ class ShopCartFlow:
             await session.get(ShopCoupon, cart.coupon_id)
             if cart.coupon_id is not None else None
         )
+        if coupon and coupon.store_id != cart.store_id:
+            raise CartRejected("کد تخفیف به این فروشگاه تعلق ندارد.")
         discount = validate_coupon(coupon, subtotal) if coupon else 0
         total = subtotal + shipping - discount
         if not 0 < total <= MAX_RIALS:
@@ -359,7 +425,9 @@ class ShopCartFlow:
         if cart is None:
             return BotReply("سبد خرید خالی است.")
         try:
-            quote = await self._quote(cart, session)
+            quote = await self._quote(
+                cart, session, bot_id=self._bot_id(event.platform),
+            )
         except CartRejected as error:
             if str(error) == "سبد خرید خالی است.":
                 return BotReply(
@@ -436,39 +504,68 @@ class ShopCartFlow:
         return BotReply("\n".join(details)[:4096], tuple(rows))
 
     async def _request_input(
-        self, event: InboundEvent, session: AsyncSession, action: str
+        self, event: InboundEvent, session: AsyncSession, action: str,
     ) -> BotReply:
-        """Wait for the next private text message, not an external UI form."""
+        """Stage address/coupon form state only for the requesting bot."""
         cart = await self._get_cart(event, session, create=True, lock=True)
-        cart.awaiting_input = "address" if action == "shop:address" else "coupon"
+        selected = "address" if action == "shop:address" else "coupon"
+        if cart.is_shared:
+            key = (self._bot_id(event.platform), event.user_id)
+            row = await session.get(
+                ShopCartInputSession, key, with_for_update=True,
+            )
+            if row is None:
+                row = ShopCartInputSession(
+                    bot_id=key[0], platform_user_id=key[1],
+                    cart_id=cart.id,
+                )
+                session.add(row)
+            row.cart_id = cart.id
+            row.awaiting_input = selected
+        else:
+            cart.awaiting_input = selected
         await session.commit()
         return BotReply(
             "نشانی کامل ارسال را وارد کنید (۱۰ تا ۵۰۰ نویسه)."
-            if cart.awaiting_input == "address"
-            else "کد تخفیف را ارسال کنید.",
+            if selected == "address" else "کد تخفیف را ارسال کنید."
         )
 
     async def _accept_input(
-        self, cart: ShopCart, value: str, session: AsyncSession
+        self, cart: ShopCart, value: str, session: AsyncSession,
+        event: InboundEvent,
     ) -> BotReply:
-        """Store the address or validated coupon provided via chat."""
-        if cart.awaiting_input == "address":
+        """Apply only the requesting bot's pending form to its verified cart."""
+        row = None
+        if cart.is_shared:
+            row = await session.get(
+                ShopCartInputSession,
+                (self._bot_id(event.platform), event.user_id),
+                with_for_update=True,
+            )
+            if row is None or row.cart_id != cart.id:
+                raise CartRejected("فرم متعلق به این گفتگو نیست.")
+        state = row.awaiting_input if row else cart.awaiting_input
+        if state == "address":
             if not 10 <= len(value) <= 500:
                 raise CartRejected("نشانی باید بین ۱۰ تا ۵۰۰ نویسه باشد.")
             cart.shipping_address = value
-        elif cart.awaiting_input == "coupon":
+        elif state == "coupon":
             code = value.upper()
             if not re.fullmatch(r"[A-Z0-9_-]{3,32}", code):
                 raise CartRejected("کد تخفیف معتبر نیست.")
-            coupon = await session.scalar(
-                select(ShopCoupon).where(func.upper(ShopCoupon.code) == code)
-            )
+            coupon = await session.scalar(select(ShopCoupon).where(
+                ShopCoupon.store_id == cart.store_id,
+                func.upper(ShopCoupon.code) == code,
+            ))
             if coupon is None:
                 raise CartRejected("کد تخفیف یافت نشد.")
             cart.coupon_id = coupon.id
         else:
             return BotReply("عملیات انتخاب‌شده معتبر نیست.")
-        cart.awaiting_input = None
+        if row:
+            row.awaiting_input = None
+        else:
+            cart.awaiting_input = None
         cart.revision += 1
         await session.commit()
         return BotReply(
@@ -481,7 +578,14 @@ class ShopCartFlow:
         requested_page: int = 0
     ) -> BotReply:
         """Paginate arbitrary administrator-defined shipping methods."""
-        clause = ShopShippingMethod.is_active.is_(True)
+        store_id = (
+            self.bot_context.store_id if self.bot_context
+            else DEFAULT_STORE_ID
+        )
+        clause = (
+            ShopShippingMethod.is_active.is_(True)
+            & (ShopShippingMethod.store_id == store_id)
+        )
         count = await session.scalar(
             select(func.count()).select_from(ShopShippingMethod).where(clause)
         )
@@ -521,7 +625,13 @@ class ShopCartFlow:
     ) -> BotReply:
         """Save the selected active shipping option."""
         shipping = await session.get(ShopShippingMethod, method_id)
-        if shipping is None or not shipping.is_active:
+        if (
+            shipping is None or not shipping.is_active
+            or shipping.store_id != (
+                self.bot_context.store_id if self.bot_context
+                else DEFAULT_STORE_ID
+            )
+        ):
             raise CartRejected("روش ارسال فعلی غیرفعال است.")
         cart = await self._get_cart(event, session, create=True, lock=True)
         cart.shipping_method_id = shipping.id
@@ -546,9 +656,11 @@ class ShopCartFlow:
         cart = await self._get_cart(event, session)
         if cart is None:
             raise CartRejected("سبد خرید خالی است.")
-        if await self._existing_pending(session, cart) is not None:
+        if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
-        quote = await self._quote(cart, session)
+        quote = await self._quote(
+                cart, session, bot_id=self._bot_id(event.platform),
+            )
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
         ):
@@ -584,10 +696,14 @@ class ShopCartFlow:
             )
         if cart.revision != expected_revision:
             raise CartRejected("محتوای سبد تغییر کرده؛ دوباره سفارش را بررسی کنید.")
-        if await self._existing_pending(session, cart) is not None:
+        if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
-        await lock_bot_catalog_policy(session, cart.bot_id)
-        quote = await self._quote(cart, session)
+        await lock_bot_catalog_policy(
+            session, self._bot_id(event.platform),
+        )
+        quote = await self._quote(
+                cart, session, bot_id=self._bot_id(event.platform),
+            )
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
         ):
@@ -595,7 +711,9 @@ class ShopCartFlow:
 
         first = quote.lines[0]
         order = ShopOrder(
-            bot_id=cart.bot_id,
+            store_id=cart.store_id,
+            customer_id=cart.customer_id,
+            bot_id=self._bot_id(event.platform),
             platform=event.platform.value,
             platform_user_id=event.user_id,
             chat_id=event.chat_id,
@@ -637,6 +755,10 @@ class ShopCartFlow:
         cart.shipping_method_id = None
         cart.coupon_id = None
         cart.awaiting_input = None
+        if cart.is_shared:
+            await session.execute(update(ShopCartInputSession).where(
+                ShopCartInputSession.cart_id == cart.id,
+            ).values(awaiting_input=None))
         cart.revision += 1
         await session.commit()
         return BotReply(

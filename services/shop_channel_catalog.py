@@ -150,7 +150,13 @@ class CatalogFlow:
             if settings and settings.welcome_message
             else "به فروشگاه خوش آمدید."
         )
-        features = await get_features(session, platform)
+        features = await get_features(
+            session, platform,
+            bot_id=(
+                self.bot_context.bot_id if self.bot_context
+                else LEGACY_BOT_IDS[platform]
+            ),
+        )
         rows = [
             (_button("🛍 محصولات", "shop:categories"),),
             (_button("📦 سفارش‌های من", "shop:orders"),),
@@ -321,7 +327,13 @@ class CatalogFlow:
             show_description=show_description,
             show_stock=show_stock,
         )
-        features = await get_features(session, platform)
+        features = await get_features(
+            session, platform,
+            bot_id=(
+                self.bot_context.bot_id if self.bot_context
+                else LEGACY_BOT_IDS[platform]
+            ),
+        )
         rows = []
         if features.cart_enabled:
             if product.stock_quantity > 0:

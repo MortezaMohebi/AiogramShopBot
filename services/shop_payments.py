@@ -61,6 +61,7 @@ class ShopPaymentService:
         telegram_fiat_enabled: bool,
         telegram_stars_enabled: bool,
         telegram_minor_multiplier: int,
+        payment_account_ids: dict[str, str] | None = None,
     ) -> InvoicePlan:
         """Create one invoice intent under a locked approved, unpaid order.
 
@@ -83,6 +84,10 @@ class ShopPaymentService:
         order = result.scalar_one_or_none()
         if order is None:
             raise PaymentRejected("سفارش متعلق به این حساب نیست.")
+        from models.shop_multibot import ShopBot
+        bot = await session.get(ShopBot, owner)
+        if bot is None or bot.platform != platform.value or bot.store_id != order.store_id:
+            raise PaymentRejected("مالکیت فروشگاه سفارش معتبر نیست.")
         if order.provider != "manual_review" or order.status != "approved_unpaid":
             raise PaymentRejected(
                 "این سفارش آماده صدور فاکتور جدید نیست؛ "
@@ -201,6 +206,10 @@ class ShopPaymentService:
 
         # The original checkout payload is random and uniquely indexed.
         intent = ShopPaymentAttempt(
+            store_id=order.store_id,
+            payment_account_id=(
+                (payment_account_ids or {}).get(provider)
+            ),
             order_id=order.id,
             bot_id=owner,
             platform=platform.value,

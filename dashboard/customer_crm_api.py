@@ -13,11 +13,12 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import String, cast, delete, func, or_, select
+from sqlalchemy import String, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.next_api import database, signed_staff
 from models.shop_content import ShopIdentity, ShopOrder
+from models.shop_store_commerce import ShopStoreCustomer
 from models.shop_customer_links import ShopCustomerIdentityLink
 from models.shop_customer_crm import (
     ShopCustomerAudit,
@@ -55,6 +56,9 @@ def basic_profile(
     """Return safe CRM metadata, never provider bearer secrets."""
     return {
         "id": identity.id,
+        "store_id": identity.store_id,
+        "store_customer_id": identity.customer_id,
+        "bot_id": identity.bot_id,
         "platform": identity.platform,
         "user_id": str(identity.platform_user_id),
         "name": identity.first_name,
@@ -190,10 +194,25 @@ async def customer_case(
             else linked.source_id
         )
         linked_peer = await db.get(ShopIdentity, peer_id)
+    # An equal platform_user_id on a different bot is NOT the same person.
+    # Only identities linked by proven StoreCustomer ownership may share CRM.
+    members = (await db.scalars(select(ShopIdentity).where(
+        ShopIdentity.customer_id == identity.customer_id,
+        ShopIdentity.store_id == identity.store_id,
+    ).order_by(ShopIdentity.id))).all() if identity.customer_id else [identity]
+    order_owners = [and_(
+        ShopOrder.bot_id == item.bot_id,
+        ShopOrder.platform == item.platform,
+        ShopOrder.platform_user_id == item.platform_user_id,
+    ) for item in members]
     orders = (await db.scalars(select(ShopOrder).where(
-        ShopOrder.platform == identity.platform,
-        ShopOrder.platform_user_id == identity.platform_user_id,
+        ShopOrder.store_id == identity.store_id,
+        or_(*order_owners),
     ).order_by(ShopOrder.id.desc()).limit(50))).all()
+    store_customer = (
+        await db.get(ShopStoreCustomer, identity.customer_id)
+        if identity.customer_id is not None else None
+    )
     notes = (await db.scalars(select(ShopCustomerNote).where(
         ShopCustomerNote.identity_id == identity.id,
     ).order_by(ShopCustomerNote.id.desc()).limit(100))).all()
@@ -212,6 +231,18 @@ async def customer_case(
 
     return {
         "customer": basic_profile(identity, profile),
+        "store_customer": ({
+            "id": store_customer.id,
+            "store_id": store_customer.store_id,
+            "display_name": store_customer.display_name,
+            "phone": store_customer.phone,
+        } if store_customer else None),
+        "verified_identities": [{
+            "id": item.id,
+            "platform": item.platform,
+            "bot_id": item.bot_id,
+            "platform_user_id": str(item.platform_user_id),
+        } for item in members],
         "verified_other_platform": ({
             "id": linked_peer.id, "platform": linked_peer.platform,
             "user_id": str(linked_peer.platform_user_id),

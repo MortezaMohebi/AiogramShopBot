@@ -10,13 +10,14 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
-    String, Text, UniqueConstraint, func,
+    String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
 
 from models.base import Base
 from models.shop_scope import legacy_bot_default
+from models.shop_multibot import DEFAULT_STORE_ID
 
 
 class ShopWalletAccount(Base):
@@ -24,10 +25,22 @@ class ShopWalletAccount(Base):
 
     __tablename__ = "shop_wallet_accounts"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
+    customer_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("shop_store_customers.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    scope: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="identity",
+        server_default="identity",
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    identity_id: Mapped[int] = mapped_column(
+    identity_id: Mapped[int | None] = mapped_column(
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
-        nullable=False, unique=True,
+        nullable=True, unique=True,
     )
     # Immutable verified scope; legacy reads remain compatible during cutover.
     bot_id: Mapped[str | None] = mapped_column(
@@ -44,6 +57,17 @@ class ShopWalletAccount(Base):
 
     __table_args__ = (
         CheckConstraint("balance_irr >= 0", name="ck_shop_wallet_balance"),
+        CheckConstraint(
+            "(scope = 'identity' AND identity_id IS NOT NULL "
+            "AND bot_id IS NOT NULL) OR "
+            "(scope = 'customer' AND identity_id IS NULL AND bot_id IS NULL)",
+            name="ck_shop_wallet_scope",
+        ),
+        Index(
+            "uq_shop_wallet_shared_customer", "store_id", "customer_id",
+            unique=True, postgresql_where=text("scope = 'customer'"),
+            sqlite_where=text("scope = 'customer'"),
+        ),
     )
 
 
@@ -52,6 +76,9 @@ class ShopWalletEntry(Base):
 
     __tablename__ = "shop_wallet_entries"
 
+    source_identity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shop_identities.id", ondelete="RESTRICT"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     account_id: Mapped[int] = mapped_column(
         ForeignKey("shop_wallet_accounts.id", ondelete="RESTRICT"),
@@ -212,6 +239,10 @@ class ShopCampaign(Base):
 
     __tablename__ = "shop_campaigns"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Legacy campaigns may address both platforms, so retain NULL for them.
     bot_id: Mapped[str | None] = mapped_column(

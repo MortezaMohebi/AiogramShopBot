@@ -177,9 +177,11 @@ class ShopReferralService:
 
         # Disabling store credit suspends new promotional awards. Existing
         # ledger entries and refunds are never removed or reversed.
-        if not (await get_features(session, order.platform)).store_credit_enabled:
+        if not (await get_features(session, order.platform, bot_id=order.bot_id)).store_credit_enabled:
             return 0
-        if not await rail_enabled(session, order.platform, "store_credit"):
+        if not await rail_enabled(
+            session, order.platform, "store_credit", bot_id=order.bot_id,
+        ):
             return 0
         policy = await session.get(ShopReferralPolicy, 1)
         if (

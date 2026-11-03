@@ -60,14 +60,6 @@ class ShopEngagementFlow:
         text = (event.text or "").strip()
         command, _, argument = text.partition(" ")
 
-        # Link requests between different bots are disabled until the owner-
-        # confirmation workflow is explicitly bound to a pair of Store bots.
-        if self.bot_context is not None and command in {
-            "/linkstart", "/linkconfirm", "/linkapprove", "/linkcancel",
-        }:
-            return BotReply(
-                "اتصال حساب‌های چندباتی هنوز نیازمند تأیید مستقل هر بات است."
-            )
         # Linking requires actions by both provider-authenticated identities
         # and a final confirmation from the initiating account.
         if command == "/linkstart":
@@ -75,6 +67,7 @@ class ShopEngagementFlow:
                 key = await begin(
                     session, platform=event.platform.value,
                     user_id=event.user_id,
+                    bot_id=self._bot_id(event.platform),
                 )
                 other = "بله" if event.platform.value == "telegram" else "تلگرام"
                 return BotReply(
@@ -94,6 +87,7 @@ class ShopEngagementFlow:
                     await claim(
                         session, platform=event.platform.value,
                         user_id=event.user_id, token=argument.strip(),
+                        bot_id=self._bot_id(event.platform),
                     )
                     return BotReply(
                         "حساب دوم تأیید اولیه شد. صاحب حساب اول باید در "
@@ -103,14 +97,17 @@ class ShopEngagementFlow:
                     await approve(
                         session, platform=event.platform.value,
                         user_id=event.user_id, token=argument.strip(),
+                        bot_id=self._bot_id(event.platform),
                     )
                     return BotReply(
-                        "✅ اتصال هویت تأیید شد. موجودی، سبد و سفارش‌های "
-                        "دو پیام‌رسان مستقل باقی می‌مانند.",
+                        "✅ هویت‌های تأییدشده در یک پروندهٔ مشتری ثبت شدند. "
+                        "اشتراک سبد و اعتبار تابع سیاست فروشگاه است؛ "
+                        "هیچ مانده‌ای خودکار منتقل نشده است.",
                     )
                 await cancel(
                     session, platform=event.platform.value,
                     user_id=event.user_id, token=argument.strip(),
+                        bot_id=self._bot_id(event.platform),
                 )
                 return BotReply("درخواست اتصال لغو شد.")
             except LinkRejected as error:
@@ -120,7 +117,10 @@ class ShopEngagementFlow:
             or _CREDIT_PREVIEW.fullmatch(callback)
             or _CREDIT_CONFIRM.fullmatch(callback)
         ):
-            features = await get_features(session, event.platform.value)
+            features = await get_features(
+                session, event.platform.value,
+                bot_id=self._bot_id(event.platform),
+            )
             if not features.store_credit_enabled:
                 return BotReply(
                     "اعتبار داخلی فروشگاه برای این پیام‌رسان غیرفعال شده است.",
@@ -186,10 +186,24 @@ class ShopEngagementFlow:
         if identity is not None:
             from models.shop_engagement import ShopWalletAccount
 
-            account_id = await session.scalar(
-                select(ShopWalletAccount.id).where(
-                    ShopWalletAccount.identity_id == identity.id
+            from services.shop_store_commerce import policy_for
+
+            policy = await policy_for(
+                session, store_id=identity.store_id,
+            )
+            if policy.credit_scope == "customer" and identity.customer_id:
+                criteria = (
+                    ShopWalletAccount.store_id == identity.store_id,
+                    ShopWalletAccount.customer_id == identity.customer_id,
+                    ShopWalletAccount.scope == "customer",
                 )
+            else:
+                criteria = (
+                    ShopWalletAccount.identity_id == identity.id,
+                    ShopWalletAccount.scope == "identity",
+                )
+            account_id = await session.scalar(
+                select(ShopWalletAccount.id).where(*criteria)
             )
             if account_id is not None:
                 results = await session.execute(
@@ -205,7 +219,10 @@ class ShopEngagementFlow:
             f" — {entry.reason[:60]}"
             for entry in entries
         )
-        features = await get_features(session, event.platform.value)
+        features = await get_features(
+                session, event.platform.value,
+                bot_id=self._bot_id(event.platform),
+            )
         return BotReply(
             f"💳 {features.store_credit_label}\n"
             f"موجودی: {format_rials(balance, self.display_unit)}\n\n"

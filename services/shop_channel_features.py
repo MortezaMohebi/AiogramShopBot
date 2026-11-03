@@ -1,4 +1,9 @@
-"""Single source of truth for provider-specific shop capability toggles."""
+"""Effective channel capabilities with independent per-bot policy overrides.
+
+Legacy provider-wide settings are retained for the two original bots. Newly
+registered bots default to DENY until an authorized operator configures
+each feature in the bot's registry; platform-wide flags never grant access.
+"""
 
 from __future__ import annotations
 
@@ -7,13 +12,15 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_channel_features import ShopChannelFeature
+from models.shop_multibot import LEGACY_BOT_IDS, ShopBot
+from models.shop_store_commerce import ShopBotCommercePolicy
 
 PLATFORMS = ("telegram", "bale")
 
 
 @dataclass(frozen=True, slots=True)
 class ChannelFeatures:
-    """Effective feature state without creating database rows on reads."""
+    """Effective, authenticated Bot API feature settings."""
 
     platform: str
     cart_enabled: bool
@@ -22,29 +29,45 @@ class ChannelFeatures:
 
 
 async def get_features(
-    session: AsyncSession, platform: str,
+    session: AsyncSession, platform: str, *,
+    bot_id: str | None = None,
 ) -> ChannelFeatures:
-    """Load current state; a missing record preserves legacy behavior."""
+    """Require explicit authorization for registered bots; preserve legacy."""
     if platform not in PLATFORMS:
         raise ValueError("Unsupported provider")
-    row = await session.get(ShopChannelFeature, platform)
-    if row is None:
-        return ChannelFeatures(
-            platform=platform,
-            cart_enabled=True,
-            store_credit_enabled=True,
-            store_credit_label="اعتبار فروشگاه",
-        )
+    owner = bot_id or LEGACY_BOT_IDS[platform]
+    bot = await session.get(ShopBot, owner)
+    if bot is None or bot.platform != platform:
+        raise ValueError("Authenticated bot identity is invalid.")
+    legacy = bot.runtime_owner == "legacy"
+    inherited = await session.get(ShopChannelFeature, platform)
+    policy = await session.get(ShopBotCommercePolicy, owner)
+    if legacy:
+        cart = inherited.cart_enabled if inherited else True
+        credit = inherited.store_credit_enabled if inherited else True
+        label = inherited.store_credit_label if inherited else "اعتبار فروشگاه"
+    else:
+        # A legacy platform-wide setting is never inherited automatically.
+        cart = False
+        credit = False
+        label = "اعتبار فروشگاه"
+    if policy:
+        if policy.cart_enabled is not None:
+            cart = policy.cart_enabled
+        if policy.credit_enabled is not None:
+            credit = policy.credit_enabled
+        if policy.credit_label:
+            label = policy.credit_label
     return ChannelFeatures(
-        platform=row.platform,
-        cart_enabled=row.cart_enabled,
-        store_credit_enabled=row.store_credit_enabled,
-        store_credit_label=row.store_credit_label,
+        platform=platform,
+        cart_enabled=cart,
+        store_credit_enabled=credit,
+        store_credit_label=label,
     )
 
 
 def inline_credit_label(features: ChannelFeatures) -> str:
-    """Truncate safely to the common 64-byte Bot API callback label limit."""
+    """Truncate a UTF-8 label to the platform's callback display budget."""
     label = features.store_credit_label.strip()
     while len(label.encode("utf-8")) > 64:
         label = label[:-1]
@@ -52,7 +75,7 @@ def inline_credit_label(features: ChannelFeatures) -> str:
 
 
 def to_data(features: ChannelFeatures) -> dict:
-    """Expose only allowlisted settings, never financial ledger data."""
+    """Serialize only client-safe, non-financial feature preferences."""
     return {
         "platform": features.platform,
         "cart_enabled": features.cart_enabled,

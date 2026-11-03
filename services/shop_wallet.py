@@ -26,6 +26,7 @@ from services.shop_bot_catalog_acl import (
 )
 from models.shop_scope import legacy_id
 from services.shop_money import MAX_RIALS, to_rials
+from services.shop_store_commerce import policy_for
 
 
 class StoreCreditRejected(ValueError):
@@ -53,74 +54,126 @@ class ShopWalletService:
 
     @staticmethod
     async def _account(
-        session: AsyncSession, identity_id: int
+        session: AsyncSession, identity_id: int,
+        *, forced_account_id: int | None = None,
     ) -> ShopWalletAccount:
-        """Lock an existing wallet or create it under a unique savepoint."""
+        """Lock the effective Customer or legacy identity credit account.
+
+        The only way to select a shared wallet is an explicit Store policy
+        and a verified customer_id. No native Bale/Telegram provider balance
+        participates in this credit account.
+        """
         identity = await session.get(ShopIdentity, identity_id)
         if identity is None:
             raise StoreCreditRejected("حساب مشتری یافت نشد.")
-        stmt = select(ShopWalletAccount).where(
-            ShopWalletAccount.identity_id == identity_id
-        ).with_for_update()
-        account = await session.scalar(stmt)
-        if account is not None:
-            if account.bot_id is not None and account.bot_id != identity.bot_id:
-                raise StoreCreditRejected("مالکیت کیف پول با بات مطابقت ندارد.")
-            if account.bot_id is None:
-                account.bot_id = identity.bot_id
+        scope = (await policy_for(
+            session, store_id=identity.store_id,
+        )).credit_scope
+        shared = scope == "customer" and identity.customer_id is not None
+        if forced_account_id is not None:
+            account = await session.scalar(select(ShopWalletAccount).where(
+                ShopWalletAccount.id == forced_account_id,
+            ).with_for_update())
+            if account is None:
+                raise StoreCreditRejected("حساب اعتبار تاریخی پیدا نشد.")
+            ShopWalletService._check_ownership(account, identity)
             return account
 
-        # A nested transaction protects the outer payment transaction from
-        # the uniqueness race when two requests first open the same wallet.
+        statement = select(ShopWalletAccount).where(
+            ShopWalletAccount.store_id == identity.store_id,
+            ShopWalletAccount.scope == (
+                "customer" if shared else "identity"
+            ),
+        )
+        if shared:
+            statement = statement.where(
+                ShopWalletAccount.customer_id == identity.customer_id,
+            )
+        else:
+            statement = statement.where(
+                ShopWalletAccount.identity_id == identity.id,
+            )
+        account = await session.scalar(statement.with_for_update())
+        if account is not None:
+            ShopWalletService._check_ownership(account, identity)
+            return account
+
         try:
             async with session.begin_nested():
-                session.add(
-                    ShopWalletAccount(
-                        bot_id=identity.bot_id,
-                        identity_id=identity_id, balance_irr=0,
-                    )
+                account = ShopWalletAccount(
+                    scope="customer" if shared else "identity",
+                    store_id=identity.store_id,
+                    customer_id=identity.customer_id,
+                    identity_id=None if shared else identity.id,
+                    bot_id=None if shared else identity.bot_id,
+                    balance_irr=0,
                 )
+                session.add(account)
                 await session.flush()
         except IntegrityError:
-            pass
-        account = await session.scalar(stmt)
-        if account is None:
-            raise StoreCreditRejected("دسترسی به اعتبار فعلاً ممکن نیست.")
+            account = await session.scalar(statement.with_for_update())
+            if account is None:
+                raise StoreCreditRejected("دسترسی به اعتبار ممکن نیست.") from None
+        ShopWalletService._check_ownership(account, identity)
         return account
+
+    @staticmethod
+    def _check_ownership(
+        account: ShopWalletAccount, identity: ShopIdentity,
+    ) -> None:
+        """Refuse access to accounts outside the verified Store/owner."""
+        if account.store_id != identity.store_id or (
+            account.scope == "identity" and (
+                account.identity_id != identity.id
+                or account.bot_id != identity.bot_id
+            )
+        ) or (
+            account.scope == "customer" and (
+                account.customer_id is None
+                or account.customer_id != identity.customer_id
+                or account.identity_id is not None
+                or account.bot_id is not None
+            )
+        ):
+            raise StoreCreditRejected("مالکیت اعتبار قابل تأیید نیست.")
 
     @staticmethod
     async def balance(
         session: AsyncSession, platform: Platform, user_id: int,
         *, bot_id: str | None = None,
     ) -> int:
-        """Return merchant store credit only, not external Bale wallet funds."""
+        """Return only this Store's effective internal merchant credit."""
         identity = await ShopWalletService.find_identity(
             session, platform, user_id, bot_id=bot_id,
         )
         if identity is None:
             return 0
-        value = await session.scalar(
-            select(ShopWalletAccount.balance_irr).where(
-                ShopWalletAccount.identity_id == identity.id
+        scope = (await policy_for(
+            session, store_id=identity.store_id,
+        )).credit_scope
+        if scope == "customer" and identity.customer_id is not None:
+            criteria = (
+                ShopWalletAccount.store_id == identity.store_id,
+                ShopWalletAccount.customer_id == identity.customer_id,
+                ShopWalletAccount.scope == "customer",
             )
-        )
-        return int(value or 0)
+        else:
+            criteria = (
+                ShopWalletAccount.store_id == identity.store_id,
+                ShopWalletAccount.identity_id == identity.id,
+                ShopWalletAccount.scope == "identity",
+            )
+        return int(await session.scalar(select(
+            ShopWalletAccount.balance_irr,
+        ).where(*criteria)) or 0)
 
     @staticmethod
     async def apply(
-        session: AsyncSession,
-        *,
-        identity_id: int,
-        delta_irr: int,
-        operation_key: str,
-        reason: str,
-        actor: str,
+        session: AsyncSession, *, identity_id: int,
+        delta_irr: int, operation_key: str, reason: str,
+        actor: str, forced_account_id: int | None = None,
     ) -> tuple[ShopWalletEntry, bool]:
-        """Apply a nonzero signed amount once, without committing the caller.
-
-        A globally unique operation_key is required for retries; reusing an
-        existing key for a different owner or delta raises a hard error.
-        """
+        """Record one signed, globally idempotent store-credit mutation."""
         if (
             type(delta_irr) is not int or delta_irr == 0
             or abs(delta_irr) > MAX_RIALS
@@ -130,42 +183,50 @@ class ShopWalletService:
         ):
             raise StoreCreditRejected("مبلغ یا سند عملیات اعتبار معتبر نیست.")
 
-        prior = await session.scalar(
-            select(ShopWalletEntry).where(
-                ShopWalletEntry.operation_key == operation_key
-            )
-        )
+        identity = await session.get(ShopIdentity, identity_id)
+        if identity is None:
+            raise StoreCreditRejected("حساب مشتری یافت نشد.")
+        prior = await session.scalar(select(ShopWalletEntry).where(
+            ShopWalletEntry.operation_key == operation_key,
+        ))
         if prior is not None:
             account = await session.get(ShopWalletAccount, prior.account_id)
             if (
-                account is None or account.identity_id != identity_id
+                account is None
+                or (prior.source_identity_id not in (None, identity_id))
                 or prior.delta_irr != delta_irr
+                or (
+                    forced_account_id is not None
+                    and prior.account_id != forced_account_id
+                )
             ):
-                raise StoreCreditRejected("شناسه عملیات قبلاً برای مبلغ دیگری ثبت شد.")
+                raise StoreCreditRejected("شناسه عملیات برای سند دیگری استفاده شد.")
+            ShopWalletService._check_ownership(account, identity)
             return prior, False
 
-        account = await ShopWalletService._account(session, identity_id)
-        # Another request may have committed this key while our request
-        # waited on the row lock. Avoid a double debit on concurrent retries.
-        concurrent = await session.scalar(
-            select(ShopWalletEntry).where(
-                ShopWalletEntry.operation_key == operation_key
-            )
+        account = await ShopWalletService._account(
+            session, identity_id, forced_account_id=forced_account_id,
         )
+        concurrent = await session.scalar(select(ShopWalletEntry).where(
+            ShopWalletEntry.operation_key == operation_key,
+        ))
         if concurrent is not None:
-            if concurrent.account_id != account.id or concurrent.delta_irr != delta_irr:
-                raise StoreCreditRejected("کلید عملیات برای مبلغ دیگری ثبت شده است.")
+            if (
+                concurrent.account_id != account.id
+                or concurrent.delta_irr != delta_irr
+                or concurrent.source_identity_id not in (None, identity_id)
+            ):
+                raise StoreCreditRejected("کلید عملیات تکراری با سند دیگری است.")
             return concurrent, False
+
         balance_after = account.balance_irr + delta_irr
         if not 0 <= balance_after <= MAX_RIALS:
             raise StoreCreditRejected("موجودی اعتبار کافی نیست یا سقف آن پر شده است.")
         account.balance_irr = balance_after
-        identity = await session.get(ShopIdentity, identity_id)
-        if identity is None or identity.bot_id != account.bot_id:
-            raise StoreCreditRejected("مالکیت اعتبار قابل تأیید نیست.")
         entry = ShopWalletEntry(
-            bot_id=identity.bot_id,
             account_id=account.id,
+            source_identity_id=identity.id,
+            bot_id=identity.bot_id,
             operation_key=operation_key,
             delta_irr=delta_irr,
             balance_after_irr=balance_after,
@@ -203,12 +264,18 @@ class ShopWalletService:
             raise StoreCreditRejected("سفارش متعلق به این حساب نیست.")
         if order.provider == "store_credit" and order.status == "paid":
             return order, False
-        features = await get_features(session, platform.value)
+        features = await get_features(
+            session, platform.value,
+            bot_id=bot_id or legacy_id(platform.value),
+        )
         if not features.store_credit_enabled:
             raise StoreCreditRejected(
                 "پرداخت با اعتبار داخلی برای این پیام‌رسان غیرفعال است."
             )
-        if not await rail_enabled(session, platform.value, "store_credit"):
+        if not await rail_enabled(
+            session, platform.value, "store_credit",
+            bot_id=bot_id or legacy_id(platform.value),
+        ):
             raise StoreCreditRejected(
                 "این روش پرداخت با اعتبار داخلی غیرفعال است."
             )
@@ -297,6 +364,7 @@ class ShopWalletService:
         now = datetime.now(timezone.utc)
         session.add(
             ShopPaymentAttempt(
+                store_id=order.store_id,
                 order_id=order.id,
                 bot_id=bot_id or legacy_id(platform.value),
                 platform=platform.value,
@@ -357,9 +425,15 @@ class ShopWalletService:
         )
         if identity is None:
             raise StoreCreditRejected("هویت گیرنده یافت نشد.")
+        debit = await session.scalar(select(ShopWalletEntry).where(
+            ShopWalletEntry.operation_key == f"store-credit-pay-order:{order.id}",
+        ))
+        if debit is None or debit.delta_irr != -to_rials(order.total_irr):
+            raise StoreCreditRejected("سند برداشت اعتبار اصلی پیدا نشد.")
         await ShopWalletService.apply(
             session,
             identity_id=identity.id,
+            forced_account_id=debit.account_id,
             delta_irr=to_rials(order.total_irr),
             operation_key=f"store-credit-refund-order:{order.id}",
             reason=f"Refund order #{order.id}",
