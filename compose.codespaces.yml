@@ -110,7 +110,11 @@ services:
       start_period: 25s
     restart: unless-stopped
   dashboard:
-    build: {context: ./dashboard-next, dockerfile: Dockerfile.codespaces}
+    build:
+      context: ./dashboard-next
+      dockerfile: Dockerfile.codespaces
+      args:
+        NEXT_ADMIN_PUBLIC_ORIGIN: "${LIVE_DASHBOARD_ORIGIN:?Run setup}"
     environment:
       NODE_ENV: "production"
       NEXT_TELEMETRY_DISABLED: "1"
