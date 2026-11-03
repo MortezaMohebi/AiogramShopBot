@@ -147,11 +147,13 @@ class ShopRelayCredential(Base):
         Index(
             "uq_shop_relay_nonrevoked_key", "key_fingerprint", unique=True,
             postgresql_where=text("state <> 'revoked'"),
+            sqlite_where=text("state <> 'revoked'"),
         ),
         Index(
             "uq_shop_relay_active_credential",
             "bot_id", "worker_id", unique=True,
             postgresql_where=text("state = 'active'"),
+            sqlite_where=text("state = 'active'"),
         ),
     )
 
