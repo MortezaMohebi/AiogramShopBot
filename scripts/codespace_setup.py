@@ -167,6 +167,24 @@ def init() -> None:
     credentials(data)
 
 
+def new_bootstrap_password() -> None:
+    """Rotate the stored initial password for an administrator not yet created.
+
+    This does NOT change an existing account's database hash. To rotate an
+    already-created administrator, use the authenticated /staff dashboard.
+    """
+    data = read_env()
+    data["LIVE_ADMIN_PASSWORD"] = secrets.token_urlsafe(32)
+    write_env(data)
+    print(
+        "A new private bootstrap password was generated for a NEW account. "
+        "Existing database accounts were not modified."
+    )
+    print(
+        "If shopadmin already exists, change its password in /staff instead."
+    )
+
+
 def show_urls(data: dict[str, str]) -> None:
     """Print safe URLs without leaking embedded webhook secrets."""
     print("Dashboard (keep Codespaces port 3000 PRIVATE):")
@@ -324,7 +342,7 @@ def main() -> int:
         choices=(
             "info", "init", "config", "start", "build-dashboard", "ports", "connect",
             "disconnect",
-            "doctor", "credentials", "demo", "status", "logs", "test",
+            "doctor", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -343,6 +361,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py doctor")
         print("  python3 scripts/codespace_setup.py disconnect")
         print("  python3 scripts/codespace_setup.py credentials")
+        print("  python3 scripts/codespace_setup.py new-bootstrap-password")
         print("  python3 scripts/codespace_setup.py demo")
         return 0
     if args.command == "init":
@@ -350,6 +369,9 @@ def main() -> int:
         return 0
     if args.command == "credentials":
         credentials(read_env())
+        return 0
+    if args.command == "new-bootstrap-password":
+        new_bootstrap_password()
         return 0
     if args.command == "config":
         return compose("config", "--quiet")
