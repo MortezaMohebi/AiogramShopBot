@@ -50,7 +50,7 @@ def validate_password(db: Session, value: str) -> None:
         or (policy.require_upper and not any(char.isupper() for char in value))
         or (policy.require_lower and not any(char.islower() for char in value))
         or (policy.require_digit and not any(char.isdecimal() for char in value))
-        or (policy.require_symbol and not any(not char.isalnum() for char in value))
+        or (policy.require_symbol and not any(not char.isalnum() and not char.isspace() for char in value))
     ):
         raise security.SecurityRejected("password_policy_failed", 422)
 
@@ -154,6 +154,48 @@ def issue_reset(
     security.audit(db, actor_id, "staff.password_reset_issued", row.id, now=instant)
     db.flush()
     return row, raw
+
+
+def prepare_redemption(
+    db: Session, kind: str, token: str, password: str,
+    *, now: datetime | None = None,
+) -> None:
+    """Validate a capability before expensive password hashing.
+
+    Redemption rechecks under row locks, so parallel use still remains
+    single-use even if two requests pass this inexpensive preflight.
+    """
+    instant = security.clock(now)
+    if kind not in {"invite", "reset"} or not TOKEN_RE.fullmatch(token):
+        raise security.SecurityRejected("invalid_link", 410)
+    digest = hashlib.sha256(token.encode("ascii")).hexdigest()
+    if kind == "invite":
+        item = db.scalar(select(ShopStaffInvitation).where(
+            ShopStaffInvitation.token_hash == digest,
+        ))
+        if (
+            item is None or item.accepted_at is not None
+            or item.cancelled_at is not None
+            or security.utc(item.expires_at) <= instant
+            or db.scalar(select(ShopStaff.id).where(
+                ShopStaff.username == item.username,
+            )) is not None
+        ):
+            raise security.SecurityRejected("invalid_link", 410)
+    else:
+        item = db.scalar(select(ShopStaffPasswordReset).where(
+            ShopStaffPasswordReset.token_hash == digest,
+        ))
+        if (
+            item is None or item.used_at is not None
+            or item.cancelled_at is not None
+            or security.utc(item.expires_at) <= instant
+        ):
+            raise security.SecurityRejected("invalid_link", 410)
+        target = db.get(ShopStaff, item.staff_id)
+        if target is None or not target.is_active:
+            raise security.SecurityRejected("invalid_link", 410)
+    validate_password(db, password)
 
 
 def redeem(
