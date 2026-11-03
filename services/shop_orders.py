@@ -15,7 +15,7 @@ from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import ShopOrder
 from services.shop_money import format_rials
-from services.shop_channel_features import get_features
+from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_refunds import ShopRefundService
 from services.shop_payments import PaymentRejected
 
@@ -122,7 +122,7 @@ class ShopOrdersFlow:
                 )]
                 if features.store_credit_enabled:
                     actions.append(InlineAction(
-                        features.store_credit_label,
+                        inline_credit_label(features),
                         f"shop:creditpay:{order.id}",
                     ))
                 rows.append(tuple(actions))
