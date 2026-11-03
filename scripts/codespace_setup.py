@@ -346,7 +346,14 @@ def main() -> int:
     if args.command == "config":
         return compose("config", "--quiet")
     if args.command == "start":
-        code = compose("up", "--build", "-d", "--wait")
+        # Build sequentially to avoid exhausting 2-core/8GB Codespaces.
+        backend = compose("build", "migrate")
+        if backend:
+            return backend
+        frontend = compose("build", "dashboard")
+        if frontend:
+            return frontend
+        code = compose("up", "-d", "--no-build", "--wait")
         if code == 0:
             show_urls(read_env())
             print("Services started. Run 'ports', then 'connect' to register.")
