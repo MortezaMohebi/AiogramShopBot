@@ -16,6 +16,9 @@ from sqlalchemy.orm import sessionmaker, Session
 import config
 from models.base import Base
 from models.shop_staff import ShopStaff
+from models.shop_staff_security import (
+    ShopPasswordPolicy, ShopStaffInvitation, ShopStaffPasswordReset,
+)
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
