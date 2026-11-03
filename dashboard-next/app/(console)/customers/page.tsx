@@ -62,6 +62,11 @@ export default async function CustomersPage({
 
   return <div className="space-y-5">
     <PageHeading title="مدیریت مشتریان" description="پروندهٔ مشتری، فیلتر، رضایت تبلیغاتی، یادداشت‌های پشتیبانی و محدودسازی مستند؛ هویت تلگرام و بله جداست." />
+    <div className="flex flex-wrap gap-2">
+      <Button asChild variant="outline" size="sm">
+        <Link href="/data-models/customers">Customer Search / Import / Export</Link>
+      </Button>
+    </div>
     <Card><CardContent className="pt-5">
       <form method="get" className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <label className="space-y-2 text-sm xl:col-span-2">نام، Username یا شناسه
