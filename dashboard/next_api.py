@@ -19,7 +19,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, or_, select, text, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -194,6 +194,12 @@ def require_staff(staff: ShopStaff | None, *roles: str) -> ShopStaff:
     if staff.role not in ("superadmin", *roles):
         raise HTTPException(status_code=403, detail="Permission denied")
     return staff
+
+
+def _store_rows(model):
+    """Restrict every signed admin list/count to the active Store set."""
+    ctx = current_context()
+    return model.store_id.in_(ctx.active_store_ids) if ctx else true()
 
 
 def product_data(item: Product) -> dict:
@@ -381,16 +387,18 @@ async def overview(staff: Staff, session: Db) -> dict:
     report = await build_shop_analytics(session, days=30)
     products = int(await session.scalar(
         select(func.count()).select_from(Product)
+        .where(_store_rows(Product))
     ) or 0)
     published = int(await session.scalar(
         select(func.count()).select_from(Product)
-        .where(Product.is_published.is_(True))
+        .where(Product.is_published.is_(True), _store_rows(Product))
     ) or 0)
     # Viewer and content/marketing roles may see aggregates, not individual
     # customer orders. Sales/finance can inspect explicit operational records.
     orders = (
         (await session.execute(
-            select(ShopOrder).order_by(ShopOrder.id.desc()).limit(8)
+            select(ShopOrder).where(_store_rows(ShopOrder))
+            .order_by(ShopOrder.id.desc()).limit(8)
         )).scalars().all()
         if staff and staff.role in ("superadmin", "sales", "finance")
         else []
@@ -425,7 +433,7 @@ async def categories(staff: Staff, session: Db) -> list[dict]:
     """Show actual category records in admin-defined order."""
     require_staff(staff, "content")
     items = (await session.execute(
-        select(ShopCategory)
+        select(ShopCategory).where(_store_rows(ShopCategory))
         .order_by(ShopCategory.position, ShopCategory.id)
         .limit(2000)
     )).scalars().all()
@@ -495,8 +503,10 @@ async def products(
         )
         if search else None
     )
-    count_statement = select(func.count()).select_from(Product)
-    list_statement = select(Product)
+    count_statement = select(func.count()).select_from(Product).where(
+        _store_rows(Product),
+    )
+    list_statement = select(Product).where(_store_rows(Product))
     if predicate is not None:
         count_statement = count_statement.where(predicate)
         list_statement = list_statement.where(predicate)
@@ -641,9 +651,11 @@ async def orders(staff: Staff, session: Db, page: int = 1) -> dict:
         raise HTTPException(status_code=400, detail="Invalid page")
     total = int(await session.scalar(
         select(func.count()).select_from(ShopOrder)
+        .where(_store_rows(ShopOrder))
     ) or 0)
     items = (await session.execute(
-        select(ShopOrder).order_by(ShopOrder.id.desc())
+        select(ShopOrder).where(_store_rows(ShopOrder))
+        .order_by(ShopOrder.id.desc())
         .offset((page - 1) * 20).limit(20)
     )).scalars().all()
     return {
@@ -671,9 +683,11 @@ async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
         raise HTTPException(status_code=400, detail="Invalid page")
     total = int(await session.scalar(
         select(func.count()).select_from(ShopIdentity)
+        .where(_store_rows(ShopIdentity))
     ) or 0)
     records = (await session.execute(
-        select(ShopIdentity).order_by(ShopIdentity.id.desc())
+        select(ShopIdentity).where(_store_rows(ShopIdentity))
+        .order_by(ShopIdentity.id.desc())
         .offset((page - 1) * 20).limit(20)
     )).scalars().all()
     return {
