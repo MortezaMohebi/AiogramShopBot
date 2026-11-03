@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { KeyRound, ShieldAlert, ShieldCheck, Settings2 } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
+import { BotReceiverPanel } from "@/components/blocks/bot-receiver-panel";
 import type { BotCatalogRuleList } from "@/lib/bot-catalog-acl";
 type CatalogAuditRow = {
   object_type: "product" | "category";
@@ -19,7 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import {
-  type BotRegistryDetail, botPlatformLabel, botRuntimeLabel,
+  type BotRegistryDetail, type BotReceiverSnapshot,
+  botPlatformLabel, botRuntimeLabel,
 } from "@/lib/bot-registry";
 import {
   changeBotState, revokeBotCredential, saveBotDetails,
@@ -36,7 +38,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const errors: Record<string, string> = {
   validation: "فیلدها را بررسی کنید؛ دلیل توقف باید حداقل ۸ نویسه داشته باشد.",
   reauth: "برای این عملیات باید در «حساب من» هویت خود را دوباره تأیید کنید.",
-  bot_runtime_not_ready: "این بات در وضعیت Draft است و هنوز Runtime چندباتی ندارد؛ روشن‌شدن آن در فاز چهارم ممکن می‌شود.",
+  bot_runtime_not_ready: "ابتدا Token و Receiver مستقل این بات را تأیید کنید.",
+  invalid_receiver_mode: "نوع دریافت پیام معتبر نیست.",
+  receiver_worker_unavailable: "Lease یا سرویس Runtime چندباتی در دسترس نیست.",
+  receiver_lease_lost: "مالکیت Receiver قطع شده است؛ وضعیت سرور را بررسی کنید.",
+  multibot_runtime_disabled: "Runtime چندباتی از تنظیمات سرور غیرفعال است.",
+  bot_credential_not_verified: "Token بات هنوز با getMe تأیید نشده است.",
+  receiver_change_in_progress: "این Receiver در حال تغییر یا نیازمند بررسی است.",
+  webhook_url_invalid: "آدرس عمومی HTTPS مربوط به Webhook پیکربندی نشده است.",
+  webhook_owned_elsewhere: "Webhook این بات در مقصد دیگری ثبت شده؛ انتقال خودکار انجام نمی‌شود.",
+  receiver_needs_review: "نتیجهٔ تغییر Receiver مشخص نیست؛ بررسی دستی ضروری است.",
+  invalid_operation_state: "وضعیت فعلی بات برای عملیات مجاز نیست.",
   configuration_changed: "نسخهٔ تنظیمات تغییر کرده است؛ صفحه را دوباره بارگذاری کنید.",
   duplicate_provider_bot: "این حساب بات قبلاً در Registry یک بات دیگر ثبت شده است.",
   duplicate_bot_credential: "این Token قبلاً برای بات دیگری یا بات قدیمی ثبت شده است.",
@@ -76,18 +88,21 @@ export default async function BotDetailPage({
   const aclSearch = new URLSearchParams({
     kind: aclKind, q: aclQ, page: String(aclPage), page_size: "20",
   });
-  const [detail, members, acl, aclAudit] = await Promise.all([
+  const [detail, members, acl, aclAudit, receiver] = await Promise.all([
     adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
     adminFetch<BotCatalogRuleList>(`/bot-catalog/bots/${id}?${aclSearch}`),
     adminFetch<{ items: CatalogAuditRow[] }>(
       `/bot-catalog/bots/${id}/audit?page=1`,
     ),
+    adminFetch<BotReceiverSnapshot>(`/bot-registry/${id}/receiver`),
   ]);
   const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
   const pending = bot.credentials.find(item => item.state === "staged");
   const active = bot.operations.desired_state === "active";
+  const receiverActive = receiver.configured && receiver.state === "active";
+  const mayChangeState = legacy || (receiverActive && health.runtime_ready);
   return <div className="space-y-6">
     <div className="flex flex-wrap gap-2">
       <Button asChild variant="outline" size="sm"><Link href="/bots">بازگشت به بات‌ها</Link></Button>
@@ -99,6 +114,8 @@ export default async function BotDetailPage({
       {query.saved === "verified" ? "getMe با Provider واقعی موفق بود؛ این به معنای فعال‌شدن Runtime نیست." :
         query.saved === "staged" ? "Token رمزنگاری و به حالت Staged ثبت شد؛ بات همچنان خاموش است." :
         query.saved === "state" ? "وضعیت فروش جدید بات ذخیره شد؛ Receiver و رسیدهای تسویه تغییر نکردند." :
+        query.saved === "receiver_staged" ? "Receiver فقط Stage شد و هنوز Provider تغییری نکرده است." :
+        query.saved === "receiver_active" ? "فعال‌سازی Receiver ثبت شد؛ برای وضعیت فعلی، گزارش سلامت را بررسی کنید." :
         "تغییرات بات ثبت شد."}
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{errors[query.error] ?? errors.save}</p> : null}
@@ -106,10 +123,11 @@ export default async function BotDetailPage({
     <div className="grid gap-3 sm:grid-cols-3">
       <Card><CardContent className="space-y-2 pt-5">
         <p className="text-xs text-muted-foreground">وضعیت جاری</p>
-        <Badge tone={legacy && active ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge>
+        <Badge tone={active && (legacy || receiverActive) ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge>
         <p className="text-xs leading-6 text-muted-foreground">
           {legacy ? "گیت فروش مستقل فعال است؛ رویدادهای تسویهٔ قدیمی ادامه دارند." :
-            "این بات هنوز در Handlerها، Webhook یا Polling ثبت نشده است."}
+            receiverActive ? "Receiver اختصاصی در Registry فعال ثبت شده است." :
+            "این بات هنوز Receiver فعال ندارد و فروش آن خاموش است."}
         </p>
       </CardContent></Card>
       <Card><CardContent className="space-y-2 pt-5">
@@ -120,10 +138,10 @@ export default async function BotDetailPage({
       </CardContent></Card>
       <Card><CardContent className="space-y-2 pt-5">
         <p className="text-xs text-muted-foreground">Receiver</p>
-        <p className="font-semibold">{health.receiver_status === "not_installed"
-          ? "هنوز راه‌اندازی نشده" :
-          health.receiver_status === "legacy_receiver_paused"
-            ? "Receiver محفوظ؛ فروش متوقف" : "Legacy Receiver"}</p>
+        <p className="font-semibold">{legacy
+          ? (health.receiver_status.includes("paused") ? "Legacy Receiver — فروش متوقف" : "Legacy Receiver")
+          : receiverActive ? `فعال — ${receiver.mode === "polling" ? "Polling" : "Webhook"}`
+          : receiver.configured ? `در انتظار: ${receiver.state}` : "هنوز راه‌اندازی نشده"}</p>
         <p className="text-xs text-muted-foreground">آخرین Update مشاهده‌شده: {date(health.received_last_at)}</p>
       </CardContent></Card>
     </div>
@@ -181,7 +199,7 @@ export default async function BotDetailPage({
 
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-5" /> وضعیت و روشن/خاموش‌کردن</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          {legacy ? <>
+          {mayChangeState ? <>
             <p className="text-sm leading-7">این کنترل فقط فروش و پیام‌های عادی بات منتخب را تغییر می‌دهد. در حالت توقف، Webhook یا getUpdates حذف نمی‌شود تا رسید پرداخت‌های قبلی همچنان پردازش شود.</p>
             <form action={changeBotState} className="space-y-4">
               <input type="hidden" name="id" value={bot.id} />
@@ -205,9 +223,9 @@ export default async function BotDetailPage({
           </> : <div className="space-y-4">
             <p className="flex items-start gap-2 rounded-lg border p-3 text-sm leading-7">
               <ShieldAlert className="mt-1 size-5 shrink-0 text-amber-600" />
-              این بات Draft است. برای آن عمداً دکمهٔ روشن‌کردن وجود ندارد؛ فعال‌کردن اکنون می‌تواند شناسهٔ مشتری، سبد خرید و پرداخت را با بات‌های قدیمی تداخل دهد.
+              این بات هنوز Receiver فعال ندارد؛ تا تأیید هویت و اتصال مستقل، فروش جدید آن مسدود است.
             </p>
-            <p className="text-xs leading-7 text-muted-foreground">پس از پیاده‌سازی Dispatcher و Receiver مستقل در فاز چهارم، کنترل روشن/خاموش به همین صفحه اضافه خواهد شد.</p>
+            <p className="text-xs leading-7 text-muted-foreground">از بخش Receiver مستقل در پایین، ابتدا Stage و سپس پس از تأیید محیط اجرا و MFA اقدام به فعال‌سازی کنید.</p>
           </div>}
         </CardContent>
       </Card>
@@ -218,14 +236,14 @@ export default async function BotDetailPage({
         <p className="text-sm leading-7">توکن هیچ‌گاه از Backend خوانده یا در صفحه نمایش داده نمی‌شود. فقط نسخه، وضعیت و زمان تأیید قابل مشاهده است. تأیید getMe صرفاً احراز هویت بات است و آن را روشن نمی‌کند.</p>
         {legacy ? <div className="rounded-lg border bg-muted/40 p-3 text-sm">
           Token بات قدیمی فقط از Secretهای Deployment خوانده می‌شود. برای امنیت اتصال‌های فعال، تعویض Token آن در این فاز مجاز نیست.
-        </div> : <form action={stageBotCredential} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        </div> : bot.status === "draft" ? <form action={stageBotCredential} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <input type="hidden" name="id" value={bot.id} />
           <label className="block space-y-2 text-sm">Token جدید برای بات Draft
             <Input type="password" name="token" dir="ltr" minLength={24} maxLength={512}
               autoComplete="new-password" required placeholder="رمز بات تنها یک بار وارد می‌شود" />
           </label>
           <Button type="submit">ثبت امن Token</Button>
-        </form>}
+        </form> : <p className="text-sm text-muted-foreground">Credential این بات فعال است و از این فرم تعویض نمی‌شود.</p>}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[660px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
@@ -256,6 +274,8 @@ export default async function BotDetailPage({
         {pending && !legacy ? <p className="text-xs text-muted-foreground">نسخهٔ Staged: {pending.version} · آخرین تأیید: {date(pending.verified_at)}</p> : null}
       </CardContent>
     </Card>
+
+    <BotReceiverPanel bot={bot} receiver={receiver} pending={pending} />
 
     {query.acl_saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">
       قانون دسترسی بات به محصولات/دسته‌بندی‌ها با ثبت Audit ذخیره شد.
@@ -297,7 +317,7 @@ export default async function BotDetailPage({
           <p>آخرین Update: {date(health.received_last_at)}</p>
           <p>درحال پردازش در یک ساعت: {health.processing_last_hour}</p>
           <p>نیازمند بررسی در یک ساعت: {health.needs_review_last_hour}</p>
-          <p>Runtime آماده: <strong>{health.runtime_ready ? "Legacy" : "هنوز متصل نشده"}</strong></p>
+          <p>Runtime آماده: <strong>{health.runtime_ready ? (legacy ? "Legacy" : "Registry — Receiver فعال") : "هنوز متصل نشده"}</strong></p>
           <p className="text-xs leading-7 text-muted-foreground">تعداد پیام کم به معنای Offline بودن بات نیست. برای تأیید هویت زنده از getMe در بخش Credential استفاده کنید.</p>
         </CardContent>
       </Card>

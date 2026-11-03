@@ -16,6 +16,7 @@ from sqladmin import ModelView
 from markupsafe import Markup, escape
 
 from models.base import Base
+from models.shop_scope import legacy_bot_default
 
 
 class ShopSettings(Base):
@@ -177,6 +178,10 @@ class ShopIdentity(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     username: Mapped[str | None] = mapped_column(String(255))
     first_name: Mapped[str | None] = mapped_column(String(255))
@@ -191,7 +196,7 @@ class ShopIdentity(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("platform", "platform_user_id", name="uq_shop_identity"),
+        UniqueConstraint("bot_id", "platform_user_id", name="uq_shop_identity_bot_user"),
         CheckConstraint(
             "platform IN ('telegram', 'bale')", name="ck_shop_identity_platform"
         ),
@@ -218,6 +223,10 @@ class ShopOrder(Base):
         autoincrement=True,
     )
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     product_id: Mapped[int] = mapped_column(

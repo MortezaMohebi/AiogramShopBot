@@ -44,6 +44,12 @@ const SAFE_CODES = new Set([
 
 
 
+  "invalid_receiver_mode", "receiver_worker_unavailable",
+  "receiver_lease_lost", "multibot_runtime_disabled",
+  "bot_credential_not_verified", "receiver_change_in_progress",
+  "webhook_url_invalid", "webhook_owned_elsewhere",
+  "receiver_needs_review", "receiver_capacity_reached",
+  "provider_outcome_unknown",
   "confirmation_required",
 ]);
 export class ApiError extends Error {
@@ -132,8 +138,11 @@ export async function currentStaff(): Promise<Staff> {
   try { return await bridgeFetch<Staff>("/auth/me", "GET", null, session); }
   catch (error) { if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1"); throw error; }
 }
-export async function adminFetch<T>(path: string, method: Method = "GET", data: unknown = null): Promise<T> {
+export async function adminFetch<T>(
+  path: string, method: Method = "GET", data: unknown = null,
+  timeoutMs = 15_000,
+): Promise<T> {
   const session = await readSession(); if (!session) redirect("/login");
-  try { return await bridgeFetch<T>(path, method, data, session); }
+  try { return await bridgeFetch<T>(path, method, data, session, timeoutMs); }
   catch (error) { if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1"); throw error; }
 }

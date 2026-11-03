@@ -55,7 +55,7 @@ export default async function BotsPage({
   return <div className="space-y-6">
     <PageHeading title="مدیریت ربات‌ها" description="چندین ربات تلگرام و بله برای یک فروشگاه؛ هویت، دسترسی و وضعیت عملیاتی مستقل." />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-4 text-sm">
-      <p className="max-w-3xl leading-7">دو بات قبلی همچنان از Runtime قدیمی استفاده می‌کنند. بات تازه در وضعیت Draft ایجاد می‌شود و تا تکمیل Runtime چندباتی، Webhook یا Polling خودکار فعال نخواهد داشت.</p>
+      <p className="max-w-3xl leading-7">دو بات قبلی با Runtime موجود حفظ می‌شوند. بات تازه در وضعیت Draft ایجاد می‌شود و فقط بعد از تأیید هویت Provider، تنظیم Receiver و فعال‌سازی دستی مدیر به Runtime مستقل می‌پیوندد؛ هیچ اتصال خودکاری انجام نمی‌شود.</p>
       <Button asChild variant="outline"><Link href="/bot-connections">زیرساخت Webhook و Worker</Link></Button>
     </div>
     <div className="flex items-center gap-2 text-sm">

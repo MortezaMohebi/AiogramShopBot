@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from models.shop_delivery import ShopRemoteFile
+from models.shop_scope import legacy_id
 
 
 def bot_fingerprint(token: str) -> str:
@@ -22,7 +23,8 @@ def bot_fingerprint(token: str) -> str:
 
 
 async def cached_file_id(
-    *, platform: str, bot_key: str, storage_key: str, kind: str
+    *, platform: str, bot_key: str, storage_key: str, kind: str,
+    bot_id: str | None = None,
 ) -> str | None:
     """Read a remote file id belonging only to the specified bot namespace."""
     from db import session_maker
@@ -30,6 +32,7 @@ async def cached_file_id(
     async with session_maker() as session:
         result = await session.scalar(
             select(ShopRemoteFile.remote_file_id).where(
+                ShopRemoteFile.bot_id == (bot_id or legacy_id(platform)),
                 ShopRemoteFile.platform == platform,
                 ShopRemoteFile.bot_fingerprint == bot_key,
                 ShopRemoteFile.storage_key == storage_key,
@@ -46,6 +49,7 @@ async def remember_file_id(
     storage_key: str,
     kind: str,
     file_id: str,
+    bot_id: str | None = None,
 ) -> None:
     """Cache only a confirmed provider file id with PostgreSQL conflict safety."""
     if not isinstance(file_id, str) or not 1 <= len(file_id) <= 4096:
@@ -54,6 +58,7 @@ async def remember_file_id(
 
     values = {
         "platform": platform,
+        "bot_id": bot_id or legacy_id(platform),
         "bot_fingerprint": bot_key,
         "storage_key": storage_key,
         "delivery_kind": kind,

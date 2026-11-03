@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import false, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
 from channels.media_policy import bale_media_method
 from models.shop_content import ShopIdentity
+from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignAudit, ShopCampaignDelivery,
 )
@@ -130,6 +131,16 @@ class BroadcastControl:
         )
         if campaign is None or campaign.status != "approved":
             raise CampaignRejected("کمپین باید قبلاً تأیید شده باشد.")
+        # Only the original two tokens are available to the existing worker.
+        # Do not launch a registry-owned campaign using an unrelated token.
+        if (
+            campaign.bot_id is not None
+            and campaign.bot_id not in LEGACY_BOT_IDS.values()
+        ):
+            raise CampaignRejected(
+                "ارسال Broadcast این بات تا فعال شدن Worker اختصاصی آن "
+                "مجاز نیست؛ گیرندگان و مجوزها محفوظ می‌مانند."
+            )
         if bale_mode not in ("standard", "business"):
             raise CampaignRejected("روش ارسال بله معتبر نیست.")
         attachments = await ShopCampaignService._attachments(session, campaign)
@@ -153,6 +164,28 @@ class BroadcastControl:
             .group_by(ShopIdentity.platform)
         )
         recipients = {platform: int(total) for platform, total in result.all()}
+        # An old campaign can legitimately address both legacy bots, but
+        # every recipient must still own the matching delivery ledger row.
+        mismatched = await session.scalar(
+            select(func.count()).select_from(ShopCampaignDelivery)
+            .join(ShopIdentity, ShopIdentity.id == ShopCampaignDelivery.identity_id)
+            .where(
+                ShopCampaignDelivery.campaign_id == campaign.id,
+                ShopCampaignDelivery.status == "queued",
+                (
+                    (ShopCampaignDelivery.bot_id != ShopIdentity.bot_id)
+                    | ShopIdentity.bot_id.not_in(tuple(LEGACY_BOT_IDS.values()))
+                    | (
+                        ShopIdentity.bot_id != campaign.bot_id
+                        if campaign.bot_id is not None else false()
+                    )
+                ),
+            )
+        )
+        if mismatched:
+            raise CampaignRejected(
+                "مالکیت گیرندگان کمپین با بات مجاز مطابقت ندارد."
+            )
         if recipients.get("telegram") and not config.TOKEN:
             raise CampaignRejected("اتصال تلگرام پیکربندی نشده است.")
         if recipients.get("bale") and not config.BALE_BOT_TOKEN:

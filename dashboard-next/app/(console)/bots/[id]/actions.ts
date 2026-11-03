@@ -14,6 +14,11 @@ const SAFE_ERRORS = new Set([
   "bot_state_unchanged", "provider_state_unavailable", "bot_secret_key_unavailable",
   "bot_secret_unreadable", "legacy_bot_credential_locked", "mfa_enrollment_required",
   "bot_credential_stage_requires_draft", "permission_denied",
+  "invalid_receiver_mode", "receiver_worker_unavailable",
+  "receiver_lease_lost", "multibot_runtime_disabled",
+  "bot_credential_not_verified", "receiver_change_in_progress",
+  "webhook_url_invalid", "webhook_owned_elsewhere",
+  "receiver_needs_review", "invalid_operation_state",
 ]);
 
 /** Do not permit arbitrary URL paths to be constructed from form content. */
@@ -116,6 +121,41 @@ export async function verifyBotCredential(form: FormData): Promise<void> {
   revalidatePath("/bots");
   revalidatePath(`/bots/${id}`);
   redirect(`/bots/${id}?saved=verified`);
+}
+
+/** Save a bot's isolated receiver config without sending provider requests. */
+export async function stageBotReceiver(form: FormData): Promise<void> {
+  const id = idFrom(form);
+  const mode = String(form.get("mode") ?? "");
+  if (mode !== "webhook" && mode !== "polling") {
+    redirect(`/bots/${id}?error=validation`);
+  }
+  try {
+    await adminFetch(`/bot-registry/${id}/receiver/stage`, "POST", { mode });
+  } catch (error) { failure(error, id); }
+  revalidatePath(`/bots/${id}`);
+  redirect(`/bots/${id}?saved=receiver_staged`);
+}
+
+/** Activate an opted-in receiver with fresh password and MFA verification. */
+export async function activateBotReceiver(form: FormData): Promise<void> {
+  const id = idFrom(form);
+  const expected_version = positiveInt(form.get("expected_version"));
+  const current_password = String(form.get("current_password") ?? "");
+  const second_factor = String(form.get("second_factor") ?? "").trim();
+  if (!expected_version || !current_password || current_password.length > 256 ||
+      !/^[0-9]{6}$/.test(second_factor)) {
+    redirect(`/bots/${id}?error=validation`);
+  }
+  try {
+    // Provider checks may exceed a read timeout; mutations are never retried.
+    await adminFetch(`/bot-registry/${id}/receiver/activate`, "POST", {
+      expected_version, current_password, second_factor,
+    }, 90_000);
+  } catch (error) { failure(error, id); }
+  revalidatePath("/bots");
+  revalidatePath(`/bots/${id}`);
+  redirect(`/bots/${id}?saved=receiver_active`);
 }
 
 /** Revoke a proposed token; the active legacy Token stays untouched. */

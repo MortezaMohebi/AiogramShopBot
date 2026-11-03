@@ -18,6 +18,8 @@ from models.shop_engagement import ShopReferralPolicy, ShopWalletEntry
 from services.shop_money import format_rials
 from services.shop_referrals import ReferralRejected, ShopReferralService
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
+from services.shop_bot_context import BotContext
+from models.shop_scope import legacy_id
 from services.shop_channel_features import get_features
 from services.shop_identity_links import LinkRejected, begin, claim, approve, cancel
 
@@ -34,9 +36,21 @@ def _home_button() -> tuple[InlineAction, ...]:
 class ShopEngagementFlow:
     """Customer-facing promotional credit, referrals and marketing consent."""
 
-    def __init__(self, display_unit: str = "IRR") -> None:
-        """Choose only the visible rial or toman unit."""
+    def __init__(
+        self, display_unit: str = "IRR",
+        *, bot_context: BotContext | None = None,
+    ) -> None:
+        """Bind wallet, referral and consent to the authenticated bot."""
         self.display_unit = display_unit
+        self.bot_context = bot_context
+
+    def _bot_id(self, platform) -> str:
+        """Get the verified bot's immutable identity."""
+        if self.bot_context is None:
+            return legacy_id(platform.value)
+        if self.bot_context.platform != platform:
+            raise StoreCreditRejected("هویت پیام‌رسان معتبر نیست.")
+        return self.bot_context.bot_id
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
@@ -46,6 +60,14 @@ class ShopEngagementFlow:
         text = (event.text or "").strip()
         command, _, argument = text.partition(" ")
 
+        # Link requests between different bots are disabled until the owner-
+        # confirmation workflow is explicitly bound to a pair of Store bots.
+        if self.bot_context is not None and command in {
+            "/linkstart", "/linkconfirm", "/linkapprove", "/linkcancel",
+        }:
+            return BotReply(
+                "اتصال حساب‌های چندباتی هنوز نیازمند تأیید مستقل هر بات است."
+            )
         # Linking requires actions by both provider-authenticated identities
         # and a final confirmation from the initiating account.
         if command == "/linkstart":
@@ -141,6 +163,7 @@ class ShopEngagementFlow:
                     platform=event.platform,
                     user_id=event.user_id,
                     code=code,
+                    bot_id=self._bot_id(event.platform),
                 )
             except ReferralRejected as error:
                 result = str(error)
@@ -152,10 +175,12 @@ class ShopEngagementFlow:
     ) -> BotReply:
         """Show actual store credit and its last five ledger operations."""
         identity = await ShopWalletService.find_identity(
-            session, event.platform, event.user_id
+            session, event.platform, event.user_id,
+            bot_id=self._bot_id(event.platform),
         )
         balance = await ShopWalletService.balance(
-            session, event.platform, event.user_id
+            session, event.platform, event.user_id,
+            bot_id=self._bot_id(event.platform),
         )
         entries = []
         if identity is not None:
@@ -201,7 +226,8 @@ class ShopEngagementFlow:
             )
         try:
             code = await ShopReferralService.code(
-                session, event.platform, event.user_id
+                session, event.platform, event.user_id,
+                bot_id=self._bot_id(event.platform),
             )
         except ReferralRejected as error:
             return BotReply(str(error))
@@ -220,7 +246,8 @@ class ShopEngagementFlow:
     ) -> BotReply:
         """Respect explicit customer choice, defaulting to no announcements."""
         identity = await ShopWalletService.find_identity(
-            session, event.platform, event.user_id
+            session, event.platform, event.user_id,
+            bot_id=self._bot_id(event.platform),
         )
         if identity is None:
             return BotReply("ابتدا /start را ارسال کنید.")
@@ -247,6 +274,7 @@ class ShopEngagementFlow:
         order = await session.scalar(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
+                ShopOrder.bot_id == self._bot_id(event.platform),
                 ShopOrder.platform == event.platform.value,
                 ShopOrder.platform_user_id == event.user_id,
             )
@@ -256,7 +284,8 @@ class ShopEngagementFlow:
         if order.status != "approved_unpaid" or order.provider != "manual_review":
             return BotReply("این سفارش آماده پرداخت با اعتبار نیست.")
         balance = await ShopWalletService.balance(
-            session, event.platform, event.user_id
+            session, event.platform, event.user_id,
+            bot_id=self._bot_id(event.platform),
         )
         if balance < order.total_irr:
             return BotReply(
@@ -285,6 +314,7 @@ class ShopEngagementFlow:
                 platform=event.platform,
                 user_id=event.user_id,
                 order_id=order_id,
+                bot_id=self._bot_id(event.platform),
             )
         except StoreCreditRejected as error:
             return BotReply(str(error), ((_home_button()),))

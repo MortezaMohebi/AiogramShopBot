@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqladmin import ModelView
 
 from models.base import Base
+from models.shop_scope import legacy_bot_default
 
 
 class ShopShippingMethod(Base):
@@ -82,6 +83,10 @@ class ShopCart(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     shipping_address: Mapped[str | None] = mapped_column(String(500))
@@ -104,7 +109,7 @@ class ShopCart(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("platform", "platform_user_id", name="uq_shop_cart_owner"),
+        UniqueConstraint("bot_id", "platform_user_id", name="uq_shop_cart_bot_owner"),
         CheckConstraint(
             "platform IN ('telegram','bale')", name="ck_shop_cart_platform"
         ),

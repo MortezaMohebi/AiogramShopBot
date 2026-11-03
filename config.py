@@ -8,6 +8,11 @@ from utils.utils import get_sslipio_external_url, start_ngrok
 
 load_dotenv(".env.bot.dev")
 RUNTIME_ENVIRONMENT = RuntimeEnvironment(os.environ.get("RUNTIME_ENVIRONMENT"))
+# Multi-bot receiver is opt-in until PostgreSQL and live-provider P4 QA pass.
+MULTIBOT_V2_RUNTIME_ENABLED = (
+    os.environ.get("MULTIBOT_V2_RUNTIME_ENABLED", "false")
+    .strip().lower() == "true"
+)
 TELEGRAM_UPDATE_MODE = os.environ.get("TELEGRAM_UPDATE_MODE", "webhook").strip().lower()
 if TELEGRAM_UPDATE_MODE not in {"webhook", "polling"}:
     raise ValueError("TELEGRAM_UPDATE_MODE must be webhook or polling.")

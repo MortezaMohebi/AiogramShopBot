@@ -18,7 +18,8 @@ from services.shop_media_delivery import bot_fingerprint
 
 
 async def claim_update(
-    *, platform: Platform, token: str, update_id: int
+    *, platform: Platform, token: str, update_id: int,
+    bot_id: str | None = None,
 ) -> tuple[bool, str]:
     """Claim a unique update for one bot and platform, safely under concurrency."""
     if type(update_id) is not int or update_id < 0:
@@ -27,7 +28,11 @@ async def claim_update(
     from db import session_maker
 
     fingerprint = bot_fingerprint(token)
+    from models.shop_scope import legacy_id
+
+    owner = bot_id or legacy_id(platform.value)
     scope = (
+        ShopInboundUpdate.bot_id == owner,
         ShopInboundUpdate.platform == platform.value,
         ShopInboundUpdate.bot_fingerprint == fingerprint,
         ShopInboundUpdate.update_id == update_id,
@@ -42,6 +47,7 @@ async def claim_update(
             async with session.begin_nested():
                 session.add(
                     ShopInboundUpdate(
+                        bot_id=owner,
                         platform=platform.value,
                         bot_fingerprint=fingerprint,
                         update_id=update_id,
@@ -65,14 +71,19 @@ async def finish_update(
     token: str,
     update_id: int,
     success: bool,
+    bot_id: str | None = None,
 ) -> None:
     """Mark a claimed update processed or pending manual investigation."""
     from db import session_maker
 
     fingerprint = bot_fingerprint(token)
+    from models.shop_scope import legacy_id
+
+    owner = bot_id or legacy_id(platform.value)
     async with session_maker() as session:
         entry = await session.scalar(
             select(ShopInboundUpdate).where(
+                ShopInboundUpdate.bot_id == owner,
                 ShopInboundUpdate.platform == platform.value,
                 ShopInboundUpdate.bot_fingerprint == fingerprint,
                 ShopInboundUpdate.update_id == update_id,

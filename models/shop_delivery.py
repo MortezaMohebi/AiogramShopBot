@@ -9,13 +9,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, CheckConstraint, DateTime, Integer, String, Text,
+    BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, String, Text,
     UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqladmin import ModelView
 
 from models.base import Base
+from models.shop_scope import legacy_bot_default
 
 
 class ShopRemoteFile(Base):
@@ -25,6 +26,10 @@ class ShopRemoteFile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
     delivery_kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -55,6 +60,10 @@ class ShopInboundUpdate(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False, default=legacy_bot_default, index=True,
+    )
     bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     update_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -68,9 +77,11 @@ class ShopInboundUpdate(Base):
     )
 
     __table_args__ = (
+        # A bot's update offset survives token rotation without allowing
+        # a duplicate callback to re-run under a new token fingerprint.
         UniqueConstraint(
-            "platform", "bot_fingerprint", "update_id",
-            name="uq_shop_inbound_update",
+            "bot_id", "update_id",
+            name="uq_shop_inbound_bot_update",
         ),
         CheckConstraint(
             "status IN ('processing','processed','needs_review')",

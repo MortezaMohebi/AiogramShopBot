@@ -4,6 +4,7 @@
 **Foundation branch:** `feat/multibot-foundation-20261103`  
 **Bot Management (P2):** `feat/multibot-management-20261103`  
 **Bot Catalog ACL (P3):** `feat/multibot-catalog-acl-20261103`  
+**Multi-Bot Runtime & Commerce (P4):** `feat/multibot-runtime-commerce-20261103`  
 **Parent branch:** `feat/staff-security-invites-mfa-audit-20261103` (PR #5، هنوز Draft)  
 **اصل معماری:** One Store → Many Bots؛ Shared Product Catalog با دسترسی اختصاصی هر بات؛ Many Bots → Many outbound Worker/Proxy Routes.
 
@@ -20,16 +21,19 @@
 | 5 | Relay/Worker Pool | Registry چند Worker، تخصیص `Bot ↔ Worker` با اولویت، Worker auth تفکیک‌شده و Secret rotation، ظرفیت، Rate Limit و failover فقط برای کار ایمن | Phase 4 | چند بات روی یک Worker و یک بات روی دو Worker تست شوند؛ timeout ارسال پیام باعث Retry کور نشود |
 | 6 | Migration, E2E and Rollout | Dual-read/compatibility window، Cutover قابل بازگشت، تست شبکه و Load، تله‌متری، پاکسازی تدریجی legacy بعد از پذیرش | Phases 1–5 | تست Codespace/PostgreSQL/Playwright/Provider، مستندات Recovery و Merge تدریجی با تأیید انسانی |
 
-## وضعیت فعلی فازها — ۳ نوامبر ۲۰۲۶
+## وضعیت فعلی فازها — ۴ نوامبر ۲۰۲۶
 
 | فاز | پیاده‌سازی سورس | پذیرش واقعی |
 |---|---|---|
 | P1 Foundation | در PR #6 ثبت شده | PostgreSQL / Codespace / Pytest تأیید نشده |
 | P2 Bot Management & Operations | مدل، API، RTL UI، Legacy Gates، Credential Verification و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
 | P3 Bot Catalog Access | سه جدول ACL، Predicate مشترک، کنترل Catalog/Callback/Cart/Checkout، پنل Many2many بات و محصول و تست‌های آفلاین در Branch مستقل ثبت شده | Docker/PostgreSQL/Playwright/Provider هنوز تأیید نشده |
-| P4 Multi-Bot Runtime & Commerce | شروع نشده | شروع نشده |
+| P4 Multi-Bot Runtime & Commerce | Receiver مستقل، Dispatcher، Migration، اسکوپ مالی، UI فعال‌سازی MFA و محدودیت Broadcast ثبت شد | محیط تست در دسترس نیست؛ PostgreSQL، Provider، Next.js و E2E اجرا نشده‌اند |
 | P5 Shared Relay Worker Pool | شروع نشده | شروع نشده |
 | P6 Migration & Final Acceptance | شروع نشده | شروع نشده |
+
+جزئیات پیاده‌سازی P4 و آزمون‌های معوق در
+[`P4_RUNTIME_COMMERCE.fa.md`](./P4_RUNTIME_COMMERCE.fa.md) ثبت شده‌اند.
 
 جزئیات فاز سوم و شرط پذیرش آن در
 [`P3_CATALOG_ACL.fa.md`](./P3_CATALOG_ACL.fa.md) ثبت شده‌اند.
@@ -43,7 +47,7 @@
 `shop_products` جاری اعمال شده و مجموعهٔ Legacy `Item` نیازمند
 برنامهٔ Migration مستقل است.
 
-**مرز عمدی:** روشن/خاموش‌کردن در P2 فقط برای دو Bot Legacy واقعاً به مسیر فروش/پیام‌های عادی اعمال می‌شود. Botهای جدید همچنان Draft و بدون Webhook/Dispatcher/Payment هستند تا P4 تکمیل شود. هیچ حالت آماده‌بودن زنده‌ای برای آن‌ها ادعا نمی‌شود.
+**مرز P4:** سورس Receiver و Dispatcher و تنظیم وضعیت Botهای Registry پیاده‌سازی شده است، اما Runtime همچنان Feature Flag خاموش دارد. هیچ Bot جدیدی به Provider وصل نشده و بدون تست و تأیید دستی فعال نخواهد شد. Broadcast بات‌های Registry تا P5 عمداً در Worker قدیمی مسدود است؛ بازتست و پذیرش Production مربوط به P6 خواهد بود.
 
 ## نکات ثابت در تمام فازها
 

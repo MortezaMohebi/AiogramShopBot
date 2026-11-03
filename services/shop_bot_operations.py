@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
 from models.shop_bot_profile import ShopBotProfile
 from models.shop_multibot import LEGACY_BOT_IDS, ShopBot, ShopBotRegistryEvent
+from models.shop_multibot_receiver import ShopBotReceiver
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 
@@ -170,8 +171,16 @@ def change_state(
         raise security.SecurityRejected("bot_not_found", 404)
     if bot.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
-    if bot.runtime_owner != "legacy" or bot.status != "legacy":
-        raise security.SecurityRejected("bot_runtime_not_ready", 409)
+    is_legacy = bot.runtime_owner == "legacy" and bot.status == "legacy"
+    if not is_legacy:
+        receiver = db.get(ShopBotReceiver, bot.id)
+        if not (
+            bot.runtime_owner == "registry"
+            and bot.status in OPERATING_STATES
+            and bot.credential_version is not None
+            and receiver is not None and receiver.state == "active"
+        ):
+            raise security.SecurityRejected("bot_runtime_not_ready", 409)
     cleaned_reason = reason.strip()
     if state in {"paused", "disabled"} and not 8 <= len(cleaned_reason) <= 500:
         raise security.SecurityRejected("bot_state_reason_required", 422)
@@ -190,9 +199,14 @@ def change_state(
     ops.updated_by = actor_id
     # Other legacy management screens must see an identical maintenance
     # status, otherwise they could silently overrule the new bot registry.
-    inherited = db.get(ShopBotProfile, bot.platform)
-    if inherited is not None:
-        inherited.maintenance_enabled = state == "maintenance"
+    if is_legacy:
+        inherited = db.get(ShopBotProfile, bot.platform)
+        if inherited is not None:
+            inherited.maintenance_enabled = state == "maintenance"
+    else:
+        # Only the ordinary storefront is paused; the verified receiver
+        # continues to consume paid receipts and refund callbacks.
+        bot.status = state
     bot.version += 1
     db.add(ShopBotRegistryEvent(
         id=str(uuid4()), bot_id=bot.id,
@@ -245,10 +259,22 @@ def operation_data(db: Session, bot: ShopBot) -> dict:
         )
     else:
         state = ops.desired_state
+    receiver = (
+        db.get(ShopBotReceiver, bot.id)
+        if bot.runtime_owner == "registry" else None
+    )
     return {
         "desired_state": state,
         "state_label": _OPS_TITLES[state],
-        "runtime_ready": bot.runtime_owner == "legacy",
+        "runtime_ready": (
+            bot.runtime_owner == "legacy"
+            or (
+                bot.runtime_owner == "registry"
+                and bot.credential_version is not None
+                and receiver is not None
+                and receiver.state == "active"
+            )
+        ),
         "welcome_message": ops.welcome_message if ops else None,
         "maintenance_message": ops.maintenance_message if ops else None,
         "support_url": ops.support_url if ops else None,

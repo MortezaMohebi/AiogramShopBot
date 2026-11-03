@@ -211,7 +211,15 @@ def resolve_active_token(db: Session, *, bot_id: str) -> str:
     Never call it directly from a public webhook using a client-supplied ID.
     """
     bot = db.get(ShopBot, bot_id)
-    if bot is None or bot.status not in {"legacy", "active"}:
+    if bot is None or not (
+        (bot.runtime_owner == "legacy" and bot.status == "legacy")
+        or (
+            bot.runtime_owner == "registry"
+            and bot.status in {
+                "active", "paused", "maintenance", "disabled",
+            }
+        )
+    ):
         raise SecurityRejected("bot_not_active", 409)
     if bot.credential_version is None:
         raise SecurityRejected("bot_credential_missing", 409)
@@ -255,3 +263,42 @@ def credential_status(db: Session, *, bot_id: str) -> list[dict]:
             str(row.verified_bot_id) if row.verified_bot_id else None
         ),
     } for row in entries]
+
+
+def encrypt_receiver_secret(bot_id: str, secret: str) -> str:
+    """Encrypt a scoped 256-bit webhook authenticator separately from tokens."""
+    if (
+        not isinstance(secret, str)
+        or len(secret) != 43
+        or not re.fullmatch(r"[A-Za-z0-9_-]{43}", secret)
+    ):
+        raise SecurityRejected("invalid_receiver_secret", 422)
+    payload = json.dumps(
+        {"schema": 1, "purpose": "receiver-webhook-v1",
+         "bot_id": bot_id, "secret": secret},
+        separators=(",", ":"),
+    )
+    return _cipher().encrypt(payload.encode("utf-8")).decode("ascii")
+
+
+def decrypt_receiver_secret(bot_id: str, ciphertext: str) -> str:
+    """Refuse any copied, corrupt or wrong-purpose encrypted receiver secret."""
+    try:
+        payload = json.loads(
+            _cipher().decrypt(ciphertext.encode("ascii"))
+        )
+    except (InvalidToken, UnicodeError, ValueError, TypeError):
+        raise SecurityRejected("bot_secret_unreadable", 503) from None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != 1
+        or payload.get("purpose") != "receiver-webhook-v1"
+        or payload.get("bot_id") != bot_id
+    ):
+        raise SecurityRejected("bot_secret_binding_mismatch", 409)
+    value = payload.get("secret")
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[A-Za-z0-9_-]{43}", value
+    ):
+        raise SecurityRejected("bot_secret_unreadable", 503)
+    return value

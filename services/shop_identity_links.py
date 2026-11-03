@@ -17,6 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import ShopIdentity
+from models.shop_scope import legacy_id
 from models.shop_customer_links import (
     ShopCustomerIdentityLink, ShopCustomerLinkRequest,
 )
@@ -42,9 +43,11 @@ async def _linked(db: AsyncSession, identity_id: int) -> bool:
 
 async def begin(
     db: AsyncSession, *, platform: str, user_id: int,
+    bot_id: str | None = None,
 ) -> str:
     """Start from one verified platform identity; issue a 256-bit secret."""
     identity = await db.scalar(select(ShopIdentity).where(
+        ShopIdentity.bot_id == (bot_id or legacy_id(platform)),
         ShopIdentity.platform == platform,
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
@@ -91,12 +94,14 @@ async def _request(
 
 async def claim(
     db: AsyncSession, *, platform: str, user_id: int, token: str,
+    bot_id: str | None = None,
 ) -> None:
     """Prove control of the second provider and await source confirmation."""
     item = await _request(db, token)
     if item.state != "pending":
         raise LinkRejected("درخواست قبلاً ثبت شده؛ تأیید حساب اول لازم است.")
     target = await db.scalar(select(ShopIdentity).where(
+        ShopIdentity.bot_id == (bot_id or legacy_id(platform)),
         ShopIdentity.platform == platform,
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
@@ -112,6 +117,7 @@ async def claim(
 
 async def approve(
     db: AsyncSession, *, platform: str, user_id: int, token: str,
+    bot_id: str | None = None,
 ) -> None:
     """Require a fresh command from the initiating provider to finalize."""
     item = await _request(db, token)
@@ -119,6 +125,7 @@ async def approve(
         raise LinkRejected("ابتدا کد را در پیام‌رسان دوم وارد کنید.")
     source = await db.scalar(select(ShopIdentity).where(
         ShopIdentity.id == item.source_id,
+        ShopIdentity.bot_id == (bot_id or legacy_id(platform)),
         ShopIdentity.platform == platform,
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
@@ -138,12 +145,14 @@ async def approve(
 
 async def cancel(
     db: AsyncSession, *, platform: str, user_id: int, token: str,
+    bot_id: str | None = None,
 ) -> None:
     """Allow only the first platform account to cancel a pending challenge."""
     item = await _request(db, token)
     owner = await db.get(ShopIdentity, item.source_id)
     if (
         owner is None or owner.platform != platform
+        or owner.bot_id != (bot_id or legacy_id(platform))
         or owner.platform_user_id != user_id
     ):
         raise LinkRejected("فقط حساب آغازکننده می‌تواند درخواست را لغو کند.")

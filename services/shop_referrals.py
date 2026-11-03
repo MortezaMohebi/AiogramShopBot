@@ -23,6 +23,7 @@ from models.shop_engagement import (
     ShopReferralReward,
 )
 from services.shop_wallet import ShopWalletService
+from models.shop_scope import legacy_id
 from services.shop_channel_features import get_features
 from services.shop_payment_rails import rail_enabled
 
@@ -39,11 +40,12 @@ class ShopReferralService:
 
     @staticmethod
     async def code(
-        session: AsyncSession, platform: Platform, user_id: int
+        session: AsyncSession, platform: Platform, user_id: int,
+        *, bot_id: str | None = None,
     ) -> str:
         """Return or create an owner's unique referral code on demand."""
         identity = await ShopWalletService.find_identity(
-            session, platform, user_id
+            session, platform, user_id, bot_id=bot_id,
         )
         if identity is None:
             raise ReferralRejected("ابتدا ربات فروشگاه را با /start آغاز کنید.")
@@ -58,7 +60,9 @@ class ShopReferralService:
         # Collision probability is tiny and DB uniqueness enforces correctness.
         code = "R-" + secrets.token_hex(6).upper()
         session.add(
-            ShopReferralProfile(identity_id=identity.id, code=code)
+            ShopReferralProfile(
+                bot_id=identity.bot_id, identity_id=identity.id, code=code,
+            )
         )
         await session.commit()
         return code
@@ -70,6 +74,7 @@ class ShopReferralService:
         platform: Platform,
         user_id: int,
         code: str,
+        bot_id: str | None = None,
     ) -> str:
         """Accept only an unambiguous first-purchase, same-platform invite."""
         policy = await session.get(ShopReferralPolicy, 1)
@@ -79,7 +84,7 @@ class ShopReferralService:
         if _CODE.fullmatch(normalized) is None:
             raise ReferralRejected("کد معرفی معتبر نیست.")
         referee = await ShopWalletService.find_identity(
-            session, platform, user_id
+            session, platform, user_id, bot_id=bot_id,
         )
         if referee is None:
             raise ReferralRejected("ابتدا با /start ثبت‌نام کنید.")
@@ -103,12 +108,16 @@ class ShopReferralService:
         # Without verified cross-platform account linking, block a user from
         # collecting referral credit by inviting their own alternate app ID.
         inviter = await session.get(type(referee), sponsor.identity_id)
-        if inviter is None or inviter.platform != referee.platform:
+        if (
+            inviter is None or inviter.platform != referee.platform
+            or inviter.bot_id != referee.bot_id
+        ):
             raise ReferralRejected(
                 "کد معرفی باید متعلق به همین پیام‌رسان باشد."
             )
         previous_purchase = await session.scalar(
             select(ShopOrder.id).where(
+                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
                 ShopOrder.platform == platform.value,
                 ShopOrder.platform_user_id == user_id,
                 ShopOrder.status.in_(
@@ -122,6 +131,7 @@ class ShopReferralService:
             )
         session.add(
             ShopReferralAttribution(
+                bot_id=referee.bot_id,
                 referee_identity_id=referee.id,
                 inviter_identity_id=sponsor.identity_id,
                 code_snapshot=normalized,
@@ -161,6 +171,7 @@ class ShopReferralService:
             or attempt.provider != order.provider
             or attempt.currency != "IRR"
             or attempt.platform != order.platform
+            or attempt.bot_id != order.bot_id
         ):
             return 0
 
@@ -179,7 +190,8 @@ class ShopReferralService:
             return 0
 
         referee = await ShopWalletService.find_identity(
-            session, Platform(order.platform), order.platform_user_id
+            session, Platform(order.platform), order.platform_user_id,
+            bot_id=order.bot_id,
         )
         if referee is None:
             return 0
@@ -201,6 +213,7 @@ class ShopReferralService:
         # previously refunded order is also treated as an earlier purchase.
         previous = await session.scalar(
             select(ShopOrder.id).where(
+                ShopOrder.bot_id == order.bot_id,
                 ShopOrder.platform == order.platform,
                 ShopOrder.platform_user_id == order.platform_user_id,
                 ShopOrder.id != order.id,
@@ -229,6 +242,7 @@ class ShopReferralService:
             return 0
         session.add(
             ShopReferralReward(
+                bot_id=order.bot_id,
                 referee_identity_id=referee.id,
                 inviter_identity_id=attribution.inviter_identity_id,
                 order_id=order.id,

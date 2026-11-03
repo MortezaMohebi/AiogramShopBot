@@ -14,17 +14,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.bale import BaleTransport
 from channels.contracts import Platform
 from models.shop_payment import ShopPaymentAttempt
+from models.shop_scope import legacy_id
 from services.bale_wallet import BaleWalletService, CheckoutRejected
 from services.shop_payments import PaymentRejected, ShopPaymentService
 
 
-async def _is_new_intent(session: AsyncSession, payload: Any) -> bool:
+async def _is_new_intent(
+    session: AsyncSession, payload: Any,
+    *, bot_id: str | None = None,
+) -> bool:
     """Identify a multi-line shop invoice without routing it as legacy stock."""
     if not isinstance(payload, str) or not payload:
         return False
     found = await session.scalar(
         select(ShopPaymentAttempt.id).where(
             ShopPaymentAttempt.payload == payload,
+            ShopPaymentAttempt.bot_id == (
+                bot_id or legacy_id(Platform.BALE.value)
+            ),
             ShopPaymentAttempt.platform == Platform.BALE.value,
         )
     )
@@ -34,9 +41,12 @@ async def _is_new_intent(session: AsyncSession, payload: Any) -> bool:
 async def validate_bale_precheckout(
     session: AsyncSession,
     query: Mapping[str, Any],
+    *, bot_id: str | None = None,
 ) -> tuple[bool, str | None]:
     """Check the correct order ledger before accepting Bale wallet payment."""
-    if await _is_new_intent(session, query.get("invoice_payload")):
+    if await _is_new_intent(
+        session, query.get("invoice_payload"), bot_id=bot_id,
+    ):
         payer = query.get("from")
         payer_id = payer.get("id") if isinstance(payer, Mapping) else None
         return await ShopPaymentService.precheckout(
@@ -46,7 +56,10 @@ async def validate_bale_precheckout(
             payload=query.get("invoice_payload"),
             currency=query.get("currency"),
             amount=query.get("total_amount"),
+            bot_id=bot_id,
         )
+    if bot_id is not None and bot_id != legacy_id("bale"):
+        return False, "فاکتور متعلق به این بات نیست."
     # Old direct-item invoices issued before migration may still be payable;
     # preserve their settlement path without mixing their order models.
     return await BaleWalletService.validate_pre_checkout(session, query)
@@ -59,9 +72,14 @@ async def settle_bale_payment(
     payer_id: int,
     chat_id: int,
     payment: Mapping[str, Any],
+    bot_id: str | None = None,
 ):
     """Verify native wallet evidence and commit the correct ledger once."""
-    if not await _is_new_intent(session, payment.get("invoice_payload")):
+    if not await _is_new_intent(
+        session, payment.get("invoice_payload"), bot_id=bot_id,
+    ):
+        if bot_id is not None and bot_id != legacy_id("bale"):
+            raise PaymentRejected("رسید متعلق به این بات نیست.")
         return await BaleWalletService.confirm_success(
             session,
             transport,
@@ -100,4 +118,5 @@ async def settle_bale_payment(
         amount=amount,
         charge_id=tx_id,
         provider_charge_id=reference,
+        bot_id=bot_id,
     )
