@@ -1,21 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
 import { createSession, sessionCookieName } from "@/lib/session";
-
-/** Refuse cross-origin login forms even if a browser sends stored cookies. */
-function trustedOrigin(request: NextRequest): boolean {
-  return request.headers.get("origin") === request.nextUrl.origin;
-}
+import { trustedBrowserOrigin } from "@/lib/public-origin";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!trustedOrigin(request)) {
+  const origin = trustedBrowserOrigin(request);
+  if (!origin) {
     return new NextResponse("Forbidden", { status: 403 });
   }
   const form = await request.formData();
   const username = String(form.get("username") ?? "").trim();
   const password = String(form.get("password") ?? "");
   if (!username || username.length > 80 || password.length > 256) {
-    return NextResponse.redirect(new URL("/login?error=credentials", request.url), 303);
+    return NextResponse.redirect(new URL("/login?error=credentials", origin), 303);
   }
 
   let account: {id: number; username: string; session_version: number};
@@ -30,10 +27,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : error instanceof ApiError && error.status === 503
           ? "unavailable"
           : "credentials";
-    return NextResponse.redirect(new URL(`/login?error=${key}`, request.url), 303);
+    return NextResponse.redirect(new URL(`/login?error=${key}`, origin), 303);
   }
 
-  const response = NextResponse.redirect(new URL("/dashboard", request.url), 303);
+  const response = NextResponse.redirect(new URL("/dashboard", origin), 303);
   response.cookies.set(sessionCookieName(), createSession(account.id, account.session_version), {
     httpOnly: true,
     sameSite: "strict",
