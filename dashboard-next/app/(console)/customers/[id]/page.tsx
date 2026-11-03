@@ -25,6 +25,7 @@ type CustomerDetail = {
     restriction_reason: string | null; restriction_until: string | null;
     registered_at: string | null;
   };
+  verified_other_platform: { id: number; platform: string; user_id: string; approved_at: string | null } | null;
   wallet_balance_irr: string;
   orders: Order[];
   notes: Note[];
@@ -69,6 +70,19 @@ export default async function CustomerDetailPage({
       <Badge tone="neutral">Block بات توسط مشتری: {customer.bot_blocked_by_customer === null ? "نامشخص" : customer.bot_blocked_by_customer ? "تأیید شده" : "ثبت نشده"}</Badge>
       {actor.role === "superadmin" ? <Button asChild variant="outline" size="sm"><a href={`/api/admin/customers/${id}/export`}>خروجی JSON اطلاعات مشتری</a></Button> : null}
     </div>
+    <Card><CardContent className="pt-5 text-sm">
+      <strong>ارتباط هویت بین دو پیام‌رسان</strong>
+      {data.verified_other_platform ? <p className="mt-2 leading-7">
+        هویت متناظر با تأیید مالکیت در {data.verified_other_platform.platform === "telegram" ? "تلگرام" : "بله"}:
+        <Link className="ms-2 font-medium underline" href={`/customers/${data.verified_other_platform.id}`}>
+          شناسه {data.verified_other_platform.user_id}
+        </Link>
+        {" · "} زمان تأیید: {data.verified_other_platform.approved_at ? fmt(data.verified_other_platform.approved_at) : "—"}
+      </p> : <p className="mt-2 text-muted-foreground">
+        ارتباط تأییدشده‌ای ثبت نشده است. مشتری می‌تواند در بات نخست /linkstart و سپس /linkconfirm و /linkapprove را در دو پیام‌رسان اجرا کند.
+      </p>}
+      <p className="mt-1 text-xs text-muted-foreground">ارتباط هویت به معنای ادغام کیف پول، سفارش یا رضایت تبلیغاتی نیست.</p>
+    </CardContent></Card>
     <div className="grid gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>پرونده و پیگیری</CardTitle></CardHeader><CardContent>
         <form action={saveCustomerProfile} className="space-y-4">
