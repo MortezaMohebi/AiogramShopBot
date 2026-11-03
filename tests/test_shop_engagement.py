@@ -24,6 +24,14 @@ from models.shop_engagement import (
     ShopReferralReward, ShopWalletAccount, ShopWalletEntry,
 )
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
+from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
+from models.shop_bot_operations import ShopBotOperations
+from models.shop_channel_features import ShopChannelFeature
+from models.shop_payment_rail import ShopPaymentRail
+from models.shop_multibot import (
+    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+)
+from models.shop_staff import ShopStaff
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
 from services.shop_referrals import ReferralRejected, ShopReferralService
 from services.shop_refunds import ShopRefundService
@@ -40,6 +48,10 @@ class OfflineDB:
     async def scalar(self, statement):
         """Execute a scalar query without external I/O."""
         return self.session.scalar(statement)
+
+    async def scalars(self, statement):
+        """Return ORM scalar results for bot-scoped product entitlements."""
+        return self.session.scalars(statement)
 
     async def execute(self, statement):
         """Execute SQLAlchemy ORM/Core statements."""
@@ -81,6 +93,10 @@ def db():
     """Create only the related shop tables in isolated SQLite memory."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
     tables = [
+        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
+        ShopBotOperations.__table__, ShopChannelFeature.__table__,
+        ShopPaymentRail.__table__, ShopBotProductRule.__table__,
+        ShopBotCategoryRule.__table__,
         ShopCategory.__table__, Product.__table__,
         ShopIdentity.__table__, ShopCoupon.__table__,
         ShopOrder.__table__, ShopOrderLine.__table__,
@@ -92,6 +108,19 @@ def db():
     ]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine, expire_on_commit=False) as session:
+        session.add(ShopStore(
+            id=DEFAULT_STORE_ID, slug="default",
+            name="Existing shop", state="active",
+        ))
+        session.add_all([
+            ShopBot(
+                id=bot_id, store_id=DEFAULT_STORE_ID,
+                slug=f"legacy-{platform}", name=f"Legacy {platform}",
+                platform=platform, status="legacy", runtime_owner="legacy",
+                version=1, credential_version=1,
+            ) for platform, bot_id in LEGACY_BOT_IDS.items()
+        ])
+        session.commit()
         yield OfflineDB(session)
     engine.dispose()
 

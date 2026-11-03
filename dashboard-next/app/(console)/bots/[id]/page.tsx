@@ -2,6 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { KeyRound, ShieldAlert, ShieldCheck, Settings2 } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
+import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
+import type { BotCatalogRuleList } from "@/lib/bot-catalog-acl";
+type CatalogAuditRow = {
+  object_type: "product" | "category";
+  object_id: number;
+  old_effect: string;
+  new_effect: string;
+  actor_id: number;
+  created_at: string | null;
+};
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +27,11 @@ import {
 } from "@/app/(console)/bots/[id]/actions";
 
 type Params = Promise<{ id: string }>;
-type Query = Promise<{ saved?: string; error?: string }>;
+type Query = Promise<{
+  saved?: string; error?: string; acl_saved?: string;
+  acl_error?: string; acl_q?: string;
+  acl_kind?: string; acl_page?: string;
+}>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const errors: Record<string, string> = {
   validation: "فیلدها را بررسی کنید؛ دلیل توقف باید حداقل ۸ نویسه داشته باشد.",
@@ -53,10 +67,22 @@ export default async function BotDetailPage({
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
-  const [detail, members, query] = await Promise.all([
+  const query = await searchParams;
+  const aclKind = query.acl_kind === "category" ? "category" : "product";
+  const aclQ = (query.acl_q ?? "").trim().slice(0, 100);
+  const aclPage = Math.min(
+    100000, Math.max(1, Number.parseInt(query.acl_page ?? "1", 10) || 1),
+  );
+  const aclSearch = new URLSearchParams({
+    kind: aclKind, q: aclQ, page: String(aclPage), page_size: "20",
+  });
+  const [detail, members, acl, aclAudit] = await Promise.all([
     adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
-    searchParams,
+    adminFetch<BotCatalogRuleList>(`/bot-catalog/bots/${id}?${aclSearch}`),
+    adminFetch<{ items: CatalogAuditRow[] }>(
+      `/bot-catalog/bots/${id}/audit?page=1`,
+    ),
   ]);
   const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
@@ -228,6 +254,39 @@ export default async function BotDetailPage({
           {!bot.credentials.length ? <p className="py-5 text-center text-sm text-muted-foreground">برای این بات هنوز هیچ Credential ثبت نشده است.</p> : null}
         </div>
         {pending && !legacy ? <p className="text-xs text-muted-foreground">نسخهٔ Staged: {pending.version} · آخرین تأیید: {date(pending.verified_at)}</p> : null}
+      </CardContent>
+    </Card>
+
+    {query.acl_saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">
+      قانون دسترسی بات به محصولات/دسته‌بندی‌ها با ثبت Audit ذخیره شد.
+    </p> : null}
+    {query.acl_error ? <p role="alert"
+      className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+      {query.acl_error === "reauth" ? "برای تغییر ACL در حساب من هویت خود را دوباره تأیید کنید." :
+        query.acl_error === "version" ? "نسخهٔ تنظیمات تغییر کرده است؛ صفحه را تازه‌سازی کنید." :
+        query.acl_error === "validation" ? "حداقل یک مورد را انتخاب کنید و قانون را بررسی کنید." :
+        query.acl_error === "permission" ? "مجوز تغییر دسترسی محصولات را ندارید." :
+        "ذخیرهٔ دسترسی انجام نشد."}
+    </p> : null}
+    <BotCatalogAccessPanel
+      botId={bot.id} version={bot.version} data={acl} query={aclQ}
+    />
+    <Card><CardHeader><CardTitle>تاریخچهٔ قوانین دسترسی</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        {aclAudit.items.slice(0, 12).map((row, index) =>
+          <div key={`${row.object_type}-${row.object_id}-${row.created_at}-${index}`}
+            className="flex flex-wrap justify-between gap-2 border-b py-2 text-xs">
+            <span>
+              {row.object_type === "product" ? "محصول" : "دسته‌بندی"} #{row.object_id}:
+              {" "}{row.old_effect} ← {row.new_effect}
+            </span>
+            <span className="text-muted-foreground">
+              مدیر #{row.actor_id} · {date(row.created_at)}
+            </span>
+          </div>)}
+        {!aclAudit.items.length ? <p className="text-sm text-muted-foreground">
+          هنوز تغییر مستقیمی برای این بات ثبت نشده است.
+        </p> : null}
       </CardContent>
     </Card>
 

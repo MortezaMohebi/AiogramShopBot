@@ -38,6 +38,9 @@ const SAFE_CODES = new Set([
   "invalid_bot_state", "bot_state_reason_required", "bot_state_unchanged",
   "bot_runtime_not_ready", "duplicate_provider_bot", "duplicate_bot_credential",
   "invalid_support_url", "use_bot_registry",
+  "invalid_catalog_rule", "catalog_target_not_found",
+  "catalog_store_not_ready",
+
 
 
 

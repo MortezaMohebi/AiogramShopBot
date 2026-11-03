@@ -6,7 +6,17 @@ from sqlalchemy.orm import Session
 
 from channels.contracts import InboundEvent, Platform, normalize_update
 from models.base import Base
-from models.shop_content import Product, ProductMedia, ShopCategory, Testimonial
+from models.shop_content import (
+    Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
+)
+from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
+from models.shop_bot_operations import ShopBotOperations
+from models.shop_channel_features import ShopChannelFeature
+from models.shop_product_visibility import ShopProductVisibility
+from models.shop_multibot import (
+    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+)
+from models.shop_staff import ShopStaff
 from services.shop_channel_catalog import CatalogFlow
 
 
@@ -25,6 +35,14 @@ class AsyncSessionProxy:
         """Return one scalar from the disposable database."""
         return self.session.scalar(statement)
 
+    async def scalars(self, statement):
+        """Return ORM scalar results from disposable SQLite."""
+        return self.session.scalars(statement)
+
+    async def get(self, model, key):
+        """Read one record by primary key without network requests."""
+        return self.session.get(model, key)
+
 
 @pytest.fixture
 def session():
@@ -32,11 +50,28 @@ def session():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine, tables=[
+            ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
             ShopCategory.__table__, Product.__table__,
             ProductMedia.__table__, Testimonial.__table__,
+            ShopSettings.__table__, ShopProductVisibility.__table__,
+            ShopChannelFeature.__table__, ShopBotOperations.__table__,
+            ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
         ]
     )
     with Session(engine) as db:
+        db.add(ShopStore(
+            id=DEFAULT_STORE_ID, slug="default",
+            name="Existing catalog", state="active",
+        ))
+        db.add_all([
+            ShopBot(
+                id=bot_id, store_id=DEFAULT_STORE_ID,
+                slug=f"legacy-{platform}", name=f"Legacy {platform}",
+                platform=platform, status="legacy", runtime_owner="legacy",
+                version=1, credential_version=1,
+            ) for platform, bot_id in LEGACY_BOT_IDS.items()
+        ])
+        db.commit()
         yield db
     engine.dispose()
 

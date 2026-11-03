@@ -18,6 +18,11 @@ import db
 from channels.contracts import BotReply, Platform
 from models.base import Base
 from models.shop_content import ShopIdentity
+from models.shop_bot_operations import ShopBotOperations
+from models.shop_multibot import (
+    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+)
+from models.shop_staff import ShopStaff
 from models.shop_engagement import (
     ShopBroadcastRateSlot, ShopBroadcastWorkerHeartbeat,
     ShopCampaign, ShopCampaignAudit, ShopCampaignDelivery, ShopCampaignMedia,
@@ -107,6 +112,8 @@ def context(monkeypatch):
     monkeypatch.setattr(config, "BALE_BOT_TOKEN", None)
     engine = create_engine("sqlite+pysqlite:///:memory:")
     tables = [
+        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
+        ShopBotOperations.__table__,
         ShopIdentity.__table__, ShopCampaign.__table__,
         ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
         ShopCampaignAudit.__table__,
@@ -115,6 +122,25 @@ def context(monkeypatch):
     ]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine, expire_on_commit=False) as session:
+        session.add(ShopStore(
+            id=DEFAULT_STORE_ID, slug="default",
+            name="Existing shop", state="active",
+        ))
+        session.add_all([
+            ShopBot(
+                id=bot_id, store_id=DEFAULT_STORE_ID,
+                slug=f"legacy-{platform}", name=f"Legacy {platform}",
+                platform=platform, status="legacy", runtime_owner="legacy",
+                version=1, credential_version=1,
+            ) for platform, bot_id in LEGACY_BOT_IDS.items()
+        ])
+        session.add_all([
+            ShopBotOperations(
+                bot_id=bot_id, desired_state="active",
+                environment="staging",
+            ) for bot_id in LEGACY_BOT_IDS.values()
+        ])
+        session.commit()
         adapter = AsyncSQLite(session)
 
         class SessionContext:

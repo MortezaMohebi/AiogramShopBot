@@ -16,6 +16,12 @@ from channels.contracts import Platform
 from models.base import Base
 from models.shop_checkout import ShopCoupon, ShopOrderLine
 from models.shop_content import Product, ShopCategory, ShopOrder
+from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
+from models.shop_bot_operations import ShopBotOperations
+from models.shop_multibot import (
+    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+)
+from models.shop_staff import ShopStaff
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_payments import PaymentRejected, ShopPaymentService
 from services.shop_refunds import ShopRefundService
@@ -35,6 +41,10 @@ class OfflineDB:
     async def scalar(self, statement):
         """Read one scalar value."""
         return self.session.scalar(statement)
+
+    async def scalars(self, statement):
+        """Read ACL product-ID results with the test SQLite connection."""
+        return self.session.scalars(statement)
 
     async def get(self, model, key):
         """Load a model by its primary key."""
@@ -62,8 +72,10 @@ def db():
     """Create only payment-related tables, leaving all data disposable."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
     tables = [
-        ShopCategory.__table__,
-        Product.__table__,
+        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
+        ShopBotOperations.__table__,
+        ShopCategory.__table__, Product.__table__,
+        ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
         ShopCoupon.__table__,
         ShopOrder.__table__,
         ShopOrderLine.__table__,
@@ -72,6 +84,19 @@ def db():
     ]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine) as session:
+        session.add(ShopStore(
+            id=DEFAULT_STORE_ID, slug="default",
+            name="Existing shop", state="active",
+        ))
+        session.add_all([
+            ShopBot(
+                id=bot_id, store_id=DEFAULT_STORE_ID,
+                slug=f"legacy-{platform}", name=f"Legacy {platform}",
+                platform=platform, status="legacy", runtime_owner="legacy",
+                version=1, credential_version=1,
+            ) for platform, bot_id in LEGACY_BOT_IDS.items()
+        ])
+        session.commit()
         yield OfflineDB(session)
     engine.dispose()
 

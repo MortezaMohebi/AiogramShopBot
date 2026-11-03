@@ -22,6 +22,11 @@ from services.shop_money import format_rials
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_presentation import product_message
 from services.shop_channel_features import get_features
+from services.shop_bot_catalog_acl import (
+    CatalogScope, legacy_bot_id, permitted_product_clause, resolve_scope,
+)
+from services.shop_bot_context import BotContext
+from services.shop_admin_security import SecurityRejected
 from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_bot_operations import ShopBotOperations
 
@@ -53,38 +58,51 @@ class CatalogFlow:
     """Resolve catalog and review navigation using one shared SQL schema."""
 
     def __init__(
-        self, currency_label: str = "ریال", display_unit: str = "IRR"
+        self, currency_label: str = "ریال", display_unit: str = "IRR",
+        *, bot_context: BotContext | None = None,
     ) -> None:
-        """Display canonical IRR in rials or tomans without float conversion."""
+        """Bind optional trusted BotContext without a client-supplied bot ID."""
         self.currency_label = currency_label
         self.display_unit = display_unit
+        # Future receivers supply only contexts resolved after authentication.
+        self.bot_context = bot_context
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
     ) -> BotReply | None:
         """Resolve recognized commands or buttons; ignore other bot features."""
+        if self.bot_context is not None and (
+            self.bot_context.platform != event.platform
+        ):
+            raise SecurityRejected("bot_identity_mismatch", 403)
+        scope = await resolve_scope(
+            session, bot_id=(
+                self.bot_context.bot_id if self.bot_context
+                else legacy_bot_id(event.platform.value)
+            ),
+        )
         if event.callback_data is not None:
             data = event.callback_data
             match = _LIST_PATTERN.fullmatch(data)
             if match:
-                return await self._list_products(session, int(match.group(1)))
+                return await self._list_products(session, int(match.group(1)), scope=scope)
             match = _CATEGORY_PATTERN.fullmatch(data)
             if match:
                 return await self._list_products(
-                    session, int(match.group(2)), category_id=int(match.group(1))
+                    session, int(match.group(2)), category_id=int(match.group(1)), scope=scope
                 )
             match = _PRODUCT_PATTERN.fullmatch(data)
             if match:
-                return await self._product(session, int(match.group(1)), event.platform.value)
+                return await self._product(session, int(match.group(1)), event.platform.value, scope)
             match = _REVIEW_PATTERN.fullmatch(data)
             if match:
                 return await self._reviews(
-                    session, int(match.group(1)), int(match.group(2))
+                    session, int(match.group(1)), int(match.group(2)), scope
                 )
             match = _MEDIA_PATTERN.fullmatch(data)
             if match:
                 return await self._media(
-                    session, int(match.group(1)), int(match.group(2))
+                    session, int(match.group(1)), int(match.group(2)), scope
                 )
             if data == "shop:home":
                 return await self._home(session, event.platform.value)
@@ -95,10 +113,10 @@ class CatalogFlow:
             match = _CATEGORY_LIST_PATTERN.fullmatch(data)
             if match:
                 return await self._categories_or_products(
-                    session, requested_page=int(match.group(1))
+                    session, requested_page=int(match.group(1)), scope=scope
                 )
             if data == "shop:categories":
-                return await self._categories_or_products(session)
+                return await self._categories_or_products(session, scope=scope)
             if data.startswith("shop:"):
                 return BotReply(
                     "درخواست معتبر نیست. لطفاً دوباره از فهرست محصولات شروع کنید.",
@@ -108,7 +126,7 @@ class CatalogFlow:
 
         text = (event.text or "").strip()
         if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
-            return await self._categories_or_products(session)
+            return await self._categories_or_products(session, scope=scope)
         if text.split(" ", 1)[0] == "/start":
             return await self._home(session, event.platform.value)
         if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
@@ -158,15 +176,23 @@ class CatalogFlow:
         )
 
     async def _categories_or_products(
-        self, session: AsyncSession, requested_page: int = 0
+        self, session: AsyncSession, requested_page: int = 0,
+        *, scope: CatalogScope,
     ) -> BotReply:
         """Paginate an unlimited number of administrator-created categories."""
-        condition = ShopCategory.is_published.is_(True)
+        category_has_permitted_product = select(Product.id).where(
+            Product.category_id == ShopCategory.id,
+            permitted_product_clause(scope),
+        ).correlate(ShopCategory).exists()
+        condition = (
+            ShopCategory.is_published.is_(True)
+            & category_has_permitted_product
+        )
         count = await session.scalar(
             select(func.count()).select_from(ShopCategory).where(condition)
         )
         if not count:
-            return await self._list_products(session, 0)
+            return await self._list_products(session, 0, scope=scope)
         last_page = (count - 1) // _CATEGORY_PAGE_SIZE
         page = min(requested_page, last_page)
         result = await session.execute(
@@ -205,10 +231,10 @@ class CatalogFlow:
         session: AsyncSession,
         requested_page: int,
         category_id: int | None = None,
+        *, scope: CatalogScope,
     ) -> BotReply:
         """Render a bounded page of published products."""
-        condition = Product.is_published.is_(True)
-        filters = [condition]
+        filters = [permitted_product_clause(scope)]
         if category_id is not None:
             selected = await session.scalar(
                 select(ShopCategory.id).where(
@@ -258,12 +284,15 @@ class CatalogFlow:
             rows=tuple(rows),
         )
 
-    async def _product(self, session: AsyncSession, product_id: int, platform: str) -> BotReply:
+    async def _product(
+        self, session: AsyncSession, product_id: int,
+        platform: str, scope: CatalogScope,
+    ) -> BotReply:
         """Show an active product, never exposing an unpublished record."""
         result = await session.execute(
             select(Product).where(
                 Product.id == product_id,
-                Product.is_published.is_(True),
+                permitted_product_clause(scope),
             )
         )
         product = result.scalar_one_or_none()
@@ -302,12 +331,13 @@ class CatalogFlow:
         return BotReply(text=body, rows=tuple(rows))
 
     async def _media(
-        self, session: AsyncSession, product_id: int, requested_page: int
+        self, session: AsyncSession, product_id: int,
+        requested_page: int, scope: CatalogScope,
     ) -> BotReply:
         """Page through unlimited published product media without hardcoding files."""
         published = await session.scalar(
             select(Product.id).where(
-                Product.id == product_id, Product.is_published.is_(True)
+                Product.id == product_id, permitted_product_clause(scope)
             )
         )
         if published is None:
@@ -360,12 +390,13 @@ class CatalogFlow:
         )
 
     async def _reviews(
-        self, session: AsyncSession, product_id: int, requested_page: int
+        self, session: AsyncSession, product_id: int,
+        requested_page: int, scope: CatalogScope,
     ) -> BotReply:
         """Show approved text testimonials for one published product."""
         exists = await session.execute(
             select(Product.id).where(
-                Product.id == product_id, Product.is_published.is_(True)
+                Product.id == product_id, permitted_product_clause(scope)
             )
         )
         if exists.scalar_one_or_none() is None:

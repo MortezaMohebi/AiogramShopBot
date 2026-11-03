@@ -21,6 +21,9 @@ from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_cart import CartRejected, validate_coupon
 from services.shop_channel_features import get_features
 from services.shop_payment_rails import rail_enabled
+from services.shop_bot_catalog_acl import (
+    allowed_for_legacy, lock_legacy_catalog_policy,
+)
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -219,7 +222,16 @@ class ShopWalletService:
             .with_for_update(of=Product)
         )
         pairs = result.all()
-        if not pairs or any(
+        if pairs:
+            await lock_legacy_catalog_policy(session, platform.value)
+        if not pairs or not await allowed_for_legacy(
+            session, platform.value,
+            [product.id for _, product in pairs],
+        ):
+            raise StoreCreditRejected(
+                "یک یا چند کالای سفارش در این بات دیگر قابل خرید نیستند."
+            )
+        if any(
             not product.is_published
             or product.stock_quantity < line.quantity
             or line.quantity < 1

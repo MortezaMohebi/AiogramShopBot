@@ -33,6 +33,9 @@ from models.shop_multibot import (
     ShopStore, ShopBot, ShopBotCredential, ShopBotRegistryEvent,
 )
 from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
+from models.shop_bot_catalog_acl import (
+    ShopBotProductRule, ShopBotCategoryRule, ShopBotCatalogAudit,
+)
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )
