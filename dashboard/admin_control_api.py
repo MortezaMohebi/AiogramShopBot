@@ -17,6 +17,10 @@ import config
 from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
 from models.shop_admin_control import AdminEvent, AdminSession, ConnectionChange, ConnectionConfig
+from models.shop_staff_security import ShopStaffInvitation, ShopStaffPasswordReset
+from services import shop_staff_lifecycle as lifecycle
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from services import shop_admin_security as security
 from services.shop_mfa_qr import make_mfa_qr_data_uri, make_otpauth_uri
 from services.shop_connection_control import stage_change, transition
@@ -155,8 +159,8 @@ async def login(payload: Login, staff: Staff, db: Db) -> dict:
             def complete(sync):
                 profile = security.profile_for(sync, account.id)
                 security.verify_second_factor(sync, profile, payload.second_factor)
-                return security.issue_session(sync, account, payload.device)
-            token = await db.run_sync(complete)
+                return security.issue_session(sync, account, payload.device), bool(profile.mfa_secret)
+            token, has_mfa = await db.run_sync(complete)
         except security.SecurityRejected as error:
             if error.status == 401:
                 await throttle("login-failure:" + name_hash, 10, 600)
@@ -164,7 +168,9 @@ async def login(payload: Login, staff: Staff, db: Db) -> dict:
         await db.commit()
         await limiter.delete(failure_key)
         return {"id": account.id, "username": account.username, "role": account.role,
-                "session_version": account.session_version, "session_token": token}
+                "session_version": account.session_version, "session_token": token,
+                "mfa_setup_required": account.role in security.MFA_REQUIRED_ROLES
+                    and not has_mfa}
     except (security.SecurityRejected, HTTPException):
         raise
     except Exception:
@@ -204,6 +210,7 @@ async def account(request: Request, staff: Staff, db: Db) -> dict:
         "username": member.username, "role": member.role,
         "display_name": profile.display_name, "time_zone": profile.time_zone,
         "mfa_enabled": bool(profile.mfa_secret),
+        "mfa_required_by_role": member.role in security.MFA_REQUIRED_ROLES,
         "permissions": sorted(security.ROLE_PERMISSIONS[member.role]),
         "sessions": [{"id": row.id, "label": row.label,
             "current": row.id == own_session(request), "created_at": row.created_at.isoformat(),
@@ -247,6 +254,7 @@ async def password(payload: PasswordChange, request: Request, staff: Staff, db: 
     await fresh_proof(db, member, payload)
     if payload.new_password == payload.current_password:
         raise security.SecurityRejected("password_unchanged", 422)
+    await db.run_sync(lambda sync: lifecycle.validate_password(sync, payload.new_password))
     member.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
     member.session_version += 1
     await db.run_sync(lambda sync: security.revoke_others(sync, member.id, None))
@@ -312,6 +320,8 @@ async def mfa_confirm(payload: Code, request: Request, staff: Staff, db: Db) -> 
 async def mfa_disable(payload: Proof, request: Request, staff: Staff, db: Db) -> dict:
     """Disable MFA only with fresh password and current OTP/recovery proof."""
     member = required(staff)
+    if member.role in security.MFA_REQUIRED_ROLES:
+        raise security.SecurityRejected("mfa_required_by_role", 409)
     await fresh_proof(db, member, payload)
     def disable(sync):
         security.disable_mfa(sync, security.profile_for(sync, member.id))
@@ -390,60 +400,163 @@ async def retired_mode_request(staff: Staff) -> dict:
     raise security.SecurityRejected("legacy_endpoint_retired", 409)
 
 
-class StaffCreate(StrictPayload):
-    """New staff starts with least privilege unless explicitly selected."""
+class StaffInvite(StrictPayload):
+    """Invite a user with an explicit role, not an administrator-chosen password."""
+
     username: str = Field(min_length=3, max_length=80)
-    password: str = Field(min_length=14, max_length=256)
     role: Literal["superadmin", "viewer", "content", "sales", "marketing", "finance"] = "viewer"
-    confirmation: Literal["CREATE_STAFF"]
+
+
+class PasswordResetRequest(StrictPayload):
+    """Select the staff account whose password owner will reset."""
+
+    staff_id: int = Field(ge=1)
+
+
+class InvitationCancel(StrictPayload):
+    """Select exactly one pending invitation to revoke."""
+
+    invitation_id: UUID
 
 
 class StaffUpdate(StrictPayload):
-    """Role changes and password resets remain audited privileged actions."""
+    """Only role or status are editable by a manager; passwords are private."""
+
     role: Literal["superadmin", "viewer", "content", "sales", "marketing", "finance"] | None = None
     is_active: bool | None = None
-    password: str | None = Field(default=None, min_length=14, max_length=256)
-    confirmation: Literal["UPDATE_STAFF"]
 
 
-@router.post("/staff", status_code=201)
-async def create_staff(payload: StaffCreate, staff: Staff, db: Db) -> dict:
-    """Create after the middleware's recent-auth check, retaining exact password."""
-    import re
-    from sqlalchemy.exc import IntegrityError
-    member = required(staff, "staff.manage")
-    username = payload.username.strip().casefold()
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,79}", username):
+class PasswordPolicyPatch(StrictPayload):
+    """The administrator configures minimum length and optional complexity."""
+
+    min_length: int = Field(ge=12, le=64)
+    require_upper: bool = False
+    require_lower: bool = False
+    require_digit: bool = False
+    require_symbol: bool = False
+
+
+class RedeemRequest(StrictPayload):
+    """Anonymous one-time capability, never a signed-in or manager-set password."""
+
+    kind: Literal["invite", "reset"]
+    token: str = Field(min_length=43, max_length=43)
+    password: str = Field(min_length=12, max_length=256)
+
+
+@router.post("/auth/redeem")
+async def redeem_staff(payload: RedeemRequest, staff: Staff, db: Db) -> dict:
+    """Redeem a hashed link atomically after rate limiting attempts."""
+    if staff is not None:
         raise security.SecurityRejected("invalid_request", 422)
-    record = ShopStaff(username=username, role=payload.role, is_active=True,
-                       password_hash=await asyncio.to_thread(hash_password, payload.password))
-    db.add(record)
+    digest = hashlib.sha256(payload.token.encode("ascii")).hexdigest()
+    await throttle("staff-redeem:" + digest, 8, 600)
+    password_hash = await asyncio.to_thread(hash_password, payload.password)
     try:
-        await db.flush()
-        identifier = record.id
-        await db.run_sync(lambda sync: security.audit(sync, member.id, "staff.created", str(identifier)))
+        await db.run_sync(lambda sync: lifecycle.redeem(
+            sync, payload.kind, payload.token, password_hash, payload.password,
+        ))
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise security.SecurityRejected("staff_username_exists", 409) from None
-    return {"id": identifier}
+        raise security.SecurityRejected("invalid_link", 410) from None
+    return {"ok": True}
+
+
+@router.post("/staff", status_code=410)
+async def retired_staff_creation(staff: Staff) -> dict:
+    """Never fall through to the legacy direct-password creation handler."""
+    required(staff, "staff.manage")
+    raise security.SecurityRejected("invitation_only", 410)
+
+
+@router.get("/staff/invitations")
+async def staff_invitations(staff: Staff, db: Db) -> dict:
+    """Return status and expiry, not invitation tokens."""
+    required(staff, "staff.manage")
+    rows = (await db.scalars(select(ShopStaffInvitation)
+        .order_by(ShopStaffInvitation.created_at.desc()).limit(100))).all()
+    return {"items": [{
+        "id": row.id, "username": row.username, "role": row.role,
+        "status": lifecycle.invitation_status(row),
+        "expires_at": row.expires_at.isoformat(),
+    } for row in rows]}
+
+
+@router.post("/staff/invitations", status_code=201)
+async def invite_staff(payload: StaffInvite, staff: Staff, db: Db) -> dict:
+    """Return a one-time bearer once; admins must share the link securely."""
+    actor = required(staff, "staff.manage")
+    item, token = await db.run_sync(lambda sync: lifecycle.issue_invitation(
+        sync, actor.id, payload.username, payload.role,
+    ))
+    await db.commit()
+    return {"ok": True, "id": item.id, "token": token,
+            "expires_at": item.expires_at.isoformat()}
+
+
+@router.post("/staff/invitations/cancel")
+async def cancel_staff_invitation(payload: InvitationCancel, staff: Staff, db: Db) -> dict:
+    """Revoke a pending invitation without changing existing staff accounts."""
+    actor = required(staff, "staff.manage")
+    await db.run_sync(lambda sync: lifecycle.cancel_invitation(
+        sync, actor.id, str(payload.invitation_id),
+    ))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/staff/password-reset")
+async def issue_staff_reset(payload: PasswordResetRequest, staff: Staff, db: Db) -> dict:
+    """Issue a short-lived reset capability; never reveal or assign passwords."""
+    actor = required(staff, "staff.manage")
+    if payload.staff_id == actor.id:
+        raise security.SecurityRejected("use_my_account", 409)
+    item, token = await db.run_sync(lambda sync: lifecycle.issue_reset(
+        sync, actor.id, payload.staff_id,
+    ))
+    await db.commit()
+    return {"ok": True, "id": item.id, "token": token,
+            "expires_at": item.expires_at.isoformat()}
+
+
+@router.get("/staff/password-policy")
+async def get_staff_password_policy(staff: Staff, db: Db) -> dict:
+    """Expose current requirements to the administrator."""
+    required(staff, "staff.manage")
+    return await db.run_sync(lambda sync: lifecycle.serialize_policy(
+        lifecycle.policy_for(sync),
+    ))
+
+
+@router.post("/staff/password-policy")
+async def set_staff_password_policy(payload: PasswordPolicyPatch, staff: Staff, db: Db) -> dict:
+    """Require recent authentication, persist policy and emit an audit event."""
+    actor = required(staff, "staff.manage")
+    result = await db.run_sync(lambda sync: lifecycle.configure_policy(
+        sync, actor.id, **payload.model_dump(),
+    ))
+    serialized = lifecycle.serialize_policy(result)
+    await db.commit()
+    return {"ok": True, **serialized}
 
 
 @router.patch("/staff/{member_id}")
 async def change_staff(member_id: int, payload: StaffUpdate, staff: Staff, db: Db) -> dict:
-    """Serialize last-admin protection and invalidate every session on change."""
+    """Serialize last-admin protection and invalidate sessions on role changes."""
     member = required(staff, "staff.manage")
-    admins = (await db.scalars(select(ShopStaff).where(ShopStaff.role == "superadmin",
-        ShopStaff.is_active.is_(True)).order_by(ShopStaff.id).with_for_update())).all()
+    admins = (await db.scalars(select(ShopStaff).where(
+        ShopStaff.role == "superadmin", ShopStaff.is_active.is_(True)
+    ).order_by(ShopStaff.id).with_for_update())).all()
     target = await db.scalar(select(ShopStaff).where(ShopStaff.id == member_id).with_for_update())
     if target is None:
         raise security.SecurityRejected("staff_not_found", 404)
-    if target.id == member.id and (payload.password is not None
-            or payload.is_active is False or (payload.role is not None and payload.role != target.role)):
-        # Own password changes always use /account with the current password.
+    if target.id == member.id and (payload.is_active is False
+            or (payload.role is not None and payload.role != target.role)):
         raise security.SecurityRejected("use_my_account", 409)
     demoting = payload.role is not None and payload.role != "superadmin"
-    if target.role == "superadmin" and target.is_active and (demoting or payload.is_active is False) and len(admins) <= 1:
+    if (target.role == "superadmin" and target.is_active
+            and (demoting or payload.is_active is False) and len(admins) <= 1):
         raise security.SecurityRejected("last_admin_protected", 409)
     changed = False
     for field in ("role", "is_active"):
@@ -451,9 +564,6 @@ async def change_staff(member_id: int, payload: StaffUpdate, staff: Staff, db: D
         if value is not None and getattr(target, field) != value:
             setattr(target, field, value)
             changed = True
-    if payload.password is not None:
-        target.password_hash = await asyncio.to_thread(hash_password, payload.password)
-        changed = True
     if not changed:
         raise security.SecurityRejected("invalid_request", 422)
     target.session_version += 1
@@ -464,9 +574,36 @@ async def change_staff(member_id: int, payload: StaffUpdate, staff: Staff, db: D
 
 
 @router.get("/account/audit")
-async def audit_log(staff: Staff, db: Db) -> dict:
-    """Allow authorized administrators to inspect safe control-plane events."""
+async def audit_log(
+    staff: Staff, db: Db, page: int = 1, actor: int | None = None,
+    action: str = "", since: datetime | None = None, until: datetime | None = None,
+) -> dict:
+    """Search administrative activity with bounded, authorized pagination."""
     required(staff, "audit.read")
-    rows = (await db.scalars(select(AdminEvent).order_by(AdminEvent.created_at.desc()).limit(100))).all()
-    return {"items": [{"id": row.id, "actor": row.staff_id, "action": row.action,
-                       "target": row.target, "created_at": row.created_at.isoformat()} for row in rows]}
+    if page < 1 or page > 10000 or len(action) > 80 or (
+        actor is not None and actor < 1
+    ):
+        raise security.SecurityRejected("invalid_request", 422)
+    conditions = []
+    if actor is not None:
+        conditions.append(AdminEvent.staff_id == actor)
+    if action:
+        if not action.replace(".", "").replace("_", "").isalpha():
+            raise security.SecurityRejected("invalid_request", 422)
+        conditions.append(AdminEvent.action == action)
+    if since is not None:
+        conditions.append(AdminEvent.created_at >= security.utc(since))
+    if until is not None:
+        conditions.append(AdminEvent.created_at <= security.utc(until))
+    stmt = select(AdminEvent)
+    count = select(func.count()).select_from(AdminEvent)
+    if conditions:
+        stmt = stmt.where(*conditions)
+        count = count.where(*conditions)
+    total = int(await db.scalar(count) or 0)
+    rows = (await db.scalars(stmt.order_by(AdminEvent.created_at.desc(), AdminEvent.id.desc())
+        .offset((page - 1) * 50).limit(50))).all()
+    return {"items": [{
+        "id": row.id, "actor": row.staff_id, "action": row.action,
+        "target": row.target, "created_at": row.created_at.isoformat(),
+    } for row in rows], "total": total, "page": page, "page_size": 50}
