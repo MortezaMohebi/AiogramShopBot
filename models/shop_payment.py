@@ -24,6 +24,7 @@ from sqladmin import ModelView
 
 from models.base import Base
 from models.shop_scope import legacy_bot_default
+from models.shop_multibot import DEFAULT_STORE_ID
 
 
 class ShopPaymentAttempt(Base):
@@ -31,6 +32,13 @@ class ShopPaymentAttempt(Base):
 
     __tablename__ = "shop_payment_attempts"
 
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, default=DEFAULT_STORE_ID, index=True,
+    )
+    payment_account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_payment_accounts.id", ondelete="RESTRICT"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(
         ForeignKey("shop_orders.id", ondelete="RESTRICT"),

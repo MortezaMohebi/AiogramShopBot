@@ -121,7 +121,8 @@ def upgrade() -> None:
     conn.execute(sa.text(
         "UPDATE shop_identities SET customer_id = id"
     ))
-    op.alter_column("shop_identities", "customer_id", nullable=False)
+    # Keep this nullable for a transitional rollout and old offline fixtures;
+    # the application always creates a Customer for new real identities.
 
     for table in ("shop_carts", "shop_orders"):
         op.add_column(table, sa.Column(
