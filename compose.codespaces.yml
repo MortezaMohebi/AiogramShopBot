@@ -139,6 +139,9 @@ services:
     restart: unless-stopped
   webhook-gateway:
     image: nginx:1.29-alpine
+    # Run master/worker without root and retain cap_drop ALL.
+    # Avoid nginx's privileged setuid/setgid worker transition.
+    user: "101:101"
     depends_on: {app: {condition: service_healthy}}
     ports: ["127.0.0.1:8080:8080"]
     volumes: ["./deploy/codespaces/nginx.conf:/etc/nginx/nginx.conf:ro"]
