@@ -30,6 +30,7 @@ class RotatingTelegramSession(BaseSession):
         self._inflight = 0
         self._replacing = False
         self._closed = False
+        self._fingerprint: str | None = None
 
     async def _acquire(self) -> BaseSession:
         """Freeze new calls briefly while a verified delegate is being swapped."""
@@ -47,7 +48,14 @@ class RotatingTelegramSession(BaseSession):
             self._inflight -= 1
             self._condition.notify_all()
 
-    async def replace(self, new_session: BaseSession) -> BaseSession:
+    @property
+    def fingerprint(self) -> str | None:
+        """Expose only a hash of the applied configuration, never credentials."""
+        return self._fingerprint
+
+    async def replace(
+        self, new_session: BaseSession, *, fingerprint: str | None = None,
+    ) -> BaseSession:
         """Atomically install a pre-verified session and return the old delegate.
 
         The caller is responsible for closing the old delegate only after its
@@ -66,6 +74,7 @@ class RotatingTelegramSession(BaseSession):
                     await self._condition.wait()
                 old = self._current
                 self._current = new_session
+                self._fingerprint = fingerprint
                 # Aiogram's get_file/download paths use session.api.file_url;
                 # therefore this property must track the live delegate.
                 self.api = new_session.api
