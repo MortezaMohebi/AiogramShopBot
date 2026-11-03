@@ -21,6 +21,7 @@ from models.shop_checkout import (
 )
 from models.shop_content import Product, ShopOrder
 from services.shop_money import MAX_RIALS, format_rials, to_rials
+from services.shop_channel_features import get_features
 
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
@@ -101,6 +102,24 @@ class ShopCartFlow:
         """Resolve supported shopping actions for the event's platform identity."""
         action = event.callback_data or ""
         text = (event.text or "").strip()
+        # A disabled provider cart refuses both current and stale callback buttons.
+        # Existing orders remain accessible through the separate order service.
+        features = await get_features(session, event.platform.value)
+        if not features.cart_enabled:
+            cart_actions = {
+                "shop:cart", "shop:shipping", "shop:clear_coupon",
+                "shop:address", "shop:coupon", "shop:checkout",
+            }
+            prefixes = (
+                "shop:add:", "shop:inc:", "shop:dec:", "shop:remove:",
+                "shop:ship:", "shop:shipping:", "shop:place:",
+            )
+            if (
+                action in cart_actions or action.startswith(prefixes)
+                or text in ("/cart", "/checkout", "🛒 سبد خرید")
+            ):
+                return BotReply("سبد خرید این پیام‌رسان در حال حاضر غیرفعال است.")
+            return None
         try:
             if action in ("shop:cart", "shop:shipping", "shop:clear_coupon"):
                 if action == "shop:shipping":
