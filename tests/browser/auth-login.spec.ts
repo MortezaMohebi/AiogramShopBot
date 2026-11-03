@@ -1,13 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-/** Keep these authentication tests on the isolated lab and desktop project. */
-test.beforeEach(async ({}, testInfo) => {
-  test.skip(
-    testInfo.project.name !== "desktop-1440",
-    "One login per suite avoids unnecessary Redis throttle increments",
-  );
-});
-
+/** Geometric checks run at every configured breakpoint. Only the
+ * authentication probe is limited to one desktop worker for Redis hygiene. */
 test("Login never advertises a real administrator identity", async ({ page }) => {
   await page.goto("/login");
 
@@ -62,7 +56,11 @@ test("Password reveal control does not collide with LTR input in RTL layout", as
   await expect(passwordInput).toHaveValue("ExampleOnly-123!");
 });
 
-test("Rejected credentials stay on the Persian login page", async ({ page }) => {
+test("Rejected credentials stay on the Persian login page", async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "desktop-1440",
+    "Only one real FastAPI login probe, to avoid Redis throttle collisions",
+  );
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "ورود به داشبورد" }))
     .toBeVisible();
