@@ -23,6 +23,7 @@ from services.shop_admin_security import (
 )
 from services import shop_admin_security as security
 from dashboard.admin_control_api import router
+from dashboard.customer_crm_api import router as customer_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
 PREFIX = "/internal/admin/v1"
@@ -45,6 +46,7 @@ def permission_for(path: str, method: str) -> str | None:
         "refunds": "finance.read" if method == "GET" else "refund.execute",
         "settings": "settings.manage", "referral-policy": "settings.manage",
         "channel-features": "settings.manage",
+        "customer-retention": "audit.read",
         "staff": "staff.manage", "broadcast": "broadcast.approve",
         "campaigns": "broadcast.approve" if path.endswith(("/start", "/approve")) else "campaigns.manage",
         "bot-connections": "bots.read" if method == "GET" else "bots.configure",
@@ -146,7 +148,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features")) and request.method != "GET":
+                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 await db.commit()
@@ -157,5 +159,6 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
 
     # Explicit top-level routes win before the legacy fallback mount.
     app.include_router(router)
+    app.include_router(customer_router)
     app.mount("/", legacy)
     return app
