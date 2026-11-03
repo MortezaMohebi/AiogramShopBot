@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, cast, func, select, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import Product
@@ -132,6 +132,13 @@ def _date_bucket(db: AsyncSession, field: Field, granularity: str):
             "quarter": "%Y-%m",
             "year": "%Y",
         }[granularity]
+        if granularity == "quarter":
+            month = cast(func.strftime("%m", field.column), Integer)
+            label = case(
+                (month <= 3, "Q1"), (month <= 6, "Q2"),
+                (month <= 9, "Q3"), else_="Q4",
+            )
+            return func.strftime("%Y", field.column) + "-" + label
         return func.strftime(fmt, field.column)
     # PostgreSQL: timestamptz -> UTC wall clock -> explicit bucket.
     return func.date_trunc(
