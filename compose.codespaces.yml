@@ -162,6 +162,15 @@ services:
   pytest:
     <<: *backend-service
     profiles: ["qa"]
+    # The offline regression runner must not possess any real bot credentials.
+    environment:
+      <<: *backend-env
+      TOKEN: ""
+      BALE_BOT_TOKEN: ""
+      BALE_WEBHOOK_SECRET: ""
+      BALE_WALLET_PROVIDER_TOKEN: ""
+      TELEGRAM_FIAT_PROVIDER_TOKEN: ""
+      TELEGRAM_WORKER_SECRET: ""
     command: ["python", "-m", "pytest", "-q", "tests"]
     depends_on: {postgres: {condition: service_healthy}}
     restart: "no"
