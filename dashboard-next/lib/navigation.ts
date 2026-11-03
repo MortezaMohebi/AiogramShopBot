@@ -1,5 +1,5 @@
 import type { StaffRole } from "@/lib/types";
-import { BarChart3, Boxes, ClipboardList, ContactRound, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, Image as ImageIcon, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Boxes, ClipboardList, ContactRound, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, Image as ImageIcon, type LucideIcon } from "lucide-react";
 export interface NavigationItem { title: string; href: string; icon: LucideIcon; roles: StaffRole[] }
 const all: StaffRole[] = ["superadmin", "sales", "content", "finance", "marketing", "viewer"];
 /** Navigation reflects fixed server roles; never replaces server authorization. */
@@ -18,6 +18,7 @@ export const navigation: NavigationItem[] = [
   { title: "امور مالی", href: "/finance", icon: ShieldCheck, roles: ["superadmin", "finance"] },
   { title: "گزارش‌ها", href: "/reports", icon: BarChart3, roles: all },
   { title: "مدیران و دسترسی‌ها", href: "/staff", icon: UserCog, roles: ["superadmin"] },
-  { title: "اتصال ربات‌ها", href: "/bot-connections", icon: Webhook, roles: ["superadmin"] },
+  { title: "ربات‌ها", href: "/bots", icon: Bot, roles: ["superadmin"] },
+  { title: "زیرساخت اتصال", href: "/bot-connections", icon: Webhook, roles: ["superadmin"] },
   { title: "تنظیمات", href: "/settings", icon: Settings2, roles: ["superadmin"] },
 ];

@@ -7,11 +7,10 @@ import os
 from hmac import compare_digest
 
 from aiohttp import ClientSession, ClientTimeout
-import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BufferedInputFile, Update
+from aiogram.types import Update
 from redis.asyncio import Redis
 from dashboard.secure_admin import SecureShopAdmin as Admin
 from dashboard.next_api import router as next_admin_router
@@ -27,6 +26,7 @@ from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
+from services.shop_bot_operations import legacy_state
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.bale_wallet import BaleWalletService, CheckoutRejected
@@ -484,6 +484,20 @@ async def _process_bale_update(request: Request, payload: dict):
     source = payload.get("callback_query") or payload.get("message") or {}
     customer = source.get("from") if isinstance(source, dict) else {}
     async with get_db_session() as session:
+        status = await legacy_state(session, "bale")
+        refund_request = bool(
+            event.callback_data
+            and event.callback_data.startswith("shop:refundorder:")
+        )
+        if status.state != "active" and not refund_request:
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            if status.state != "disabled":
+                await transport.send(
+                    event.chat_id,
+                    BotReply(status.message),
+                )
+            return {"status": status.state}
         await register_customer(
             session,
             platform=Platform.BALE,
@@ -497,7 +511,7 @@ async def _process_bale_update(request: Request, payload: dict):
         ):
             return {"status": "blocked"}
         options = await get_bot_options(session, Platform.BALE.value)
-        if options.maintenance_enabled:
+        if options.maintenance_enabled and not refund_request:
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)
             await transport.send(
@@ -613,18 +627,33 @@ async def webhook(request: Request):
 
 @app.exception_handler(Exception)
 async def exception_handler(request: Request, exc: Exception):
-    traceback_str = traceback.format_exc()
-    admin_notification = (
-        f"Critical error caused by {exc}\n\n"
-        f"Stack trace:\n{traceback_str}"
+    """Report only an opaque incident ID; provider errors may contain tokens."""
+    from uuid import uuid4
+
+    incident = str(uuid4())
+    # Neither the exception string nor traceback source is returned to the
+    # browser, operator messaging bot, Docker stdout, or monitoring hooks.
+    logging.error(
+        "Unhandled bot application error: incident=%s type=%s",
+        incident, type(exc).__name__,
     )
-    if len(admin_notification) > 4096:
-        byte_array = bytearray(admin_notification, 'utf-8')
-        admin_notification = BufferedInputFile(byte_array, "exception.txt")
-    await NotificationService.send_to_admins(admin_notification, None)
+    try:
+        await NotificationService.send_to_admins(
+            f"An error was recorded. Incident: {incident}. "
+            "Inspect sanitized application telemetry.",
+            None,
+        )
+    except Exception:
+        logging.error(
+            "Admin incident notification failed for %s", incident,
+        )
     return JSONResponse(
         status_code=500,
-        content={"message": f"An error occurred: {str(exc)}"},
+        content={
+            "message": "Internal server error",
+            "request_id": incident,
+        },
+        headers={"Cache-Control": "no-store"},
     )
 
 

@@ -21,6 +21,7 @@ from models.shop_multibot import (
 )
 from services import shop_admin_security as security
 from services.shop_bot_secrets import credential_status
+from services.shop_bot_operations import operation_data
 
 _SLUG = re.compile(r"^[a-z][a-z0-9-]{2,63}$")
 _ALLOWED_PLATFORMS = frozenset({"telegram", "bale"})
@@ -123,6 +124,7 @@ def serialize_bot(db: Session, bot: ShopBot) -> dict:
         "version": bot.version,
         "credential_version": bot.credential_version,
         "credentials": credential_status(db, bot_id=bot.id),
+        "operations": operation_data(db, bot),
         "verified_at": (
             bot.verified_at.isoformat() if bot.verified_at else None
         ),

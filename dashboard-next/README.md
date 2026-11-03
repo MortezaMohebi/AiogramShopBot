@@ -159,3 +159,24 @@ Only deployment-allowlisted destinations may receive the Telegram token.
 See [the Persian admin transport runbook](../docs/TELEGRAM_TRANSPORT_DASHBOARD.fa.md).
 This PR remains Draft until Codespaces Docker/PostgreSQL/Next.js/browser and
 real-provider acceptance tests pass.
+
+
+## Multi-Bot Management (P2, stacked Draft PR)
+
+The admin menu has a new **Bots** entry (`/bots`) with paginated
+Telegram/Bale registry, store/draft-bot creation, scoped details,
+redacted credential receipts, provider `getMe` verification and
+evidence-based per-bot health.
+
+Legacy bots can independently be switched between Active, Maintenance,
+Paused and Disabled. Ordinary Telegram updates pass through an Aiogram
+outer middleware; Bale ordinary messages use their own gate; broadcasts
+are not claimed for paused bots. Pending pre-checkouts, successful
+payments and existing refund requests remain eligible for settlement.
+
+New bots **remain draft and unconnected** until P4 introduces
+bot-scoped dispatchers, identities, carts, wallets and payment receipts.
+No new token is activated by simply saving it or passing `getMe`.
+
+See [P2 management and acceptance checklist](../docs/planning/multibot/P2_BOT_MANAGEMENT.fa.md)
+and [Multi-Bot roadmap](../docs/planning/multibot/IMPLEMENTATION_ORDER.fa.md).

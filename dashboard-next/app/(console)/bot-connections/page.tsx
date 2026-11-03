@@ -3,9 +3,6 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import {
   ConnectionControlPanel, type ConnectionData,
 } from "@/components/blocks/connection-control-panel";
-import {
-  BotProfilePanel, type BotHealth, type BotProfile,
-} from "@/components/blocks/bot-profile-panel";
 import { TelegramTransportPanel, type TelegramTransportData } from "@/components/blocks/telegram-transport-panel";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 
@@ -24,11 +21,8 @@ export default async function BotConnectionsPage({
 }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
-  const [operations, profiles, health, members, telegramTransport, params] = await Promise.all([
+  const [operations, telegramTransport, params] = await Promise.all([
     adminFetch<ConnectionData>("/connection-changes"),
-    adminFetch<{ items: BotProfile[] }>("/bot-profiles"),
-    adminFetch<{ items: BotHealth[] }>("/bot-profiles/health"),
-    adminFetch<{ id: number; username: string }[]>("/staff"),
     adminFetch<TelegramTransportData>("/telegram-transport"),
     searchParams,
   ]);
@@ -37,7 +31,7 @@ export default async function BotConnectionsPage({
     {params.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">تنظیمات بات ثبت شد.</p> : null}
     {params.verified ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">شناسهٔ Provider با getMe تأیید شد.</p> : null}
     {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[params.error] ?? "درخواست انجام نشد."}</p> : null}
-    <BotProfilePanel initial={profiles.items} health={health.items} staff={members} />
+    <p className="rounded-lg border bg-muted/30 p-4 text-sm">تنظیمات هر بات، روشن/خاموش‌کردن و تأیید هویت اکنون در <a className="font-semibold underline" href="/bots">مدیریت ربات‌ها</a> قرار دارند. این صفحه فقط زیرساخت اتصال و مسیرهای API را کنترل می‌کند.</p>
     <TelegramTransportPanel initial={telegramTransport} />
     <ConnectionControlPanel initial={operations} />
   </div>;

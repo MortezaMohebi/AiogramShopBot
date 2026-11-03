@@ -20,6 +20,8 @@ import config
 from dashboard.next_api import database, signed_staff
 from models.shop_admin_control import ConnectionChange, ConnectionConfig
 from models.shop_bot_profile import ShopBotProfile
+from models.shop_multibot import LEGACY_BOT_IDS
+from models.shop_bot_operations import ShopBotOperations
 from models.shop_delivery import ShopInboundUpdate
 from models.shop_engagement import ShopBroadcastWorkerHeartbeat
 from models.shop_staff import ShopStaff
@@ -105,6 +107,13 @@ async def update_bot_profile(
         owner = await db.get(ShopStaff, payload.owner_staff_id)
         if owner is None or not owner.is_active:
             raise security.SecurityRejected("staff_not_found", 404)
+    # The new Registry owns pausing/reenabling. The old profile endpoint may
+    # not accidentally override a registry-wide disabled/paused state.
+    controlled = await db.get(ShopBotOperations, LEGACY_BOT_IDS[platform])
+    if controlled is not None and payload.maintenance_enabled != (
+        controlled.desired_state == "maintenance"
+    ):
+        raise security.SecurityRejected("use_bot_registry", 409)
     record = await db.scalar(select(ShopBotProfile).where(
         ShopBotProfile.platform == platform,
     ).with_for_update())

@@ -1,0 +1,114 @@
+/** Redacted, per-bot API contracts; credentials are never serialized. */
+
+export type BotPlatform = "telegram" | "bale";
+export type BotDesiredState = "active" | "paused" | "maintenance" | "disabled";
+export type BotRegistryStatus =
+  | "draft" | "legacy" | "active" | "paused" | "maintenance" | "disabled";
+
+export interface StoreRecord {
+  id: string;
+  slug: string;
+  name: string;
+  state: string;
+}
+
+export interface BotCredentialStatus {
+  version: number;
+  source: "environment" | "encrypted";
+  state: "staged" | "active" | "revoked";
+  created_at: string | null;
+  has_secret: boolean;
+  verified_at: string | null;
+  verified_bot_id: string | null;
+}
+
+export interface BotOperations {
+  desired_state: BotDesiredState;
+  state_label: string;
+  runtime_ready: boolean;
+  welcome_message: string | null;
+  maintenance_message: string | null;
+  support_url: string | null;
+  owner_staff_id: number | null;
+  environment: "staging" | "production" | "codespaces";
+  reason: string | null;
+  updated_at: string | null;
+}
+
+export interface BotRecord {
+  id: string;
+  store_id: string;
+  slug: string;
+  name: string;
+  platform: BotPlatform;
+  provider_bot_id: string | null;
+  provider_username: string | null;
+  status: BotRegistryStatus;
+  runtime_owner: "legacy" | "registry";
+  version: number;
+  credential_version: number | null;
+  credentials: BotCredentialStatus[];
+  verified_at: string | null;
+  operations: BotOperations;
+}
+
+export interface BotRegistrySnapshot {
+  stores: StoreRecord[];
+  bots: BotRecord[];
+  default_store_id: string;
+  runtime_migration_complete: boolean;
+  total_bots: number;
+  page: number;
+  page_size: number;
+}
+
+export interface BotHealthSnapshot {
+  bot_id: string;
+  runtime_owner: "legacy" | "registry";
+  runtime_ready: boolean;
+  desired_state: BotDesiredState;
+  provider_api: "not_probed";
+  verified_identity_at: string | null;
+  receiver_status: string;
+  received_last_at: string | null;
+  processing_last_hour: number;
+  needs_review_last_hour: number;
+  has_live_credential: boolean;
+}
+
+export interface BotRegistryDetail {
+  bot: BotRecord;
+  health: BotHealthSnapshot;
+  state_events: {
+    id: string;
+    actor_id: number;
+    previous_state: BotDesiredState;
+    next_state: BotDesiredState;
+    reason: string | null;
+    created_at: string | null;
+  }[];
+  events: {
+    id: string;
+    actor_id: number | null;
+    action: string;
+    credential_version: number | null;
+    created_at: string | null;
+  }[];
+}
+
+export function botPlatformLabel(platform: BotPlatform): string {
+  return platform === "telegram" ? "تلگرام" : "بله";
+}
+
+export function botRuntimeLabel(bot: BotRecord): string {
+  if (bot.runtime_owner !== "legacy") {
+    return "Draft — هنوز به Runtime متصل نشده";
+  }
+  const state = bot.operations.desired_state;
+  return ({
+    active: "فعال در Runtime فعلی",
+    paused: "متوقف؛ تسویه‌ها محفوظ‌اند",
+    maintenance: "حالت نگهداری",
+    disabled: "غیرفعال؛ رسیدهای قبلی محفوظ‌اند",
+  } as const)[state];
+}

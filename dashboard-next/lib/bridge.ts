@@ -35,6 +35,10 @@ const SAFE_CODES = new Set([
   "bot_secret_unreadable", "bot_secret_binding_mismatch",
   "bot_secret_unavailable", "bot_credential_missing",
   "credential_version_conflict", "invalid_bot_runtime",
+  "invalid_bot_state", "bot_state_reason_required", "bot_state_unchanged",
+  "bot_runtime_not_ready", "duplicate_provider_bot", "duplicate_bot_credential",
+  "invalid_support_url", "use_bot_registry",
+
 
 
   "confirmation_required",

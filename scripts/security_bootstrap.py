@@ -37,7 +37,9 @@ async def main() -> None:
     from models.shop_staff_state import STAFF_STATES_TABLES
     from models.shop_telegram_transport import TELEGRAM_TRANSPORT_TABLES
     from models.shop_multibot import MULTIBOT_FOUNDATION_TABLES
+    from models.shop_bot_operations import BOT_OPERATIONS_TABLES
     from services.shop_multibot_bootstrap import adopt_legacy_codespace
+    from services.shop_bot_operations_bootstrap import upgrade_codespace_bot_operations
     async with engine.begin() as connection:
         if await connection.scalar(text("SELECT current_database()")) != "shop_codespace":
             raise RuntimeError("Only the Codespaces database may be bootstrapped")
@@ -49,15 +51,21 @@ async def main() -> None:
                 raise RuntimeError("Versioned databases must use their migrations")
         # These new tables are additive; neither existing product nor order
         # columns are changed. An existing Codespace keeps all its data.
-        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | set(CRM_TABLE_NAMES) | set(STAFF_PREFERENCES_TABLES) | set(BOT_PROFILE_TABLES) | set(PAYMENT_RAIL_TABLES) | set(CUSTOMER_LINK_TABLES) | set(STAFF_STATES_TABLES) | set(TELEGRAM_TRANSPORT_TABLES) | set(MULTIBOT_FOUNDATION_TABLES) | {"shop_product_visibility"}
+        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | set(CRM_TABLE_NAMES) | set(STAFF_PREFERENCES_TABLES) | set(BOT_PROFILE_TABLES) | set(PAYMENT_RAIL_TABLES) | set(CUSTOMER_LINK_TABLES) | set(STAFF_STATES_TABLES) | set(TELEGRAM_TRANSPORT_TABLES) | set(MULTIBOT_FOUNDATION_TABLES) | set(BOT_OPERATIONS_TABLES) | {"shop_product_visibility"}
         missing = permitted_missing(tables, set(Base.metadata.tables), additions)
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,
                 tables=[Base.metadata.tables[name] for name in missing], checkfirst=False))
-        await verify_codespace_schema(connection)
+        # Phase 1 credentials lack the four nullable Phase 2 verification
+        # fields. Adopt existing bots, apply allowlisted additive SQL, and
+        # verify the complete schema before committing the transaction.
         # Idempotently register the existing env-backed Telegram/Bale bots.
         # All business rows remain untouched within the same DDL transaction.
         await adopt_legacy_codespace(connection)
+        # Nullable credential verification receipts and legacy status rows
+        # migrate in-place; Codespace volumes and customer data are preserved.
+        await upgrade_codespace_bot_operations(connection)
+        await verify_codespace_schema(connection)
     await create_admin()
     print("Security schema verified; existing accounts, orders and media preserved.")
 

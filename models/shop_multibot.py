@@ -155,6 +155,11 @@ class ShopBotCredential(Base):
     )
     environment_key: Mapped[str | None] = mapped_column(String(40))
     ciphertext: Mapped[str | None] = mapped_column(Text)
+    verified_bot_id: Mapped[int | None] = mapped_column(BigInteger)
+    verified_username: Mapped[str | None] = mapped_column(String(255))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Purpose-keyed HMAC fingerprint is never returned or printed.
+    token_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("shop_staff.id", ondelete="SET NULL"),
     )
@@ -185,6 +190,14 @@ class ShopBotCredential(Base):
             name="ck_bot_credential_material",
         ),
         Index("ix_bot_credentials_bot_state", "bot_id", "state"),
+        Index(
+            "uq_shop_bot_credential_fingerprint", "token_fingerprint",
+            unique=True, postgresql_where=text(
+                "token_fingerprint IS NOT NULL AND state IN ('staged','active')"
+            ), sqlite_where=text(
+                "token_fingerprint IS NOT NULL AND state IN ('staged','active')"
+            ),
+        ),
         # Enforce one active version in Codespaces create_all AND Alembic.
         Index(
             "uq_bot_credential_one_active", "bot_id", unique=True,

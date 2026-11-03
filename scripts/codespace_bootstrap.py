@@ -169,11 +169,13 @@ async def create_admin() -> None:
 
 
 async def main() -> None:
-    """Bootstrap and validate the schema before creating the admin user."""
-    safe_configuration()
-    await bootstrap_schema()
-    await create_admin()
-    print("Codespaces fresh-schema bootstrap completed.")
+    """Use the same safe additive initializer for fresh and existing Codespaces."""
+    from scripts.security_bootstrap import main as additive_bootstrap
+
+    # Running this older module must never demand a volume reset just because
+    # a later feature introduces additional model tables or nullable columns.
+    await additive_bootstrap()
+    print("Codespaces schema and additive bot registry verified.")
 
 
 if __name__ == "__main__":

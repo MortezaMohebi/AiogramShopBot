@@ -22,6 +22,8 @@ from services.shop_money import format_rials
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_presentation import product_message
 from services.shop_channel_features import get_features
+from models.shop_multibot import LEGACY_BOT_IDS
+from models.shop_bot_operations import ShopBotOperations
 
 _PAGE_SIZE = 6
 _CATEGORY_PAGE_SIZE = 6
@@ -87,9 +89,9 @@ class CatalogFlow:
             if data == "shop:home":
                 return await self._home(session, event.platform.value)
             if data == "shop:help":
-                return await self._settings_text(session, key="support")
+                return await self._settings_text(session, key="support", platform=event.platform.value)
             if data == "shop:faq":
-                return await self._settings_text(session, key="faq")
+                return await self._settings_text(session, key="faq", platform=event.platform.value)
             match = _CATEGORY_LIST_PATTERN.fullmatch(data)
             if match:
                 return await self._categories_or_products(
@@ -110,16 +112,19 @@ class CatalogFlow:
         if text.split(" ", 1)[0] == "/start":
             return await self._home(session, event.platform.value)
         if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
-            return await self._settings_text(session, key="support")
+            return await self._settings_text(session, key="support", platform=event.platform.value)
         if text in ("❓ پرسش‌های متداول", "/faq"):
-            return await self._settings_text(session, key="faq")
+            return await self._settings_text(session, key="faq", platform=event.platform.value)
         return None
 
     async def _home(self, session: AsyncSession, platform: str) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
         settings = await session.get(ShopSettings, 1)
+        per_bot = await session.get(ShopBotOperations, LEGACY_BOT_IDS[platform])
         welcome = (
-            settings.welcome_message
+            per_bot.welcome_message
+            if per_bot and per_bot.welcome_message
+            else settings.welcome_message
             if settings and settings.welcome_message
             else "به فروشگاه خوش آمدید."
         )
@@ -137,14 +142,15 @@ class CatalogFlow:
         return BotReply(text=welcome[:4096], rows=tuple(rows))
 
     async def _settings_text(
-        self, session: AsyncSession, *, key: str
+        self, session: AsyncSession, *, key: str, platform: str
     ) -> BotReply:
         """Read help and support information from editable admin settings."""
         settings = await session.get(ShopSettings, 1)
+        per_bot = await session.get(ShopBotOperations, LEGACY_BOT_IDS[platform])
         if key == "faq":
             body = settings.faq_text if settings else None
         else:
-            url = (settings.support_url or "").strip() if settings else ""
+            url = (per_bot.support_url or "").strip() if per_bot and per_bot.support_url else ((settings.support_url or "").strip() if settings else "")
             body = url if url.startswith("https://") else None
         return BotReply(
             text=(body or "اطلاعات این بخش هنوز ثبت نشده است.")[:4096],
