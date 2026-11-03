@@ -71,7 +71,7 @@ def test_dataset_registry_exposes_only_explicit_fields() -> None:
     with pytest.raises(SecurityRejected):
         PRODUCT.field("password_hash", intent="search")
     with pytest.raises(SecurityRejected):
-        PRODUCT.field("uom_code", intent="import_nonexistent")
+        PRODUCT.field("store_id", intent="import")
 
 
 def test_literal_sql_wildcards_are_escaped() -> None:
