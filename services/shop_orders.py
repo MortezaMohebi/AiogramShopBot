@@ -155,27 +155,28 @@ class ShopOrdersFlow:
                     ),
                 ))
             if order.status == "approved_unpaid":
-                # Stale unpaid orders may not mint new invoices for products
-                # whose access was revoked after the review was approved.
+                # A denied order can still be cancelled or reconciled.
+                # Only the creation of new invoice intents is prohibited.
                 available_ids = order_products.get(order.id, set())
                 if not available_ids or not available_ids <= allowed_products:
                     lines.append(
                         "دسترسی به یکی از کالاهای این سفارش تغییر کرده است؛ "
                         "پرداخت جدید برای آن مجاز نیست."
                     )
-                    continue
-                actions = []
-                if external_ready:
-                    actions.append(InlineAction(
-                        f"💳 پرداخت سفارش #{order.id}", f"shop:pay:{order.id}",
-                    ))
-                if credit_available:
-                    actions.append(InlineAction(
-                        inline_credit_label(features),
-                        f"shop:creditpay:{order.id}",
-                    ))
-                if actions:
-                    rows.append(tuple(actions))
+                else:
+                    actions = []
+                    if external_ready:
+                        actions.append(InlineAction(
+                            f"💳 پرداخت سفارش #{order.id}",
+                            f"shop:pay:{order.id}",
+                        ))
+                    if credit_available:
+                        actions.append(InlineAction(
+                            inline_credit_label(features),
+                            f"shop:creditpay:{order.id}",
+                        ))
+                    if actions:
+                        rows.append(tuple(actions))
             if (
                 order.provider == "manual_review"
                 and order.status in ("pending_review", "approved_unpaid")
