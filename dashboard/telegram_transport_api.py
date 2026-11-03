@@ -206,3 +206,17 @@ async def transport_apply(
         db, actor_id=actor.id, change_id=str(payload.change_id),
         bot=live_bot(request),
     )
+
+
+@router.post("/telegram-transport/reconcile")
+async def transport_reconcile(
+    payload: TransportApply, request: Request, staff: Actor, db: Db,
+) -> dict:
+    """Review an uncertain apply without replaying a candidate network route."""
+    actor = required(staff, "bots.apply")
+    await throttle("telegram-transport-reconcile", 3, 60)
+    await fresh_proof(db, actor, payload)
+    return await control.reconcile(
+        db, actor_id=actor.id, change_id=str(payload.change_id),
+        bot=live_bot(request),
+    )
