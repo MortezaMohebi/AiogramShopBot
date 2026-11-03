@@ -267,6 +267,13 @@ async def assign_route(
         or worker is None or worker.status == "disabled"
     ):
         raise security.SecurityRejected("relay_route_not_supported", 409)
+    priority_owner = await db.scalar(select(ShopBotRelayRoute.worker_id).where(
+        ShopBotRelayRoute.bot_id == bot_id,
+        ShopBotRelayRoute.priority == priority,
+        ShopBotRelayRoute.worker_id != worker_id,
+    ).limit(1))
+    if priority_owner is not None:
+        raise security.SecurityRejected("relay_priority_taken", 409)
     row = await db.scalar(select(ShopBotRelayRoute).where(
         ShopBotRelayRoute.bot_id == bot_id,
         ShopBotRelayRoute.worker_id == worker_id,
