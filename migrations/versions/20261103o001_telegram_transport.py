@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("config_ciphertext", sa.Text(), nullable=False),
-        sa.Column("verified_bot_id", sa.Integer(), nullable=False),
+        sa.Column("verified_bot_id", sa.BigInteger(), nullable=False),
         sa.Column("verified_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_by", sa.Integer(), sa.ForeignKey("shop_staff.id"), nullable=False),
         sa.CheckConstraint("id = 1", name="ck_shop_telegram_transport_singleton"),
@@ -38,7 +38,7 @@ def upgrade() -> None:
         sa.Column("operation", sa.String(16), nullable=False, server_default="switch"),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("error_code", sa.String(64)),
-        sa.Column("verified_bot_id", sa.Integer()),
+        sa.Column("verified_bot_id", sa.BigInteger()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.CheckConstraint(
