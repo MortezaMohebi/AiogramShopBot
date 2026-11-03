@@ -9,7 +9,12 @@ import { readSession } from "@/lib/session";
 import type { ShopSettings, Staff } from "@/lib/types";
 
 export const runtime = "nodejs";
-const MAX_BODY_BYTES = 30_000;
+// Match the signed FastAPI JSON ceiling. The form permits up to 24,851
+// Unicode characters, which can exceed 30 KB in UTF-8 or escaped JSON.
+const MAX_BODY_BYTES = 256 * 1024;
+
+/** Distinguish a body limit from ordinary invalid field content. */
+class SettingsBodyTooLarge extends Error {}
 
 type FailureCode =
   | "invalid_request"
@@ -38,8 +43,12 @@ function failure(code: FailureCode, status: number): NextResponse {
 /** Refuse oversized bodies even if an intermediary omits Content-Length. */
 async function boundedJson(request: NextRequest): Promise<unknown> {
   const announced = request.headers.get("content-length");
-  if (announced && (!/^\d+$/.test(announced) || +announced > MAX_BODY_BYTES)) {
+  if (announced && !/^\d+$/.test(announced)) {
     throw new Error("invalid_request");
+  }
+  if (announced && Number(announced) > MAX_BODY_BYTES) {
+    await request.body?.cancel().catch(() => undefined);
+    throw new SettingsBodyTooLarge();
   }
   if (!request.body) throw new Error("invalid_request");
 
@@ -51,15 +60,22 @@ async function boundedJson(request: NextRequest): Promise<unknown> {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_BODY_BYTES) throw new Error("invalid_request");
+      if (total > MAX_BODY_BYTES) throw new SettingsBodyTooLarge();
       parts.push(value);
     }
+  } catch (error) {
+    // Stop reading a rejected upload rather than leaving its stream active.
+    await reader.cancel().catch(() => undefined);
+    throw error;
   } finally {
     reader.releaseLock();
   }
 
   try {
-    return JSON.parse(Buffer.concat(parts).toString("utf8")) as unknown;
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(
+      Buffer.concat(parts),
+    );
+    return JSON.parse(decoded) as unknown;
   } catch {
     throw new Error("invalid_request");
   }
@@ -118,26 +134,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const session = await readSession();
   if (!session) return failure("session_expired", 401);
-  const contentType = request.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().startsWith("application/json")) {
+  const contentType = (request.headers.get("content-type") ?? "")
+    .split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
     return failure("invalid_request", 415);
   }
 
   let payload: unknown;
   try {
     payload = await boundedJson(request);
-  } catch {
-    return failure("invalid_request", 422);
+  } catch (error) {
+    return failure("invalid_request", error instanceof SettingsBodyTooLarge ? 413 : 422);
   }
   const data = validatePayload(payload);
   if (!data) return failure("invalid_request", 422);
 
+  let writeAccepted = false;
   try {
     const staff = await bridgeFetch<Staff>("/auth/me", "GET", null, session);
     if (staff.role !== "superadmin") {
       return failure("permission_denied", 403);
     }
     await bridgeFetch("/settings", "PATCH", data, session);
+    writeAccepted = true;
     const saved = await bridgeFetch<ShopSettings>(
       "/settings", "GET", null, session,
     );
@@ -155,6 +174,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    // A failed verification after PATCH is not proof that the write failed.
+    // Do not invite a blind retry or falsely report a confirmed save.
+    if (writeAccepted) return failure("save_failed", 503);
     if (error instanceof ApiError) {
       if (error.status === 401) return failure("session_expired", 401);
       if (error.status === 403) return failure("permission_denied", 403);
