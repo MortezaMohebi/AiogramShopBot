@@ -18,7 +18,7 @@ function failure(error: unknown): never {
 /** Only role and activation status may be edited by another administrator. */
 export async function updateStaff(form: FormData) {
   const id = text(form, "id"), role = text(form, "role");
-  if (!/^[1-9]\\d*$/.test(id) || !roles.includes(role)) redirect("/staff?error=validation");
+  if (!/^[1-9][0-9]*$/.test(id) || !roles.includes(role)) redirect("/staff?error=validation");
   try {
     await adminFetch(`/staff/${id}`, "PATCH", {
       role, is_active: form.has("is_active"),
