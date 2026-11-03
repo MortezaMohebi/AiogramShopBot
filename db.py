@@ -32,6 +32,7 @@ from models.shop_staff_state import ShopStaffState
 from models.shop_multibot import (
     ShopStore, ShopBot, ShopBotCredential, ShopBotRegistryEvent,
 )
+from models.shop_bot_operations import ShopBotOperations
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )
