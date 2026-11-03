@@ -178,7 +178,7 @@ PRODUCT = Dataset(
 
 CUSTOMER = Dataset(
     "customers", ShopStoreCustomer, "مشتریان فروشگاه",
-    "customers.read", "customers.read",
+    "customers.read", "customers.import",
     (
         Field("id", "ID", "integer", ShopStoreCustomer.id),
         Field("external_ref", "شناسه خارجی", "string",

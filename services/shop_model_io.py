@@ -59,12 +59,9 @@ def _safe_cell(value: Any) -> Any:
 
 def _headers(dataset: Dataset, *, template: bool) -> list[str]:
     """Reuse the registry's exposure rules, never arbitrary ORM columns."""
-    return [
-        field.key for field in dataset.fields
-        if field.importable if template
-    ] if template else [
-        field.key for field in dataset.fields if field.exportable
-    ]
+    if template:
+        return [field.key for field in dataset.fields if field.importable]
+    return [field.key for field in dataset.fields if field.exportable]
 
 
 def encode_table(
@@ -269,6 +266,8 @@ async def _plan_product(
         # Existing stock requires a separate audited adjustment ledger;
         # silent replacement from a spreadsheet would lose inventory history.
         raise security.SecurityRejected("import_stock_adjustment_required", 409)
+    if values.get("is_published") is True:
+        raise security.SecurityRejected("import_publish_requires_review", 409)
     if "price_stars" in values and values["price_stars"] <= 0:
         raise security.SecurityRejected("invalid_import_value", 422)
     ptype = values.get(
@@ -320,7 +319,10 @@ async def _plan_product(
         )
         values.setdefault("description", "")
         values.setdefault("stock_quantity", 0)
-        values.setdefault("is_published", False)
+        # No new Product is bulk-published by importing a spreadsheet.
+        if values.get("is_published") is True:
+            raise security.SecurityRejected("import_publish_requires_review", 409)
+        values["is_published"] = False
     return RowPlan(
         number=index,
         action="update" if existing is not None else "create",

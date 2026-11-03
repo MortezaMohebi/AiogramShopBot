@@ -8,6 +8,7 @@ fastapi==0.115.12
 itsdangerous==2.2.0
 kryptoexpress-sdk==0.1.1
 matplotlib==3.10.7
+openpyxl==3.1.5  # CSV/XLSX admin templates and bounded imports/exports
 passlib==1.7.4
 pillow==12.1.0
 pydantic==2.9.2
