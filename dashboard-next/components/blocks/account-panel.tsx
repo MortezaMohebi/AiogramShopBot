@@ -86,13 +86,14 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     <Card><CardHeader><CardTitle>تغییر رمز عبور</CardTitle></CardHeader><CardContent>
       <form onSubmit={(event) => submit(event, "password")} className="space-y-4">
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <label className="block space-y-1 text-sm">رمز تازه (حداقل ۱۴ نویسه)<Input name="new_password" type="password" autoComplete="new-password" minLength={14} maxLength={256} dir="ltr" required disabled={busy} /></label>
+        <label className="block space-y-1 text-sm">رمز تازه (حداقل {initial.password_policy.min_length} نویسه)<Input name="new_password" type="password" autoComplete="new-password" minLength={initial.password_policy.min_length} maxLength={256} dir="ltr" required disabled={busy} /></label>
         <p className="text-xs leading-6 text-muted-foreground">بعد از تغییر رمز، تمام نشست‌ها بسته می‌شوند و باید دوباره وارد شوید.</p>
         <Button type="submit" disabled={busy}>تغییر رمز و خروج از همه دستگاه‌ها</Button>
       </form>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>احراز هویت دومرحله‌ای</CardTitle></CardHeader><CardContent className="space-y-4">
       <p className="text-sm">وضعیت: <strong>{initial.mfa_enabled ? "فعال" : "غیرفعال"}</strong></p>
+      {initial.mfa_required_by_role ? <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">برای نقش شما MFA اجباری است. تا زمان فعال‌سازی، دسترسی به امکانات مدیریتی محدود می‌ماند.</p> : null}
       {recovery.length ? <div role="status" className="space-y-3 rounded-lg border p-4">
         <p className="text-sm">این کدها فقط همین بار نمایش داده می‌شوند. در محلی امن ذخیره کنید؛ هر کد یک‌بار قابل استفاده است.</p>
         <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
@@ -132,7 +133,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         </form>
       </div> : <form onSubmit={(event) => submit(event, initial.mfa_enabled ? "mfa-disable" : "mfa-setup")} className="space-y-4">
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button>
+        {!(initial.mfa_enabled && initial.mfa_required_by_role) ? <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button> : null}
       </form>}
     </CardContent></Card>
     <Card><CardHeader><CardTitle>تأیید مجدد هویت برای عملیات حساس</CardTitle></CardHeader><CardContent>
