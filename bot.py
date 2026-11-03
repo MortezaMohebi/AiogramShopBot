@@ -115,18 +115,17 @@ async def _startup() -> None:
     bot_photo_id = config.DEFAULT_MEDIA_FILE_ID
     try:
         me = await asyncio.wait_for(bot.get_me(), timeout=12)
-        if expected_bot_id is not None and me.id != expected_bot_id:
-            raise RuntimeError(
-                "Configured Telegram token identifies a different verified bot."
-            )
-        profile_available = True
-    except RuntimeError:
-        raise
     except Exception:
         logging.warning(
             "Telegram API startup probe unavailable; admin recovery remains "
             "available, outbound messages may be interrupted."
         )
+    else:
+        if expected_bot_id is not None and me.id != expected_bot_id:
+            raise RuntimeError(
+                "Configured Telegram token identifies a different verified bot."
+            )
+        profile_available = True
     if profile_available:
         try:
             photos = await asyncio.wait_for(
@@ -146,10 +145,20 @@ async def _startup() -> None:
     with open("static/no_image.jpeg", "w") as destination:
         destination.write(bot_photo_id)
     if bot_photo_id and profile_available:
-        await MediaService.update_inaccessible_media(bot)
+        try:
+            await MediaService.update_inaccessible_media(bot)
+        except Exception:
+            logging.warning(
+                "Telegram media metadata unavailable at startup."
+            )
     validate_i18n()
     if bot_photo_id and profile_available:
-        await ButtonMediaRepository.init_buttons_media()
+        try:
+            await ButtonMediaRepository.init_buttons_media()
+        except Exception:
+            logging.warning(
+                "Legacy Telegram button media unavailable at startup."
+            )
     if config.CRYPTO_FORWARDING_MODE:
         for cryptocurrency in Cryptocurrency:
             forwarding_address = cryptocurrency.get_forwarding_address()
