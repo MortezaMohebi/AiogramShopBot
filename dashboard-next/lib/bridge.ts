@@ -53,6 +53,7 @@ const SAFE_CODES = new Set([
   "invalid_relay_worker", "relay_worker_exists",
   "relay_worker_not_found", "relay_worker_not_verified",
   "relay_route_not_supported", "invalid_relay_priority",
+  "relay_priority_taken",
   "relay_route_must_pause", "relay_activation_not_ready",
   "relay_pool_disabled", "relay_probe_failed",
   "relay_route_unavailable", "relay_secret_unreadable",
