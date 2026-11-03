@@ -317,7 +317,7 @@ def main() -> int:
         choices=(
             "info", "init", "config", "start", "ports", "connect",
             "disconnect",
-            "doctor", "credentials", "status", "logs", "test",
+            "doctor", "credentials", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -335,6 +335,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py doctor")
         print("  python3 scripts/codespace_setup.py disconnect")
         print("  python3 scripts/codespace_setup.py credentials")
+        print("  python3 scripts/codespace_setup.py demo")
         return 0
     if args.command == "init":
         init()
@@ -365,6 +366,10 @@ def main() -> int:
         return compose(
             "exec", "-T", "app", "python", "-m",
             "scripts.codespace_connect", "--unregister",
+        )
+    if args.command == "demo":
+        return compose(
+            "exec", "-T", "app", "python", "-m", "scripts.codespace_demo"
         )
     if args.command == "doctor":
         code = compose(
