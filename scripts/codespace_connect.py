@@ -47,13 +47,14 @@ async def check_provider(*, register: bool, unregister: bool) -> None:
                 print("Telegram webhook: points elsewhere, preserved")
         elif register:
             # Idempotent and non-destructive to pending customer updates.
-            if info.url != expected_tg:
-                await tg_bot.set_webhook(
-                    url=expected_tg,
-                    secret_token=config.WEBHOOK_SECRET_TOKEN,
-                    drop_pending_updates=False,
-                    max_connections=2,
-                )
+            # Always refresh the webhook secret header too. A same-URL
+            # registration can otherwise retain an obsolete token.
+            await tg_bot.set_webhook(
+                url=expected_tg,
+                secret_token=config.WEBHOOK_SECRET_TOKEN,
+                drop_pending_updates=False,
+                max_connections=2,
+            )
             print("Telegram webhook: configured on Codespace gateway")
         else:
             status = "matching" if info.url == expected_tg else "not matching"
