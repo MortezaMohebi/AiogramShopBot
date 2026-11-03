@@ -409,6 +409,13 @@ class BroadcastWorker:
                 user_id=claim.user_id,
                 bale_mode=claim.bale_mode,
             )
+            if (
+                claim.platform == Platform.TELEGRAM
+                and self.telegram_transport_sync is not None
+            ):
+                # A rate-limit wait may have outlived a successful switch.
+                # Re-read the committed route immediately before each send.
+                await self.telegram_transport_sync()
             allowed, progress = await self._step_allowed(claim)
             if not allowed:
                 await self._complete(
