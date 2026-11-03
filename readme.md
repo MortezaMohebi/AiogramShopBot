@@ -1,3 +1,7 @@
+> **Codespaces login / error handling:** [Persian authentication and CSRF guide](docs/FRONTEND_AUTH_ERROR_HANDLING.fa.md). Run `bash scripts/setup_codespace.sh auth-smoke` after rebuilding the dashboard to test the proxy-safe login without administrator credentials.
+
+> **Live Telegram + Bale + Next.js on GitHub Codespaces:** [Docker Compose](compose.codespaces.yml) · [Persian setup guide](docs/CODESPACES_LIVE_SETUP.fa.md). Use dedicated test bots, keep port 3000 private, and explicitly register real webhooks only after checking port 8080.
+
 > **Isolated Telegram + Bale / Next.js integration lab:**
 > [Docker Compose test stack](compose.test.yml) ·
 > [Persian setup, QA and reset guide](docs/TEST_DOCKER_COMPOSE.fa.md).

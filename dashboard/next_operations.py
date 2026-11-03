@@ -38,6 +38,7 @@ from services.shop_refunds import ShopRefundService
 from services.shop_campaigns import ShopCampaignService
 from services.shop_broadcast_control import CampaignRejected
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
+from services.shop_sequence import next_display_position
 from utils.utils import hash_password
 
 router = APIRouter()
@@ -104,6 +105,38 @@ async def media_product_options(staff: Staff, session: Db) -> list[dict]:
     ]
 
 
+@router.get("/products/{product_id}/media")
+async def product_media_for_editor(
+    product_id: int, staff: Staff, session: Db,
+) -> dict:
+    """Load one product's private media for its integrated editor only."""
+    require_staff(staff, "content")
+    if await session.get(Product, product_id) is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    items = (
+        await session.execute(
+            select(ProductMedia)
+            .where(ProductMedia.product_id == product_id)
+            .order_by(ProductMedia.position, ProductMedia.id)
+            .limit(100)
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "id": item.id,
+                "filename": item.original_filename,
+                "kind": item.kind,
+                "mime_type": item.mime_type,
+                "size_bytes": item.size_bytes,
+                "caption": item.caption,
+                "is_published": item.is_published,
+            }
+            for item in items
+        ],
+    }
+
+
 @router.post("/upload/{target}", status_code=201)
 async def upload_media(
     target: str, request: Request, staff: Staff, session: Db,
@@ -128,7 +161,16 @@ async def upload_media(
         async with request.form(
             max_files=1, max_fields=10, max_part_size=8192
         ) as form:
-            position = bounded_number(form.get("position", "0"))
+            # Position is allocated in the database, not entered by users.
+            # Separate models keep independent display sequences.
+            sequence_model = {
+                "product": ProductMedia,
+                "testimonial": Testimonial,
+                "campaign": ShopCampaignMedia,
+            }[target]
+            position = await session.run_sync(
+                lambda sync: next_display_position(sync, sequence_model)
+            )
             caption = form.get("caption", "")
             if not isinstance(caption, str):
                 raise HTTPException(status_code=422, detail="Invalid caption")

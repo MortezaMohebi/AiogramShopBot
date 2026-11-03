@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import { statusLabel } from "@/lib/utils";
+import { uploadErrorMessage } from "@/lib/upload-errors";
 
 type Params = Promise<{ id: string }>;
 type Query = Promise<{ saved?: string; error?: string }>;
@@ -43,7 +44,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
     <div>
       <PageHeading title={`کمپین «${campaign.title}»`} description="بررسی دستی رسیدهای نامشخص و کنترل توقف؛ تغییر وضعیت پرداخت یا ارسال مجدد خودکار انجام نمی‌شود." />
       {query.saved ? <p role="status" className="mb-5 rounded-lg bg-accent p-3 text-sm">عملیات مدیریت رسانه ثبت شد. وضعیت پرونده و فایل‌ها را بررسی کنید.</p> : null}
-      {query.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">درخواست انجام نشد. وضعیت Draft، محدودیت فایل و مدارک عملیات را بررسی کنید. در وضعیت نامشخص بله، بدون بررسی دوباره تلاش نکنید.</p> : null}
+      {query.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{uploadErrorMessage(query.error, "درخواست انجام نشد. وضعیت Draft، محدودیت فایل و مدارک عملیات را بررسی کنید. در وضعیت نامشخص بله، بدون بررسی دوباره تلاش نکنید.")}</p> : null}
       <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
         <Card>
           <CardHeader><CardTitle>وضعیت ارسال</CardTitle></CardHeader>

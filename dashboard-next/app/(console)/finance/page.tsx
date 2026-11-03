@@ -60,7 +60,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
         <Card>
           <CardHeader><CardTitle>اصلاح اعتبار با سند</CardTitle></CardHeader>
           <CardContent>
-            {limit > 0n ? (
+            {limit > BigInt(0) ? (
               <form action={adjustWallet} className="space-y-3">
                 <input type="hidden" name="operation_id" value={randomUUID()} />
                 <p className="text-xs text-muted-foreground">سقف مجاز هر عملیات: {formatIrr(capabilities.wallet_adjustment_limit_irr)}. هر عملیات کلید مستقل و ثبت در Ledger دارد.</p>

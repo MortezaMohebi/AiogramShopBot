@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict
@@ -18,7 +19,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +39,8 @@ from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
 from models.shop_staff import ShopStaff
+from models.shop_product_visibility import ShopProductVisibility
+from services.shop_sequence import next_display_position
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
@@ -223,7 +226,6 @@ class CategoryPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=255)
-    position: int = Field(default=0, ge=0, le=1_000_000)
     is_published: bool = False
 
 
@@ -237,29 +239,32 @@ class CategoryPatch(BaseModel):
 
 
 class ProductPayload(BaseModel):
-    """A new product with exact IRR price and optional independent Stars price."""
+    """Create a product; merchant SKU and optional description may be blank."""
 
     model_config = ConfigDict(extra="forbid")
-    sku: str = Field(min_length=1, max_length=64)
+    sku: str = Field(default="", max_length=64)
     name: str = Field(min_length=1, max_length=255)
-    description: str = Field(min_length=1, max_length=40_000)
+    description: str = Field(default="", max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int = Field(ge=0, le=PRICE_LIMIT)
     stock_quantity: int = Field(default=0, ge=0, le=100_000_000)
-    position: int = Field(default=0, ge=0, le=1_000_000)
     product_type: Literal["physical", "digital"] = "physical"
     requires_shipping: bool = True
     price_stars: int | None = Field(default=None, ge=1)
     is_published: bool = False
+    show_description: bool = True
+    show_stock: bool = True
+    show_media: bool = True
+    show_reviews: bool = True
 
 
 class ProductPatch(BaseModel):
-    """Patch without silently resetting values omitted by the editor."""
+    """Allow explicit visibility changes without changing archived orders."""
 
     model_config = ConfigDict(extra="forbid")
-    sku: str | None = Field(default=None, min_length=1, max_length=64)
+    sku: str | None = Field(default=None, max_length=64)
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, min_length=1, max_length=40_000)
+    description: str | None = Field(default=None, max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int | None = Field(default=None, ge=0, le=PRICE_LIMIT)
     stock_quantity: int | None = Field(default=None, ge=0, le=100_000_000)
@@ -268,6 +273,23 @@ class ProductPatch(BaseModel):
     requires_shipping: bool | None = None
     price_stars: int | None = Field(default=None, ge=1)
     is_published: bool | None = None
+    show_description: bool | None = None
+    show_stock: bool | None = None
+    show_media: bool | None = None
+    show_reviews: bool | None = None
+
+
+PUBLIC_OPTIONAL_FIELDS = (
+    "show_description", "show_stock", "show_media", "show_reviews",
+)
+
+
+def public_field_values(row: ShopProductVisibility | None) -> dict[str, bool]:
+    """Apply backwards-compatible visible defaults for existing products."""
+    return {
+        name: getattr(row, name) if row is not None else True
+        for name in PUBLIC_OPTIONAL_FIELDS
+    }
 
 
 class CampaignPayload(BaseModel):
@@ -420,7 +442,11 @@ async def create_category(
 ) -> dict:
     """Create a database-backed category, never hardcode navigation content."""
     require_staff(staff, "content")
-    record = ShopCategory(**payload.model_dump())
+    fields = payload.model_dump()
+    fields["position"] = await session.run_sync(
+        lambda sync: next_display_position(sync, ShopCategory)
+    )
+    record = ShopCategory(**fields)
     session.add(record)
     try:
         await session.commit()
@@ -490,7 +516,8 @@ async def product(product_id: int, staff: Staff, session: Db) -> dict:
     item = await session.get(Product, product_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return product_data(item)
+    visibility = await session.get(ShopProductVisibility, product_id)
+    return {**product_data(item), **public_field_values(visibility)}
 
 
 def validated_product_values(
@@ -517,7 +544,16 @@ async def create_product(
 ) -> dict:
     """Create a product with a unique SKU and safe unpublished default."""
     require_staff(staff, "content")
-    fields = validated_product_values(payload.model_dump())
+    fields = payload.model_dump()
+    visibility = {name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS}
+    # Keep historic NOT NULL and UNIQUE constraints without forcing the
+    # merchant to invent an SKU for every new product.
+    fields["sku"] = fields["sku"].strip() or f"AUTO-{secrets.token_hex(8).upper()}"
+    fields["description"] = fields["description"].strip()
+    fields["position"] = await session.run_sync(
+        lambda sync: next_display_position(sync, Product)
+    )
+    fields = validated_product_values(fields)
     category_id = fields.get("category_id")
     if category_id is not None and not await session.get(
         ShopCategory, category_id
@@ -526,11 +562,12 @@ async def create_product(
     record = Product(**fields)
     session.add(record)
     try:
+        await session.flush()
+        session.add(ShopProductVisibility(product_id=record.id, **visibility))
         await session.commit()
     except IntegrityError:
         await session.rollback()
         raise HTTPException(status_code=409, detail="SKU already exists") from None
-    await session.refresh(record)
     return {"id": record.id}
 
 
@@ -544,12 +581,21 @@ async def edit_product(
     if record is None:
         raise HTTPException(status_code=404, detail="Product not found")
     fields = payload.model_dump(exclude_unset=True)
+    visibility = {
+        name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS
+        if name in fields
+    }
+    for name, value in visibility.items():
+        if value is None:
+            raise HTTPException(status_code=422, detail=f"{name} must be boolean")
     for required in (
-        "sku", "name", "description", "price_irr", "stock_quantity",
+        "name", "description", "price_irr", "stock_quantity",
         "position", "product_type", "requires_shipping", "is_published",
     ):
         if required in fields and fields[required] is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
+    if "sku" in fields:
+        fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields = validated_product_values(fields, current=record)
     category_id = fields.get("category_id")
     if category_id is not None and not await session.get(
@@ -558,6 +604,15 @@ async def edit_product(
         raise HTTPException(status_code=422, detail="Category not found")
     for key, value in fields.items():
         setattr(record, key, value)
+    if visibility:
+        existing_policy = await session.get(ShopProductVisibility, product_id)
+        if existing_policy is None:
+            session.add(ShopProductVisibility(
+                product_id=product_id, **visibility,
+            ))
+        else:
+            for key, value in visibility.items():
+                setattr(existing_policy, key, value)
     try:
         await session.commit()
     except IntegrityError:
@@ -1137,3 +1192,206 @@ async def edit_coupon(
 from dashboard.next_operations import router as next_operations_router  # noqa: E402
 
 router.include_router(next_operations_router)
+
+
+@router.get("/bot-connections")
+async def bot_connections(staff: Staff, session: Db) -> dict:
+    """Expose actual Bot API deployment modes without secrets or side effects.
+
+    Configuration is server-owned, so the dashboard cannot silently move a
+    webhook to a malicious external destination or start a second poller.
+    """
+    require_staff(staff, "superadmin")
+    await session.execute(text("SELECT 1"))
+
+    import os
+    from redis.asyncio import Redis
+
+    pending_mode = None
+    try:
+        cache = Redis(
+            host=config.REDIS_HOST,
+            password=config.REDIS_PASSWORD,
+            decode_responses=True,
+            socket_connect_timeout=2,
+        )
+        try:
+            pending_mode = await cache.get("shop:pending:telegram:update_mode")
+        finally:
+            await cache.aclose()
+    except Exception:
+        # Do not hide the actual deployment mode if Redis is unavailable.
+        pending_mode = None
+
+    from urllib.parse import urlsplit
+
+    provider_origin = config.WEBHOOK_HOST
+    if provider_origin:
+        parsed = urlsplit(provider_origin)
+        provider_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    return {
+        "database": "connected",
+        "telegram": {
+            "configured": bool(config.TOKEN),
+            "update_mode": config.TELEGRAM_UPDATE_MODE,
+            "pending_update_mode": pending_mode,
+            "api_transport": config.TELEGRAM_API_MODE,
+            "webhook_url": (
+                config.WEBHOOK_URL if config.TELEGRAM_UPDATE_MODE == "webhook"
+                else None
+            ),
+            "worker_configured": bool(config.TELEGRAM_WORKER_URL),
+            "proxy_configured": bool(config.TELEGRAM_PROXY_URL),
+            "supported_update_modes": ["webhook", "getUpdates"],
+        },
+        "bale": {
+            "configured": bool(config.BALE_BOT_TOKEN),
+            "update_mode": "webhook",
+            # Never expose Bale's secret path or provider token to the UI.
+            "webhook_url_label": (
+                f"{provider_origin}/webhooks/bale/[private-secret]"
+                if provider_origin and config.BALE_BOT_TOKEN
+                else None
+            ),
+            "supported_update_modes": ["webhook"],
+        },
+        "runtime_note": (
+            "Transport mode and host are deployment settings. "
+            "Changing them requires an explicit controlled restart; "
+            "saving storefront text does not alter provider webhooks."
+        ),
+    }
+
+
+class TelegramModeRequest(BaseModel):
+    """Explicitly stage a mode switch; no implicit provider mutation."""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["webhook", "polling"]
+    confirmation: str
+
+
+@router.post("/bot-connections/telegram-mode-request")
+async def request_telegram_mode(
+    payload: TelegramModeRequest, staff: Staff,
+) -> dict:
+    """Stage the mode for supervised Codespaces activation after a restart.
+
+    A Telegram webhook and getUpdates cannot receive updates concurrently.
+    Never call deleteWebhook or launch a second poller from a web request.
+    """
+    require_staff(staff, "superadmin")
+
+    import os
+    if (
+        os.environ.get("CODESPACE_FRESH_SCHEMA") != "true"
+        or os.environ.get("POSTGRES_DB") != "shop_codespace"
+    ):
+        raise HTTPException(
+            status_code=403, detail="Controlled activation unavailable"
+        )
+    if payload.confirmation != "STAGE_TELEGRAM_MODE":
+        raise HTTPException(
+            status_code=422, detail="Explicit confirmation required"
+        )
+
+    from redis.asyncio import Redis
+
+    cache = Redis(
+        host=config.REDIS_HOST, password=config.REDIS_PASSWORD,
+        decode_responses=True, socket_connect_timeout=2,
+    )
+    try:
+        await cache.set("shop:pending:telegram:update_mode", payload.mode)
+    finally:
+        await cache.aclose()
+    return {
+        "ok": True,
+        "pending_update_mode": payload.mode,
+        "activation": "codespace_restart_required",
+    }
+
+
+@router.get("/bot-connections/probe")
+async def bot_connection_probe(staff: Staff) -> dict:
+    """Check provider getMe/getWebhookInfo without modifying any webhook.
+
+    Provider failures are represented as statuses instead of crashing
+    the complete administration dashboard.
+    """
+    require_staff(staff, "superadmin")
+    import asyncio
+
+    from aiohttp import ClientSession, ClientTimeout
+    from channels.bale import BaleTransport
+    from utils.telegram import create_bot, create_telegram_session
+
+    telegram: dict = {"status": "not_configured"}
+    bale: dict = {"status": "not_configured"}
+
+    if config.TOKEN:
+        telegram_bot = None
+        try:
+            telegram_bot = create_bot(
+                config.TOKEN, create_telegram_session()
+            )
+            info = await asyncio.wait_for(
+                telegram_bot.get_webhook_info(), timeout=8
+            )
+            account = await asyncio.wait_for(
+                telegram_bot.get_me(), timeout=8
+            )
+            telegram = {
+                "status": "connected",
+                "username": account.username,
+                "pending_updates": info.pending_update_count or 0,
+                "webhook_matches": (
+                    info.url == config.WEBHOOK_URL
+                    if config.TELEGRAM_UPDATE_MODE == "webhook"
+                    else not bool(info.url)
+                ),
+                "provider_mode": (
+                    "webhook" if info.url else "getUpdates"
+                ),
+            }
+        except Exception:
+            telegram = {"status": "unavailable"}
+        finally:
+            if telegram_bot is not None:
+                await telegram_bot.session.close()
+
+    if config.BALE_BOT_TOKEN:
+        try:
+            async with ClientSession(
+                timeout=ClientTimeout(total=8),
+                trust_env=False,
+            ) as http:
+                transport = BaleTransport(config.BALE_BOT_TOKEN, http)
+                identity = await transport._call("getMe", {})
+                bale = {
+                    "status": "connected",
+                    "username": (
+                        identity.get("username")
+                        if isinstance(identity, dict)
+                        else None
+                    ),
+                }
+                try:
+                    info = await transport._call("getWebhookInfo", {})
+                except Exception:
+                    bale["webhook_status"] = "unsupported_or_unavailable"
+                else:
+                    expected = (
+                        f"{config.WEBHOOK_HOST}/webhooks/bale/"
+                        f"{config.BALE_WEBHOOK_SECRET}"
+                    )
+                    bale["webhook_status"] = (
+                        "matching" if isinstance(info, dict)
+                        and info.get("url") == expected
+                        else "different"
+                    )
+        except Exception:
+            bale = {"status": "unavailable"}
+
+    return {"telegram": telegram, "bale": bale}

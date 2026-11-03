@@ -27,3 +27,6 @@ data/
 
 # Browser test artifacts are never included in images or Git.
 .test-artifacts/
+
+# Never put the owner Codespace credentials into any image or build layer.
+.codespaces/

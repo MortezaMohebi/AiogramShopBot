@@ -1,138 +1,108 @@
 import "server-only";
-
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { readSession } from "@/lib/session";
 import type { Staff } from "@/lib/types";
 
-interface Identity {
-  id: number;
-  version: number;
-}
-
+interface Identity { id: number; version: number; sid?: string }
+type Method = "GET" | "POST" | "PATCH" | "DELETE";
+const SAFE_CODES = new Set([
+  "session_expired", "permission_denied", "reauthentication_required", "invalid_credentials",
+  "mfa_required", "invalid_verification", "mfa_not_configured", "mfa_unavailable",
+  "mfa_already_enabled", "mfa_enrollment_expired", "password_unchanged", "invalid_timezone",
+  "invalid_request", "session_not_found", "temporarily_locked", "security_service_unavailable",
+  "operation_not_found", "invalid_operation_state", "idempotency_conflict",
+  "connection_change_in_progress", "configuration_changed", "legacy_endpoint_retired",
+  "connection_worker_unavailable", "reconciliation_required",
+]);
 export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
+  constructor(readonly status: number, message: string, readonly requestId?: string, readonly code?: string) {
+    super(message); this.name = "ApiError";
   }
 }
-
+/** Log metadata only: never URL queries, bodies, session bearers or provider errors. */
+function bridgeFailure(path: string, method: Method, status: number,
+  code: "configuration" | "network" | "timeout" | "http" | "invalid_json",
+  requestId = randomUUID(), safeCode?: string): ApiError {
+  const route = path.split("?", 1)[0].replace(/\/[0-9]+(?=\/|$)/g, "/:id").slice(0, 160);
+  console.warn("[shop-admin/bridge]", { requestId, method, route, status, code });
+  return new ApiError(status, `Administrative API ${code} (${requestId})`, requestId, safeCode);
+}
 function environment(): { host: URL; secret: string } {
-  const host = process.env.SHOP_FASTAPI_INTERNAL_URL;
-  const secret = process.env.NEXT_ADMIN_BRIDGE_SECRET ?? "";
-  if (!host || secret.length < 32) {
-    throw new Error("Next dashboard backend bridge is not configured.");
-  }
+  const host = process.env.SHOP_FASTAPI_INTERNAL_URL, secret = process.env.NEXT_ADMIN_BRIDGE_SECRET ?? "";
+  if (!host || secret.length < 32) throw new Error("Bridge configuration missing");
   const origin = new URL(host);
-  if (origin.protocol !== "http:" && origin.protocol !== "https:") {
-    throw new Error("Unsupported FastAPI bridge URL scheme.");
-  }
+  if (!["http:", "https:"].includes(origin.protocol)) throw new Error("Unsupported bridge scheme");
   return { host: origin, secret };
 }
-
-/** Sign the EXACT outgoing bytes; binary and JSON share the same HMAC policy. */
-export async function bridgeResponse(
-  path: string,
-  method: "GET" | "POST" | "PATCH" | "DELETE",
-  body: Uint8Array | string | null,
-  contentType: string | null,
-  identity: Identity | null,
-  timeoutMs = 15_000,
-): Promise<Response> {
-  const { host, secret } = environment();
-  if (!path.startsWith("/") || path.startsWith("//")) {
-    throw new Error("Invalid internal API path.");
-  }
+/** Sign exact bytes and bind the backend session to this request; never auto-retry writes. */
+export async function bridgeResponse(path: string, method: Method, body: Uint8Array | string | null,
+  contentType: string | null, identity: Identity | null, timeoutMs = 15_000): Promise<Response> {
+  if (!path.startsWith("/") || path.startsWith("//")) throw new Error("Invalid internal API path.");
+  let connection: ReturnType<typeof environment>;
+  try { connection = environment(); }
+  catch { throw bridgeFailure(`/internal/admin/v1${path}`, method, 503, "configuration"); }
+  const { host, secret } = connection;
   const url = new URL(`/internal/admin/v1${path}`, host);
-  if (!url.pathname.startsWith("/internal/admin/v1/")) {
-    throw new Error("Invalid internal admin route.");
-  }
-  const bytes = typeof body === "string"
-    ? Buffer.from(body, "utf8")
-    : body === null ? new Uint8Array() : body;
+  if (!url.pathname.startsWith("/internal/admin/v1/")) throw new Error("Invalid internal admin route.");
+  const bytes = typeof body === "string" ? Buffer.from(body, "utf8") : body === null ? new Uint8Array() : body;
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const target = url.pathname + url.search;
-  const digest = createHash("sha256").update(bytes).digest("hex");
-  const staff = String(identity?.id ?? 0);
-  const version = String(identity?.version ?? 0);
-  const signature = createHmac("sha256", secret)
-    .update([timestamp, method, target, digest, staff, version].join("\n"))
-    .digest("hex");
-
-  const response = await fetch(url, {
-    method,
-    headers: {
-      ...(contentType ? { "content-type": contentType } : {}),
-      "x-shop-time": timestamp,
-      "x-shop-signature": signature,
-      "x-shop-staff": staff,
-      "x-shop-version": version,
-    },
-    // Request bytes must remain byte-for-byte identical after signing.
-    body: method === "GET" || body === null ? undefined : new Uint8Array(bytes),
-    cache: "no-store",
-    redirect: "error",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-
+  const target = url.pathname + url.search, digest = createHash("sha256").update(bytes).digest("hex");
+  const staff = String(identity?.id ?? 0), version = String(identity?.version ?? 0);
+  const signature = createHmac("sha256", secret).update([timestamp, method, target, digest, staff, version].join("\n")).digest("hex");
+  const requestId = randomUUID(), signal = AbortSignal.timeout(timeoutMs);
+  const sessionHeaders: Record<string, string> = identity?.sid ? {
+    "x-shop-session": identity.sid,
+    "x-shop-session-proof": createHmac("sha256", secret).update(`session-v1\n${signature}\n${identity.sid}`).digest("hex"),
+  } : {};
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method, headers: { ...(contentType ? { "content-type": contentType } : {}),
+        "x-shop-time": timestamp, "x-shop-signature": signature, "x-shop-staff": staff,
+        "x-shop-version": version, "x-shop-request-id": requestId, ...sessionHeaders },
+      body: method === "GET" || body === null ? undefined : new Uint8Array(bytes),
+      cache: "no-store", redirect: "error", signal,
+    });
+  } catch {
+    throw bridgeFailure(url.pathname, method, signal.aborted ? 504 : 503, signal.aborted ? "timeout" : "network", requestId);
+  }
   if (!response.ok) {
-    let detail = `API error ${response.status}`;
-    try {
-      const result: unknown = await response.json();
-      if (
-        typeof result === "object" && result !== null &&
-        "detail" in result && typeof result.detail === "string"
-      ) {
-        detail = result.detail;
-      }
-    } catch {
-      // No stack traces, HTML bodies, cookies or provider details reach the UI.
+    // Accept only short known error codes, never arbitrary FastAPI/provider text.
+    let safeCode: string | undefined;
+    const reader = response.body?.getReader();
+    if (reader) {
+      try {
+        const parts: Uint8Array[] = []; let size = 0;
+        while (size <= 4096) {
+          const { done, value } = await reader.read(); if (done) break;
+          size += value.byteLength; if (size > 4096) break; parts.push(value);
+        }
+        if (size <= 4096) {
+          const data: unknown = JSON.parse(Buffer.concat(parts).toString("utf8"));
+          if (data && typeof data === "object" && "detail" in data && typeof data.detail === "string" && SAFE_CODES.has(data.detail)) safeCode = data.detail;
+        }
+      } catch { /* Arbitrary HTML/traceback is discarded. */ }
+      finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
     }
-    throw new ApiError(response.status, detail);
+    throw bridgeFailure(url.pathname, method, response.status, "http", requestId, safeCode);
   }
   return response;
 }
-
-/** Strictly JSON-only convenience wrapper for ordinary server actions. */
-export async function bridgeFetch<T>(
-  path: string,
-  method: "GET" | "POST" | "PATCH" | "DELETE",
-  data: unknown,
-  identity: Identity | null,
-): Promise<T> {
-  const raw = method === "GET" || method === "DELETE"
-    ? null
-    : JSON.stringify(data ?? {});
-  const response = await bridgeResponse(
-    path, method, raw, raw === null ? null : "application/json", identity,
-  );
-  return (await response.json()) as T;
+export async function bridgeFetch<T>(path: string, method: Method, data: unknown,
+  identity: Identity | null, timeoutMs = 15_000): Promise<T> {
+  const raw = method === "GET" || method === "DELETE" ? null : JSON.stringify(data ?? {});
+  const response = await bridgeResponse(path, method, raw, raw === null ? null : "application/json", identity, timeoutMs);
+  try { return await response.json() as T; }
+  catch { throw bridgeFailure(`/internal/admin/v1${path}`, method, 502, "invalid_json"); }
 }
-
-/** Verify a live staff account on EVERY server-rendered admin request. */
 export async function currentStaff(): Promise<Staff> {
-  const session = await readSession();
-  if (!session) redirect("/login");
-  try {
-    return await bridgeFetch<Staff>("/auth/me", "GET", null, session);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
-      redirect("/login?expired=1");
-    }
-    throw error;
-  }
+  const session = await readSession(); if (!session) redirect("/login");
+  try { return await bridgeFetch<Staff>("/auth/me", "GET", null, session); }
+  catch (error) { if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1"); throw error; }
 }
-
-/** Role-sensitive backend call; Python rechecks staff against PostgreSQL. */
-export async function adminFetch<T>(
-  path: string,
-  method: "GET" | "POST" | "PATCH" | "DELETE" = "GET",
-  data: unknown = null,
-): Promise<T> {
-  const session = await readSession();
-  if (!session) redirect("/login");
-  return bridgeFetch<T>(path, method, data, session);
+export async function adminFetch<T>(path: string, method: Method = "GET", data: unknown = null): Promise<T> {
+  const session = await readSession(); if (!session) redirect("/login");
+  try { return await bridgeFetch<T>(path, method, data, session); }
+  catch (error) { if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1"); throw error; }
 }

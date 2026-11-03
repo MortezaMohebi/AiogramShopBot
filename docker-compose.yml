@@ -62,6 +62,9 @@ services:
     build:
       context: ./dashboard-next
       dockerfile: Dockerfile
+      args:
+        # This PUBLIC CDN origin must be available DURING the Next.js build.
+        NEXT_ADMIN_CDN_URL: "${NEXT_ADMIN_CDN_URL:-}"
     env_file:
       - .env.next-admin
     environment:

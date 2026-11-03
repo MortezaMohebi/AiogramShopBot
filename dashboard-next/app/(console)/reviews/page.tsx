@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Paginated } from "@/lib/types";
+import { uploadErrorMessage } from "@/lib/upload-errors";
 
 type Review = {
   id: number; product_id: number; product_name: string;
@@ -33,7 +34,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Para
     <div className="space-y-6">
       <PageHeading title="رضایت مشتریان" description="ثبت متن یا فایل، بررسی و تأیید مستقل برای نمایش در فروشگاه هر دو پیام‌رسان." />
       {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">تغییرات رضایت مشتری ثبت شد.</p> : null}
-      {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">عملیات انجام نشد؛ محدودیت فایل، متن یا مجوز انتشار را بررسی کنید.</p> : null}
+      {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{uploadErrorMessage(params.error, "عملیات انجام نشد؛ محدودیت فایل، متن یا مجوز انتشار را بررسی کنید.")}</p> : null}
       <Card>
         <CardHeader><CardTitle>افزودن رضایت جدید</CardTitle></CardHeader>
         <CardContent>

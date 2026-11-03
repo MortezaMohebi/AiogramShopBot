@@ -1,94 +1,48 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createStaff, updateStaff } from "@/app/(console)/staff/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 
-type StaffMember = {
-  id: number; username: string; role: string; is_active: boolean; created_at: string;
+const roles = [["viewer", "مشاهده"], ["sales", "فروش"], ["content", "محتوا"], ["finance", "مالی"], ["marketing", "بازاریابی"], ["superadmin", "مدیر اصلی"]] as const;
+const errors: Record<string, string> = {
+  reauthentication_required: "پیش از تغییر کارکنان، در حساب من رمز فعلی و کد دومرحله‌ای را تأیید کنید.",
+  staff_username_exists: "نام کاربری تکراری است.", last_admin_protected: "آخرین مدیر اصلی فعال قابل غیرفعال‌سازی نیست.",
+  use_my_account: "برای تغییر رمز شخصی از حساب من استفاده کنید.",
 };
-type Params = Promise<{saved?: string; error?: string}>;
-const roles = [
-  ["superadmin", "مدیر اصلی"], ["sales", "فروش"], ["content", "محتوا"],
-  ["finance", "مالی"], ["marketing", "بازاریابی"], ["viewer", "مشاهده"],
-] as const;
+type Member = { id: number; username: string; role: string; is_active: boolean };
 
-/** Superadmin-only database staff management with session revocation. */
-export default async function StaffPage({ searchParams }: { searchParams: Params }) {
+/** Account lifecycle controls with least-privilege defaults and clear reauthentication. */
+export default async function StaffPage({ searchParams }: { searchParams: Promise<{ saved?: string; error?: string }> }) {
   const current = await currentStaff();
   if (current.role !== "superadmin") notFound();
-  const [members, params] = await Promise.all([
-    adminFetch<StaffMember[]>("/staff"), searchParams,
-  ]);
-  return (
-    <div className="space-y-6">
-      <PageHeading title="مدیران و دسترسی‌ها" description="حساب‌های واقعی کارکنان؛ ویرایش نقش، غیرفعال‌سازی و تغییر رمز، نشست‌های قدیمی را باطل می‌کند." />
-      {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">تغییرات حساب مدیریتی ثبت شد.</p> : null}
-      {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">عملیات انجام نشد. تکراری‌نبودن نام، رمز حداقل ۱۴ نویسه و محدودیت آخرین مدیر اصلی را بررسی کنید.</p> : null}
-      <Card>
-        <CardHeader><CardTitle>افزودن مدیر</CardTitle></CardHeader>
-        <CardContent>
-          <form action={createStaff} className="grid gap-4 lg:grid-cols-2">
-            <label className="space-y-2 text-sm">نام کاربری انگلیسی
-              <Input name="username" pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,79}" minLength={3} maxLength={80} required autoComplete="off" dir="ltr" />
-            </label>
-            <label className="space-y-2 text-sm">نقش
-              <select name="role" className="h-10 w-full rounded-md border border-input bg-background px-3">
-                {roles.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
-              </select>
-            </label>
-            <label className="space-y-2 text-sm">رمز جدید (حداقل ۱۴ نویسه)
-              <Input name="password" type="password" minLength={14} maxLength={256} required autoComplete="new-password" />
-            </label>
-            <label className="space-y-2 text-sm">تأیید عملیات
-              <Input name="confirmation" required placeholder="CREATE_STAFF" dir="ltr" />
-            </label>
-            <div className="lg:col-span-2"><Button type="submit">ساخت حساب</Button></div>
-          </form>
-        </CardContent>
-      </Card>
-      <div className="grid gap-4">
-        {members.map((member) => (
-          <Card key={member.id}>
-            <CardContent className="space-y-4 py-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <strong dir="ltr">{member.username}</strong>
-                  <p className="mt-1 text-xs text-muted-foreground">شناسه #{member.id} · عضویت {new Date(member.created_at).toLocaleDateString("fa-IR")}</p>
-                </div>
-                <Badge tone={member.is_active ? "success" : "danger"}>{member.is_active ? "فعال" : "غیرفعال"}</Badge>
-              </div>
-              <form action={updateStaff} className="grid gap-3 md:grid-cols-2">
-                <input type="hidden" name="id" value={member.id} />
-                <input type="hidden" name="self" value={member.id === current.id ? "1" : "0"} />
-                {member.id !== current.id ? (
-                  <>
-                    <label className="space-y-1 text-sm">نقش
-                      <select name="role" defaultValue={member.role} className="h-10 w-full rounded-md border border-input bg-background px-3">
-                        {roles.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
-                      </select>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input name="is_active" type="checkbox" defaultChecked={member.is_active} className="size-4 accent-primary" />
-                      حساب فعال باشد
-                    </label>
-                  </>
-                ) : <p className="text-sm text-muted-foreground md:col-span-2">برای جلوگیری از قفل‌شدن پنل، نمی‌توانید نقش یا وضعیت حساب خود را تغییر دهید؛ تغییر رمز مجاز است.</p>}
-                <label className="space-y-1 text-sm">رمز تازه (اختیاری)
-                  <Input name="password" type="password" minLength={14} maxLength={256} autoComplete="new-password" placeholder="اگر تغییر ندارد، خالی بماند" />
-                </label>
-                <label className="space-y-1 text-sm">تأیید تغییر
-                  <Input name="confirmation" required dir="ltr" placeholder="UPDATE_STAFF" />
-                </label>
-                <div className="md:col-span-2"><Button type="submit" size="sm">ذخیره و ابطال نشست‌های قبلی</Button></div>
-              </form>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
+  const [members, params] = await Promise.all([adminFetch<Member[]>("/staff"), searchParams]);
+  return <div className="space-y-6">
+    <PageHeading title="مدیران و دسترسی‌ها" description="تغییر دسترسی با ثبت رویداد و ابطال نشست‌های قبلی؛ پیش‌فرض حساب جدید فقط مشاهده است." />
+    <p className="text-sm leading-7 text-muted-foreground">عملیات این صفحه به تأیید امنیتی پنج دقیقهٔ اخیر نیاز دارد. <Link className="underline" href="/account">حساب من و تأیید مجدد</Link> · <Link className="underline" href="/permissions">جدول مجوزهای نقش‌ها</Link></p>
+    {params.saved ? <p role="status" className="rounded-lg bg-accent p-3">تغییرات ثبت شد.</p> : null}
+    {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-destructive">{errors[params.error] ?? "ثبت انجام نشد. فیلدها، نشست و سطح دسترسی را بررسی کنید."}</p> : null}
+    <Card><CardHeader><CardTitle>افزودن کاربر پنل</CardTitle></CardHeader><CardContent>
+      <form action={createStaff} className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-2 text-sm">نام کاربری<Input name="username" dir="ltr" minLength={3} maxLength={80} pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,79}" required autoComplete="off" /></label>
+        <label className="space-y-2 text-sm">نقش<select name="role" defaultValue="viewer" className="h-10 w-full rounded border bg-background px-3">{roles.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
+        <label className="space-y-2 text-sm">رمز اولیه (حداقل ۱۴ نویسه)<Input name="password" type="password" minLength={14} maxLength={256} required autoComplete="new-password" /></label>
+        <label className="space-y-2 text-sm">تأیید ساخت: CREATE_STAFF<Input name="confirmation" dir="ltr" pattern="CREATE_STAFF" required /></label>
+        <Button type="submit">ساخت حساب</Button>
+      </form>
+    </CardContent></Card>
+    {members.map((member) => <Card key={member.id}><CardHeader><CardTitle><span dir="ltr">{member.username}</span> · {member.is_active ? "فعال" : "غیرفعال"}</CardTitle></CardHeader><CardContent>
+      {member.id === current.id ? <p className="text-sm">حساب فعلی شما. <Link href="/account" className="underline">تغییر رمز، MFA و نشست‌ها در حساب من</Link></p> : <form action={updateStaff} className="grid gap-4 md:grid-cols-2">
+        <input type="hidden" name="id" value={member.id} />
+        <label className="space-y-2 text-sm">نقش<select name="role" defaultValue={member.role} className="h-10 w-full rounded border bg-background px-3">{roles.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked={member.is_active} />حساب فعال باشد</label>
+        <label className="space-y-2 text-sm">بازنشانی رمز (اختیاری)<Input name="password" type="password" minLength={14} maxLength={256} autoComplete="new-password" /></label>
+        <label className="space-y-2 text-sm">تأیید تغییر: UPDATE_STAFF<Input name="confirmation" dir="ltr" pattern="UPDATE_STAFF" required /></label>
+        <Button type="submit" variant="outline">ذخیره و ابطال نشست‌های قبلی</Button>
+      </form>}
+    </CardContent></Card>)}
+  </div>;
 }

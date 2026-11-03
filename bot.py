@@ -3,6 +3,7 @@ import json
 import logging
 from contextlib import suppress
 import sys
+import os
 from hmac import compare_digest
 
 from aiohttp import ClientSession, ClientTimeout
@@ -111,15 +112,19 @@ async def _startup() -> None:
         else config.DEFAULT_MEDIA_FILE_ID
     )
     if not bot_photo_id:
-        raise RuntimeError(
-            "Configure DEFAULT_MEDIA_FILE_ID for legacy Telegram menus "
-            "or set a profile image for the bot before starting."
+        # Codespaces can start a brand-new bot without a profile photo.
+        # The shared shop uses text fallback; legacy photo-only screens
+        # remain unavailable until the bot receives a photo/file ID.
+        logging.warning(
+            "Telegram bot has no profile photo; add one for legacy media menus."
         )
     with open("static/no_image.jpeg", "w") as f:
         f.write(bot_photo_id)
-    await MediaService.update_inaccessible_media(bot)
+    if bot_photo_id:
+        await MediaService.update_inaccessible_media(bot)
     validate_i18n()
-    await ButtonMediaRepository.init_buttons_media()
+    if bot_photo_id:
+        await ButtonMediaRepository.init_buttons_media()
     if config.CRYPTO_FORWARDING_MODE:
         for cryptocurrency in Cryptocurrency:
             forwarding_address = cryptocurrency.get_forwarding_address()
@@ -137,10 +142,17 @@ async def _startup() -> None:
         except Exception as e:
             logging.warning(e)
 
-    if config.TELEGRAM_UPDATE_MODE == "webhook":
+    if config.TELEGRAM_UPDATE_MODE == "webhook" and (
+        os.environ.get("CODESPACE_MANUAL_WEBHOOK") == "true"
+    ):
+        logging.info(
+            "Codespaces webhook registration deferred until explicit connect."
+        )
+    elif config.TELEGRAM_UPDATE_MODE == "webhook":
         await bot.set_webhook(
             url=config.WEBHOOK_URL,
             secret_token=config.WEBHOOK_SECRET_TOKEN,
+            max_connections=2 if config.WEBHOOK_HOST.endswith(".app.github.dev") else 40,
         )
     else:
         # Telegram does not permit getUpdates while a webhook is active.
@@ -164,7 +176,7 @@ async def _shutdown() -> None:
             polling_task.cancel()
         with suppress(asyncio.CancelledError):
             await polling_task
-    else:
+    elif os.environ.get("CODESPACE_MANUAL_WEBHOOK") != "true":
         await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()
@@ -202,6 +214,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz() -> dict:
+    """Report live app database/Redis readiness to Docker only."""
+    from sqlalchemy import text
+    async with get_db_session() as session:
+        await session.execute(text("SELECT 1"))
+    if not await redis.ping():
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+    return {"ok": True, "runtime": "bot"}
+
+
 # Signed Next.js BFF. SQLAdmin remains intact during migration.
 app.include_router(next_admin_router)
 app.state.telegram_bot = bot

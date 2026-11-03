@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Menu, MessageCircle, X } from "lucide-react";
+import { Menu, MessageCircle, X } from "lucide-react";
+import { LogoutControl } from "@/components/blocks/logout-control";
 import type { Staff } from "@/lib/types";
 import { navigation } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -12,7 +13,6 @@ import { cn } from "@/lib/utils";
 export function Sidebar({ staff }: { staff: Staff }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [pathname]);
   const visible = navigation.filter((item) => item.roles.includes(staff.role));
 
   return (
@@ -65,6 +65,7 @@ export function Sidebar({ staff }: { staff: Staff }) {
                   <Link
                     href={href}
                     aria-current={current ? "page" : undefined}
+                    onClick={() => setOpen(false)}
                     className={cn(
                       "flex h-11 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
                       current
@@ -87,11 +88,7 @@ export function Sidebar({ staff }: { staff: Staff }) {
             <p className="text-sm font-semibold">{staff.username}</p>
             <p className="text-xs text-muted-foreground">نقش: {staff.role}</p>
           </div>
-          <form action="/api/auth/logout" method="post">
-            <button type="submit" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-              <LogOut className="size-4" /> خروج امن
-            </button>
-          </form>
+          <LogoutControl />
         </div>
       </aside>
     </>

@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "test:captcha": "node --experimental-strip-types --test tests/captcha-verification.test.mts",
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/*.test.mts",
+    "test:settings": "node --experimental-strip-types --test tests/shop-settings-route.test.mts tests/bridge.test.mts"
   },
   "engines": {
     "node": ">=22.0.0"

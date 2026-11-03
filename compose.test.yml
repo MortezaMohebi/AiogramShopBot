@@ -148,6 +148,8 @@ services:
     build:
       context: ./dashboard-next
       dockerfile: Dockerfile.test
+      args:
+        NEXT_ADMIN_CDN_URL: "${LAB_ADMIN_CDN_URL:-}"
     depends_on:
       api:
         condition: service_healthy
@@ -158,6 +160,8 @@ services:
       NEXT_ADMIN_PUBLIC_ORIGIN: "https://localhost:8443"
       NEXT_ADMIN_BRIDGE_SECRET: "${LAB_BRIDGE_SECRET:?Run python scripts/test_lab.py init}"
       NEXT_ADMIN_SESSION_SECRET: "${LAB_SESSION_SECRET:?Run python scripts/test_lab.py init}"
+      # Live provider keys are intentionally absent in the isolated lab.
+      NEXT_ADMIN_CAPTCHA_PROVIDER: "none"
     expose:
       - "3000"
     networks:
