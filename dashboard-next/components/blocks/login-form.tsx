@@ -43,7 +43,7 @@ export function LoginForm({ initialError, captcha }: Props) {
         if (code === "invalid_credentials") { const input = form.elements.namedItem("password"); if (input instanceof HTMLInputElement) input.value = ""; }
         return;
       }
-      if (!["/dashboard", "/account?enroll=1"].includes(reply.redirect ?? "")) throw new Error("service_unavailable");
+      if (reply.redirect !== "/dashboard" && reply.redirect !== "/account?enroll=1") throw new Error("service_unavailable");
       // A fresh navigation avoids a cached unauthenticated RSC tree.
       window.location.replace(reply.redirect);
     } catch (error) {
