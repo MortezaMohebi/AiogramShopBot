@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from channels.contracts import Platform
 from models.base import Base
 from models.shop_admin_control import AdminEvent
+from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
     DEFAULT_STORE_ID,
     LEGACY_BOT_IDS,
@@ -54,6 +55,7 @@ def db(monkeypatch):
         AdminEvent.__table__,
         ShopStore.__table__,
         ShopBot.__table__,
+        ShopBotOperations.__table__,
         ShopBotCredential.__table__,
         ShopBotRegistryEvent.__table__,
     ])
