@@ -29,7 +29,7 @@ from models.shop_content import (
     Product, ProductMedia, Testimonial, ShopCategory, ShopIdentity, ShopOrder, ShopSettings,
 )
 from models.shop_checkout import (
-    ShopOrderLine, ShopShippingMethod, ShopCoupon,
+    ShopOrderLine, ShopCartItem, ShopShippingMethod, ShopCoupon,
 )
 from models.shop_payment import ShopRefundCase, ShopPaymentAttempt
 from models.shop_engagement import (
@@ -643,6 +643,20 @@ async def edit_product(
                 "purchase_uom_id", record.purchase_uom_id,
             ),
         )
+        if selected != record.uom_id:
+            # Existing stock, open carts or historic orders are quantified in
+            # the original unit. Relabeling them would corrupt inventory.
+            has_cart = await session.scalar(select(ShopCartItem.id).where(
+                ShopCartItem.product_id == record.id,
+            ).limit(1))
+            has_order = await session.scalar(select(ShopOrderLine.id).where(
+                ShopOrderLine.product_id == record.id,
+            ).limit(1))
+            if record.stock_quantity or has_cart is not None or has_order is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="uom_locked",
+                )
         fields["uom_id"] = selected
         fields["purchase_uom_id"] = purchase
     fields = validated_product_values(fields, current=record)
