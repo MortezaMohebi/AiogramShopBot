@@ -340,6 +340,91 @@ def connect(*, yes: bool) -> int:
     )
 
 
+def pending_telegram_mode() -> str:
+    """Read the Redis-staged request from the isolated running app."""
+    read_env()
+    command = [
+        "docker", "compose",
+        "--project-name", PROJECT,
+        "--env-file", str(ENV_FILE),
+        "-f", str(COMPOSE_FILE),
+        "exec", "-T", "app",
+        "python", "-m", "scripts.codespace_pending_bot_mode",
+    ]
+    result = subprocess.run(
+        command, capture_output=True, text=True,
+        check=False, cwd=ROOT, timeout=25,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Cannot read the pending request from Redis. "
+            "Check that the app container is healthy."
+        )
+    mode = result.stdout.strip()
+    if mode not in {"none", "webhook", "polling"}:
+        raise RuntimeError("Unexpected pending mode response.")
+    return mode
+
+
+def apply_bot_mode() -> int:
+    """Apply an approved receiving mode through a safe container restart.
+
+    This action never silently drops Telegram pending updates. Switching
+    back to webhook requires explicit provider registration with connect.
+    """
+    mode = pending_telegram_mode()
+    if mode == "none":
+        print("No pending Telegram update-mode request.")
+        return 0
+
+    data = read_env()
+    old_mode = data.get("LIVE_TELEGRAM_UPDATE_MODE", "webhook")
+    print(f"Active Docker configuration: {old_mode}")
+    print(f"Requested Telegram receiving mode: {mode}")
+    print(
+        "The Telegram receiver will restart; getUpdates and webhook "
+        "cannot run concurrently. Pending Telegram updates are preserved."
+    )
+    if not sys.stdin.isatty():
+        raise RuntimeError("Interactive confirmation required.")
+    if input("Type APPLY to restart the Telegram receiver: ").strip() != "APPLY":
+        print("Activation cancelled; existing receiver preserved.")
+        return 1
+
+    if old_mode != mode:
+        data["LIVE_TELEGRAM_UPDATE_MODE"] = mode
+        write_env(data)
+
+    result = compose(
+        "up", "-d", "--no-build", "--force-recreate", "--wait", "app"
+    )
+    if result:
+        print(
+            "Recreation failed. The requested mode remains in the private "
+            "environment file; inspect app logs before retrying."
+        )
+        return result
+
+    clear = compose(
+        "exec", "-T", "app",
+        "python", "-m", "scripts.codespace_pending_bot_mode", "clear"
+    )
+    if clear:
+        print("Mode activated, but acknowledgement failed. Inspect Redis.")
+        return clear
+    if mode == "webhook":
+        print(
+            "Webhook mode is now running but provider registration is "
+            "manual: verify port 8080 and run 'connect' after approval."
+        )
+    else:
+        print(
+            "getUpdates mode is now running. Telegram webhook was deleted "
+            "without dropping pending updates. Bale webhook is unchanged."
+        )
+    return 0
+
+
 def main() -> int:
     """Provide repeatable setup, QA and teardown without shell interpolation."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -348,7 +433,7 @@ def main() -> int:
         choices=(
             "info", "init", "config", "start", "build-dashboard", "ports", "connect",
             "disconnect",
-            "doctor", "auth-smoke", "dashboard-probe", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
+            "doctor", "auth-smoke", "dashboard-probe", "apply-bot-mode", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -367,6 +452,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py doctor")
         print("  python3 scripts/codespace_setup.py auth-smoke")
         print("  python3 scripts/codespace_setup.py dashboard-probe")
+        print("  python3 scripts/codespace_setup.py apply-bot-mode")
         print("  python3 scripts/codespace_setup.py disconnect")
         print("  python3 scripts/codespace_setup.py credentials")
         print("  python3 scripts/codespace_setup.py new-bootstrap-password")
@@ -434,6 +520,8 @@ def main() -> int:
             "exec", "-T", "app", "python", "-m",
             "scripts.codespace_dashboard_probe",
         )
+    if args.command == "apply-bot-mode":
+        return apply_bot_mode()
     if args.command == "doctor":
         code = compose(
             "exec", "-T", "app", "python", "-m", "scripts.codespace_connect"
