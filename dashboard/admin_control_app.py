@@ -212,6 +212,13 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "overview", "reports",
                         "shipping", "coupons",
                     }
+                    # Read-only legacy views have explicit Store joins and
+                    # may aggregate safely. Mutation handlers stay unavailable
+                    # in a multi-Store selection until independently audited.
+                    if request.method == "GET":
+                        multi_safe.update({
+                            "media", "testimonials", "refunds", "wallets",
+                        })
                     if resource not in multi_safe and (
                         scope.current_store_id != DEFAULT_STORE_ID
                         or set(scope.active_store_ids) != {DEFAULT_STORE_ID}
