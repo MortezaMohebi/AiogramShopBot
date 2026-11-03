@@ -6,7 +6,7 @@ import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Category, Product } from "@/lib/types";
 
 type Params = Promise<{ id: string }>;
-type Search = Promise<{ error?: string }>;
+type Search = Promise<{ error?: string; saved?: string; ref?: string }>;
 
 /** Edit one existing product; historic paid-order snapshots remain untouched. */
 export default async function EditProductPage({
@@ -29,7 +29,18 @@ export default async function EditProductPage({
   return (
     <div>
       <PageHeading title={`ویرایش «${product.name}»`} description="تغییرات محصولات در هر دو ربات اعمال می‌شود؛ مبالغ سفارش‌های گذشته ثابت می‌مانند." />
-      {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ویرایش ذخیره نشد. داده‌ها یا تکراری‌بودن SKU را بررسی کنید.</p> : null}
+      {query.saved ? <p role="status" className="mb-4 rounded-lg border bg-muted p-3 text-sm">محصول ذخیره شد. اکنون می‌توانید رسانه‌های آن را اضافه یا ویرایش کنید.</p> : null}
+      {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+        {({
+          mfa: "ابتدا احراز هویت دومرحله‌ای حساب مدیر را فعال کنید.",
+          conflict: "کد SKU یا مشخصات یکتای محصول تکراری است.",
+          validation: "داده‌های محصول معتبر نیستند؛ نوع محصول و فیلدهای عددی را بررسی کنید.",
+          permission: "برای ویرایش محصول اجازه ندارید.",
+          service: "دسترسی به API یا پایگاه داده برقرار نشد.",
+          unknown: "ویرایش محصول انجام نشد؛ شمارهٔ پیگیری را بررسی کنید.",
+        } as Record<string, string>)[query.error] ?? "ویرایش محصول انجام نشد."}
+        {query.ref && /^[a-f0-9-]{36}$/i.test(query.ref) ? <span className="mt-2 block font-mono text-xs" dir="ltr">Request ID: {query.ref}</span> : null}
+      </p> : null}
       <ProductEditor product={product} categories={categories} media={media} />
     </div>
   );
