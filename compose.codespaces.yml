@@ -120,6 +120,7 @@ services:
       dockerfile: Dockerfile.codespaces
       args:
         NEXT_ADMIN_PUBLIC_ORIGIN: "${LIVE_DASHBOARD_ORIGIN:?Run setup}"
+        NEXT_ADMIN_CDN_URL: "${LIVE_ADMIN_CDN_URL:-}"
     environment:
       NODE_ENV: "production"
       NEXT_TELEMETRY_DISABLED: "1"
@@ -127,6 +128,10 @@ services:
       NEXT_ADMIN_PUBLIC_ORIGIN: "${LIVE_DASHBOARD_ORIGIN:?Run setup}"
       NEXT_ADMIN_BRIDGE_SECRET: "${LIVE_BRIDGE_SECRET:?Run setup}"
       NEXT_ADMIN_SESSION_SECRET: "${LIVE_SESSION_SECRET:?Run setup}"
+      NEXT_ADMIN_CAPTCHA_PROVIDER: "${LIVE_ADMIN_CAPTCHA_PROVIDER:-none}"
+      NEXT_ADMIN_CAPTCHA_SITE_KEY: "${LIVE_ADMIN_CAPTCHA_SITE_KEY:-}"
+      NEXT_ADMIN_CAPTCHA_SECRET_KEY: "${LIVE_ADMIN_CAPTCHA_SECRET_KEY:-}"
+      NEXT_ADMIN_RECAPTCHA_V3_MIN_SCORE: "${LIVE_ADMIN_RECAPTCHA_V3_MIN_SCORE:-0.5}"
     depends_on: {app: {condition: service_healthy}}
     networks: [private]
     ports: ["127.0.0.1:3000:3000"]

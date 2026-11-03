@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "typecheck": "tsc --noEmit",
+    "test:captcha": "node --experimental-strip-types --test tests/captcha-verification.test.mts",
     "lint": "eslint ."
   },
   "engines": {

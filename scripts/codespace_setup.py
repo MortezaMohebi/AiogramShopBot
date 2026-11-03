@@ -160,6 +160,12 @@ def init() -> None:
         "LIVE_TELEGRAM_WORKER_SECRET": "",
         "LIVE_DEFAULT_MEDIA_FILE_ID": "",
         "LIVE_BALE_PAYMENT_TOKEN": "",
+        # Optional CAPTCHA/CDN stay off unless the owner configures them.
+        "LIVE_ADMIN_CAPTCHA_PROVIDER": "none",
+        "LIVE_ADMIN_CAPTCHA_SITE_KEY": "",
+        "LIVE_ADMIN_CAPTCHA_SECRET_KEY": "",
+        "LIVE_ADMIN_RECAPTCHA_V3_MIN_SCORE": "0.5",
+        "LIVE_ADMIN_CDN_URL": "",
     }
     write_env(data)
     print("Codespaces secrets created (mode 0600); real Bot API tokens stored.")

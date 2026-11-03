@@ -9,7 +9,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ARG NEXT_ADMIN_PUBLIC_ORIGIN
+ARG NEXT_ADMIN_CDN_URL
 ENV NEXT_ADMIN_PUBLIC_ORIGIN=$NEXT_ADMIN_PUBLIC_ORIGIN
+ENV NEXT_ADMIN_CDN_URL=$NEXT_ADMIN_CDN_URL
 # BuildKit stages expose each failure independently.
 # Cap per-process heap for small Codespaces without skipping checks.
 ENV NODE_OPTIONS="--max-old-space-size=2048"
