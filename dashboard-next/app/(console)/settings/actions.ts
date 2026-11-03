@@ -27,3 +27,24 @@ export async function saveReferralPolicy(form: FormData) {
   revalidatePath("/settings");
   redirect("/settings?saved=referral");
 }
+
+/** Update both provider policies in one audited FastAPI transaction. */
+export async function saveChannelFeatures(form: FormData) {
+  const items = (["telegram", "bale"] as const).map((platform) => ({
+    platform,
+    cart_enabled: form.has(`${platform}_cart_enabled`),
+    store_credit_enabled: form.has(`${platform}_store_credit_enabled`),
+    store_credit_label: String(form.get(`${platform}_store_credit_label`) ?? "").trim(),
+  }));
+  if (items.some((item) => item.store_credit_label.length < 1 ||
+      item.store_credit_label.length > 80)) redirect("/settings?error=channels");
+  let failed = false;
+  try {
+    await adminFetch("/channel-features", "POST", { items });
+  } catch {
+    failed = true;
+  }
+  if (failed) redirect("/settings?error=channels");
+  revalidatePath("/settings");
+  redirect("/settings?saved=channels");
+}
