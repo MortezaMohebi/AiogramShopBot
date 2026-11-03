@@ -126,7 +126,7 @@ export function BotProfilePanel({
     })}
     <p className="text-xs leading-7 text-muted-foreground xl:col-span-2">
       توکن‌ها همچنان در Secretهای Deployment نگهداری می‌شوند و از این پنل قابل مشاهده نیستند.
-      تغییر روش Direct / Proxy / Cloudflare Worker نیازمند بررسی و اعمال تنظیمات Runtime مستقل است.
+      مسیر Telegram Direct / Proxy / Cloudflare Worker از بخش بعدی همین صفحه با مرحلهٔ ثبت، تست و تأیید هویت قابل تغییر است. Proxy و Worker فقط از مقصدهای امن مجاز استفاده می‌کنند.
       <Link href="/account" className="ms-2 underline">تأیید مجدد هویت در حساب من</Link>
     </p>
   </div>;
