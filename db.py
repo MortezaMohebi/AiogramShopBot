@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import os
 
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
@@ -7,7 +8,9 @@ from typing import Any
 
 from sqlalchemy import text, Result, CursorResult
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection, AsyncSession, create_async_engine,
+)
 from sqlalchemy.orm import sessionmaker, Session
 
 import config
@@ -118,12 +121,74 @@ async def check_all_tables_exist(session: AsyncSession | Session, schema: str = 
     return True
 
 
-async def create_db_and_tables() -> None:
-    """Fail closed unless the complete Alembic schema is installed.
+async def verify_codespace_schema(connection: AsyncConnection) -> None:
+    """Require all ORM tables/columns in the isolated Codespaces PostgreSQL.
 
-    Preserves the old startup entrypoint but never uses create_all to bypass
-    financial constraints, migrations or the shop's immutable-ledger tables.
+    This checks read-only catalog metadata; it never creates, alters, drops,
+    stamps or migrates any table. A newer model with missing columns fails
+    closed rather than silently modifying a database containing data.
     """
+    actual_database = await connection.scalar(
+        text("SELECT current_database()")
+    )
+    if actual_database != "shop_codespace":
+        raise RuntimeError(
+            "Refusing schema verification outside the Codespaces database."
+        )
+
+    result = await connection.execute(
+        text(
+            "SELECT table_name, column_name "
+            "FROM information_schema.columns "
+            "WHERE table_schema = 'public'"
+        )
+    )
+    actual = {(table, column) for table, column in result.all()}
+    expected = {
+        (table.name, column.name)
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+    }
+    if not expected:
+        raise RuntimeError("SQLAlchemy model metadata is empty.")
+
+    missing = expected - actual
+    if missing:
+        # Omit customer values and SQL metadata in the error response.
+        raise RuntimeError(
+            "Codespaces schema is incomplete or outdated: "
+            f"{len(missing)} expected columns are missing. "
+            "Inspect database state before an explicit reset."
+        )
+
+
+async def create_db_and_tables() -> None:
+    """Verify the installed schema using its exact deployment policy.
+
+    The disposable Codespaces stack uses an ORM-created fresh schema without
+    historical revisions. Production retains its strict Alembic-head checks.
+    Neither path mutates schemas during normal bot startup.
+    """
+    if os.environ.get("CODESPACE_FRESH_SCHEMA") == "true":
+        # A flag alone cannot bypass Production migration protection.
+        required = {
+            "POSTGRES_DB": "shop_codespace",
+            "POSTGRES_USER": "shop_codespace",
+            "DB_HOST": "postgres",
+            "SHOP_CAMPAIGN_DISPATCH_ENABLED": "false",
+            "BALE_BROADCAST_PAID_ENABLED": "false",
+        }
+        if any(
+            os.environ.get(name) != expected
+            for name, expected in required.items()
+        ):
+            raise RuntimeError(
+                "Codespaces fresh-schema mode refused: unsafe environment."
+            )
+        async with engine.connect() as connection:
+            await verify_codespace_schema(connection)
+        return
+
     root = Path(__file__).resolve().parent
     configuration = AlembicConfig(str(root / "alembic.ini"))
     configuration.set_main_option("script_location", str(root / "migrations"))
