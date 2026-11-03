@@ -91,6 +91,35 @@ def file_response(key: str, mime: str) -> FileResponse:
     )
 
 
+@router.get("/products/{product_id}/media")
+async def product_media(
+    product_id: int, staff: Staff, session: Db,
+) -> list[dict]:
+    """List stored assets for an authorized product editor; never expose paths."""
+    require_staff(staff, "content")
+    if await session.get(Product, product_id) is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    media = (await session.scalars(
+        select(ProductMedia)
+        .where(ProductMedia.product_id == product_id)
+        .order_by(ProductMedia.position, ProductMedia.id)
+        .limit(300)
+    )).all()
+    return [
+        {
+            "id": item.id,
+            "kind": item.kind,
+            "filename": item.original_filename,
+            "mime_type": item.mime_type,
+            "size_bytes": item.size_bytes,
+            "caption": item.caption or "",
+            "position": item.position,
+            "is_published": item.is_published,
+        }
+        for item in media
+    ]
+
+
 @router.get("/media/products")
 async def media_product_options(staff: Staff, session: Db) -> list[dict]:
     """Provide a bounded list of real products for the media picker."""
