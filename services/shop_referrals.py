@@ -23,6 +23,8 @@ from models.shop_engagement import (
     ShopReferralReward,
 )
 from services.shop_wallet import ShopWalletService
+from services.shop_channel_features import get_features
+from services.shop_payment_rails import rail_enabled
 
 
 _CODE = re.compile(r"R-[A-F0-9]{12}\Z")
@@ -162,6 +164,12 @@ class ShopReferralService:
         ):
             return 0
 
+        # Disabling store credit suspends new promotional awards. Existing
+        # ledger entries and refunds are never removed or reversed.
+        if not (await get_features(session, order.platform)).store_credit_enabled:
+            return 0
+        if not await rail_enabled(session, order.platform, "store_credit"):
+            return 0
         policy = await session.get(ShopReferralPolicy, 1)
         if (
             policy is None or not policy.is_enabled

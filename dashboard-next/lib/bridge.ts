@@ -14,6 +14,20 @@ const SAFE_CODES = new Set([
   "operation_not_found", "invalid_operation_state", "idempotency_conflict",
   "connection_change_in_progress", "configuration_changed", "legacy_endpoint_retired",
   "connection_worker_unavailable", "reconciliation_required",
+  "invitation_only", "invalid_link", "password_policy_failed", "mfa_enrollment_required",
+  "mfa_required_by_role", "invitation_not_found", "staff_username_exists",
+  "staff_not_found", "last_admin_protected", "use_my_account",
+  "username_unchanged", "customer_not_found", "restriction_reason_required",
+  "invalid_transport_mode", "invalid_proxy_endpoint", "invalid_proxy_credentials",
+  "invalid_worker_origin", "invalid_worker_secret",
+  "transport_endpoint_not_approved", "transport_config_unreadable",
+  "transport_probe_failed", "transport_reconciliation_required",
+  "transport_worker_unavailable", "transport_stage_expired",
+  "transport_unchanged", "transport_history_not_found",
+  "transport_interrupted", "transport_restored_to_verified",
+  "bot_identity_mismatch", "provider_not_configured", "provider_state_unavailable",
+
+  "confirmation_required",
 ]);
 export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly requestId?: string, readonly code?: string) {

@@ -1,0 +1,59 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  purgeCustomerNotes, saveRetentionPolicy,
+} from "@/app/(console)/customers/retention/actions";
+import { PageHeading } from "@/components/blocks/page-heading";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { adminFetch, currentStaff } from "@/lib/bridge";
+
+type Policy = { note_retention_days: number; audit_retention_days: number };
+type Query = Promise<{ saved?: string; error?: string }>;
+
+/** No unattended GDPR or ledger deletion: explicit, auditable case-note cleanup. */
+export default async function CustomerRetentionPage({
+  searchParams,
+}: { searchParams: Query }) {
+  const staff = await currentStaff();
+  if (staff.role !== "superadmin") notFound();
+  const [policy, query] = await Promise.all([
+    adminFetch<Policy>("/customer-retention"), searchParams,
+  ]);
+  return <div className="space-y-5">
+    <Button asChild variant="outline" size="sm"><Link href="/customers">بازگشت به مشتریان</Link></Button>
+    <PageHeading title="سیاست نگهداری اطلاعات مشتری" description="نگهداری داده‌های پشتیبانی بدون آسیب‌زدن به سفارش‌ها، اسناد مالی یا تاریخچهٔ رضایت." />
+    {query.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">
+      {query.saved === "purged" ? "یادداشت‌های منقضی‌شده مطابق سیاست حذف و ثبت Audit شدند." :
+        query.saved === "preview" ? "بررسی بدون حذف انجام شد؛ تعداد قابل حذف را از اجرای آزمایشی API دریافت کنید." : "سیاست نگهداری ذخیره شد."}
+    </p> : null}
+    {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+      {query.error === "reauth" ? "برای این عملیات، در حساب من هویت خود را مجدداً تأیید کنید." : "عملیات کامل نشد؛ وضعیت سرویس و داده‌ها را بررسی کنید."}
+    </p> : null}
+    <Card><CardHeader><CardTitle>دوره‌های نگهداری</CardTitle></CardHeader><CardContent className="space-y-5">
+      <form action={saveRetentionPolicy} className="grid gap-4 md:grid-cols-2">
+        <label className="space-y-2 text-sm">نگهداری یادداشت‌های داخلی (روز)
+          <Input name="note_retention_days" type="number" min={30} max={3650} required defaultValue={policy.note_retention_days} />
+        </label>
+        <label className="space-y-2 text-sm">دورهٔ نگهداری Audit پشتیبانی (روز)
+          <Input name="audit_retention_days" type="number" min={365} max={3650} required defaultValue={policy.audit_retention_days} />
+        </label>
+        <p className="md:col-span-2 text-xs leading-7 text-muted-foreground">
+          تغییر سیاست موجب پاکسازی خودکار نمی‌شود. Audit پشتیبانی برای بررسی‌های بعدی محفوظ می‌ماند؛ پاکسازی زیر تنها یادداشت‌های داخلی قدیمی را دربر می‌گیرد.
+        </p>
+        <Button type="submit" className="md:justify-self-start">ذخیره سیاست</Button>
+      </form>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>پاکسازی کنترل‌شدهٔ یادداشت‌ها</CardTitle></CardHeader><CardContent className="space-y-4">
+      <p className="text-sm leading-7">فقط یادداشت‌های قدیمی‌تر از مدت تعیین‌شده حذف می‌شوند. هیچ سفارش، تراکنش کیف پول، رضایت تبلیغاتی یا پروندهٔ مشتری حذف نخواهد شد.</p>
+      <form action={purgeCustomerNotes} className="space-y-4">
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="confirm" className="mt-1 size-4 accent-primary" />
+          تأیید می‌کنم که درخواست پاکسازی واقعی یادداشت‌های منقضی‌شده است؛ برای بررسی صرف، این گزینه را خالی می‌گذارم.
+        </label>
+        <Button type="submit" variant="outline">اجرای بررسی یا پاکسازی طبق تأیید</Button>
+      </form>
+    </CardContent></Card>
+  </div>;
+}

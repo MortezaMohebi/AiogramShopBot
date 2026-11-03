@@ -140,8 +140,10 @@ async def create_admin() -> None:
     from utils.utils import hash_password
 
     async with session_maker() as session:
+        # Only a completely empty staff register permits bootstrap. This
+        # prevents re-provisioning a deliberately disabled or renamed admin.
         account = await session.scalar(
-            select(ShopStaff).where(ShopStaff.username == "shopadmin")
+            select(ShopStaff.id).order_by(ShopStaff.id).limit(1)
         )
         if account is not None:
             print("Existing administrator preserved; password not changed.")

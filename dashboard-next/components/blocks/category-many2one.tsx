@@ -1,7 +1,7 @@
 "use client";
 
-import { type KeyboardEvent, useId, useMemo, useState } from "react";
-import { Check, LoaderCircle, Plus, Search, X } from "lucide-react";
+import { type KeyboardEvent, useId, useMemo, useRef, useState } from "react";
+import { Check, LoaderCircle, Pencil, Plus, Search, X } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import type { Category } from "@/lib/types";
 
@@ -31,6 +31,9 @@ export function CategoryMany2One({
   const [highlight, setHighlight] = useState(0);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [editName, setEditName] = useState("");
+  const [updating, setUpdating] = useState(false);
 
   const matching = useMemo(
     () => options.filter(
@@ -95,6 +98,61 @@ export function CategoryMany2One({
       setError(cause instanceof Error ? cause.message : "ارتباط برقرار نشد.");
     } finally {
       setCreating(false);
+    }
+  }
+
+  function beginEdit() {
+    const selected = options.find((option) => option.id === selectedId);
+    if (!selected) return;
+    setEditName(selected.name);
+    setError(null);
+    setExpanded(false);
+    dialog.current?.showModal();
+  }
+
+  /** Edit exactly the selected database record, preserving the hidden ID. */
+  async function saveEdit() {
+    const name = editName.trim();
+    if (selectedId === null || !name || name.length > 255 || updating) {
+      setError("نام دسته‌بندی معتبر نیست.");
+      return;
+    }
+    setUpdating(true);
+    setError(null);
+    try {
+      const challenge = await requestBrowserChallenge();
+      const response = await fetch("/api/admin/categories", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        redirect: "error",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Shop-Login-Challenge": challenge,
+        },
+        body: JSON.stringify({ id: selectedId, name }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const result = await response.json() as {
+        ok?: boolean; id?: number; name?: string; code?: string;
+      };
+      if (!response.ok || !result.ok || result.id !== selectedId) {
+        throw new Error(result.code === "already_exists"
+          ? "این نام قبلاً ثبت شده است."
+          : result.code === "permission_denied"
+            ? "مجوز ویرایش این دسته‌بندی را ندارید."
+            : "ویرایش دسته‌بندی انجام نشد.");
+      }
+      setOptions((previous) => previous.map((item) =>
+        item.id === selectedId ? { ...item, name } : item
+      ));
+      setValue(name);
+      dialog.current?.close();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "ارتباط با سرور برقرار نشد.");
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -207,10 +265,46 @@ export function CategoryMany2One({
           ) : null}
         </div>
       ) : null}
+      {selectedId !== null && canCreate ? (
+        <button type="button" onClick={beginEdit}
+          className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-foreground hover:bg-accent">
+          <Pencil aria-hidden="true" className="size-4" />
+          ویرایش دسته‌بندی انتخاب‌شده
+        </button>
+      ) : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
       <p className="text-xs text-muted-foreground">
         انتخاب اختیاری است؛ دسته‌بندی جدید ابتدا منتشرنشده می‌ماند.
       </p>
+      <dialog ref={dialog}
+        className="m-auto w-[min(94vw,28rem)] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60"
+        onClose={() => setError(null)}>
+        <div dir="rtl" className="space-y-4 p-6">
+          <p className="text-xs text-muted-foreground">محصول / دسته‌بندی / ویرایش</p>
+          <h2 className="text-lg font-semibold">ویرایش دسته‌بندی</h2>
+          <label className="block space-y-2 text-sm">
+            نام دسته‌بندی
+            <input value={editName} autoFocus maxLength={255}
+              onChange={(event) => setEditName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveEdit();
+                }
+              }}
+              className="h-10 w-full rounded-md border border-input bg-background px-3" />
+          </label>
+          {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+          <div className="flex gap-2">
+            <button type="button" disabled={updating} onClick={() => void saveEdit()}
+              className="h-10 rounded-md bg-primary px-4 text-sm text-primary-foreground disabled:opacity-50">
+              {updating ? "در حال ذخیره..." : "ذخیره دسته‌بندی"}
+            </button>
+            <button type="button" disabled={updating} onClick={() => dialog.current?.close()}
+              className="h-10 rounded-md border border-border px-4 text-sm">انصراف</button>
+          </div>
+        </div>
+      </dialog>
     </div>
   );
 }

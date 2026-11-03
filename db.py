@@ -16,6 +16,22 @@ from sqlalchemy.orm import sessionmaker, Session
 import config
 from models.base import Base
 from models.shop_staff import ShopStaff
+from models.shop_staff_security import (
+    ShopPasswordPolicy, ShopStaffInvitation, ShopStaffPasswordReset,
+)
+from models.shop_channel_features import ShopChannelFeature
+from models.shop_customer_crm import (
+    ShopCustomerProfile, ShopCustomerNote, ShopCustomerConsentEvent,
+    ShopCustomerAudit, ShopCustomerRetentionPolicy,
+)
+from models.shop_staff_preferences import ShopStaffPreferences
+from models.shop_bot_profile import ShopBotProfile
+from models.shop_payment_rail import ShopPaymentRail
+from models.shop_customer_links import ShopCustomerLinkRequest, ShopCustomerIdentityLink
+from models.shop_staff_state import ShopStaffState
+from models.shop_telegram_transport import (
+    ShopTelegramTransport, ShopTelegramTransportChange,
+)
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (

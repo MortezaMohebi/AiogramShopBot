@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import Platform
+from services.shop_payment_rails import rail_enabled
 from services.shop_payments import (
     InvoicePlan, PaymentRejected, ShopPaymentService,
 )
@@ -53,9 +54,9 @@ async def send_order_invoice(
         platform=platform,
         platform_user_id=user_id,
         order_id=order_id,
-        bale_enabled=config.BALE_WALLET_CHECKOUT_ENABLED,
-        telegram_fiat_enabled=config.TELEGRAM_FIAT_CHECKOUT_ENABLED,
-        telegram_stars_enabled=config.TELEGRAM_STARS_CHECKOUT_ENABLED,
+        bale_enabled=config.BALE_WALLET_CHECKOUT_ENABLED and await rail_enabled(session, "bale", "bale_wallet"),
+        telegram_fiat_enabled=config.TELEGRAM_FIAT_CHECKOUT_ENABLED and await rail_enabled(session, "telegram", "telegram_fiat"),
+        telegram_stars_enabled=config.TELEGRAM_STARS_CHECKOUT_ENABLED and await rail_enabled(session, "telegram", "telegram_stars"),
         telegram_minor_multiplier=config.TELEGRAM_IRR_MINOR_MULTIPLIER,
     )
     try:

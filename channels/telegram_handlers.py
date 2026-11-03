@@ -18,6 +18,7 @@ from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
+from services.shop_bot_profiles import get_bot_options
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.shop_orders import ShopOrdersFlow
@@ -54,6 +55,9 @@ async def _shop_reply(
     event: InboundEvent, session: AsyncSession
 ) -> BotReply | None:
     """Select the common cart first, then catalog for non-cart actions."""
+    options = await get_bot_options(session, event.platform.value)
+    if options.maintenance_enabled:
+        return BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید.")
     engagement = await ShopEngagementFlow(
         config.SHOP_DISPLAY_UNIT
     ).reply(event, session)
@@ -77,7 +81,7 @@ def _flow() -> CatalogFlow:
 
 
 @shop_catalog_router.message(
-    Command("wallet", "referral", "ref", "subscribe", "unsubscribe")
+    Command("wallet", "referral", "ref", "subscribe", "unsubscribe", "linkstart", "linkconfirm", "linkapprove", "linkcancel")
 )
 @shop_catalog_router.message(F.text.in_({
     "💳 اعتبار من", "🎁 معرفی دوستان",

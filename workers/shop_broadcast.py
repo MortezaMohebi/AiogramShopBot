@@ -17,7 +17,9 @@ import config
 from channels.telegram import TelegramTransport
 from db import create_db_and_tables, engine
 from services.shop_broadcast_worker import BroadcastWorker
-from utils.telegram import create_bot
+from utils.telegram import create_bot, create_telegram_session
+from utils.telegram_rotating_session import RotatingTelegramSession
+from services.shop_telegram_transport_control import sync_broadcast_session
 
 
 async def main() -> None:
@@ -34,7 +36,17 @@ async def main() -> None:
     # Never let an old schema silently truncate paid budgets or recipient
     # receipts. The API process uses the same Alembic-head validation.
     await create_db_and_tables()
-    telegram_bot = create_bot(config.TOKEN) if config.TOKEN else None
+    telegram_bot = (
+        create_bot(
+            config.TOKEN,
+            RotatingTelegramSession(create_telegram_session()),
+        )
+        if config.TOKEN else None
+    )
+    if telegram_bot is not None:
+        # An authenticated getMe probe is required before the worker can
+        # switch to a new committed proxy/Worker route.
+        await sync_broadcast_session(telegram_bot)
     bale_session = (
         ClientSession(timeout=ClientTimeout(total=120))
         if config.BALE_BOT_TOKEN else None
@@ -44,6 +56,10 @@ async def main() -> None:
             TelegramTransport(telegram_bot) if telegram_bot else None
         ),
         bale_session=bale_session,
+        telegram_transport_sync=(
+            (lambda: sync_broadcast_session(telegram_bot))
+            if telegram_bot is not None else None
+        ),
     )
 
     task = asyncio.create_task(

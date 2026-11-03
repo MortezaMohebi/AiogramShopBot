@@ -10,7 +10,7 @@ import { type AccountData, controlAction, permissionLabels } from "@/lib/account
 /** Each proof is entered by the owner; passwords are never trimmed or persisted. */
 function ProofFields({ factor, disabled }: { factor: boolean; disabled: boolean }) {
   return <div className="grid gap-3 md:grid-cols-2">
-    <label className="space-y-1 text-sm">رمز فعلی
+    <label className={factor ? "space-y-2 text-sm" : "space-y-2 text-sm md:col-span-2"}>رمز فعلی
       <Input name="current_password" type="password" autoComplete="current-password" maxLength={256} required disabled={disabled} dir="ltr" />
     </label>
     {factor ? <label className="space-y-1 text-sm">کد احراز هویت یا بازیابی
@@ -31,7 +31,22 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     secret: string;
     qrDataUri: string;
   } | null>(null), [recovery, setRecovery] = useState<string[]>([]);
-  function date(value: string) { return new Date(value).toLocaleString("fa-IR", { timeZone: initial.time_zone }); }
+  // The browser supplies a searchable, official list of IANA time zones.
+  const zones = typeof Intl.supportedValuesOf === "function"
+    ? Intl.supportedValuesOf("timeZone")
+    : ["Asia/Tehran", "Asia/Tokyo", "Europe/London", "UTC"];
+  if (!zones.includes(initial.time_zone)) zones.push(initial.time_zone);
+  zones.sort((a, b) => a.localeCompare(b));
+  const calendarLocale =
+    initial.preferences.calendar === "gregorian" ? "fa-IR-u-ca-gregory" :
+    initial.preferences.calendar === "jalali" ? "fa-IR-u-ca-persian" :
+    initial.preferences.language === "en" ? "en-US-u-ca-gregory" :
+    "fa-IR-u-ca-persian";
+  function date(value: string) {
+    return new Date(value).toLocaleString(calendarLocale, {
+      timeZone: initial.time_zone,
+    });
+  }
   async function perform(action: string, payload: unknown, form?: HTMLFormElement) {
     if (busy) return;
     setBusy(true); setNotice(null);
@@ -52,7 +67,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       }
       if (result.recovery_codes) { setRecovery(result.recovery_codes); setEnrollment(null); }
       setNotice({ ok: true, text: "عملیات ثبت شد و وضعیت حساب به‌روز شد." });
-      if (action !== "profile") form?.reset();
+      if (action !== "profile" && action !== "preferences") form?.reset();
       router.refresh();
     } catch (error) { setNotice({ ok: false, text: error instanceof Error ? error.message : "عملیات انجام نشد." }); }
     finally { setBusy(false); }
@@ -66,23 +81,89 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
   return <div className="space-y-5" aria-busy={busy}>
     {notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null}
     <Card><CardHeader><CardTitle>مشخصات من</CardTitle></CardHeader><CardContent>
-      <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b dir="ltr">{initial.role}</b></p>
+      <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b>{({superadmin:"مدیر اصلی",finance:"مالی",sales:"فروش",content:"محتوا",marketing:"بازاریابی",viewer:"مشاهده"} as Record<string,string>)[initial.role] ?? initial.role}</b></p>
       <form onSubmit={(event) => submit(event, "profile")} className="grid gap-4 md:grid-cols-2">
-        <label className="space-y-1 text-sm">نام نمایشی<Input name="display_name" defaultValue={initial.display_name} maxLength={120} disabled={busy} /></label>
-        <label className="space-y-1 text-sm">منطقهٔ زمانی<Input name="time_zone" defaultValue={initial.time_zone} maxLength={80} dir="ltr" required disabled={busy} /></label>
+        <label className="block space-y-2 text-sm">نام نمایشی<Input className="h-10 w-full" name="display_name" defaultValue={initial.display_name} maxLength={120} disabled={busy} /></label>
+        <label className="block space-y-2 text-sm">منطقهٔ زمانی
+          <select name="time_zone" defaultValue={initial.time_zone} required disabled={busy} dir="ltr" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+            {zones.map((zone) => <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>)}
+          </select>
+        </label>
         <Button type="submit" disabled={busy}>ذخیره مشخصات</Button>
+      </form>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>زبان، تقویم و اعلان‌های کاری</CardTitle></CardHeader><CardContent>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        void perform("preferences", {
+          language: String(data.get("language") ?? "fa"),
+          calendar: String(data.get("calendar") ?? "auto"),
+          notify_orders: data.has("notify_orders"),
+          notify_campaigns: data.has("notify_campaigns"),
+          notify_finance: data.has("notify_finance"),
+          notify_system: data.has("notify_system"),
+        }, form);
+      }} className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block space-y-2 text-sm">زبان ترجیحی پنل
+            <select name="language" defaultValue={initial.preferences.language} disabled={busy}
+              className="h-10 w-full rounded-md border bg-background px-3">
+              <option value="fa">فارسی</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label className="block space-y-2 text-sm">نمایش تاریخ در حساب من
+            <select name="calendar" defaultValue={initial.preferences.calendar} disabled={busy}
+              className="h-10 w-full rounded-md border bg-background px-3">
+              <option value="auto">خودکار</option>
+              <option value="jalali">جلالی</option>
+              <option value="gregorian">میلادی</option>
+            </select>
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">زبان ترجیحی برای سرویس‌های آینده ذخیره می‌شود؛ ترجمهٔ کامل همهٔ صفحات پنل هنوز ارائه نشده است. تغییر تقویم در تاریخ‌های حساب من اعمال می‌شود.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([
+            ["notify_orders", "اعلان سفارش‌ها"],
+            ["notify_campaigns", "اعلان کمپین‌ها"],
+            ["notify_finance", "اعلان مالی"],
+            ["notify_system", "اعلان کارهای سیستمی"],
+          ] as const).map(([field, title]) =>
+            <label key={field} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name={field} defaultChecked={initial.preferences[field]}
+                disabled={busy} className="size-4 accent-primary" />{title}
+            </label>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">اعلان‌های امنیتی ضروری از این تنظیمات تأثیر نمی‌گیرند.</p>
+        <Button type="submit" variant="outline" disabled={busy}>ذخیره ترجیحات</Button>
+      </form>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle>تغییر نام کاربری</CardTitle></CardHeader><CardContent>
+      <form onSubmit={(event) => submit(event, "username")} className="space-y-4">
+        <p className="text-xs text-muted-foreground">تغییر نام کاربری نیازمند رمز فعلی و MFA است. پس از تغییر، تمام دستگاه‌ها خارج خواهند شد.</p>
+        <label className="block space-y-2 text-sm">نام کاربری جدید
+          <Input name="username" dir="ltr" minLength={3} maxLength={80}
+            pattern="[a-z0-9][a-z0-9_.-]{2,79}" required disabled={busy}
+            autoCapitalize="none" autoCorrect="off" />
+        </label>
+        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
+        <Button type="submit" variant="outline" disabled={busy}>تغییر نام کاربری و خروج از نشست‌ها</Button>
       </form>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>تغییر رمز عبور</CardTitle></CardHeader><CardContent>
       <form onSubmit={(event) => submit(event, "password")} className="space-y-4">
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <label className="block space-y-1 text-sm">رمز تازه (حداقل ۱۴ نویسه)<Input name="new_password" type="password" autoComplete="new-password" minLength={14} maxLength={256} dir="ltr" required disabled={busy} /></label>
+        <label className="block space-y-1 text-sm">رمز تازه (حداقل {initial.password_policy.min_length} نویسه)<Input name="new_password" type="password" autoComplete="new-password" minLength={initial.password_policy.min_length} maxLength={256} dir="ltr" required disabled={busy} /></label>
         <p className="text-xs leading-6 text-muted-foreground">بعد از تغییر رمز، تمام نشست‌ها بسته می‌شوند و باید دوباره وارد شوید.</p>
         <Button type="submit" disabled={busy}>تغییر رمز و خروج از همه دستگاه‌ها</Button>
       </form>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>احراز هویت دومرحله‌ای</CardTitle></CardHeader><CardContent className="space-y-4">
       <p className="text-sm">وضعیت: <strong>{initial.mfa_enabled ? "فعال" : "غیرفعال"}</strong></p>
+      {initial.mfa_required_by_role ? <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">برای نقش شما MFA اجباری است. تا زمان فعال‌سازی، دسترسی به امکانات مدیریتی محدود می‌ماند.</p> : null}
       {recovery.length ? <div role="status" className="space-y-3 rounded-lg border p-4">
         <p className="text-sm">این کدها فقط همین بار نمایش داده می‌شوند. در محلی امن ذخیره کنید؛ هر کد یک‌بار قابل استفاده است.</p>
         <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
@@ -122,7 +203,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         </form>
       </div> : <form onSubmit={(event) => submit(event, initial.mfa_enabled ? "mfa-disable" : "mfa-setup")} className="space-y-4">
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button>
+        {!(initial.mfa_enabled && initial.mfa_required_by_role) ? <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button> : null}
       </form>}
     </CardContent></Card>
     <Card><CardHeader><CardTitle>تأیید مجدد هویت برای عملیات حساس</CardTitle></CardHeader><CardContent>

@@ -167,7 +167,7 @@ async def signed_staff(request: Request, session: Db) -> ShopStaff | None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if staff_id == 0 and version == 0:
-        if request.url.path != "/internal/admin/v1/auth/login":
+        if request.url.path not in {"/internal/admin/v1/auth/login", "/internal/admin/v1/auth/redeem"}:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return None
 
@@ -1314,7 +1314,7 @@ async def request_telegram_mode(
 
 
 @router.get("/bot-connections/probe")
-async def bot_connection_probe(staff: Staff) -> dict:
+async def bot_connection_probe(staff: Staff, request: Request) -> dict:
     """Check provider getMe/getWebhookInfo without modifying any webhook.
 
     Provider failures are represented as statuses instead of crashing
@@ -1331,11 +1331,16 @@ async def bot_connection_probe(staff: Staff) -> dict:
     bale: dict = {"status": "not_configured"}
 
     if config.TOKEN:
-        telegram_bot = None
+        telegram_bot = getattr(request.app.state, "telegram_bot", None)
+        owns_session = False
         try:
-            telegram_bot = create_bot(
-                config.TOKEN, create_telegram_session()
-            )
+            if telegram_bot is None:
+                # Isolated lab has no live receiver; a temporary session is
+                # used only for this read-only probe.
+                telegram_bot = create_bot(
+                    config.TOKEN, create_telegram_session(),
+                )
+                owns_session = True
             info = await asyncio.wait_for(
                 telegram_bot.get_webhook_info(), timeout=8
             )
@@ -1358,7 +1363,9 @@ async def bot_connection_probe(staff: Staff) -> dict:
         except Exception:
             telegram = {"status": "unavailable"}
         finally:
-            if telegram_bot is not None:
+            # The in-process managed Bot belongs to the receiver and MUST
+            # never be closed by a dashboard health probe.
+            if owns_session and telegram_bot is not None:
                 await telegram_bot.session.close()
 
     if config.BALE_BOT_TOKEN:

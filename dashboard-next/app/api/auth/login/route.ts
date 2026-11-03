@@ -9,7 +9,7 @@ import { createSession, sessionCookieName } from "@/lib/session";
 import { controlJson } from "@/lib/control-request";
 
 export const runtime = "nodejs";
-interface StaffLogin { id: number; session_version: number; session_token: string }
+interface StaffLogin { id: number; session_version: number; session_token: string; mfa_setup_required?: boolean }
 function failure(request: NextRequest, code: string, status: number): NextResponse {
   const requestId = randomUUID();
   console.warn("[shop-admin/auth]", { requestId, code, status });
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       device: (request.headers.get("user-agent") ?? "Browser").slice(0, 160),
     }, null);
     if (!account || !Number.isSafeInteger(account.id) || account.id < 1 || !Number.isSafeInteger(account.session_version) || account.session_version < 1 || !/^[A-Za-z0-9_-]{43}$/.test(account.session_token)) return failure(request, "service_unavailable", 503);
-    const response = NextResponse.json({ ok: true, redirect: "/dashboard" }, { headers: { "Cache-Control": "no-store" } });
+    const response = NextResponse.json({ ok: true, redirect: account.mfa_setup_required ? "/account?enroll=1" : "/dashboard" }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(sessionCookieName(), createSession(account.id, account.session_version, account.session_token), { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 8 * 60 * 60 });
     response.cookies.set(loginChallengeCookieName(), "", { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
     return response;

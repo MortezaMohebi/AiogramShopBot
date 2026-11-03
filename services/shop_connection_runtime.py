@@ -18,6 +18,7 @@ from db import engine, session_maker
 from models.shop_admin_control import ConnectionChange, ConnectionConfig
 from services.shop_admin_security import SecurityRejected, has_permission
 from services.shop_connection_control import transition
+from services.shop_bot_profiles import get_bot_options
 
 log = logging.getLogger(__name__)
 
@@ -262,10 +263,33 @@ class ConnectionSupervisor:
                 async with session_maker() as db:
                     cfg = await db.get(ConnectionConfig, platform)
                     offset = cfg.next_update_id
+                    options = await get_bot_options(db, platform)
+                poll_timeout = options.poll_timeout_seconds
+                outer_timeout = options.request_timeout_seconds + poll_timeout + 5
+                updates_arg = (
+                    {"allowed_updates": list(options.allowed_updates)}
+                    if options.allowed_updates else {}
+                )
                 if platform == "telegram":
-                    updates = await asyncio.wait_for(provider.get_updates(offset=offset, timeout=10, limit=50), 15)
+                    updates = await asyncio.wait_for(
+                        provider.get_updates(
+                            offset=offset, timeout=poll_timeout, limit=50,
+                            **updates_arg,
+                        ),
+                        timeout=outer_timeout,
+                    )
                 else:
-                    updates = await asyncio.wait_for(provider._call("getUpdates", {"offset": offset, "timeout": 10, "limit": 50}), 15)
+                    updates = await asyncio.wait_for(
+                        provider._call(
+                            "getUpdates", {
+                                "offset": offset,
+                                "timeout": poll_timeout,
+                                "limit": 50,
+                                **updates_arg,
+                            },
+                        ),
+                        timeout=outer_timeout,
+                    )
                 if not isinstance(updates, list):
                     raise ValueError("Invalid update list")
                 for update in updates:

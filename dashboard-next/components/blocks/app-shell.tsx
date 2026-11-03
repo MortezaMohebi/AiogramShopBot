@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import type { Staff } from "@/lib/types";
 import { Sidebar } from "@/components/blocks/sidebar";
 import { ThemeToggle } from "@/components/blocks/theme-toggle";
-import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { CircleUserRound } from "lucide-react";
 
 /** Dashboard-01-inspired app shell: permanent RTL sidebar and compact header. */
 export function AppShell({
@@ -23,9 +24,10 @@ export function AppShell({
             <span className="font-semibold">فروشگاه تلگرام و بله</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-1 rounded-full bg-accent px-3 py-1 text-xs text-accent-foreground sm:inline-flex">
-              <ShieldCheck className="size-3.5" /> داده‌های واقعی
-            </span>
+            <Link href="/account" className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" aria-label="بازکردن پروفایل و امنیت حساب">
+              <CircleUserRound aria-hidden="true" className="size-4" />
+              <span>حساب من</span>
+            </Link>
             <ThemeToggle />
           </div>
         </header>

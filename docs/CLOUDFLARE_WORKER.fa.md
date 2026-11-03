@@ -106,3 +106,20 @@ pytest -q tests/test_telegram_worker_session.py
 
 در نهایت لازم است روی VPS واقعی یک آزمایش اتصال `getMe` و `getUpdates` یا
 `setWebhook` انجام شود. این تست‌ها را بدون توکن آزمایشی معتبر نمی‌توان PASS کرد.
+
+
+## مدیریت از پنل Next.js (جدید)
+
+برای تغییر مسیر خروجی **بدون ویرایش دستی `TELEGRAM_API_MODE` در هر تغییر**،
+پس از تعیین مقصدهای مجاز در Deployment به
+**اتصال ربات‌ها → مسیر API تلگرام** بروید. Direct، HTTP/SOCKS5 Proxy و
+Cloudflare Worker از جریان ثبت پیشنهاد، تست `getMe` و تأیید رمز/MFA
+پشتیبانی می‌کنند. وضعیت موفق در PostgreSQL رمزنگاری‌شده می‌ماند و پس از
+Restart بارگذاری می‌شود. Broadcast Worker نیز نسخهٔ تأییدشده را دریافت می‌کند.
+
+جزئیات امنیت، Allowlist، Recovery، Rollback و تست‌های پذیرش:
+[`docs/TELEGRAM_TRANSPORT_DASHBOARD.fa.md`](./TELEGRAM_TRANSPORT_DASHBOARD.fa.md).
+
+از این مسیر هیچ Token یا مقدار `RELAY_SHARED_SECRET` در GitHub،
+پاسخ GET، لاگ یا Query String ثبت نکنید. مواردی مانند تغییر Token
+یا ایجاد Worker در Cloudflare همچنان نیازمند مجوزها و تنظیمات مستقل‌اند.

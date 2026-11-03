@@ -21,6 +21,7 @@ from models.shop_content import (
 from services.shop_money import format_rials
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_presentation import product_message
+from services.shop_channel_features import get_features
 
 _PAGE_SIZE = 6
 _CATEGORY_PAGE_SIZE = 6
@@ -72,7 +73,7 @@ class CatalogFlow:
                 )
             match = _PRODUCT_PATTERN.fullmatch(data)
             if match:
-                return await self._product(session, int(match.group(1)))
+                return await self._product(session, int(match.group(1)), event.platform.value)
             match = _REVIEW_PATTERN.fullmatch(data)
             if match:
                 return await self._reviews(
@@ -84,7 +85,7 @@ class CatalogFlow:
                     session, int(match.group(1)), int(match.group(2))
                 )
             if data == "shop:home":
-                return await self._home(session)
+                return await self._home(session, event.platform.value)
             if data == "shop:help":
                 return await self._settings_text(session, key="support")
             if data == "shop:faq":
@@ -107,14 +108,14 @@ class CatalogFlow:
         if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
             return await self._categories_or_products(session)
         if text.split(" ", 1)[0] == "/start":
-            return await self._home(session)
+            return await self._home(session, event.platform.value)
         if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
             return await self._settings_text(session, key="support")
         if text in ("❓ پرسش‌های متداول", "/faq"):
             return await self._settings_text(session, key="faq")
         return None
 
-    async def _home(self, session: AsyncSession) -> BotReply:
+    async def _home(self, session: AsyncSession, platform: str) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
         settings = await session.get(ShopSettings, 1)
         welcome = (
@@ -122,16 +123,18 @@ class CatalogFlow:
             if settings and settings.welcome_message
             else "به فروشگاه خوش آمدید."
         )
-        return BotReply(
-            text=welcome[:4096],
-            rows=(
-                (_button("🛍 محصولات", "shop:categories"),),
-                (_button("📦 سفارش‌های من", "shop:orders"),),
-                (_button("🛒 سبد خرید", "shop:cart"),),
-                (_button("🆘 پشتیبانی", "shop:help"),),
-                (_button("❓ پرسش‌های متداول", "shop:faq"),),
-            ),
-        )
+        features = await get_features(session, platform)
+        rows = [
+            (_button("🛍 محصولات", "shop:categories"),),
+            (_button("📦 سفارش‌های من", "shop:orders"),),
+        ]
+        if features.cart_enabled:
+            rows.append((_button("🛒 سبد خرید", "shop:cart"),))
+        rows.extend([
+            (_button("🆘 پشتیبانی", "shop:help"),),
+            (_button("❓ پرسش‌های متداول", "shop:faq"),),
+        ])
+        return BotReply(text=welcome[:4096], rows=tuple(rows))
 
     async def _settings_text(
         self, session: AsyncSession, *, key: str
@@ -249,7 +252,7 @@ class CatalogFlow:
             rows=tuple(rows),
         )
 
-    async def _product(self, session: AsyncSession, product_id: int) -> BotReply:
+    async def _product(self, session: AsyncSession, product_id: int, platform: str) -> BotReply:
         """Show an active product, never exposing an unpublished record."""
         result = await session.execute(
             select(Product).where(
@@ -275,13 +278,15 @@ class CatalogFlow:
             show_description=show_description,
             show_stock=show_stock,
         )
+        features = await get_features(session, platform)
         rows = []
-        if product.stock_quantity > 0:
-            rows.append((_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),))
-        rows.extend((
-            (_button("🛒 مشاهده سبد", "shop:cart"),),
-            (_button("📦 سفارش‌های من", "shop:orders"),),
-        ))
+        if features.cart_enabled:
+            if product.stock_quantity > 0:
+                rows.append(
+                    (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),)
+                )
+            rows.append((_button("🛒 مشاهده سبد", "shop:cart"),))
+        rows.append((_button("📦 سفارش‌های من", "shop:orders"),))
         # Hide the navigation controls as well as the underlying data.
         if show_media:
             rows.append((_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),))

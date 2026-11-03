@@ -26,6 +26,7 @@ from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
 from services.shop_cart import ShopCartFlow
+from services.shop_bot_profiles import get_bot_options
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.bale_wallet import BaleWalletService, CheckoutRejected
@@ -89,42 +90,75 @@ from services.media import MediaService
 from services.notification import NotificationService
 from services.wallet import WalletService
 from utils.telegram import create_bot, create_telegram_session
+from utils.telegram_rotating_session import RotatingTelegramSession
+from services.shop_telegram_transport_control import load_verified_on_boot
 from utils.utils import validate_i18n
 
 redis = Redis(host=config.REDIS_HOST, password=config.REDIS_PASSWORD)
-session = create_telegram_session()
+session = RotatingTelegramSession(create_telegram_session())
 bot = create_bot(config.TOKEN, session)
 dp = Dispatcher(storage=RedisStorage(redis))
 
 
 async def _startup() -> None:
     await create_db_and_tables()
+    # Load only the last verified encrypted outbound transport before *any*
+    # Telegram Bot API call. Never fall back to a different route on failure.
+    expected_bot_id = await load_verified_on_boot(bot)
     static = Path("static")
     if static.exists() is False:
         static.mkdir()
-    me = await bot.get_me()
-    photos = await bot.get_user_profile_photos(me.id)
-    # No hardcoded product or placeholder image and no external stock-photo URL.
-    # The legacy upstream views require a Telegram file_id for their navigation.
-    bot_photo_id = (
-        photos.photos[0][-1].file_id
-        if photos.total_count > 0
-        else config.DEFAULT_MEDIA_FILE_ID
-    )
-    if not bot_photo_id:
-        # Codespaces can start a brand-new bot without a profile photo.
-        # The shared shop uses text fallback; legacy photo-only screens
-        # remain unavailable until the bot receives a photo/file ID.
+    # An inaccessible Proxy or Worker must not take down the admin panel:
+    # the operator needs the panel to stage a verified recovery route.
+    # A genuinely different authenticated Bot ID remains a hard failure.
+    profile_available = False
+    bot_photo_id = config.DEFAULT_MEDIA_FILE_ID
+    try:
+        me = await asyncio.wait_for(bot.get_me(), timeout=12)
+    except Exception:
         logging.warning(
-            "Telegram bot has no profile photo; add one for legacy media menus."
+            "Telegram API startup probe unavailable; admin recovery remains "
+            "available, outbound messages may be interrupted."
         )
-    with open("static/no_image.jpeg", "w") as f:
-        f.write(bot_photo_id)
-    if bot_photo_id:
-        await MediaService.update_inaccessible_media(bot)
+    else:
+        if expected_bot_id is not None and me.id != expected_bot_id:
+            raise RuntimeError(
+                "Configured Telegram token identifies a different verified bot."
+            )
+        profile_available = True
+    if profile_available:
+        try:
+            photos = await asyncio.wait_for(
+                bot.get_user_profile_photos(me.id), timeout=12,
+            )
+            if photos.total_count > 0:
+                bot_photo_id = photos.photos[0][-1].file_id
+        except Exception:
+            logging.warning(
+                "Telegram profile photo unavailable; using text fallback."
+            )
+    if not bot_photo_id:
+        logging.warning(
+            "Telegram bot has no profile photo; legacy photo-only "
+            "navigation will be unavailable until configured."
+        )
+    with open("static/no_image.jpeg", "w") as destination:
+        destination.write(bot_photo_id)
+    if bot_photo_id and profile_available:
+        try:
+            await MediaService.update_inaccessible_media(bot)
+        except Exception:
+            logging.warning(
+                "Telegram media metadata unavailable at startup."
+            )
     validate_i18n()
-    if bot_photo_id:
-        await ButtonMediaRepository.init_buttons_media()
+    if bot_photo_id and profile_available:
+        try:
+            await ButtonMediaRepository.init_buttons_media()
+        except Exception:
+            logging.warning(
+                "Legacy Telegram button media unavailable at startup."
+            )
     if config.CRYPTO_FORWARDING_MODE:
         for cryptocurrency in Cryptocurrency:
             forwarding_address = cryptocurrency.get_forwarding_address()
@@ -139,8 +173,8 @@ async def _startup() -> None:
     for admin in config.ADMIN_ID_LIST:
         try:
             await bot.send_message(admin, 'Bot is working')
-        except Exception as e:
-            logging.warning(e)
+        except Exception:
+            logging.warning("Telegram admin startup notification unavailable.")
 
     if config.TELEGRAM_UPDATE_MODE == "webhook" and (
         os.environ.get("CODESPACE_MANUAL_WEBHOOK") == "true"
@@ -462,6 +496,15 @@ async def _process_bale_update(request: Request, payload: dict):
             platform_user_id=event.user_id,
         ):
             return {"status": "blocked"}
+        options = await get_bot_options(session, Platform.BALE.value)
+        if options.maintenance_enabled:
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            await transport.send(
+                event.chat_id,
+                BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید."),
+            )
+            return {"status": "maintenance"}
         if event.callback_data and event.callback_data.startswith("shop:pay:"):
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)

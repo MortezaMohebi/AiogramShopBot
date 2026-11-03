@@ -13,6 +13,10 @@ x-backend-env: &backend-env
   TELEGRAM_WORKER_URL: "${LIVE_TELEGRAM_WORKER_URL:-}"
   TELEGRAM_WORKER_SECRET: "${LIVE_TELEGRAM_WORKER_SECRET:-}"
   TELEGRAM_PROXY_URL: "${LIVE_TELEGRAM_PROXY_URL:-}"
+  # Approved outbound destinations; updates via the dashboard are limited to
+  # these allowlists to prevent leaking the Bot token to unknown relays.
+  TELEGRAM_PROXY_ALLOWED_ENDPOINTS: "${LIVE_TELEGRAM_PROXY_ALLOWED_ENDPOINTS:-}"
+  TELEGRAM_WORKER_ALLOWED_ORIGINS: "${LIVE_TELEGRAM_WORKER_ALLOWED_ORIGINS:-}"
   TOKEN: "${LIVE_TELEGRAM_TOKEN:?Configure Telegram token}"
   BALE_BOT_TOKEN: "${LIVE_BALE_TOKEN:?Configure Bale token}"
   BALE_WEBHOOK_SECRET: "${LIVE_BALE_WEBHOOK_SECRET:?Run setup}"

@@ -4,7 +4,7 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Category } from "@/lib/types";
 
-type Params = Promise<{ error?: string }>;
+type Params = Promise<{ error?: string; ref?: string }>;
 
 /** New products remain unpublished unless the authorized merchant opts in. */
 export default async function NewProductPage({ searchParams }: { searchParams: Params }) {
@@ -15,7 +15,17 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
   return (
     <div>
       <PageHeading title="محصول جدید" description="ثبت اطلاعات محصول برای هر دو ربات، بدون تغییر برنامه." />
-      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ذخیره محصول ممکن نشد. مقادیر، SKU و محدودیت‌های نوع محصول را بررسی کنید.</p> : null}
+      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+        {({
+          mfa: "ابتدا احراز هویت دومرحله‌ای حساب مدیر را فعال کنید.",
+          conflict: "SKU یا مشخصات یکتای محصول تکراری است.",
+          validation: "مقادیر واردشده معتبر نیستند؛ نوع محصول، دسته‌بندی و فیلدهای عددی را بررسی کنید.",
+          permission: "سطح دسترسی شما اجازهٔ ثبت محصول نمی‌دهد.",
+          service: "ارتباط با سرویس مدیریت یا پایگاه داده برقرار نشد.",
+          unknown: "ثبت محصول انجام نشد. شمارهٔ پیگیری را برای بررسی نگه دارید.",
+        } as Record<string, string>)[params.error] ?? "ثبت محصول انجام نشد."}
+        {params.ref && /^[a-f0-9-]{36}$/i.test(params.ref) ? <span className="mt-2 block font-mono text-xs" dir="ltr">Request ID: {params.ref}</span> : null}
+      </p> : null}
       <ProductEditor categories={categories} />
     </div>
   );
