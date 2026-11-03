@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -184,6 +185,12 @@ class ShopBotCredential(Base):
             name="ck_bot_credential_material",
         ),
         Index("ix_bot_credentials_bot_state", "bot_id", "state"),
+        # Enforce one active version in Codespaces create_all AND Alembic.
+        Index(
+            "uq_bot_credential_one_active", "bot_id", unique=True,
+            postgresql_where=text("state = 'active'"),
+            sqlite_where=text("state = 'active'"),
+        ),
     )
 
 
