@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,7 +128,7 @@ async def update_bot_profile(
 @router.post("/bot-profiles/{platform}/verify")
 async def verify_bot_identity(
     platform: Literal["telegram", "bale"],
-    actor: Actor, db: Db,
+    actor: Actor, db: Db, request: Request,
 ) -> dict:
     """Verify the currently deployed credential with getMe; fail on bot swap."""
     member = require(actor, "bots.configure")
@@ -138,16 +138,15 @@ async def verify_bot_identity(
     if platform == "telegram":
         if not config.TOKEN:
             raise security.SecurityRejected("provider_not_configured", 409)
-        from utils.telegram import create_bot, create_telegram_session
-
-        bot = create_bot(config.TOKEN, create_telegram_session())
+        # Verify the live managed session, not stale Deployment-only ENV.
+        bot = getattr(request.app.state, "telegram_bot", None)
+        if bot is None:
+            raise security.SecurityRejected("transport_worker_unavailable", 503)
         try:
             info = await asyncio.wait_for(bot.get_me(), timeout=10)
             provider_id, username = info.id, info.username
         except Exception:
             raise security.SecurityRejected("provider_state_unavailable", 503) from None
-        finally:
-            await bot.session.close()
     else:
         if not config.BALE_BOT_TOKEN:
             raise security.SecurityRejected("provider_not_configured", 409)
