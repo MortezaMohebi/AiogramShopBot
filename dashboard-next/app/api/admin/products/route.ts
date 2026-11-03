@@ -8,7 +8,8 @@ import type { Staff } from "@/lib/types";
 export const runtime = "nodejs";
 const MAX_BYTES = 120_000;
 const keys = new Set([
-  "sku", "name", "description", "category_id", "price_irr",
+  "sku", "external_ref", "uom_id", "purchase_uom_id",
+  "name", "description", "category_id", "price_irr",
   "price_stars", "stock_quantity", "product_type", "requires_shipping",
   "is_published", "show_description", "show_stock", "show_media", "show_reviews",
 ]);

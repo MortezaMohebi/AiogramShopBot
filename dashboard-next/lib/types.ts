@@ -46,6 +46,10 @@ export interface Overview {
 export interface Product {
   id: number;
   sku: string;
+  external_ref: string | null;
+  store_id: string;
+  uom_id: string;
+  purchase_uom_id: string | null;
   category_id: number | null;
   name: string;
   description: string;
