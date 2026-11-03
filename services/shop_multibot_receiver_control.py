@@ -197,6 +197,8 @@ async def activate_receiver(
         raise security.SecurityRejected("receiver_worker_unavailable", 503)
     if not getattr(config, "MULTIBOT_V2_RUNTIME_ENABLED", False):
         raise security.SecurityRejected("multibot_runtime_disabled", 409)
+    # A cached boolean is insufficient after PostgreSQL lease loss.
+    await supervisor.check_lease()
 
     bot = await db.scalar(select(ShopBot).where(
         ShopBot.id == bot_id,
@@ -253,6 +255,7 @@ async def activate_receiver(
                 client, platform=bot.platform,
                 mode=row.mode, url=url, secret=secret,
             )
+            await supervisor.check_lease()
     except BaseException as error:
         code = (
             error.code if isinstance(error, security.SecurityRejected)

@@ -23,6 +23,7 @@ from channels.bale import BaleTransport
 from channels.contracts import BotReply, MediaAttachment, Platform
 from channels.telegram import TelegramTransport
 from models.shop_content import ShopIdentity
+from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopBroadcastWorkerHeartbeat,
 )
@@ -151,10 +152,18 @@ class BroadcastWorker:
             ]
             if not available_platforms:
                 return None
+            # This legacy worker has only the two original provider tokens.
+            # Registry-owned deliveries remain queued for a future bot-aware
+            # worker and must never be sent with a legacy credential.
+            eligible_bot_ids = tuple(
+                LEGACY_BOT_IDS[platform] for platform in available_platforms
+            )
             active = await session.scalar(
                 select(ShopCampaign)
                 .where(
                     ShopCampaign.status == "sending",
+                    ShopCampaign.bot_id.in_(eligible_bot_ids)
+                    | ShopCampaign.bot_id.is_(None),
                     select(ShopCampaignDelivery.id)
                     .join(
                         ShopIdentity,
@@ -164,6 +173,8 @@ class BroadcastWorker:
                         ShopCampaignDelivery.campaign_id == ShopCampaign.id,
                         ShopCampaignDelivery.status == "queued",
                         ShopIdentity.platform.in_(available_platforms),
+                        ShopIdentity.bot_id.in_(eligible_bot_ids),
+                        ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
                     )
                     .exists(),
                 )
@@ -183,6 +194,8 @@ class BroadcastWorker:
                     ShopCampaignDelivery.campaign_id == active.id,
                     ShopCampaignDelivery.status == "queued",
                     ShopIdentity.platform.in_(available_platforms),
+                    ShopIdentity.bot_id.in_(eligible_bot_ids),
+                    ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
                 )
                 .order_by(ShopCampaignDelivery.id)
                 .limit(1)
@@ -194,7 +207,11 @@ class BroadcastWorker:
             if pair is None:
                 return None
             delivery, identity = pair
-            if identity.platform not in ("telegram", "bale"):
+            if (
+                identity.platform not in ("telegram", "bale")
+                or (active.bot_id is not None
+                    and active.bot_id != identity.bot_id)
+            ):
                 delivery.status = "skipped"
                 delivery.last_error_code = "unknown_platform"
                 await session.commit()
@@ -244,6 +261,10 @@ class BroadcastWorker:
             operations = await legacy_state(session, identity.platform)
             return (
                 operations.state == "active"
+                and identity.bot_id == LEGACY_BOT_IDS.get(identity.platform)
+                and delivery.bot_id == identity.bot_id
+                and (campaign.bot_id is None
+                     or campaign.bot_id == identity.bot_id)
                 and campaign.status == "sending"
                 and identity.is_blocked is False
                 and identity.allow_announcements is True,
