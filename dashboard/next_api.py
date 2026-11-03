@@ -41,6 +41,7 @@ from models.shop_engagement import (
 from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
+from services.shop_store_context import current_context
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
@@ -429,7 +430,7 @@ async def categories(staff: Staff, session: Db) -> list[dict]:
     )).scalars().all()
     return [
         {
-            "id": row.id, "name": row.name,
+            "id": row.id, "name": row.name, "store_id": row.store_id,
             "position": row.position, "is_published": row.is_published,
         }
         for row in items
@@ -555,10 +556,15 @@ async def create_product(
     )
     fields = validated_product_values(fields)
     category_id = fields.get("category_id")
-    if category_id is not None and not await session.get(
-        ShopCategory, category_id
-    ):
-        raise HTTPException(status_code=422, detail="Category not found")
+    if category_id is not None:
+        category = await session.get(ShopCategory, category_id)
+        scope = current_context()
+        if category is None or (
+            scope is not None and category.store_id != scope.current_store_id
+        ):
+            raise HTTPException(
+                status_code=422, detail="Category belongs to another Store",
+            )
     record = Product(**fields)
     session.add(record)
     try:
@@ -598,10 +604,15 @@ async def edit_product(
         fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields = validated_product_values(fields, current=record)
     category_id = fields.get("category_id")
-    if category_id is not None and not await session.get(
-        ShopCategory, category_id
-    ):
-        raise HTTPException(status_code=422, detail="Category not found")
+    if category_id is not None:
+        category = await session.get(ShopCategory, category_id)
+        scope = current_context()
+        if category is None or (
+            scope is not None and category.store_id != scope.current_store_id
+        ):
+            raise HTTPException(
+                status_code=422, detail="Category belongs to another Store",
+            )
     for key, value in fields.items():
         setattr(record, key, value)
     if visibility:
