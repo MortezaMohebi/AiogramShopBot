@@ -20,7 +20,7 @@ type Bridge = {
 };
 
 function load(send: typeof fetch, authenticated = true) {
-  const module = { exports: {} as Bridge };
+  const evaluatedModule = { exports: {} as Bridge };
   const logs: unknown[][] = [];
   const deps: Record<string, unknown> = {
     "server-only": {}, "node:crypto": crypto,
@@ -30,7 +30,7 @@ function load(send: typeof fetch, authenticated = true) {
     "@/lib/session": { readSession: async () => authenticated ? identity : null },
   };
   runInNewContext(code, {
-    exports: module.exports, module,
+    exports: evaluatedModule.exports, module: evaluatedModule,
     require: (id: string) => {
       if (!(id in deps)) throw new Error(`Unexpected dependency ${id}`);
       return deps[id];
@@ -39,7 +39,7 @@ function load(send: typeof fetch, authenticated = true) {
     Buffer, URL, Uint8Array, AbortSignal, Response, fetch: send,
     console: { warn: (...values: unknown[]) => logs.push(values) },
   }, { filename: file });
-  return { ...module.exports, logs };
+  return { ...evaluatedModule.exports, logs };
 }
 
 function hasStatus(status: number) {

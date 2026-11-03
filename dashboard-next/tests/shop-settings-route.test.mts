@@ -32,7 +32,7 @@ function fixture(options: {
 } = {}) {
   const calls: { path: string; method: string; data: unknown }[] = [];
   let persisted: Settings | null = null;
-  const module = { exports: {} as { POST: (request: Request) => Promise<Response> } };
+  const evaluatedModule = { exports: {} as { POST: (request: Request) => Promise<Response> } };
   const deps: Record<string, unknown> = {
     "node:crypto": { randomUUID },
     "next/server": { NextResponse: { json: Response.json.bind(Response) } },
@@ -63,7 +63,7 @@ function fixture(options: {
     },
   };
   runInNewContext(code, {
-    exports: module.exports, module,
+    exports: evaluatedModule.exports, module: evaluatedModule,
     require: (id: string) => {
       if (!(id in deps)) throw new Error(`Unmocked dependency: ${id}`);
       return deps[id];
@@ -71,7 +71,7 @@ function fixture(options: {
     Buffer, URL, TextDecoder, ReadableStream,
     console: { warn: () => undefined },
   }, { filename: sourcePath });
-  return { POST: module.exports.POST, calls, saved: () => persisted };
+  return { POST: evaluatedModule.exports.POST, calls, saved: () => persisted };
 }
 
 function request(payload: unknown, headers: Record<string, string> = {}) {
