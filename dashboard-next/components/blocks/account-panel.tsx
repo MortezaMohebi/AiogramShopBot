@@ -10,7 +10,7 @@ import { type AccountData, controlAction, permissionLabels } from "@/lib/account
 /** Each proof is entered by the owner; passwords are never trimmed or persisted. */
 function ProofFields({ factor, disabled }: { factor: boolean; disabled: boolean }) {
   return <div className="grid gap-3 md:grid-cols-2">
-    <label className="space-y-1 text-sm">رمز فعلی
+    <label className={factor ? "space-y-2 text-sm" : "space-y-2 text-sm md:col-span-2"}>رمز فعلی
       <Input name="current_password" type="password" autoComplete="current-password" maxLength={256} required disabled={disabled} dir="ltr" />
     </label>
     {factor ? <label className="space-y-1 text-sm">کد احراز هویت یا بازیابی
