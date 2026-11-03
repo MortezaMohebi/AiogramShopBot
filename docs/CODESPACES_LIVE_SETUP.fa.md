@@ -11,8 +11,10 @@ Redis و پنل Next.js** اجرا می‌شوند. ارتباط واقعی Bot 
 ۱. در GitHub مخزن `MortezaMohebi/AiogramShopBot` را باز کن.
 ۲. شاخهٔ `feat/codespaces-live-stack-20261103` را انتخاب کن.
 ۳. از **Code → Codespaces → Create codespace on branch** وارد محیط شو.
-۴. ترجیحاً دستگاه **۴ هسته / ۱۶ گیگابایت RAM** یا بیشتر را انتخاب کن؛
-   ساخت هم‌زمان تصویرهای Python و Next.js در ۲ هسته ممکن است فشار بیاورد.
+۴. ترجیحاً دستگاه **۴ هسته / ۱۶ گیگابایت RAM** یا بیشتر را انتخاب کن.
+   در Codespace کوچک‌تر (۲ هسته/۸ گیگابایت)، Setup تصاویر Python و Next.js
+   را **ترتیبی** می‌سازد و Image Python بین Bot و Migration مشترک است؛
+   سرعت پایین‌تر است ولی مصرف هم‌زمان حافظه محدود می‌شود.
 ۵. مطمئن شو Docker Compose V2 فعال است: `docker compose version`.
 
 فایل `.devcontainer/devcontainer.json` پایتون ۳٫۱۲، Docker-in-Docker
