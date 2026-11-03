@@ -193,8 +193,10 @@ class ShopBotCredential(Base):
         Index(
             "uq_shop_bot_credential_fingerprint", "token_fingerprint",
             unique=True, postgresql_where=text(
-                "token_fingerprint IS NOT NULL"
-            ), sqlite_where=text("token_fingerprint IS NOT NULL"),
+                "token_fingerprint IS NOT NULL AND state IN ('staged','active')"
+            ), sqlite_where=text(
+                "token_fingerprint IS NOT NULL AND state IN ('staged','active')"
+            ),
         ),
         # Enforce one active version in Codespaces create_all AND Alembic.
         Index(
