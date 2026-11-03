@@ -21,6 +21,7 @@ from models.shop_staff_security import ShopStaffInvitation, ShopStaffPasswordRes
 from models.shop_channel_features import ShopChannelFeature
 from services.shop_channel_features import get_features, to_data, PLATFORMS
 from services import shop_staff_lifecycle as lifecycle
+from services import shop_staff_preferences as staff_preferences
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from services import shop_admin_security as security
@@ -63,6 +64,23 @@ class ProfileChange(StrictPayload):
     """Only safe personal display preferences; no username or role edits."""
     display_name: str = Field(default="", max_length=120)
     time_zone: str = Field(default="Asia/Tehran", min_length=1, max_length=80)
+
+
+class PreferencesChange(StrictPayload):
+    """Per-user display and non-security work alert preferences."""
+
+    language: Literal["fa", "en"] = "fa"
+    calendar: Literal["auto", "jalali", "gregorian"] = "auto"
+    notify_orders: bool = True
+    notify_campaigns: bool = True
+    notify_finance: bool = True
+    notify_system: bool = True
+
+
+class UsernameChange(Proof):
+    """Rename only the current authenticated account after recent proof."""
+
+    username: str = Field(min_length=3, max_length=80)
 
 
 class Code(StrictPayload):
@@ -214,6 +232,9 @@ async def account(request: Request, staff: Staff, db: Db) -> dict:
         "mfa_enabled": bool(profile.mfa_secret),
         "mfa_required_by_role": member.role in security.MFA_REQUIRED_ROLES,
         "password_policy": await db.run_sync(lambda sync: lifecycle.serialize_policy(lifecycle.policy_for(sync))),
+        "preferences": await db.run_sync(lambda sync: staff_preferences.serialize(
+            staff_preferences.for_user(sync, member.id),
+        )),
         "permissions": sorted(security.ROLE_PERMISSIONS[member.role]),
         "sessions": [{"id": row.id, "label": row.label,
             "current": row.id == own_session(request), "created_at": row.created_at.isoformat(),
@@ -236,6 +257,52 @@ async def profile(payload: ProfileChange, staff: Staff, db: Db) -> dict:
     await db.run_sync(lambda sync: security.update_profile(sync, member.id, payload.display_name, payload.time_zone))
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/account/preferences")
+async def save_preferences(
+    payload: PreferencesChange, staff: Staff, db: Db,
+) -> dict:
+    """Persist language, calendar and work notifications for the owner."""
+    member = required(staff)
+    await db.execute(select(ShopStaff.id).where(
+        ShopStaff.id == member.id,
+    ).with_for_update())
+    await db.run_sync(lambda sync: staff_preferences.update(
+        sync, member.id, **payload.model_dump(),
+    ))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/account/username")
+async def change_username(
+    payload: UsernameChange, staff: Staff, db: Db,
+) -> dict:
+    """Rename the current staff subject, re-authenticate, and revoke sessions."""
+    import re
+
+    member = required(staff)
+    name = payload.username.strip().casefold()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,79}", name):
+        raise security.SecurityRejected("invalid_request", 422)
+    await fresh_proof(db, member, payload)
+    if member.username == name:
+        raise security.SecurityRejected("username_unchanged", 422)
+    member.username = name
+    member.session_version += 1
+    await db.run_sync(lambda sync: security.revoke_others(
+        sync, member.id, None,
+    ))
+    await db.run_sync(lambda sync: security.audit(
+        sync, member.id, "account.username_changed",
+    ))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise security.SecurityRejected("staff_username_exists", 409) from None
+    return {"ok": True, "login_required": True}
 
 
 @router.post("/account/reauthenticate")
