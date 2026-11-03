@@ -628,18 +628,33 @@ async def webhook(request: Request):
 
 @app.exception_handler(Exception)
 async def exception_handler(request: Request, exc: Exception):
-    traceback_str = traceback.format_exc()
-    admin_notification = (
-        f"Critical error caused by {exc}\n\n"
-        f"Stack trace:\n{traceback_str}"
+    """Report only an opaque incident ID; provider errors may contain tokens."""
+    from uuid import uuid4
+
+    incident = str(uuid4())
+    # Neither the exception string nor traceback source is returned to the
+    # browser, operator messaging bot, Docker stdout, or monitoring hooks.
+    logging.error(
+        "Unhandled bot application error: incident=%s type=%s",
+        incident, type(exc).__name__,
     )
-    if len(admin_notification) > 4096:
-        byte_array = bytearray(admin_notification, 'utf-8')
-        admin_notification = BufferedInputFile(byte_array, "exception.txt")
-    await NotificationService.send_to_admins(admin_notification, None)
+    try:
+        await NotificationService.send_to_admins(
+            f"An error was recorded. Incident: {incident}. "
+            "Inspect sanitized application telemetry.",
+            None,
+        )
+    except Exception:
+        logging.error(
+            "Admin incident notification failed for %s", incident,
+        )
     return JSONResponse(
         status_code=500,
-        content={"message": f"An error occurred: {str(exc)}"},
+        content={
+            "message": "Internal server error",
+            "request_id": incident,
+        },
+        headers={"Cache-Control": "no-store"},
     )
 
 
