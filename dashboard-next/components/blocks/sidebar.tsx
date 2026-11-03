@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut, Menu, MessageCircle, X } from "lucide-react";
@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 export function Sidebar({ staff }: { staff: Staff }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [pathname]);
   const visible = navigation.filter((item) => item.roles.includes(staff.role));
 
   return (
@@ -65,6 +64,7 @@ export function Sidebar({ staff }: { staff: Staff }) {
                   <Link
                     href={href}
                     aria-current={current ? "page" : undefined}
+                    onClick={() => setOpen(false)}
                     className={cn(
                       "flex h-11 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
                       current
