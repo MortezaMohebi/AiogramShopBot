@@ -81,7 +81,7 @@ def _flow() -> CatalogFlow:
 
 
 @shop_catalog_router.message(
-    Command("wallet", "referral", "ref", "subscribe", "unsubscribe")
+    Command("wallet", "referral", "ref", "subscribe", "unsubscribe", "linkstart", "linkconfirm", "linkapprove", "linkcancel")
 )
 @shop_catalog_router.message(F.text.in_({
     "💳 اعتبار من", "🎁 معرفی دوستان",
