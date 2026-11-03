@@ -21,6 +21,7 @@ from models.shop_content import (
 from services.shop_money import format_rials
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_presentation import product_message
+from models.shop_uom import ShopUom
 from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
     CatalogScope, legacy_bot_id, permitted_product_clause, resolve_scope,
@@ -321,9 +322,13 @@ class CatalogFlow:
         show_stock = visibility.show_stock if visibility else True
         show_media = visibility.show_media if visibility else True
         show_reviews = visibility.show_reviews if visibility else True
+        unit = await session.get(ShopUom, product.uom_id)
+        if unit is None or unit.store_id != product.store_id:
+            return BotReply("واحد اندازه‌گیری این محصول معتبر نیست.")
         body = product_message(
             product,
             price_label=format_rials(product.price, self.display_unit),
+            unit_symbol=unit.symbol,
             show_description=show_description,
             show_stock=show_stock,
         )

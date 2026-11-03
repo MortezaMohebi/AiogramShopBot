@@ -157,6 +157,13 @@ def upgrade() -> None:
         raise RuntimeError("Unresolved product UoM ownership; rollback transaction")
     op.alter_column("shop_products", "uom_id", nullable=False)
 
+    # Legacy paid order lines were quantified as integral individual pieces.
+    # Preserve their historical unit, independently of future UoM changes.
+    op.add_column("shop_order_lines", sa.Column(
+        "uom_code_snapshot", sa.String(32), nullable=False,
+        server_default="piece",
+    ))
+
     op.add_column("shop_products", sa.Column("external_ref", sa.String(80)))
     op.add_column(
         "shop_store_customers", sa.Column("external_ref", sa.String(80)),

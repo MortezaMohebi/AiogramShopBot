@@ -10,6 +10,7 @@ def product_message(
     product: object,
     *,
     price_label: str,
+    unit_symbol: str = "عدد",
     show_description: bool = True,
     show_stock: bool = True,
 ) -> str:
@@ -23,9 +24,9 @@ def product_message(
         if len(description) > 2800:
             excerpt += "…"
         lines.extend(("", excerpt))
-    lines.extend(("", f"قیمت: {price_label}"))
+    lines.extend(("", f"قیمت هر {unit_symbol}: {price_label}"))
     if stock <= 0:
         lines.append("ناموجود")
     elif show_stock:
-        lines.append(f"موجودی: {stock}")
+        lines.append(f"موجودی: {stock} {unit_symbol}")
     return "\n".join(lines)
