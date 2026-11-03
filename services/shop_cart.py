@@ -499,43 +499,68 @@ class ShopCartFlow:
         return BotReply("\n".join(details)[:4096], tuple(rows))
 
     async def _request_input(
-        self, event: InboundEvent, session: AsyncSession, action: str
+        self, event: InboundEvent, session: AsyncSession, action: str,
     ) -> BotReply:
-        """Wait for the next private text message, not an external UI form."""
+        """Stage address/coupon form state only for the requesting bot."""
         cart = await self._get_cart(event, session, create=True, lock=True)
-        cart.awaiting_input = "address" if action == "shop:address" else "coupon"
+        selected = "address" if action == "shop:address" else "coupon"
+        if cart.is_shared:
+            key = (self._bot_id(event.platform), event.user_id)
+            row = await session.get(
+                ShopCartInputSession, key, with_for_update=True,
+            )
+            if row is None:
+                row = ShopCartInputSession(
+                    bot_id=key[0], platform_user_id=key[1],
+                    cart_id=cart.id,
+                )
+                session.add(row)
+            row.cart_id = cart.id
+            row.awaiting_input = selected
+        else:
+            cart.awaiting_input = selected
         await session.commit()
         return BotReply(
             "نشانی کامل ارسال را وارد کنید (۱۰ تا ۵۰۰ نویسه)."
-            if cart.awaiting_input == "address"
-            else "کد تخفیف را ارسال کنید.",
+            if selected == "address" else "کد تخفیف را ارسال کنید."
         )
 
     async def _accept_input(
-        self, cart: ShopCart, value: str, session: AsyncSession
+        self, cart: ShopCart, value: str, session: AsyncSession,
+        event: InboundEvent,
     ) -> BotReply:
-        """Store the address or validated coupon provided via chat."""
-        if cart.awaiting_input == "address":
+        """Apply only the requesting bot's pending form to its verified cart."""
+        row = None
+        if cart.is_shared:
+            row = await session.get(
+                ShopCartInputSession,
+                (self._bot_id(event.platform), event.user_id),
+                with_for_update=True,
+            )
+            if row is None or row.cart_id != cart.id:
+                raise CartRejected("فرم متعلق به این گفتگو نیست.")
+        state = row.awaiting_input if row else cart.awaiting_input
+        if state == "address":
             if not 10 <= len(value) <= 500:
                 raise CartRejected("نشانی باید بین ۱۰ تا ۵۰۰ نویسه باشد.")
             cart.shipping_address = value
-        elif cart.awaiting_input == "coupon":
+        elif state == "coupon":
             code = value.upper()
             if not re.fullmatch(r"[A-Z0-9_-]{3,32}", code):
                 raise CartRejected("کد تخفیف معتبر نیست.")
-            coupon = await session.scalar(
-                select(ShopCoupon).where(func.upper(ShopCoupon.code) == code)
-            )
+            coupon = await session.scalar(select(ShopCoupon).where(
+                ShopCoupon.store_id == cart.store_id,
+                func.upper(ShopCoupon.code) == code,
+            ))
             if coupon is None:
                 raise CartRejected("کد تخفیف یافت نشد.")
             cart.coupon_id = coupon.id
         else:
             return BotReply("عملیات انتخاب‌شده معتبر نیست.")
-        cart.awaiting_input = None
-        if cart.is_shared:
-            await session.execute(update(ShopCartInputSession).where(
-                ShopCartInputSession.cart_id == cart.id,
-            ).values(awaiting_input=None))
+        if row:
+            row.awaiting_input = None
+        else:
+            cart.awaiting_input = None
         cart.revision += 1
         await session.commit()
         return BotReply(
