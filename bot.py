@@ -486,7 +486,11 @@ async def _process_bale_update(request: Request, payload: dict):
     customer = source.get("from") if isinstance(source, dict) else {}
     async with get_db_session() as session:
         status = await legacy_state(session, "bale")
-        if status.state != "active":
+        refund_request = bool(
+            event.callback_data
+            and event.callback_data.startswith("shop:refundorder:")
+        )
+        if status.state != "active" and not refund_request:
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)
             if status.state != "disabled":
@@ -508,7 +512,7 @@ async def _process_bale_update(request: Request, payload: dict):
         ):
             return {"status": "blocked"}
         options = await get_bot_options(session, Platform.BALE.value)
-        if options.maintenance_enabled:
+        if options.maintenance_enabled and not refund_request:
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)
             await transport.send(
