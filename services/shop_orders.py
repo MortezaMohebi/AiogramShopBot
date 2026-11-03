@@ -16,6 +16,8 @@ from models.shop_checkout import ShopOrderLine
 from models.shop_content import ShopOrder
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
+from services.shop_payment_rails import rail_enabled
+import config
 from services.shop_refunds import ShopRefundService
 from services.shop_payments import PaymentRejected
 
@@ -100,6 +102,24 @@ class ShopOrdersFlow:
         )
         quantities = dict(counts_result.all())
         features = await get_features(session, event.platform.value)
+        credit_available = (
+            features.store_credit_enabled and await rail_enabled(
+                session, event.platform.value, "store_credit",
+            )
+        )
+        external_ready = (
+            config.BALE_WALLET_CHECKOUT_ENABLED
+            and bool(config.BALE_WALLET_PROVIDER_TOKEN)
+            and await rail_enabled(session, "bale", "bale_wallet")
+        ) if event.platform.value == "bale" else (
+            (config.TELEGRAM_STARS_CHECKOUT_ENABLED and
+             await rail_enabled(session, "telegram", "telegram_stars"))
+            or
+            (config.TELEGRAM_FIAT_CHECKOUT_ENABLED
+             and bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN)
+             and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
+             and await rail_enabled(session, "telegram", "telegram_fiat"))
+        )
         lines = ["📦 سفارش‌های من"]
         rows: list[tuple[InlineAction, ...]] = []
         for order in orders:
@@ -117,15 +137,18 @@ class ShopOrdersFlow:
                     ),
                 ))
             if order.status == "approved_unpaid":
-                actions = [InlineAction(
-                    f"💳 پرداخت سفارش #{order.id}", f"shop:pay:{order.id}",
-                )]
-                if features.store_credit_enabled:
+                actions = []
+                if external_ready:
+                    actions.append(InlineAction(
+                        f"💳 پرداخت سفارش #{order.id}", f"shop:pay:{order.id}",
+                    ))
+                if credit_available:
                     actions.append(InlineAction(
                         inline_credit_label(features),
                         f"shop:creditpay:{order.id}",
                     ))
-                rows.append(tuple(actions))
+                if actions:
+                    rows.append(tuple(actions))
             if (
                 order.provider == "manual_review"
                 and order.status in ("pending_review", "approved_unpaid")
