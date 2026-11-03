@@ -3,6 +3,7 @@ import json
 import logging
 from contextlib import suppress
 import sys
+import os
 from hmac import compare_digest
 
 from aiohttp import ClientSession, ClientTimeout
@@ -141,7 +142,13 @@ async def _startup() -> None:
         except Exception as e:
             logging.warning(e)
 
-    if config.TELEGRAM_UPDATE_MODE == "webhook":
+    if config.TELEGRAM_UPDATE_MODE == "webhook" and (
+        os.environ.get("CODESPACE_MANUAL_WEBHOOK") == "true"
+    ):
+        logging.info(
+            "Codespaces webhook registration deferred until explicit connect."
+        )
+    elif config.TELEGRAM_UPDATE_MODE == "webhook":
         await bot.set_webhook(
             url=config.WEBHOOK_URL,
             secret_token=config.WEBHOOK_SECRET_TOKEN,
@@ -169,7 +176,7 @@ async def _shutdown() -> None:
             polling_task.cancel()
         with suppress(asyncio.CancelledError):
             await polling_task
-    else:
+    elif __import__("os").environ.get("CODESPACE_MANUAL_WEBHOOK") != "true":
         await bot.delete_webhook()
     await dp.storage.close()
     await bot.session.close()
