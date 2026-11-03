@@ -108,19 +108,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return failure(request, "security_check_failed", 403);
   }
 
-  // Reject a demonstrably foreign Origin unless browser Fetch Metadata
-  // confirms same-origin intent. A proxy-stripped Origin is acceptable only
-  // because the random, host-only double-submit challenge is verified.
-  const headerOrigin = request.headers.get("origin");
-  if (
-    headerOrigin &&
-    headerOrigin !== "null" &&
-    headerOrigin !== origin.origin &&
-    request.headers.get("sec-fetch-site") !== "same-origin"
-  ) {
-    return failure(request, "security_check_failed", 403);
-  }
-
+  // Do not check an untrusted/rewritten proxy Origin a second time.
+  // A host-only, unpredictable double-submit cookie + custom request header
+  // and Fetch Metadata are the CSRF authority for this browser flow.
   if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
     return failure(request, "invalid_request", 415);
   }
