@@ -100,12 +100,21 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
         if settings and settings.welcome_message
         else get_text(language, BotEntity.COMMON, "start_message")
     )
-    await message.answer_photo(
-        photo=bot_photo_id,
-        caption=welcome[:1024],
-        reply_markup=start_markup,
-        parse_mode=None,
-    )
+    if bot_photo_id:
+        await message.answer_photo(
+            photo=bot_photo_id,
+            caption=welcome[:1024],
+            reply_markup=start_markup,
+            parse_mode=None,
+        )
+    else:
+        # Brand-new Telegram bots can serve the shared catalog before
+        # their optional profile/legacy placeholder image is configured.
+        await message.answer(
+            text=welcome,
+            reply_markup=start_markup,
+            parse_mode=None,
+        )
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())
