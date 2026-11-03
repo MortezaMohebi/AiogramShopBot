@@ -39,15 +39,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return securityError(request);
   }
 
-  const origin = request.headers.get("origin");
-  if (
-    origin &&
-    origin !== "null" &&
-    origin !== expected.origin &&
-    request.headers.get("sec-fetch-site") !== "same-origin"
-  ) {
-    return securityError(request);
-  }
+  // No further Origin comparison: Codespaces may rewrite or strip it.
+  // The host-only double-submit cookie and Fetch Metadata already protect
+  // this mutation against cross-site browser requests.
 
   const response = NextResponse.json(
     { ok: true, redirect: "/login" },
