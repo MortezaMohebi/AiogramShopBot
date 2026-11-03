@@ -11,7 +11,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text,
-    UniqueConstraint, func,
+    UniqueConstraint, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -146,7 +146,7 @@ class ShopRelayCredential(Base):
         Index(
             "uq_shop_relay_active_credential",
             "bot_id", "worker_id", unique=True,
-            postgresql_where=(state == "active"),
+            postgresql_where=text("state = 'active'"),
         ),
     )
 
