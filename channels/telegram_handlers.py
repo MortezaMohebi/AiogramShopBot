@@ -55,6 +55,14 @@ async def _shop_reply(
     event: InboundEvent, session: AsyncSession
 ) -> BotReply | None:
     """Select the common cart first, then catalog for non-cart actions."""
+    # Refund rights for already-paid orders survive bot pause/maintenance.
+    # The order service still validates the exact payer's platform identity.
+    if event.callback_data and event.callback_data.startswith(
+        "shop:refundorder:"
+    ):
+        return await ShopOrdersFlow(
+            config.SHOP_DISPLAY_UNIT
+        ).reply(event, session)
     options = await get_bot_options(session, event.platform.value)
     if options.maintenance_enabled:
         return BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید.")
