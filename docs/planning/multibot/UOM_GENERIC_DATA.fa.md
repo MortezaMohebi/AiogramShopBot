@@ -95,11 +95,16 @@ Files: `services/shop_model_registry.py`,
 - Both templates are **generated dynamically from the same Dataset fields**
   (Excel also includes a Guide sheet). Import rejects unknown/duplicate fields.
 - Limits: 8 MiB raw file, 32 MiB uncompressed XLSX, 1000 imported rows,
-  5000 exported rows per request. Larger datasets require a future streaming
+  5000 exported rows per request, plus a 16 MiB serialized export ceiling.
+  Larger datasets require a future streaming
   batch Job with cursor, progress and separate approval.
 - Workflow: download template → fill → upload → **Preview** (create/update
-  counts and SHA-256) → explicit Apply of **the exact same file** → atomic DB
-  commit. A changed file cannot reuse a Preview Hash.
+  counts, SHA-256 and a fingerprint of current database rows) → **one-use,
+  15-minute database receipt** bound to Staff, browser session, Store and
+  StoreContext version → explicit Apply of the same file. The receipt is
+  consumed atomically with the database changes; an expired/replayed receipt,
+  Store switch, changed file or changed database snapshot is rejected.
+  A matching file hash by itself is NOT authorization to import.
 - Product matching: exact Store-scoped `external_ref` or `sku`, never
   name. Customer matching: exact Store-scoped `external_ref` **only**; do not
   merge customers by phone, name, or platform user ID.
@@ -122,6 +127,12 @@ Files: `services/shop_model_registry.py`,
 unit tables, stable per-Store defaults, Product UoM/purchase-UoM FKs,
 OrderLine unit snapshots and stable per-Store External References.
 
+Additional additive migrations:
+- `20261104x001_import_preview_receipts.py`: one-time import receipt
+  ledger without uploaded file contents or customer PII.
+- `20261104y001_uom_tenant_constraints.py`: composite Store/unit Foreign
+  Keys that block cross-Store unit references even through raw SQL.
+
 - Legacy Product inventory/prices and OrderLine quantities remain unchanged.
 - Existing customers receive deterministic `legacy-customer-<id>`
   references; Products `legacy-product-<id>`, allowing idempotent exports.
@@ -138,12 +149,15 @@ OrderLine unit snapshots and stable per-Store External References.
   switcher / Product Editor / Data Workbench Playwright tests.
 - [ ] Run Alembic w001 on a backed-up PostgreSQL copy; record product/order/
   identity/wallet counts, stock totals and payment/refund sums before/after.
+- [ ] `python -m pytest -q tests/test_model_import_preview_offline.py`.
 - [ ] Import CSV and XLSX with Persian text and Excel-generated numeric cells;
   invalid headers, formulas, zip bombs, duplicate keys, late reauthorization,
   imported 1000+ rows, 5000+ exports and ambiguous network outcomes.
 - [ ] Two Stores with matching SKU/UoM names; export only selected Stores,
   import only one current Store; denied Staff cannot read/modify another
   Store. Test direct PK reads, count queries, aggregates and ORM deletes.
+- [ ] Preview receipt replay, expiry, cross-Store, two-device sessions,
+  optimistic Store version, changed DB rows and PostgreSQL transaction locking.
 - [ ] UoM conversion precision, new Store initialization, referenced Product
   UoM cannot change, existing OrderLine snapshot immutability.
 - [ ] Verify bot catalog/checkout/Bale/Telegram provider compatibility.
