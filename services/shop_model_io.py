@@ -427,18 +427,28 @@ async def preview_or_apply(
         raise security.SecurityRejected("import_empty_file", 422)
     # One duplicate reference in a file could otherwise update one record
     # more than once with conflicting values.
-    seen_keys: set[str] = set()
+    seen_external_refs: set[str] = set()
+    seen_skus: set[str] = set()
+    seen_record_ids: set[int] = set()
     plans = []
     for record in raw_rows:
         values: dict[str, Any] = {}
         for name, value in record["values"].items():
             field = dataset.field(name, intent="import")
             values[name] = _parse(field, value)
-        identity = values.get("external_ref") or values.get("sku")
-        if identity:
-            if identity in seen_keys:
-                raise security.SecurityRejected("import_duplicate_key", 409)
-            seen_keys.add(identity)
+        # Detect both independent unique keys. Two rows with different
+        # external refs but the same SKU must never mutate one Product twice.
+        external_ref = values.get("external_ref")
+        sku = values.get("sku")
+        if (
+            (external_ref and external_ref in seen_external_refs)
+            or (sku and sku in seen_skus)
+        ):
+            raise security.SecurityRejected("import_duplicate_key", 409)
+        if external_ref:
+            seen_external_refs.add(external_ref)
+        if sku:
+            seen_skus.add(sku)
         if dataset.name == "products":
             plan = await _plan_product(
                 db, store_id=store_id, line=values, index=record["row"],
@@ -447,6 +457,10 @@ async def preview_or_apply(
             plan = await _plan_customer(
                 db, store_id=store_id, line=values, index=record["row"],
             )
+        if plan.record is not None:
+            if plan.record.id in seen_record_ids:
+                raise security.SecurityRejected("import_duplicate_key", 409)
+            seen_record_ids.add(plan.record.id)
         plans.append(plan)
     snapshot = _snapshot_digest(plans)
     summary = {
