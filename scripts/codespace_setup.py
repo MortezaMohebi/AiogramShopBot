@@ -156,6 +156,8 @@ def init() -> None:
         "LIVE_ADMIN_PASSWORD": secrets.token_urlsafe(25),
         "LIVE_TELEGRAM_API_MODE": "direct",
         "LIVE_TELEGRAM_PROXY_URL": "",
+        "LIVE_TELEGRAM_PROXY_ALLOWED_ENDPOINTS": "",
+        "LIVE_TELEGRAM_WORKER_ALLOWED_ORIGINS": "",
         "LIVE_TELEGRAM_WORKER_URL": "",
         "LIVE_TELEGRAM_WORKER_SECRET": "",
         "LIVE_DEFAULT_MEDIA_FILE_ID": "",
