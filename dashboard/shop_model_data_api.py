@@ -82,7 +82,15 @@ async def list_models(actor: Actor) -> dict:
     if actor is None:
         raise security.SecurityRejected("session_expired", 401)
     return {"items": [
-        dataset.metadata() for dataset in REGISTRY.values()
+        {
+            **dataset.metadata(),
+            "can_import": bool(
+                dataset.write_permission and security.has_permission(
+                    actor.role, dataset.write_permission,
+                )
+            ),
+        }
+        for dataset in REGISTRY.values()
         if security.has_permission(actor.role, dataset.read_permission)
     ]}
 
@@ -90,7 +98,15 @@ async def list_models(actor: Actor) -> dict:
 @router.get("/data-models/{model_name}")
 async def describe_model(model_name: str, actor: Actor) -> dict:
     """Expose reusable field/operator metadata and no SQL implementation."""
-    return authorize(actor, model_name).metadata()
+    dataset = authorize(actor, model_name)
+    return {
+        **dataset.metadata(),
+        "can_import": bool(
+            dataset.write_permission and security.has_permission(
+                actor.role, dataset.write_permission,
+            )
+        ),
+    }
 
 
 @router.post("/data-models/{model_name}/search")
