@@ -35,8 +35,8 @@ _TELEGRAM_TOKEN = re.compile(r"^[1-9][0-9]{5,19}:[A-Za-z0-9_-]{20,}$")
 _ASCII_TOKEN = re.compile(r"^[\x21-\x7e]{24,512}$")
 
 
-def _cipher() -> Fernet:
-    """Derive a dedicated Fernet key without printing the environment secret."""
+def _key_bytes() -> bytes:
+    """Derive the purpose-isolated encryption/HMAC key from Deployment."""
     raw = os.environ.get("SHOP_BOT_SECRET_KEY")
     if raw:
         try:
@@ -60,7 +60,23 @@ def _cipher() -> Fernet:
         ).digest()
     if len(secret) != 32:
         raise SecurityRejected("bot_secret_key_invalid", 503)
-    return Fernet(base64.urlsafe_b64encode(secret))
+    return secret
+
+
+def _cipher() -> Fernet:
+    """Construct a purpose-isolated, authenticated Fernet cipher."""
+    return Fernet(base64.urlsafe_b64encode(_key_bytes()))
+
+
+def fingerprint_token(platform: str, token: str) -> str:
+    """HMAC a bot token for deduplication without a reversible public digest."""
+    if not _valid_token(token, platform):
+        raise SecurityRejected("invalid_bot_token_format", 422)
+    return hmac.new(
+        _key_bytes(),
+        ("bot-identity:v1:" + platform + ":" + token).encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _valid_token(value: str, platform: str) -> bool:
@@ -121,6 +137,17 @@ def stage_bot_token(
     if bot.status != "draft":
         raise SecurityRejected("bot_credential_stage_requires_draft", 409)
     ciphertext = encrypt_for_bot(bot.id, bot.platform, token)
+    fingerprint = fingerprint_token(bot.platform, token)
+    # A draft must never silently reuse the active legacy bot identity.
+    previous_env = os.environ.get(ENV_TOKEN_KEYS[bot.platform], "")
+    if previous_env and hmac.compare_digest(token, previous_env):
+        raise SecurityRejected("duplicate_bot_credential", 409)
+    duplicate = db.scalar(select(ShopBotCredential.id).where(
+        ShopBotCredential.token_fingerprint == fingerprint,
+        ShopBotCredential.state.in_(("staged", "active")),
+    ))
+    if duplicate is not None:
+        raise SecurityRejected("duplicate_bot_credential", 409)
     version = int(db.scalar(
         select(func.max(ShopBotCredential.version)).where(
             ShopBotCredential.bot_id == bot.id,
@@ -138,7 +165,8 @@ def stage_bot_token(
     row = ShopBotCredential(
         id=str(uuid4()), bot_id=bot.id,
         version=version, source="encrypted", state="staged",
-        ciphertext=ciphertext, created_by=actor_id,
+        ciphertext=ciphertext, token_fingerprint=fingerprint,
+        created_by=actor_id,
     )
     db.add(row)
     db.add(ShopBotRegistryEvent(
@@ -216,4 +244,10 @@ def credential_status(db: Session, *, bot_id: str) -> list[dict]:
         "state": row.state,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "has_secret": bool(row.ciphertext or row.environment_key),
+        "verified_at": (
+            row.verified_at.isoformat() if row.verified_at else None
+        ),
+        "verified_bot_id": (
+            str(row.verified_bot_id) if row.verified_bot_id else None
+        ),
     } for row in entries]
