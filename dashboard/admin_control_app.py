@@ -27,6 +27,7 @@ from dashboard.customer_crm_api import router as customer_router
 from dashboard.bot_profile_api import router as bot_profile_router
 from dashboard.payment_rails_api import router as payment_rails_router
 from dashboard.telegram_transport_api import router as telegram_transport_router
+from dashboard.shop_multibot_api import router as multibot_foundation_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
 PREFIX = "/internal/admin/v1"
@@ -53,6 +54,8 @@ def permission_for(path: str, method: str) -> str | None:
         "channel-features": "settings.manage",
         "bot-profiles": "bots.read" if method == "GET" else "bots.configure",
         "payment-rails": "settings.manage",
+        "stores": "bots.read" if method == "GET" else "bots.configure",
+        "bot-registry": "bots.read" if method == "GET" else "bots.configure",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
         "staff": "staff.manage", "broadcast": "broadcast.approve",
@@ -156,7 +159,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
+                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 await db.commit()
@@ -171,5 +174,6 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(bot_profile_router)
     app.include_router(payment_rails_router)
     app.include_router(telegram_transport_router)
+    app.include_router(multibot_foundation_router)
     app.mount("/", legacy)
     return app
