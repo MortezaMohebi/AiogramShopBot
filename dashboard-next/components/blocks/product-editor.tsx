@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Category, Product } from "@/lib/types";
+import type { UomUnit } from "@/lib/uoms";
 
 type SaveCode =
   | "invalid_product" | "sku_exists" | "permission_denied"
@@ -38,6 +39,7 @@ const messages: Record<SaveCode, string> = {
 interface ProductEditorProps {
   product?: Product;
   categories: Category[];
+  uoms: UomUnit[];
   media?: ProductFile[];
   botAccess?: ProductBotCatalogList;
   botAccessQuery?: string;
@@ -49,6 +51,7 @@ interface ProductEditorProps {
 export function ProductEditor({
   product,
   categories,
+  uoms,
   media = [],
   botAccess,
   botAccessQuery = "",
@@ -58,6 +61,16 @@ export function ProductEditor({
   const router = useRouter();
   const [kind, setKind] = useState<"physical" | "digital">(
     product?.product_type ?? "physical",
+  );
+  const [uomId, setUomId] = useState(
+    product?.uom_id ?? uoms.find((item) => item.code === "piece")?.id ?? "",
+  );
+  const [purchaseUnit, setPurchaseUnit] = useState(
+    product?.purchase_uom_id ?? "",
+  );
+  const currentCategory = uoms.find((item) => item.id === uomId)?.category_id;
+  const purchaseChoices = uoms.filter((item) =>
+    item.active && item.category_id === currentCategory,
   );
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{
@@ -75,6 +88,9 @@ export function ProductEditor({
       ...(product ? { id: product.id } : {}),
       name: value("name"),
       sku: value("sku"),
+      external_ref: value("external_ref") || null,
+      uom_id: uomId || null,
+      purchase_uom_id: purchaseUnit || null,
       description: value("description"),
       category_id: value("category_id") ? Number(value("category_id")) : null,
       price_irr: value("price_irr"),
@@ -178,6 +194,14 @@ export function ProductEditor({
                 </div>
               </div>
               <div className="space-y-2">
+                <label htmlFor="product-external-ref" className="text-sm font-medium">
+                  External Reference (برای Import/Export اختیاری)
+                </label>
+                <Input id="product-external-ref" name="external_ref"
+                  maxLength={80} dir="ltr" defaultValue={product?.external_ref ?? ""}
+                  placeholder="supplier-product-001" />
+              </div>
+              <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label htmlFor="product-description" className="text-sm font-medium">
                     توضیحات (اختیاری)
@@ -200,6 +224,38 @@ export function ProductEditor({
             <Card>
               <CardHeader><CardTitle>قیمت و موجودی</CardTitle></CardHeader>
               <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-2 text-sm font-medium">
+                    واحد فروش (UoM)
+                    <select name="uom_id" value={uomId} required
+                      onChange={(event) => {
+                        setUomId(event.target.value);
+                        setPurchaseUnit("");
+                      }}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3">
+                      {uoms.filter((unit) => unit.active).map((unit) =>
+                        <option key={unit.id} value={unit.id}>
+                          {unit.name} ({unit.symbol})
+                        </option>)}
+                    </select>
+                  </label>
+                  <label className="block space-y-2 text-sm font-medium">
+                    واحد خرید (اختیاری)
+                    <select name="purchase_uom_id" value={purchaseUnit}
+                      onChange={(event) => setPurchaseUnit(event.target.value)}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3">
+                      <option value="">همان واحد فروش</option>
+                      {purchaseChoices.map((unit) =>
+                        <option key={unit.id} value={unit.id}>
+                          {unit.name} ({unit.symbol})
+                        </option>)}
+                    </select>
+                  </label>
+                </div>
+                <p className="text-xs leading-6 text-muted-foreground">
+                  قیمت به ازای یک واحد فروش است. موجودی و Cart فعلاً تعداد صحیح
+                  می‌پذیرند؛ مقدار اعشاری تنها بعد از Migration کامل موجودی مجاز می‌شود.
+                </p>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label htmlFor="product-price" className="text-sm font-medium">
