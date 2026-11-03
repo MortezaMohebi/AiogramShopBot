@@ -42,6 +42,7 @@ from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
 from services.shop_store_context import current_context
+from services.shop_uom import validate_product_units
 from models.shop_multibot import DEFAULT_STORE_ID
 from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
@@ -210,6 +211,9 @@ def product_data(item: Product) -> dict:
         "id": item.id,
         "store_id": item.store_id,
         "sku": item.sku,
+        "external_ref": item.external_ref,
+        "uom_id": item.uom_id,
+        "purchase_uom_id": item.purchase_uom_id,
         "category_id": item.category_id,
         "name": item.name,
         "description": item.description,
@@ -253,6 +257,9 @@ class ProductPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     sku: str = Field(default="", max_length=64)
+    external_ref: str | None = Field(default=None, max_length=80)
+    uom_id: str | None = Field(default=None, max_length=36)
+    purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
@@ -273,6 +280,9 @@ class ProductPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     sku: str | None = Field(default=None, max_length=64)
+    external_ref: str | None = Field(default=None, max_length=80)
+    uom_id: str | None = Field(default=None, max_length=36)
+    purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=40_000)
     category_id: int | None = Field(default=None, ge=1)
@@ -564,6 +574,16 @@ async def create_product(
     # merchant to invent an SKU for every new product.
     fields["sku"] = fields["sku"].strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields["description"] = fields["description"].strip()
+    scope = current_context()
+    if scope is not None:
+        scope.require(scope.current_store_id, write=True)
+    store_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    fields["store_id"] = store_id
+    fields["uom_id"], fields["purchase_uom_id"] = await validate_product_units(
+        session, store_id=store_id,
+        uom_id=fields.get("uom_id"),
+        purchase_uom_id=fields.get("purchase_uom_id"),
+    )
     fields["position"] = await session.run_sync(
         lambda sync: next_display_position(sync, Product)
     )
@@ -615,6 +635,16 @@ async def edit_product(
             raise HTTPException(status_code=422, detail="Null not allowed")
     if "sku" in fields:
         fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
+    if "uom_id" in fields or "purchase_uom_id" in fields:
+        selected, purchase = await validate_product_units(
+            session, store_id=record.store_id,
+            uom_id=fields.get("uom_id", record.uom_id),
+            purchase_uom_id=fields.get(
+                "purchase_uom_id", record.purchase_uom_id,
+            ),
+        )
+        fields["uom_id"] = selected
+        fields["purchase_uom_id"] = purchase
     fields = validated_product_values(fields, current=record)
     category_id = fields.get("category_id")
     if category_id is not None:
