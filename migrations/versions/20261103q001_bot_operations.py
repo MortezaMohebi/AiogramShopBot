@@ -71,6 +71,38 @@ def upgrade() -> None:
             name="ck_bot_operations_welcome_message",
         ),
     )
+    op.create_table(
+        "shop_bot_operations_events",
+        sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column(
+            "bot_id", sa.String(36),
+            sa.ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+            nullable=False,
+        ),
+        sa.Column(
+            "actor_id", sa.Integer(),
+            sa.ForeignKey("shop_staff.id"), nullable=False,
+        ),
+        sa.Column("previous_state", sa.String(20), nullable=False),
+        sa.Column("next_state", sa.String(20), nullable=False),
+        sa.Column("reason", sa.String(500)),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            nullable=False, server_default=sa.func.now(),
+        ),
+        sa.CheckConstraint(
+            "previous_state IN ('active','maintenance','paused','disabled')",
+            name="ck_bot_state_audit_previous",
+        ),
+        sa.CheckConstraint(
+            "next_state IN ('active','maintenance','paused','disabled')",
+            name="ck_bot_state_audit_next",
+        ),
+    )
+    op.create_index(
+        "ix_shop_bot_operations_events_bot_id",
+        "shop_bot_operations_events", ["bot_id"],
+    )
     op.add_column(
         "shop_bot_credentials",
         sa.Column("verified_bot_id", sa.BigInteger()),
