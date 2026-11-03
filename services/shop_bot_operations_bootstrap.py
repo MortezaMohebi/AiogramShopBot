@@ -44,7 +44,8 @@ async def upgrade_codespace_bot_operations(
         "CREATE UNIQUE INDEX IF NOT EXISTS "
         "uq_shop_bot_credential_fingerprint "
         "ON shop_bot_credentials(token_fingerprint) "
-        "WHERE token_fingerprint IS NOT NULL"
+        "WHERE token_fingerprint IS NOT NULL "
+        "AND state IN ('staged','active')"
     ))
     # Keep current maintenance state as the effective Bot Registry state.
     # Re-running the bootstrap never overwrites an operator decision.
