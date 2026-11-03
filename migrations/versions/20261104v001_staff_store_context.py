@@ -109,6 +109,41 @@ def upgrade() -> None:
         "SELECT id, :store_id FROM shop_admin_sessions"
     ), {"store_id": store_id})
 
+    # Legacy global uniqueness would prohibit identical SKUs, categories and
+    # coupons in independent Stores. Scope these constraints to Store.
+    op.drop_constraint(
+        "shop_categories_name_key", "shop_categories", type_="unique",
+    )
+    op.create_unique_constraint(
+        "uq_shop_category_store_name", "shop_categories",
+        ["store_id", "name"],
+    )
+    op.drop_constraint(
+        "shop_products_sku_key", "shop_products", type_="unique",
+    )
+    op.create_unique_constraint(
+        "uq_shop_product_store_sku", "shop_products",
+        ["store_id", "sku"],
+    )
+    op.drop_constraint(
+        "shop_shipping_methods_name_key", "shop_shipping_methods",
+        type_="unique",
+    )
+    op.create_unique_constraint(
+        "uq_shop_shipping_store_name", "shop_shipping_methods",
+        ["store_id", "name"],
+    )
+    op.drop_constraint(
+        "shop_coupons_code_key", "shop_coupons", type_="unique",
+    )
+    op.drop_index(
+        "uq_shop_coupon_code_casefold", table_name="shop_coupons",
+    )
+    op.create_index(
+        "uq_shop_coupon_store_code_casefold", "shop_coupons",
+        ["store_id", sa.text("upper(code)")], unique=True,
+    )
+
     # Require the user's desired Store and active Store set to be independently
     # checked against live membership on every authenticated API request.
 

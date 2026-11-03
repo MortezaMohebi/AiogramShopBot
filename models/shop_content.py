@@ -50,7 +50,12 @@ class ShopCategory(Base):
         nullable=False, default=DEFAULT_STORE_ID, index=True,
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id", "name", name="uq_shop_category_store_name",
+        ),
+    )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -72,7 +77,7 @@ class Product(Base):
         nullable=False, default=DEFAULT_STORE_ID, index=True,
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    sku: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    sku: Mapped[str] = mapped_column(String(64), nullable=False)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("shop_categories.id", ondelete="SET NULL")
     )
@@ -101,6 +106,9 @@ class Product(Base):
     orders: Mapped[list["ShopOrder"]] = relationship(back_populates="product")
 
     __table_args__ = (
+        UniqueConstraint(
+            "store_id", "sku", name="uq_shop_product_store_sku",
+        ),
         CheckConstraint("price >= 0", name="ck_shop_product_price"),
         CheckConstraint("stock_quantity >= 0", name="ck_shop_product_stock"),
         CheckConstraint(
