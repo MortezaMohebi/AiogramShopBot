@@ -186,10 +186,24 @@ class ShopEngagementFlow:
         if identity is not None:
             from models.shop_engagement import ShopWalletAccount
 
-            account_id = await session.scalar(
-                select(ShopWalletAccount.id).where(
-                    ShopWalletAccount.identity_id == identity.id
+            from services.shop_store_commerce import policy_for
+
+            policy = await policy_for(
+                session, store_id=identity.store_id,
+            )
+            if policy.credit_scope == "customer" and identity.customer_id:
+                criteria = (
+                    ShopWalletAccount.store_id == identity.store_id,
+                    ShopWalletAccount.customer_id == identity.customer_id,
+                    ShopWalletAccount.scope == "customer",
                 )
+            else:
+                criteria = (
+                    ShopWalletAccount.identity_id == identity.id,
+                    ShopWalletAccount.scope == "identity",
+                )
+            account_id = await session.scalar(
+                select(ShopWalletAccount.id).where(*criteria)
             )
             if account_id is not None:
                 results = await session.execute(
