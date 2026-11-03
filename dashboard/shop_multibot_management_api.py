@@ -27,7 +27,6 @@ from services import shop_admin_security as security
 from services import shop_bot_operations as operations
 from services import shop_bot_registry as registry
 from services import shop_bot_verification as verification
-from services.shop_media_delivery import bot_fingerprint
 
 router = APIRouter(prefix="/internal/admin/v1", tags=["Multi-bot management"])
 Db = Annotated[AsyncSession, Depends(database)]
@@ -75,80 +74,70 @@ class BotIdentityVerification(StrictPayload):
 
 
 async def bot_health_data(db: AsyncSession, bot: ShopBot) -> dict:
-    """Distinguish verified identity from actual per-bot receiver observations."""
-    operational = await db.get(ShopBotOperations, bot.id)
+    """Separate registered configuration from actual receiver observations."""
+    from models.shop_multibot_receiver import ShopBotReceiver
+
+    policy = await db.get(ShopBotOperations, bot.id)
+    receiver = await db.get(ShopBotReceiver, bot.id)
     previous = (
         await db.get(ShopBotProfile, bot.platform)
-        if operational is None and bot.runtime_owner == "legacy"
+        if policy is None and bot.runtime_owner == "legacy"
         else None
     )
     target_state = (
-        operational.desired_state if operational is not None
+        policy.desired_state if policy is not None
         else "maintenance" if previous and previous.maintenance_enabled
-        else "active" if bot.runtime_owner == "legacy" else "disabled"
+        else "active" if bot.runtime_owner == "legacy"
+        else bot.status if bot.status in {
+            "active", "paused", "maintenance", "disabled",
+        } else "disabled"
     )
-    result = {
+    is_legacy = bot.runtime_owner == "legacy"
+    ready = is_legacy or (
+        receiver is not None and receiver.state == "active"
+        and bot.credential_version is not None
+    )
+    credential_configured = (
+        bool(config.TOKEN if bot.platform == "telegram" else config.BALE_BOT_TOKEN)
+        if is_legacy else bot.credential_version is not None
+    )
+    receiver_state = (
+        "legacy_receiver" if is_legacy
+        else receiver.state if receiver is not None else "not_installed"
+    )
+    if ready and target_state != "active":
+        receiver_state += "_shopping_paused"
+    since = security.clock() - timedelta(hours=1)
+    scope = (ShopInboundUpdate.bot_id == bot.id,)
+    latest = await db.scalar(select(func.max(
+        ShopInboundUpdate.received_at,
+    )).where(*scope))
+    counts = (await db.execute(select(
+        ShopInboundUpdate.status, func.count()
+    ).where(
+        *scope,
+        ShopInboundUpdate.received_at >= since,
+        ShopInboundUpdate.status.in_(("processing", "needs_review")),
+    ).group_by(ShopInboundUpdate.status))).all()
+    stat = dict(counts)
+    return {
         "bot_id": bot.id,
         "runtime_owner": bot.runtime_owner,
-        "runtime_ready": bot.runtime_owner == "legacy",
+        "runtime_ready": ready,
         "desired_state": target_state,
         "provider_api": "not_probed",
         "verified_identity_at": (
             bot.verified_at.isoformat() if bot.verified_at else None
         ),
-        "receiver_status": (
-            "legacy_receiver" if bot.runtime_owner == "legacy"
-            else "not_installed"
+        "receiver_status": receiver_state,
+        "receiver_mode": (
+            receiver.mode if receiver is not None else None
         ),
-        "received_last_at": None,
-        "processing_last_hour": 0,
-        "needs_review_last_hour": 0,
-        "has_live_credential": bool(bot.credential_version),
+        "received_last_at": latest.isoformat() if latest else None,
+        "processing_last_hour": int(stat.get("processing", 0)),
+        "needs_review_last_hour": int(stat.get("needs_review", 0)),
+        "has_live_credential": credential_configured,
     }
-    if bot.runtime_owner != "legacy":
-        return result
-
-    token = (
-        config.TOKEN if bot.platform == "telegram"
-        else config.BALE_BOT_TOKEN
-    )
-    if not token:
-        result["receiver_status"] = "credential_missing"
-        result["has_live_credential"] = False
-        return result
-
-    scope = (
-        ShopInboundUpdate.platform == bot.platform,
-        ShopInboundUpdate.bot_fingerprint == bot_fingerprint(token),
-    )
-    since = security.clock() - timedelta(hours=1)
-    last_seen = await db.scalar(select(func.max(
-        ShopInboundUpdate.received_at,
-    )).where(*scope))
-    counts = (await db.execute(
-        select(ShopInboundUpdate.status, func.count()).where(
-            *scope,
-            ShopInboundUpdate.received_at >= since,
-            ShopInboundUpdate.status.in_(("processing", "needs_review")),
-        ).group_by(ShopInboundUpdate.status)
-    )).all()
-    status_counts = dict(counts)
-    result["received_last_at"] = (
-        last_seen.isoformat() if last_seen else None
-    )
-    result["processing_last_hour"] = int(
-        status_counts.get("processing", 0)
-    )
-    result["needs_review_last_hour"] = int(
-        status_counts.get("needs_review", 0)
-    )
-    result["receiver_status"] = (
-        "legacy_receiver_paused"
-        if target_state in {"maintenance", "paused", "disabled"}
-        else "legacy_receiver"
-    )
-    return result
-
 
 @router.get("/bot-registry/{bot_id}")
 async def read_bot(
