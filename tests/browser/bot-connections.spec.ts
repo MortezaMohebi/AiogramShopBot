@@ -21,7 +21,10 @@ test("Connection settings show actual modes without leaking bot credentials", as
   await expect(page.getByRole("heading", { name: "اتصال ربات‌ها و Webhook" }))
     .toBeVisible();
   await expect(page.getByText("روش فعال دریافت")).toBeVisible();
-  await expect(page.getByText("getUpdates — Long Polling")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "روش موردنظر" }))
+    .toHaveValue("webhook");
+  await expect(page.locator('option[value="polling"]'))
+    .toHaveText("getUpdates — Long Polling");
   await expect(page.getByText("مسیر Webhook بله (Secret مخفی)"))
     .toHaveCount(0);
   await expect(page.getByRole("button", { name: "ثبت درخواست تغییر حالت" }))
