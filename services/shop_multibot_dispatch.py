@@ -33,7 +33,9 @@ LOG = logging.getLogger(__name__)
 async def _send(context: BotContext, client, chat_id: int, reply: BotReply) -> None:
     """Send one finalized message through only the current bot's transport."""
     if context.platform == Platform.TELEGRAM:
-        await TelegramTransport(client).send(chat_id, reply)
+        await TelegramTransport(
+            client, bot_id=context.bot_id,
+        ).send(chat_id, reply)
     else:
         await client.send(chat_id, reply)
 
