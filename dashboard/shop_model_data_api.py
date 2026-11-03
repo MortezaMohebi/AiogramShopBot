@@ -19,6 +19,7 @@ from dashboard.admin_control_api import StrictPayload
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 from services import shop_model_io as data_io
+from services import shop_import_preview as previews
 from services import shop_model_query as engine
 from services.shop_model_registry import REGISTRY, get_dataset
 from services.shop_store_context import current_context
@@ -183,6 +184,7 @@ async def import_model(
     model_name: str, request: Request, actor: Actor, db: Db,
     format_name: Literal["csv", "xlsx"] = Query(alias="format"),
     dry_run: bool = True, expected_sha256: str | None = None,
+    preview_id: str | None = None,
 ) -> dict:
     """Preview before applying one atomic, Store-owned spreadsheet update."""
     dataset = authorize(actor, model_name, write=True)
@@ -199,9 +201,31 @@ async def import_model(
     raw = await request.body()
     if len(raw) > data_io.MAX_BYTES:
         raise security.SecurityRejected("invalid_import_file", 413)
-    return await data_io.preview_or_apply(
-        db, dataset=dataset, raw=raw,
-        format_name=format_name,
-        store_id=context.current_store_id, dry_run=dry_run,
-        expected_sha256=expected_sha256,
+    if dry_run:
+        # A preview authorizes this exact file and database snapshot for
+        # this signed Staff, current Store, context version and browser session.
+        outcome = await data_io.preview_or_apply(
+            db, dataset=dataset, raw=raw,
+            format_name=format_name,
+            store_id=context.current_store_id, dry_run=True,
+            expected_sha256=None,
+        )
+        receipt = await previews.issue_preview(
+            db, context=context, model_name=dataset.name, result=outcome,
+        )
+        receipt.pop("snapshot_sha256", None)
+        return receipt
+    if preview_id is None or expected_sha256 is None:
+        raise security.SecurityRejected("import_preview_required", 409)
+    locked_receipt = await previews.claim_preview(
+        db, context=context, model_name=dataset.name,
+        receipt_id=preview_id, expected_sha256=expected_sha256,
     )
+    result = await data_io.preview_or_apply(
+        db, dataset=dataset, raw=raw,
+        format_name=format_name, store_id=context.current_store_id,
+        dry_run=False, expected_sha256=expected_sha256,
+        preview_receipt=locked_receipt,
+    )
+    result.pop("snapshot_sha256", None)
+    return result
