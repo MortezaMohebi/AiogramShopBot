@@ -14,7 +14,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
   const params = await searchParams;
   return (
     <div>
-      <PageHeading title="محصول جدید" description="ثبت اطلاعات محصول برای هر دو ربات، بدون تغییر برنامه." />
+      <PageHeading title="محصول جدید" description="محصول ابتدا در کاتالوگ مرکزی ثبت می‌شود؛ دسترسی بات‌ها را پس از ثبت در فرم ویرایش تعیین کنید." />
       {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
         {({
           mfa: "ابتدا احراز هویت دومرحله‌ای حساب مدیر را فعال کنید.",
