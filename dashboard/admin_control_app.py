@@ -32,6 +32,7 @@ from dashboard.shop_multibot_management_api import router as multibot_management
 from dashboard.shop_bot_catalog_api import router as bot_catalog_router
 from dashboard.shop_multibot_receiver_api import router as multi_receiver_router
 from dashboard.shop_relay_pool_api import router as relay_pool_router
+from dashboard.shop_store_commerce_api import router as store_commerce_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -72,6 +73,8 @@ def permission_for(path: str, method: str) -> str | None:
         ),
         "bot-catalog": "bots.read" if method == "GET" else "bots.configure",
         "relay-workers": "bots.read" if method == "GET" else "bots.configure",
+        "store-customers": "bots.read",
+        "payment-accounts": "bots.read" if method == "GET" else "bots.apply",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
         "staff": "staff.manage", "broadcast": "broadcast.approve",
@@ -184,7 +187,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
+                if (path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 await db.commit()
@@ -204,6 +207,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(bot_catalog_router)
     app.include_router(multi_receiver_router)
     app.include_router(relay_pool_router)
+    app.include_router(store_commerce_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
     app.mount("/", legacy)
