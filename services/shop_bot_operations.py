@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.shop_bot_operations import ShopBotOperations
+from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
 from models.shop_bot_profile import ShopBotProfile
 from models.shop_multibot import LEGACY_BOT_IDS, ShopBot, ShopBotRegistryEvent
 from models.shop_staff import ShopStaff
@@ -179,8 +179,14 @@ def change_state(
     if ops.desired_state == state:
         raise security.SecurityRejected("bot_state_unchanged", 409)
 
+    previous_state = ops.desired_state
     ops.desired_state = state
     ops.reason = cleaned_reason if state != "active" else None
+    db.add(ShopBotOperationsEvent(
+        id=str(uuid4()), bot_id=bot.id, actor_id=actor_id,
+        previous_state=previous_state, next_state=state,
+        reason=cleaned_reason or None,
+    ))
     ops.updated_by = actor_id
     # Other legacy management screens must see an identical maintenance
     # status, otherwise they could silently overrule the new bot registry.
