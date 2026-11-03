@@ -2,30 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch, bridgeResponse } from "@/lib/bridge";
 import { readSession } from "@/lib/session";
 import type { Staff } from "@/lib/types";
+import { trustedBrowserOrigin } from "@/lib/public-origin";
 
 export const runtime = "nodejs";
 const MAX_BODY_BYTES = 50_100_000;
 type UploadTarget = "product" | "testimonial" | "campaign";
-
-/** Require an exact configured public Origin; reject spoofed cross-site posts. */
-function allowedOrigin(request: NextRequest): string | null {
-  const publicOrigin = process.env.NEXT_ADMIN_PUBLIC_ORIGIN;
-  if (process.env.NODE_ENV === "production" && !publicOrigin) return null;
-  const expected = publicOrigin ?? request.nextUrl.origin;
-  try {
-    const url = new URL(expected);
-    if (url.origin !== expected) return null;
-    if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
-      return null;
-    }
-  } catch {
-    return null;
-  }
-  if (request.headers.get("origin") !== expected) return null;
-  const site = request.headers.get("sec-fetch-site");
-  if (site && site !== "same-origin") return null;
-  return expected;
-}
 
 /** Read one multipart body with a hard limit even without Content-Length. */
 async function boundedBytes(request: NextRequest): Promise<Uint8Array> {
@@ -59,7 +40,7 @@ async function boundedBytes(request: NextRequest): Promise<Uint8Array> {
 
 /** Browser POST -> same-origin BFF -> signed FastAPI private storage. */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const origin = allowedOrigin(request);
+  const origin = trustedBrowserOrigin(request);
   if (!origin) return new NextResponse("Forbidden", { status: 403 });
   const target = request.nextUrl.searchParams.get("target") as UploadTarget | null;
   if (!target || !["product", "testimonial", "campaign"].includes(target)) {
