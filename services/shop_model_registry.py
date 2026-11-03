@@ -14,6 +14,9 @@ from typing import Any
 
 from sqlalchemy import ColumnElement
 from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy import select
+from models.shop_uom import ShopUom
 
 from models.shop_content import Product, ShopOrder
 from models.shop_store_commerce import ShopStoreCustomer
@@ -30,7 +33,7 @@ class Field:
     key: str
     title: str
     kind: str
-    column: InstrumentedAttribute | None = None
+    column: InstrumentedAttribute | ColumnElement | None = None
     sortable: bool = True
     searchable: bool = True
     groupable: bool = False
@@ -167,10 +170,20 @@ PRODUCT = Dataset(
               importable=True, groupable=True),
         Field("category_id", "دسته‌بندی", "integer", Product.category_id,
               importable=True, groupable=True),
-        Field("uom_code", "واحد فروش", "string", None, importable=True,
-              searchable=False, sortable=False, max_length=32),
-        Field("purchase_uom_code", "واحد خرید", "string", None,
-              importable=True, searchable=False, sortable=False, max_length=32),
+        Field(
+            "uom_code", "واحد فروش", "string",
+            select(ShopUom.code).where(
+                ShopUom.id == Product.uom_id,
+            ).correlate(Product).scalar_subquery(),
+            importable=True, groupable=True, max_length=32,
+        ),
+        Field(
+            "purchase_uom_code", "واحد خرید", "string",
+            select(ShopUom.code).where(
+                ShopUom.id == Product.purchase_uom_id,
+            ).correlate(Product).scalar_subquery(),
+            importable=True, max_length=32,
+        ),
         Field("store_id", "Store", "uuid", Product.store_id,
               sortable=False, importable=False, max_length=36),
     ),
@@ -278,8 +291,9 @@ def safe_value(value: Any) -> str | int | bool | None:
     """Serialize bounded, non-secret CSV/JSON scalar fields."""
     if value is None:
         return None
-    if isinstance(value, (datetime,)):
-        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, datetime):
+        instant = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return instant.astimezone(timezone.utc).isoformat()
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, (bool, int)):
