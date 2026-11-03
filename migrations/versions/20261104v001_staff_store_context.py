@@ -109,6 +109,19 @@ def upgrade() -> None:
         "SELECT id, :store_id FROM shop_admin_sessions"
     ), {"store_id": store_id})
 
+    # The old shop_settings singleton still serves the legacy default Store.
+    # Additional Stores receive independent brand and welcome/help settings.
+    op.create_table(
+        "shop_store_settings",
+        sa.Column("store_id", sa.String(36), sa.ForeignKey(
+            "shop_stores.id", ondelete="RESTRICT",
+        ), primary_key=True),
+        sa.Column("brand_name", sa.String(255)),
+        sa.Column("welcome_message", sa.Text()),
+        sa.Column("faq_text", sa.Text()),
+        sa.Column("support_url", sa.String(500)),
+    )
+
     # Legacy global uniqueness would prohibit identical SKUs, categories and
     # coupons in independent Stores. Scope these constraints to Store.
     op.drop_constraint(

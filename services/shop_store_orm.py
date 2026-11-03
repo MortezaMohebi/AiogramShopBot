@@ -16,7 +16,9 @@ from models.shop_content import Product, ShopCategory, ShopIdentity, ShopOrder
 from models.shop_engagement import ShopCampaign, ShopWalletAccount
 from models.shop_multibot import ShopBot
 from models.shop_payment import ShopPaymentAttempt
-from models.shop_store_commerce import ShopPaymentAccount, ShopStoreCustomer
+from models.shop_store_commerce import (
+    ShopPaymentAccount, ShopStoreCustomer, ShopStoreSettings,
+)
 from services import shop_admin_security as security
 from services.shop_store_context import current_context
 
@@ -27,6 +29,7 @@ STORE_OWNED_MODELS = (
     ShopBot, ShopCategory, Product, ShopShippingMethod, ShopCoupon,
     ShopIdentity, ShopCart, ShopOrder, ShopWalletAccount, ShopCampaign,
     ShopPaymentAttempt, ShopStoreCustomer, ShopPaymentAccount,
+    ShopStoreSettings,
 )
 
 

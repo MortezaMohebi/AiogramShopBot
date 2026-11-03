@@ -44,7 +44,7 @@ from models.shop_relay_pool import (
 )
 from models.shop_store_commerce import (
     ShopStoreCustomer, ShopStoreCommercePolicy, ShopBotCommercePolicy,
-    ShopPaymentAccount, ShopBotPaymentAccess,
+    ShopPaymentAccount, ShopBotPaymentAccess, ShopStoreSettings,
 )
 from models.shop_staff_store import (
     ShopStaffStoreAccess, ShopStaffStorePreference, ShopAdminSessionStore,
