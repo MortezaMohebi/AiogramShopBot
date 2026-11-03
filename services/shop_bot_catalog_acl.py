@@ -151,6 +151,17 @@ async def visible_product_ids(
     return set(result.all())
 
 
+async def lock_bot_catalog_policy(
+    db: AsyncSession, bot_id: str,
+) -> None:
+    """Serialize payment/order creation with any per-bot ACL edit."""
+    owned = await db.scalar(select(ShopBot.id).where(
+        ShopBot.id == bot_id,
+    ).with_for_update())
+    if owned is None:
+        raise security.SecurityRejected("bot_not_found", 404)
+
+
 async def lock_legacy_catalog_policy(
     db: AsyncSession, platform: str,
 ) -> None:
@@ -166,6 +177,18 @@ async def lock_legacy_catalog_policy(
     ).with_for_update())
     if existing is None:
         raise security.SecurityRejected("bot_not_found", 404)
+
+
+async def allowed_for_bot(
+    db: AsyncSession, bot_id: str, product_ids: list[int] | set[int],
+) -> bool:
+    """Re-evaluate every current product grant in the authenticated bot scope."""
+    identifiers = set(product_ids)
+    if not identifiers:
+        return False
+    scope = await resolve_scope(db, bot_id=bot_id)
+    permitted = await visible_product_ids(db, scope, identifiers)
+    return permitted == identifiers
 
 
 async def allowed_for_legacy(
