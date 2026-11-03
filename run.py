@@ -15,6 +15,8 @@ from handlers.common.review_management import review_management_router
 from channels.contracts import InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from models.shop_content import ShopSettings
+from models.shop_multibot import LEGACY_BOT_IDS
+from models.shop_bot_operations import ShopBotOperations
 from services.shop_identity import register_customer
 from services.shop_bot_profiles import get_bot_options
 from services.shop_referrals import (
@@ -104,8 +106,13 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     bot_photo_id = get_bot_photo_id()
     # The shop's own welcome copy comes from the admin dashboard.
     settings = await session.get(ShopSettings, 1)
+    per_bot = await session.get(
+        ShopBotOperations, LEGACY_BOT_IDS["telegram"],
+    )
     welcome = (
-        settings.welcome_message
+        per_bot.welcome_message
+        if per_bot and per_bot.welcome_message
+        else settings.welcome_message
         if settings and settings.welcome_message
         else get_text(language, BotEntity.COMMON, "start_message")
     )
