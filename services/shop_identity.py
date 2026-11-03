@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
+from models.shop_scope import legacy_id
 from models.shop_customer_crm import ShopCustomerProfile
 from services.shop_customer_crm import effective_restriction
 
@@ -24,6 +25,7 @@ async def register_customer(
     platform_user_id: int,
     username: str | None = None,
     first_name: str | None = None,
+    bot_id: str | None = None,
 ) -> ShopIdentity:
     """Create or update a platform identity without granting campaign opt-in."""
     if type(platform_user_id) is not int or platform_user_id <= 0:
@@ -33,7 +35,9 @@ async def register_customer(
     if first_name is not None:
         first_name = first_name.strip()[:255] or None
 
+    owner = bot_id or legacy_id(platform.value)
     condition = (
+        ShopIdentity.bot_id == owner,
         ShopIdentity.platform == platform.value,
         ShopIdentity.platform_user_id == platform_user_id,
     )
@@ -41,6 +45,7 @@ async def register_customer(
     identity = result.scalar_one_or_none()
     if identity is None:
         identity = ShopIdentity(
+            bot_id=owner,
             platform=platform.value,
             platform_user_id=platform_user_id,
             username=username,
@@ -64,7 +69,8 @@ async def register_customer(
 
 
 async def is_blocked(
-    session: AsyncSession, *, platform: Platform, platform_user_id: int
+    session: AsyncSession, *, platform: Platform, platform_user_id: int,
+    bot_id: str | None = None,
 ) -> bool:
     """Check the platform-scoped ban without mutating any records."""
     rows = await session.execute(
@@ -77,6 +83,7 @@ async def is_blocked(
             ShopCustomerProfile.identity_id == ShopIdentity.id,
         )
         .where(
+            ShopIdentity.bot_id == (bot_id or legacy_id(platform.value)),
             ShopIdentity.platform == platform.value,
             ShopIdentity.platform_user_id == platform_user_id,
         )
