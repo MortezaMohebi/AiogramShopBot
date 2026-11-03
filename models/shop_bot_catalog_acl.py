@@ -31,7 +31,7 @@ class ShopBotProductRule(Base):
     )
     product_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("shop_products.id", ondelete="CASCADE"),
-        primary_key=True,
+        primary_key=True, index=True,
     )
     effect: Mapped[str] = mapped_column(String(5), nullable=False)
     updated_by: Mapped[int | None] = mapped_column(
@@ -60,7 +60,7 @@ class ShopBotCategoryRule(Base):
     )
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("shop_categories.id", ondelete="CASCADE"),
-        primary_key=True,
+        primary_key=True, index=True,
     )
     effect: Mapped[str] = mapped_column(String(5), nullable=False)
     updated_by: Mapped[int | None] = mapped_column(
