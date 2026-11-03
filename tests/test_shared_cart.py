@@ -15,6 +15,13 @@ from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopCoupon, ShopOrderLine, ShopShippingMethod,
 )
 from models.shop_content import Product, ShopCategory, ShopOrder
+from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
+from models.shop_bot_operations import ShopBotOperations
+from models.shop_channel_features import ShopChannelFeature
+from models.shop_multibot import (
+    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+)
+from models.shop_staff import ShopStaff
 from services.shop_cart import ShopCartFlow, validate_coupon
 from services.shop_orders import ShopOrdersFlow
 
@@ -33,6 +40,14 @@ class AsyncDatabase:
     async def scalar(self, statement):
         """Read a single value."""
         return self.session.scalar(statement)
+
+    async def scalars(self, statement):
+        """Return scalar query results for ACL predicates."""
+        return self.session.scalars(statement)
+
+    def add(self, record):
+        """Add a new cart or order row to this isolated session."""
+        self.session.add(record)
 
     async def get(self, model, key):
         """Load a model by its primary key."""
@@ -60,8 +75,10 @@ def db():
     """Provide complete new checkout tables in disposable SQLite memory."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
     tables = [
-        ShopCategory.__table__,
-        Product.__table__,
+        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
+        ShopChannelFeature.__table__, ShopBotOperations.__table__,
+        ShopCategory.__table__, Product.__table__,
+        ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
         ShopShippingMethod.__table__,
         ShopCoupon.__table__,
         ShopCart.__table__,
@@ -71,6 +88,19 @@ def db():
     ]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine) as session:
+        session.add(ShopStore(
+            id=DEFAULT_STORE_ID, slug="default",
+            name="Existing Store", state="active",
+        ))
+        session.add_all([
+            ShopBot(
+                id=bot_id, store_id=DEFAULT_STORE_ID,
+                slug=f"legacy-{platform}", name=f"Legacy {platform}",
+                platform=platform, status="legacy", runtime_owner="legacy",
+                version=1, credential_version=1,
+            ) for platform, bot_id in LEGACY_BOT_IDS.items()
+        ])
+        session.commit()
         yield AsyncDatabase(session)
     engine.dispose()
 
