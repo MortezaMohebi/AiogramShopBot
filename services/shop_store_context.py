@@ -265,7 +265,8 @@ async def store_permissions(
     """Show only Stores this administrator is authorized to manage."""
     manageable = {
         store.id for store in operator.allowed_stores
-        if store.access_level == "manager"
+        if store.id in operator.active_store_ids
+        and store.access_level == "manager"
     }
     current_grants = (await db.scalars(select(ShopStaffStoreAccess).where(
         ShopStaffStoreAccess.staff_id == member_id,
@@ -318,6 +319,12 @@ async def update_staff_permissions(
     }
     if not set(desired) <= manageable:
         raise security.SecurityRejected("store_permission_denied", 403)
+    # Serialize grants/revocations on each Store row. Otherwise two admins
+    # could concurrently demote two different managers, both see count=2,
+    # and accidentally leave that Store with no manager.
+    (await db.scalars(select(ShopStore).where(
+        ShopStore.id.in_(sorted(manageable)),
+    ).order_by(ShopStore.id).with_for_update())).all()
     target = await db.get(ShopStaff, target_id, with_for_update=True)
     if target is None:
         raise security.SecurityRejected("staff_not_found", 404)
