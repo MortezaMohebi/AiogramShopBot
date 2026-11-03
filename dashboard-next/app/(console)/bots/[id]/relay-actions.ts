@@ -7,6 +7,7 @@ import { ApiError, adminFetch } from "@/lib/bridge";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ERRORS = new Set([
   "configuration_changed", "invalid_relay_priority",
+  "relay_priority_taken",
   "relay_route_not_supported", "relay_route_must_pause",
   "duplicate_relay_credential", "invalid_worker_secret",
   "relay_pool_disabled", "relay_activation_not_ready",
