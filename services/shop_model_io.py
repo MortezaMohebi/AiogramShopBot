@@ -11,7 +11,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import re
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -19,13 +21,14 @@ from zipfile import BadZipFile, ZipFile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import Product, ShopCategory
 from models.shop_checkout import ShopCartItem, ShopOrderLine
 from models.shop_store_commerce import ShopStoreCustomer
+from models.shop_model_import import ShopModelImportPreview
 from models.shop_uom import ShopUom, default_unit_id
 from services import shop_admin_security as security
 from services.shop_model_registry import Dataset, Field
@@ -360,10 +363,39 @@ async def _plan_customer(
     )
 
 
+def _snapshot_digest(plans: list[RowPlan]) -> str:
+    """Fingerprint existing ORM records and create/update classifications.
+
+    Any concurrent price, name, stock, UoM or customer profile modification
+    between Preview and Apply invalidates the earlier approval. Only a hash
+    is stored; the snapshot does not duplicate customer PII in the ledger.
+    """
+    manifest = []
+    for plan in plans:
+        item = {
+            "line": plan.number,
+            "action": plan.action,
+            "record_id": getattr(plan.record, "id", None),
+        }
+        if plan.record is not None:
+            mapper = sa_inspect(plan.record).mapper
+            item["columns"] = {
+                column.key: str(getattr(plan.record, column.key))
+                for column in mapper.column_attrs
+            }
+        manifest.append(item)
+    payload = json.dumps(
+        manifest, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
 async def preview_or_apply(
     db: AsyncSession, *, dataset: Dataset, raw: bytes,
     format_name: str, store_id: str, dry_run: bool,
     expected_sha256: str | None,
+    preview_receipt: ShopModelImportPreview | None = None,
 ) -> dict:
     """Preview or atomically upsert explicit models within the current Store."""
     if dataset.name not in {"products", "customers"}:
@@ -371,7 +403,9 @@ async def preview_or_apply(
     if type(dry_run) is not bool:
         raise security.SecurityRejected("invalid_import_request", 422)
     digest = hashlib.sha256(raw).hexdigest()
-    if not dry_run and expected_sha256 != digest:
+    if not dry_run and (
+        expected_sha256 != digest or preview_receipt is None
+    ):
         raise security.SecurityRejected("import_preview_required", 409)
     _, raw_rows = decode_table(dataset, raw=raw, format_name=format_name)
     if not raw_rows:
@@ -399,8 +433,10 @@ async def preview_or_apply(
                 db, store_id=store_id, line=values, index=record["row"],
             )
         plans.append(plan)
+    snapshot = _snapshot_digest(plans)
     summary = {
         "model": dataset.name, "rows": len(plans),
+        "snapshot_sha256": snapshot,
         "creates": sum(row.action == "create" for row in plans),
         "updates": sum(row.action == "update" for row in plans),
         "sha256": digest,
@@ -410,6 +446,15 @@ async def preview_or_apply(
     }
     if dry_run:
         return {**summary, "committed": False}
+    # The locked, one-use proof is consumed in the SAME transaction as the
+    # model changes; a replay after timeout is never retried automatically.
+    if (
+        preview_receipt.snapshot_sha256 != snapshot
+        or preview_receipt.rows != len(plans)
+        or preview_receipt.creates != summary["creates"]
+        or preview_receipt.updates != summary["updates"]
+    ):
+        raise security.SecurityRejected("import_data_changed", 409)
 
     try:
         for plan in plans:
@@ -433,6 +478,7 @@ async def preview_or_apply(
                         # Bulk publishing/stock overwrite are out of scope.
                         continue
                     setattr(plan.record, name, value)
+        preview_receipt.consumed_at = datetime.now(timezone.utc)
         await db.flush()
         await db.commit()
     except IntegrityError:
