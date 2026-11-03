@@ -173,6 +173,10 @@ def stage_bot_token(
         id=str(uuid4()), bot_id=bot.id, actor_id=actor_id,
         action="credential_staged", credential_version=version,
     ))
+    # A superseding staged token invalidates the latest getMe timestamp,
+    # while retaining the previously verified immutable provider identity
+    # to reject accidental or malicious credential swaps.
+    bot.verified_at = None
     bot.version += 1
     db.flush()
     return row
