@@ -246,8 +246,8 @@ def test_legacy_denials_are_provider_specific_and_inherit_restores(db):
 def test_atomic_product_many2many_and_stale_version_rejected(db):
     """One product can be denied by Telegram but allowed by a new Bale bot."""
     assignments = [
-        (LEGACY_BOT_IDS["telegram"], "deny"),
-        (new_bot(db).id, "allow"),
+        (LEGACY_BOT_IDS["telegram"], "deny", 1),
+        (new_bot(db).id, "allow", 1),
     ]
     changed = acl.update_product_bot_rules(
         db, product_id=200, actor_id=1,
