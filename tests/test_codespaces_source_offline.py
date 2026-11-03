@@ -143,3 +143,52 @@ def test_fresh_schema_bootstrap_never_stamps_migrations() -> None:
     assert 'CODESPACE_FRESH_SCHEMA: "true"' in compose
     assert "  bootstrap:" in compose
     assert "service_completed_successfully" in compose
+
+
+
+def test_proxy_safe_login_requires_host_bound_csrf_and_structured_errors() -> None:
+    """Do not regress to raw 403 HTML or disable CSRF behind Codespaces."""
+    root = Path(__file__).resolve().parent.parent / "dashboard-next"
+    server = (root / "app/api/auth/login/route.ts").read_text("utf-8")
+    challenge = (root / "app/api/auth/challenge/route.ts").read_text("utf-8")
+    security = (root / "lib/login-challenge.ts").read_text("utf-8")
+    client = (root / "components/blocks/login-form.tsx").read_text("utf-8")
+
+    assert "verifyLoginChallenge(request)" in server
+    assert "safeLoginFetchMetadata(request)" in server
+    assert "Cache-Control" in server
+    assert "invalid_credentials" in server
+    assert "temporarily_locked" in server
+    assert "security_check_failed" in server
+    assert 'new NextResponse("Forbidden"' not in server
+
+    assert "issueLoginChallenge()" in challenge
+    assert "httpOnly: true" in challenge
+    assert 'sameSite: "strict"' in challenge
+    assert "no-store" in challenge
+    assert "__Host-shop_login_challenge" in security
+    assert "timingSafeEqual" in security
+
+    assert "onSubmit={handleSubmit}" in client
+    assert 'role="alert"' in client
+    assert "aria-busy={working}" in client
+    assert "requestBrowserChallenge()" in client
+    assert 'redirect: "error"' in client
+    assert "setIssue(loginIssue(result, response.status))" in client
+
+    assert (root / "app/error.tsx").is_file()
+    assert (root / "app/global-error.tsx").is_file()
+    assert (root / "components/blocks/logout-control.tsx").is_file()
+
+
+def test_codespaces_auth_smoke_never_uses_real_admin_password() -> None:
+    """The local login probe must use only a randomly named fake identity."""
+    root = Path(__file__).resolve().parent.parent
+    smoke = (root / "scripts/codespace_auth_smoke.py").read_text("utf-8")
+    setup = (root / "scripts/codespace_setup.py").read_text("utf-8")
+
+    assert "secrets.token_hex(12)" in smoke
+    assert '"security_check_failed"' in smoke
+    assert '"invalid_credentials"' in smoke
+    assert '"LIVE_ADMIN_PASSWORD"' not in smoke
+    assert 'if args.command == "auth-smoke":' in setup
