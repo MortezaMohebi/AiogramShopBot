@@ -78,6 +78,18 @@ def test_compose_ports_and_paid_flags_are_explicitly_bounded() -> None:
     assert "location = /hooks/telegram" in gateway
     assert "location ^~ /webhooks/bale/" in gateway
     assert "location / { return 404; }" in gateway
+    # Restrict Nginx master/worker to UID/GID 101 and keep all
+    # Linux capabilities dropped, with writable temporary paths.
+    assert 'user: "101:101"' in compose
+    assert 'cap_drop: ["ALL"]' in compose
+    for path in (
+        "client_body_temp_path /tmp/client_temp;",
+        "proxy_temp_path /tmp/proxy_temp;",
+        "fastcgi_temp_path /tmp/fastcgi_temp;",
+        "uwsgi_temp_path /tmp/uwsgi_temp;",
+        "scgi_temp_path /tmp/scgi_temp;",
+    ):
+        assert path in gateway
 
 
 def test_admin_password_never_has_a_public_api_route() -> None:
