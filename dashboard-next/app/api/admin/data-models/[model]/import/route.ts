@@ -44,8 +44,8 @@ export async function POST(
   }
 
   const contentLength = request.headers.get("content-length");
-  if (!contentLength || !/^\d+$/.test(contentLength) ||
-    Number(contentLength) > MAX_BYTES) {
+  if (contentLength && (!/^\d+$/.test(contentLength) ||
+    Number(contentLength) > MAX_BYTES)) {
     return reject("invalid_import_file", 413);
   }
   if ((request.headers.get("content-type") ?? "").split(";", 1)[0] !==
@@ -53,9 +53,27 @@ export async function POST(
     return reject("invalid_import_file", 415);
   }
   try {
-    const bytes = new Uint8Array(await request.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) {
-      return reject("invalid_import_file", 413);
+    // Read at most 8 MiB, including uploads without Content-Length.
+    const reader = request.body?.getReader();
+    if (!reader) return reject("invalid_import_file", 422);
+    const chunks: Uint8Array[] = [];
+    let byteLength = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > MAX_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return reject("invalid_import_file", 413);
+      }
+      chunks.push(value);
+    }
+    if (byteLength === 0) return reject("invalid_import_file", 422);
+    const bytes = new Uint8Array(byteLength);
+    let offset = 0;
+    for (const part of chunks) {
+      bytes.set(part, offset);
+      offset += part.byteLength;
     }
     const parameters = new URLSearchParams({
       format, dry_run: mode === "preview" ? "true" : "false",
