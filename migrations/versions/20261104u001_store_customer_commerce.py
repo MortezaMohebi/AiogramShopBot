@@ -124,6 +124,17 @@ def upgrade() -> None:
     # Keep this nullable for a transitional rollout and old offline fixtures;
     # the application always creates a Customer for new real identities.
 
+    # Earlier cross-provider links already contain independent mutual proof.
+    # Reconcile only links with two identities in this same Store, preserving
+    # every historical order/wallet reference and every consent record.
+    conn.execute(sa.text(
+        "UPDATE shop_identities AS target SET customer_id = source.customer_id "
+        "FROM shop_customer_identity_links AS links "
+        "JOIN shop_identities AS source ON source.id = links.source_id "
+        "WHERE target.id = links.target_id "
+        "AND target.store_id = source.store_id"
+    ))
+
     for table in ("shop_carts", "shop_orders"):
         op.add_column(table, sa.Column(
             "customer_id", sa.BigInteger(), nullable=True,
@@ -228,6 +239,31 @@ def upgrade() -> None:
         "FROM shop_wallet_accounts AS a WHERE e.account_id = a.id"
     ))
 
+    op.create_table(
+        "shop_store_customer_link_events",
+        sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column("store_id", sa.String(36), sa.ForeignKey(
+            "shop_stores.id", ondelete="RESTRICT",
+        ), nullable=False),
+        sa.Column("request_id", sa.String(36), sa.ForeignKey(
+            "shop_customer_link_requests.id", ondelete="RESTRICT",
+        ), nullable=False, unique=True),
+        sa.Column("source_identity_id", sa.Integer(), sa.ForeignKey(
+            "shop_identities.id", ondelete="RESTRICT",
+        ), nullable=False),
+        sa.Column("target_identity_id", sa.Integer(), sa.ForeignKey(
+            "shop_identities.id", ondelete="RESTRICT",
+        ), nullable=False),
+        sa.Column("customer_id", sa.BigInteger(), sa.ForeignKey(
+            "shop_store_customers.id", ondelete="RESTRICT",
+        ), nullable=False),
+        sa.Column("linked_at", sa.DateTime(timezone=True), nullable=False,
+                  server_default=sa.func.now()),
+    )
+    op.create_index(
+        "ix_shop_store_customer_link_events_store_id",
+        "shop_store_customer_link_events", ["store_id"],
+    )
     op.create_table(
         "shop_store_commerce_policies",
         sa.Column("store_id", sa.String(36), sa.ForeignKey(

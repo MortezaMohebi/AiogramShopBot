@@ -38,6 +38,35 @@ class ShopStoreCustomer(Base):
     )
 
 
+class ShopStoreCustomerLinkEvent(Base):
+    """Immutable proof that two bot identities were linked after both approved."""
+
+    __tablename__ = "shop_store_customer_link_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    request_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_customer_link_requests.id", ondelete="RESTRICT"),
+        nullable=False, unique=True,
+    )
+    source_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_identities.id", ondelete="RESTRICT"), nullable=False,
+    )
+    target_identity_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_identities.id", ondelete="RESTRICT"), nullable=False,
+    )
+    customer_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("shop_store_customers.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+
 class ShopStoreCommercePolicy(Base):
     """Explicit opt-in sharing; absent policy always isolates existing data."""
 
@@ -184,6 +213,7 @@ class ShopBotPaymentAccess(Base):
 STORE_COMMERCE_TABLES = frozenset({
     ShopStoreCustomer.__tablename__,
     ShopStoreCommercePolicy.__tablename__,
+    ShopStoreCustomerLinkEvent.__tablename__,
     ShopBotCommercePolicy.__tablename__,
     ShopPaymentAccount.__tablename__,
     ShopBotPaymentAccess.__tablename__,
