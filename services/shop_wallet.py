@@ -64,6 +64,10 @@ class ShopWalletService:
         ).with_for_update()
         account = await session.scalar(stmt)
         if account is not None:
+            if account.bot_id is not None and account.bot_id != identity.bot_id:
+                raise StoreCreditRejected("مالکیت کیف پول با بات مطابقت ندارد.")
+            if account.bot_id is None:
+                account.bot_id = identity.bot_id
             return account
 
         # A nested transaction protects the outer payment transaction from
@@ -156,10 +160,11 @@ class ShopWalletService:
         if not 0 <= balance_after <= MAX_RIALS:
             raise StoreCreditRejected("موجودی اعتبار کافی نیست یا سقف آن پر شده است.")
         account.balance_irr = balance_after
+        identity = await session.get(ShopIdentity, identity_id)
+        if identity is None or identity.bot_id != account.bot_id:
+            raise StoreCreditRejected("مالکیت اعتبار قابل تأیید نیست.")
         entry = ShopWalletEntry(
-            bot_id=identity.bot_id if (identity := await session.get(
-                ShopIdentity, identity_id,
-            )) is not None else None,
+            bot_id=identity.bot_id,
             account_id=account.id,
             operation_key=operation_key,
             delta_irr=delta_irr,
@@ -283,7 +288,7 @@ class ShopWalletService:
             delta_irr=-amount,
             operation_key=f"store-credit-pay-order:{order.id}",
             reason=f"Payment for order #{order.id}",
-            actor=f"{platform.value}:{user_id}",
+            actor=f"{bot_id or legacy_id(platform.value)}:{user_id}",
         )
         for line, product in pairs:
             product.stock_quantity -= line.quantity
