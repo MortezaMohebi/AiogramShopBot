@@ -2,7 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
-  CheckCircle2, CircleHelp, Cloud, LockKeyhole, Network, RefreshCcw,
+  CheckCircle2, CircleHelp, LockKeyhole, Network, RefreshCcw,
   RotateCcw, ShieldAlert, ShieldCheck, TestTube2, Wifi,
 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
