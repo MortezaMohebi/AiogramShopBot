@@ -146,6 +146,18 @@ services:
       timeout: 5s
       retries: 12
     restart: unless-stopped
+  broadcast-worker:
+    <<: *backend-service
+    profiles: ["broadcast"]
+    environment:
+      <<: *backend-env
+      SHOP_PROCESS_ROLE: "broadcast_worker"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    volumes: ["codespace_media:/bot/media_data"]
+    command: ["python", "-m", "workers.shop_broadcast"]
+    restart: "no"
   pytest:
     <<: *backend-service
     profiles: ["qa"]
