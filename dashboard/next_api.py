@@ -1197,6 +1197,8 @@ async def bot_connection_probe(staff: Staff) -> dict:
     the complete administration dashboard.
     """
     require_staff(staff, "superadmin")
+    import asyncio
+
     from aiohttp import ClientSession, ClientTimeout
     from channels.bale import BaleTransport
     from utils.telegram import create_bot, create_telegram_session
@@ -1210,10 +1212,12 @@ async def bot_connection_probe(staff: Staff) -> dict:
             telegram_bot = create_bot(
                 config.TOKEN, create_telegram_session()
             )
-            info = await telegram_bot.get_webhook_info(
-                request_timeout=8,
+            info = await asyncio.wait_for(
+                telegram_bot.get_webhook_info(), timeout=8
             )
-            account = await telegram_bot.get_me(request_timeout=8)
+            account = await asyncio.wait_for(
+                telegram_bot.get_me(), timeout=8
+            )
             telegram = {
                 "status": "connected",
                 "username": account.username,
