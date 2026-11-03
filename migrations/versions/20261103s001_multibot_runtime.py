@@ -118,6 +118,17 @@ def upgrade() -> None:
         "AND campaign.bot_id IS NULL"
     ))
 
+    # The deduplication identity belongs to the registered bot across
+    # token rotation, not to the transient token fingerprint.
+    op.drop_constraint(
+        "uq_shop_inbound_update",
+        "shop_inbound_updates", type_="unique",
+    )
+    op.create_unique_constraint(
+        "uq_shop_inbound_bot_update",
+        "shop_inbound_updates", ["bot_id", "update_id"],
+    )
+
     # Drop the global platform+user uniqueness only once every legacy row
     # has a non-null bot_id. This permits another Telegram bot to serve the
     # same numeric Telegram user in an entirely different identity/cart.
