@@ -61,9 +61,6 @@ export default async function BotDetailPage({
   const { bot, health, events } = detail;
   const legacy = bot.runtime_owner === "legacy";
   const pending = bot.credentials.find(item => item.state === "staged");
-  const verified = bot.credentials.find(item =>
-    item.version === (bot.credential_version ?? pending?.version)
-  );
   const active = bot.operations.desired_state === "active";
   return <div className="space-y-6">
     <div className="flex flex-wrap gap-2">
