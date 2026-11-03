@@ -393,7 +393,7 @@ async def activate_route(
         ShopRelayCredential.bot_id == bot_id,
         ShopRelayCredential.worker_id == worker_id,
         ShopRelayCredential.version == credential_version,
-        ShopRelayCredential.state == "staged",
+        ShopRelayCredential.state.in_(("staged", "active")),
     ))
     if (
         worker is None or worker.status == "disabled"
@@ -402,6 +402,9 @@ async def activate_route(
         or bot.provider_bot_id is None or bot.verified_at is None
         or route is None or route.version != expected_version
         or credential is None
+        or (
+            credential.state == "active" and route.status != "paused"
+        )
     ):
         raise security.SecurityRejected("relay_activation_not_ready", 409)
     origin = _origin(worker.origin)
@@ -446,19 +449,25 @@ async def activate_route(
         or _origin(worker.origin) != origin
         or route is None or route.version != expected_version
         or bot is None or bot.provider_bot_id != identity.id
-        or credential is None or credential.state != "staged"
+        or credential is None
+        or credential.state not in {"staged", "active"}
+        or (
+            credential.state == "active" and route.status != "paused"
+        )
     ):
         raise security.SecurityRejected("configuration_changed", 409)
+    promoting = credential.state == "staged"
     old = (await db.scalars(select(ShopRelayCredential).where(
         ShopRelayCredential.bot_id == bot_id,
         ShopRelayCredential.worker_id == worker_id,
         ShopRelayCredential.state == "active",
     ).with_for_update())).all()
-    for item in old:
-        item.state = "retiring"
-    # The partial unique index permits exactly one active credential per pair.
-    await db.flush()
-    credential.state = "active"
+    if promoting:
+        for item in old:
+            item.state = "retiring"
+        # Exactly one active key remains after a staged-key promotion.
+        await db.flush()
+        credential.state = "active"
     credential.verified_at = datetime.now(timezone.utc)
     route.status = "active"
     route.version += 1
@@ -466,7 +475,10 @@ async def activate_route(
     worker.status = "active"
     worker.version += 1
     worker.updated_by = actor_id
-    _event(db, worker_id, bot_id, actor_id, "route_activated")
+    _event(
+        db, worker_id, bot_id, actor_id,
+        "route_activated" if promoting else "route_resumed",
+    )
     await db.commit()
     return {
         "ok": True, "bot_id": bot_id,
