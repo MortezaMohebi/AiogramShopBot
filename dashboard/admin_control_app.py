@@ -31,6 +31,7 @@ from dashboard.shop_multibot_api import router as multibot_foundation_router
 from dashboard.shop_multibot_management_api import router as multibot_management_router
 from dashboard.shop_bot_catalog_api import router as bot_catalog_router
 from dashboard.shop_multibot_receiver_api import router as multi_receiver_router
+from dashboard.shop_relay_pool_api import router as relay_pool_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -195,6 +196,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(multibot_management_router)
     app.include_router(bot_catalog_router)
     app.include_router(multi_receiver_router)
+    app.include_router(relay_pool_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
     app.mount("/", legacy)
