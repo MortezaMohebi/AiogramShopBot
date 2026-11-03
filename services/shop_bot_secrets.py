@@ -8,6 +8,7 @@ does not hot-swap running Telegram/Bale transports or enable a draft bot.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -40,13 +41,13 @@ def _cipher() -> Fernet:
     if raw:
         try:
             secret = base64.urlsafe_b64decode(raw.encode("ascii"))
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, binascii.Error):
             raise SecurityRejected("bot_secret_key_invalid", 503) from None
     else:
         base = os.environ.get("SHOP_SECURITY_ENCRYPTION_KEY", "")
         try:
             decoded = base64.urlsafe_b64decode(base.encode("ascii"))
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, binascii.Error):
             raise SecurityRejected("bot_secret_key_unavailable", 503) from None
         if len(decoded) != 32:
             raise SecurityRejected("bot_secret_key_unavailable", 503)
