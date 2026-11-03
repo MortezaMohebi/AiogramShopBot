@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowLeft, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
@@ -40,7 +39,11 @@ async function readJson(response: Response): Promise<LoginResponse> {
     throw new Error("network_unavailable");
   }
   try {
-    return (await response.json()) as LoginResponse;
+    const value: unknown = await response.json();
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("service_unavailable");
+    }
+    return value as LoginResponse;
   } catch {
     throw new Error("service_unavailable");
   }
@@ -63,7 +66,6 @@ function loginIssue(data: LoginResponse, status: number): LoginIssue {
 
 /** Persian, accessible login with host-bound CSRF and inline errors. */
 export function LoginForm({ initialError }: LoginFormProps) {
-  const router = useRouter();
   const [issue, setIssue] = useState<LoginIssue | null>(
     initialError ? { code: normalizeLoginError(initialError) } : null,
   );
@@ -132,8 +134,9 @@ export function LoginForm({ initialError }: LoginFormProps) {
       if (result.redirect !== "/dashboard") {
         throw new Error("service_unavailable");
       }
-      router.replace("/dashboard");
-      router.refresh();
+      // A full navigation reliably observes the new HttpOnly cookie, even
+      // when the App Router has a cached unauthenticated server component.
+      window.location.replace("/dashboard");
     } catch (error) {
       const code: LoginErrorCode =
         error instanceof Error && error.message === "security_check_failed"
