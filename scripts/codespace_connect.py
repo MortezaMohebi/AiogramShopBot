@@ -30,7 +30,7 @@ def validate() -> None:
         raise RuntimeError("Paid/broadcast operations must remain disabled.")
 
 
-async def check_provider(*, register: bool) -> None:
+async def check_provider(*, register: bool, unregister: bool) -> None:
     """Check both tokens; register only after a separate explicit request."""
     validate()
     tg_bot = create_bot(config.TOKEN, create_telegram_session())
@@ -39,7 +39,13 @@ async def check_provider(*, register: bool) -> None:
         print(f"Telegram API: OK (@{me.username or 'unnamed'})")
         info = await tg_bot.get_webhook_info()
         expected_tg = config.WEBHOOK_URL
-        if register:
+        if unregister:
+            if info.url == expected_tg:
+                await tg_bot.delete_webhook(drop_pending_updates=False)
+                print("Telegram webhook: removed from this Codespace")
+            else:
+                print("Telegram webhook: points elsewhere, preserved")
+        elif register:
             # Idempotent and non-destructive to pending customer updates.
             if info.url != expected_tg:
                 await tg_bot.set_webhook(
@@ -79,10 +85,14 @@ async def check_provider(*, register: bool) -> None:
                     current = info_bale.get("url", "") if isinstance(
                         info_bale, dict
                     ) else ""
-                    print(
-                        "Bale webhook: "
-                        + ("matching" if current == desired_bale else "not matching")
-                    )
+                    if unregister and current == desired_bale:
+                        await bale._call("deleteWebhook", {})
+                        print("Bale webhook: removed from this Codespace")
+                    else:
+                        print(
+                            "Bale webhook: "
+                            + ("matching" if current == desired_bale else "not matching")
+                        )
     finally:
         await tg_bot.session.close()
 
@@ -91,13 +101,21 @@ def main() -> None:
     """Require an explicit flag before registering either external webhook."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--unregister", action="store_true",
+        help="Remove only webhooks still pointing to this Codespace.",
+    )
+    parser.add_argument(
         "--register",
         action="store_true",
         help="Register Codespace webhooks with real Telegram and Bale bots.",
     )
     args = parser.parse_args()
+    if args.register and args.unregister:
+        parser.error("Choose register OR unregister.")
     try:
-        asyncio.run(check_provider(register=args.register))
+        asyncio.run(check_provider(
+            register=args.register, unregister=args.unregister
+        ))
     except Exception:
         # Third-party error messages may contain provider URLs with tokens.
         # Never echo raw exception, headers or response bodies.
