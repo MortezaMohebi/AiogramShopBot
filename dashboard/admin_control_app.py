@@ -28,6 +28,7 @@ from dashboard.bot_profile_api import router as bot_profile_router
 from dashboard.payment_rails_api import router as payment_rails_router
 from dashboard.telegram_transport_api import router as telegram_transport_router
 from dashboard.shop_multibot_api import router as multibot_foundation_router
+from dashboard.shop_multibot_management_api import router as multibot_management_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
 PREFIX = "/internal/admin/v1"
@@ -175,5 +176,6 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(payment_rails_router)
     app.include_router(telegram_transport_router)
     app.include_router(multibot_foundation_router)
+    app.include_router(multibot_management_router)
     app.mount("/", legacy)
     return app
