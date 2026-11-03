@@ -93,16 +93,19 @@ function RouteControls({
       <CredentialProof />
       <Button type="submit" variant="outline">توقف انتخاب این مسیر</Button>
     </form> : null}
-    {route.credential_state === "staged" && route.credential_version ? <form
+    {route.credential_history.filter(item =>
+      item.state === "staged" || item.state === "retiring",
+    ).map(item => <form key={item.version}
       action={revokeRelayCredential} className="space-y-3 rounded-lg border p-3">
       <input type="hidden" name="bot_id" value={bot.id} />
       <input type="hidden" name="worker_id" value={route.worker_id} />
-      <input type="hidden" name="version" value={route.credential_version} />
-      <p className="text-xs leading-6">لغو نسخهٔ Staged فقط پس از حذف آن از
-        RELAY_CLIENTS_JSON در Worker نهایی می‌شود.</p>
+      <input type="hidden" name="version" value={item.version} />
+      <p className="text-xs leading-6">کلید نسخهٔ {item.version} ({item.state}):
+        ابتدا این Version را از RELAY_CLIENTS_JSON Worker حذف کنید، سپس
+        با MFA آن را در Registry لغو کنید.</p>
       <CredentialProof />
-      <Button type="submit" variant="outline">لغو نسخهٔ Staged</Button>
-    </form> : null}
+      <Button type="submit" variant="outline">لغو نسخهٔ {item.version}</Button>
+    </form>)}
   </div>;
 }
 
