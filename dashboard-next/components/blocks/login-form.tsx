@@ -205,7 +205,6 @@ export function LoginForm({ initialError }: LoginFormProps) {
           spellCheck={false}
           minLength={3}
           maxLength={80}
-          placeholder="shopadmin"
           className="text-start"
           disabled={working}
           required
