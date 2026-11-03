@@ -4,6 +4,7 @@ export interface BotConnections {
   telegram: {
     configured: boolean;
     update_mode: "webhook" | "polling";
+    pending_update_mode: "webhook" | "polling" | null;
     api_transport: "direct" | "http_proxy" | "cloudflare_worker";
     webhook_url: string | null;
     worker_configured: boolean;
