@@ -36,7 +36,10 @@ async def main() -> None:
             revision = await connection.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
             if revision.first():
                 raise RuntimeError("Versioned databases must use their migrations")
-        missing = permitted_missing(tables, set(Base.metadata.tables), set(CONTROL_TABLE_NAMES))
+        # These new tables are additive; neither existing product nor order
+        # columns are changed. An existing Codespace keeps all its data.
+        additions = set(CONTROL_TABLE_NAMES) | {"shop_product_visibility"}
+        missing = permitted_missing(tables, set(Base.metadata.tables), additions)
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,
                 tables=[Base.metadata.tables[name] for name in missing], checkfirst=False))
