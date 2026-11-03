@@ -70,7 +70,7 @@ services:
     volumes: ["codespace_pg:/var/lib/postgresql"]
     networks: [private]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$${POSTGRES_USER}\" -d \"$$${POSTGRES_DB}\""]
+      test: ["CMD-SHELL", "pg_isready -U \"${POSTGRES_USER}\" -d \"${POSTGRES_DB}\""]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -78,11 +78,11 @@ services:
   redis:
     image: redis:7.4-alpine
     environment: {REDIS_PASSWORD: "${LIVE_REDIS_PASSWORD:?Run setup}"}
-    command: ["/bin/sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$${REDIS_PASSWORD}\""]
+    command: ["/bin/sh", "-ec", "exec redis-server --appendonly yes --requirepass \"${REDIS_PASSWORD}\""]
     volumes: ["codespace_redis:/data"]
     networks: [private]
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 30
