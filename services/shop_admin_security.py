@@ -27,6 +27,7 @@ from models.shop_admin_control import AdminEvent, AdminProfile, AdminSession
 UTC = timezone.utc
 IDLE_LIMIT = timedelta(minutes=30)
 ABSOLUTE_LIMIT = timedelta(hours=8)
+MFA_REQUIRED_ROLES = frozenset({"superadmin", "finance"})
 REAUTH_LIMIT = timedelta(minutes=5)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 BASE_PERMISSIONS = frozenset({"account.manage_self", "dashboard.read", "reports.read"})
@@ -268,6 +269,7 @@ def verify_second_factor(db: Session, profile: AdminProfile, code: str, *, now=N
 
 def disable_mfa(db: Session, profile: AdminProfile) -> None:
     """Clear MFA only after the route has performed fresh password/OTP proof."""
+    # Role enforcement is performed by the caller while holding its staff row.
     profile.mfa_secret = profile.pending_mfa = profile.pending_until = None
     profile.recovery_hashes, profile.last_totp_step = "[]", -1
     audit(db, profile.staff_id, "mfa.disabled")
