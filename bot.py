@@ -24,6 +24,7 @@ from admin import authentication_backend
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_customer_experience import CustomerExperienceFlow
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
 from services.shop_bot_operations import legacy_state
@@ -550,6 +551,8 @@ async def _process_bale_update(request: Request, payload: dict):
             reply = await ShopCartFlow(
                 display_unit=config.SHOP_DISPLAY_UNIT
             ).reply(event, session)
+        if reply is None:
+            reply = await CustomerExperienceFlow().reply(event, session)
         if reply is None:
             reply = await CatalogFlow(
                 currency_label=config.SHOP_CURRENCY_LABEL,
