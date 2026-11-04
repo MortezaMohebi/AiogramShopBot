@@ -7,6 +7,7 @@ import pytest
 from services.shop_customer_notifications import (
     notification_permitted,
     validate_outbox_transition,
+    can_deliver_at_dispatch,
 )
 
 
@@ -51,3 +52,36 @@ def test_uncertain_outcome_never_requeues_or_resends():
         validate_outbox_transition("processing", "queued")
     with pytest.raises(ValueError):
         validate_outbox_transition("sent", "processing")
+
+
+@pytest.mark.parametrize(
+    "topic,consent,explicit,bot_active,owner_valid,expected",
+    [
+        ("order", False, False, True, True, True),
+        ("ticket", False, False, True, True, True),
+        ("marketing", False, False, True, True, False),
+        ("marketing", True, False, True, True, True),
+        ("stock", False, False, True, True, False),
+        ("stock", False, True, True, True, True),
+        ("order", False, False, False, True, False),
+        ("ticket", False, False, True, False, False),
+    ],
+)
+def test_dispatch_rechecks_consent_and_bot_state(
+    topic, consent, explicit, bot_active, owner_valid, expected,
+):
+    """Queued notifications must not bypass later revocation or deactivation."""
+    assert can_deliver_at_dispatch(
+        topic=topic, advertising_consent=consent,
+        explicit_request=explicit, bot_active=bot_active,
+        owner_valid=owner_valid,
+    ) is expected
+
+
+def test_cancelled_or_review_required_message_cannot_be_sent_again():
+    """Delivery results must never be implicitly replayed."""
+    assert validate_outbox_transition("processing", "cancelled")
+    with pytest.raises(ValueError):
+        validate_outbox_transition("cancelled", "queued")
+    with pytest.raises(ValueError):
+        validate_outbox_transition("needs_review", "processing")
