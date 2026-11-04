@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_checkout import ShopOrderLine
-from models.shop_content import ShopOrder
+from models.shop_content import Product, ShopOrder
+from services.shop_checkout_policy import legal_credit_for_items
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_payment_rails import rail_enabled
@@ -122,13 +123,19 @@ class ShopOrdersFlow:
         # denies an unpaid order. A customer's paid/refundable history remains
         # visible, and cancellation of the unpaid request stays available.
         order_items = await session.execute(
-            select(ShopOrderLine.order_id, ShopOrderLine.product_id)
-            .where(ShopOrderLine.order_id.in_(ids))
+            select(
+                ShopOrderLine.order_id, ShopOrderLine.product_id,
+                Product.product_type,
+            ).join(
+                Product, Product.id == ShopOrderLine.product_id,
+            ).where(ShopOrderLine.order_id.in_(ids))
         )
         order_products: dict[int, set[int]] = {}
+        order_types: dict[int, set[str]] = {}
         all_products: set[int] = set()
-        for order_id, product_id in order_items.all():
+        for order_id, product_id, product_type in order_items.all():
             order_products.setdefault(order_id, set()).add(product_id)
+            order_types.setdefault(order_id, set()).add(product_type)
             all_products.add(product_id)
         allowed_products = await visible_product_ids(
             session,
@@ -150,27 +157,27 @@ class ShopOrdersFlow:
                 bot_id=owner,
             )
         )
-        external_ready = (
+        bale_ready = (
             config.BALE_WALLET_CHECKOUT_ENABLED
             and (not legacy or bool(config.BALE_WALLET_PROVIDER_TOKEN))
             and await rail_enabled(
                 session, "bale", "bale_wallet", bot_id=owner,
             )
-        ) if event.platform.value == "bale" else (
-            (
-                config.TELEGRAM_STARS_CHECKOUT_ENABLED
-                and await rail_enabled(
-                    session, "telegram", "telegram_stars", bot_id=owner,
-                )
-            ) or (
-                config.TELEGRAM_FIAT_CHECKOUT_ENABLED
-                and (not legacy or bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN))
-                and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
-                and await rail_enabled(
-                    session, "telegram", "telegram_fiat", bot_id=owner,
-                )
+        ) if event.platform == Platform.BALE else False
+        stars_ready = (
+            config.TELEGRAM_STARS_CHECKOUT_ENABLED
+            and await rail_enabled(
+                session, "telegram", "telegram_stars", bot_id=owner,
             )
-        )
+        ) if event.platform == Platform.TELEGRAM else False
+        fiat_ready = (
+            config.TELEGRAM_FIAT_CHECKOUT_ENABLED
+            and (not legacy or bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN))
+            and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
+            and await rail_enabled(
+                session, "telegram", "telegram_fiat", bot_id=owner,
+            )
+        ) if event.platform == Platform.TELEGRAM else False
         lines = ["📦 سفارش‌های من"]
         rows: list[tuple[InlineAction, ...]] = []
         for order in orders:
@@ -198,12 +205,22 @@ class ShopOrdersFlow:
                     )
                 else:
                     actions = []
+                    kinds = order_types.get(order.id, set())
+                    external_ready = (
+                        bale_ready if event.platform == Platform.BALE
+                        else stars_ready if kinds == {"digital"}
+                        else fiat_ready if kinds == {"physical"}
+                        else False
+                    )
                     if external_ready:
                         actions.append(InlineAction(
                             f"💳 پرداخت سفارش #{order.id}",
                             f"shop:pay:{order.id}",
                         ))
-                    if credit_available:
+                    if (
+                        credit_available
+                        and legal_credit_for_items(event.platform, kinds)
+                    ):
                         actions.append(InlineAction(
                             inline_credit_label(features),
                             f"shop:creditpay:{order.id}",
