@@ -214,7 +214,7 @@ async def require_digital_supply(
                 ShopDigitalAsset.product_id == product.id,
                 ShopDigitalAsset.store_id == product.store_id,
                 ShopDigitalAsset.active.is_(True),
-            ))
+            ).with_for_update())
         )
         if pinned_asset_id is not None:
             validate_pinned_asset(

@@ -23,6 +23,7 @@ from models.shop_checkout import (
 from models.shop_content import ShopOrder
 from models.shop_uom import ShopUom
 from services.shop_checkout_policy import CheckoutRules
+from services.shop_digital_catalog import require_digital_supply
 from services.shop_mixed_checkout import (
     MixedCheckoutPlan, MixedCheckoutError, build_split_plan,
     checkout_quote_fingerprint,
@@ -41,6 +42,43 @@ def checkout_idempotency_key(
         raise MixedCheckoutError("Invalid checkout owner or revision.")
     payload = f"checkout-v2:{bot_id}:{user_id}:{cart_id}:{revision}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+async def quote_signature(
+    db: AsyncSession, *, cart: ShopCart, quote,
+    policy_token: str, discount_irr: int | None = None,
+) -> tuple[str, dict[int, str]]:
+    """Bind live Product prices and exact active private file versions.
+
+    The returned Asset rows are locked during this checkout transaction;
+    an administrator cannot swap the file before the OrderLine snapshot.
+    """
+    asset_ids: dict[int, str] = {}
+    for line in quote.lines:
+        product = line.product
+        if (
+            product.product_type == "digital"
+            and product.digital_delivery_mode == "file"
+        ):
+            asset = await require_digital_supply(
+                db, product=product, quantity=line.quantity,
+            )
+            if asset is None:
+                raise MixedCheckoutError("Digital file not available.")
+            asset_ids[product.id] = asset.id
+    proof = checkout_quote_fingerprint(
+        quote.lines,
+        shipping_irr=quote.shipping,
+        physical_discount_irr=(
+            quote.discount if discount_irr is None else discount_irr
+        ),
+        coupon_code=quote.coupon_code,
+        shipping_label=quote.shipping_label,
+        shipping_address=cart.shipping_address,
+        policy_token=policy_token,
+        asset_ids=asset_ids,
+    )
+    return proof, asset_ids
 
 
 async def mixed_quote(
@@ -67,13 +105,10 @@ async def mixed_quote(
         physical_discount_irr=discount, coupon_code=quote.coupon_code,
         shipping_label=quote.shipping_label,
     )
-    proof = checkout_quote_fingerprint(
-        quote.lines, shipping_irr=plan.physical.shipping_irr,
-        physical_discount_irr=plan.physical.discount_irr,
-        coupon_code=plan.coupon_code,
-        shipping_label=plan.shipping_label,
-        shipping_address=cart.shipping_address,
+    proof, _ = await quote_signature(
+        db, cart=cart, quote=quote,
         policy_token=policy_token,
+        discount_irr=plan.physical.discount_irr,
     )
     return plan, proof
 
@@ -144,6 +179,11 @@ async def create_split_orders(
     ))).all())
     if len(units) != len(needed_uoms):
         raise MixedCheckoutError("Invalid Store UoM reference.")
+    _, file_snapshots = await quote_signature(
+        db, cart=cart, quote=quote,
+        policy_token=policy.policy_token,
+        discount_irr=plan.physical.discount_irr,
+    )
     current = {line.product.id: line.product for line in quote.lines}
     group = ShopCheckoutGroup(
         id=str(uuid4()), store_id=cart.store_id,
@@ -211,6 +251,7 @@ async def create_split_orders(
                 unit_price_stars_snapshot=(
                     line.unit_price_stars if part.kind == "digital" else None
                 ),
+                digital_asset_id_snapshot=file_snapshots.get(product.id),
                 quantity=line.quantity,
                 total_irr=line.line_total_irr,
             ))

@@ -15,7 +15,7 @@ from services.shop_checkout_copy import checkout_confirmation_text
 from services.shop_mixed_checkout import MixedCheckoutError
 from services.shop_mixed_checkout_orders import (
     checkout_idempotency_key, create_split_orders,
-    existing_split_orders, mixed_quote,
+    existing_split_orders, mixed_quote, quote_signature,
 )
 
 from sqlalchemy import delete, func, select, update
@@ -813,7 +813,10 @@ class ShopCartFlow:
                 stars_total = split_plan.digital.total_stars
             else:
                 stars_total = telegram_stars_total(event.platform, quote)
-                approval_token = policy.policy_token
+                approval_token, _ = await quote_signature(
+                    session, cart=cart, quote=quote,
+                    policy_token=policy.policy_token,
+                )
         except MixedCheckoutError as error:
             raise CartRejected(str(error)) from None
         if len(policy.terms_text) < 12:
@@ -942,9 +945,13 @@ class ShopCartFlow:
                 raise CartRejected(str(error)) from None
             stars_total = None
         else:
-            if policy.policy_token != expected_policy_token:
+            current_proof, pinned_files = await quote_signature(
+                session, cart=cart, quote=quote,
+                policy_token=policy.policy_token,
+            )
+            if current_proof != expected_policy_token:
                 raise CartRejected(
-                    "قیمت یا شرایط خرید تغییر کرده؛ دوباره سفارش را بررسی کنید."
+                    "قیمت، فایل یا شرایط خرید تغییر کرده؛ سفارش را تازه کنید."
                 )
             stars_total = telegram_stars_total(event.platform, quote)
         if split_parts is None:
@@ -1004,6 +1011,9 @@ class ShopCartFlow:
                         unit_price_stars_snapshot=(
                             line.product.price_stars
                             if stars_total is not None else None
+                        ),
+                        digital_asset_id_snapshot=pinned_files.get(
+                            line.product.id,
                         ),
                         quantity=line.quantity,
                         total_irr=line.line_total,
