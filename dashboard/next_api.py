@@ -117,7 +117,15 @@ async def bounded_bridge_body(request: Request) -> bytes:
     Enforcing a bound before signature verification avoids unbounded memory.
     """
     path = request.url.path
-    upload = path.startswith("/internal/admin/v1/upload/")
+    import re
+
+    upload = (
+        path.startswith("/internal/admin/v1/upload/")
+        or bool(re.fullmatch(
+            r"/internal/admin/v1/products/[1-9][0-9]{0,18}/digital-file",
+            path,
+        )) and request.method == "POST"
+    )
     # Only the signed, typed model import endpoint may accept an 8 MiB
     # spreadsheet. All other admin API requests keep their previous limits.
     data_import = (

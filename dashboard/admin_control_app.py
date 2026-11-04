@@ -39,6 +39,7 @@ from dashboard.shop_store_context_api import router as store_context_router
 from dashboard.shop_uom_api import router as shop_uom_router
 from dashboard.shop_model_data_api import router as model_data_router
 from dashboard.shop_customer_experience_api import router as customer_experience_router
+from dashboard.shop_digital_api import router as digital_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -91,6 +92,7 @@ def permission_for(path: str, method: str) -> str | None:
         "support-tickets": "customers.read",
         "fulfillments": "orders.read" if method == "GET" else "orders.manage",
         "customer-notifications": "bots.read",
+        "digital-deliveries": "orders.read",
         "payment-accounts": "bots.read" if method == "GET" else "bots.apply",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
@@ -204,7 +206,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
+                if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or (path.startswith(PREFIX + "/products/") and path.endswith(("/digital-file", "/digital-licenses"))) or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 # Only session-authenticated requests can acquire StoreContext.
@@ -224,7 +226,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "overview", "reports", "settings",
                         "shipping", "coupons", "data-models",
                         "support-tickets", "fulfillments",
-                        "customer-notifications",
+                        "customer-notifications", "digital-deliveries",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -279,6 +281,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(shop_uom_router)
     app.include_router(model_data_router)
     app.include_router(customer_experience_router)
+    app.include_router(digital_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
     app.mount("/", legacy)
