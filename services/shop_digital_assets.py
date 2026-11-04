@@ -77,20 +77,32 @@ async def _asset_ready(
 
 async def require_digital_assets(
     db: AsyncSession, *, order_lines: list[tuple],
-) -> None:
+) -> dict[int, int]:
     """Refuse issuing a digital invoice without real files or enough codes."""
+    selected: dict[int, int] = {}
     for line, product in order_lines:
         if product.product_type != "digital":
             continue
-        asset = await active_asset(
-            db, store_id=product.store_id, product_id=product.id,
+        snapshot_id = getattr(line, "digital_asset_id_snapshot", None)
+        asset = (
+            await db.get(ShopDigitalAsset, snapshot_id)
+            if snapshot_id is not None
+            else await active_asset(
+                db, store_id=product.store_id, product_id=product.id,
+            )
         )
-        if asset is None or not await _asset_ready(
-            db, asset=asset, quantity=line.quantity,
+        if (
+            asset is None or asset.store_id != product.store_id
+            or asset.product_id != product.id
+            or not await _asset_ready(
+                db, asset=asset, quantity=line.quantity,
+            )
         ):
             raise DeliveryPolicyError(
                 "Digital merchandise is not configured or out of license stock."
             )
+        selected[product.id] = asset.id
+    return selected
 
 
 async def stage_digital_on_paid_receipt(
@@ -113,11 +125,21 @@ async def stage_digital_on_paid_receipt(
             or line.product_id != product.id
         ):
             raise DeliveryPolicyError("Cross-Store digital Order ownership.")
-        asset = await active_asset(
-            db, store_id=order.store_id, product_id=product.id, lock=True,
+        # The price was accepted against this immutable Asset version.
+        # Never deliver an admin-replaced file/license after payment.
+        asset = (
+            await db.get(
+                ShopDigitalAsset, line.digital_asset_id_snapshot,
+                with_for_update=True,
+            )
+            if line.digital_asset_id_snapshot is not None else None
         )
-        if asset is None or not await _asset_ready(
-            db, asset=asset, quantity=line.quantity,
+        if (
+            asset is None or asset.store_id != order.store_id
+            or asset.product_id != product.id
+            or not await _asset_ready(
+                db, asset=asset, quantity=line.quantity,
+            )
         ):
             raise DeliveryPolicyError("Digital asset or licenses unavailable.")
         existing = await db.scalar(select(ShopDigitalDelivery.id).where(

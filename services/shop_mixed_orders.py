@@ -60,6 +60,7 @@ async def create_split_orders(
     quote, split: MixedCheckoutPlan,
     policy, bot_id: str, user_id: int, chat_id: int,
     expected_revision: int, quote_token: str,
+    asset_ids: dict[int, int],
 ) -> tuple[ShopOrder, ShopOrder]:
     """Save exactly two Orders and clear Cart in one DB transaction.
 
@@ -161,6 +162,7 @@ async def create_split_orders(
                     line.product.price_stars
                     if part.kind == "digital" else None
                 ),
+                digital_asset_id_snapshot=asset_ids.get(line.product.id),
                 quantity=line.quantity,
                 total_irr=line.line_total,
             ))
