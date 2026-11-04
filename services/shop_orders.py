@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import ShopOrderLine
-from models.shop_content import Product, ShopOrder
+from models.shop_content import Product, ShopIdentity, ShopOrder
 from services.shop_checkout_policy import legal_credit_for_items
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
@@ -96,15 +96,25 @@ class ShopOrdersFlow:
         self, event: InboundEvent, session: AsyncSession
     ) -> BotReply:
         """Read only orders belonging to the current platform identity."""
-        result = await session.execute(
-            select(ShopOrder)
-            .where(
+        identity = await session.scalar(select(ShopIdentity).where(
+            ShopIdentity.bot_id == self._bot_id(event.platform),
+            ShopIdentity.platform == event.platform.value,
+            ShopIdentity.platform_user_id == event.user_id,
+        ))
+        if identity is not None and identity.customer_id is not None:
+            conditions = (
+                ShopOrder.store_id == identity.store_id,
+                ShopOrder.customer_id == identity.customer_id,
+            )
+        else:
+            conditions = (
                 ShopOrder.bot_id == self._bot_id(event.platform),
                 ShopOrder.platform == event.platform.value,
                 ShopOrder.platform_user_id == event.user_id,
             )
-            .order_by(ShopOrder.id.desc())
-            .limit(10)
+        result = await session.execute(
+            select(ShopOrder).where(*conditions)
+            .order_by(ShopOrder.id.desc()).limit(20)
         )
         orders = result.scalars().all()
         if not orders:
@@ -181,20 +191,30 @@ class ShopOrdersFlow:
         lines = ["📦 سفارش‌های من"]
         rows: list[tuple[InlineAction, ...]] = []
         for order in orders:
+            originates_here = order.bot_id == self._bot_id(event.platform)
             count = quantities.get(order.id, order.quantity)
             lines.append(
                 f"#{order.id} — {count} کالا — "
                 f"{format_rials(order.total_irr, self.display_unit)}\n"
                 f"{STATUS_NAMES.get(order.status, 'در حال بررسی')}"
             )
-            if order.status in ("paid", "paid_unfulfilled"):
+            rows.append((
+                InlineAction(
+                    f"📄 جزئیات سفارش #{order.id}",
+                    f"ux:order:detail:{order.id}",
+                ),
+            ))
+            if (
+                originates_here
+                and order.status in ("paid", "paid_unfulfilled")
+            ):
                 rows.append((
                     InlineAction(
                         f"درخواست بازپرداخت #{order.id}",
                         f"shop:refundorder:{order.id}",
                     ),
                 ))
-            if order.status == "approved_unpaid":
+            if originates_here and order.status == "approved_unpaid":
                 # A denied order can still be cancelled or reconciled.
                 # Only the creation of new invoice intents is prohibited.
                 available_ids = order_products.get(order.id, set())
@@ -228,7 +248,8 @@ class ShopOrdersFlow:
                     if actions:
                         rows.append(tuple(actions))
             if (
-                order.provider == "manual_review"
+                originates_here
+                and order.provider == "manual_review"
                 and order.status in ("pending_review", "approved_unpaid")
             ):
                 rows.append((

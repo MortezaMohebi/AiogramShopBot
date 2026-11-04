@@ -19,6 +19,8 @@ from services import shop_customer_search as search
 
 _SEARCH_PAGE = re.compile(r"ux:search:page:(0|[1-9][0-9]{0,3})\Z")
 _SEARCH_FIELD = re.compile(r"ux:search:field:(all|name|sku|description)\Z")
+_ORDER_DETAIL = re.compile(r"ux:order:detail:([1-9][0-9]{0,18})\Z")
+_ORDER_TRACK = re.compile(r"ux:order:track:([1-9][0-9]{0,18})\Z")
 
 
 class CustomerExperienceFlow:
@@ -85,6 +87,74 @@ class CustomerExperienceFlow:
             return BotReply(
                 "عملیات متوقف شد.",
                 ((InlineAction("🏠 منوی اصلی", "shop:home"),),),
+            )
+
+        detail = _ORDER_DETAIL.fullmatch(action)
+        tracking = _ORDER_TRACK.fullmatch(action)
+        if detail or tracking:
+            from sqlalchemy import select
+
+            from models.shop_checkout import ShopOrderLine
+            from models.shop_content import ShopOrder
+            from services.shop_customer_account import customer_for_bot
+            from services.shop_fulfillment import customer_tracking
+
+            try:
+                _, customer = await customer_for_bot(
+                    db, context, platform_user_id=event.user_id,
+                )
+            except ValueError:
+                return BotReply("برای مشاهده سفارش ابتدا /start را اجرا کنید.")
+            order_id = int((detail or tracking).group(1))
+            order = await db.scalar(select(ShopOrder).where(
+                ShopOrder.id == order_id,
+                ShopOrder.customer_id == customer.id,
+                ShopOrder.store_id == context.store_id,
+            ))
+            if order is None:
+                return BotReply("سفارش متعلق به این حساب پیدا نشد.")
+            if tracking:
+                result = await customer_tracking(db, order=order)
+                if result["status"] == "not_started":
+                    return BotReply(
+                        result["message"],
+                        ((InlineAction("📦 سفارش", f"ux:order:detail:{order.id}"),),),
+                    )
+                timeline = "\n".join(
+                    f"• {item['status']} — {item['time'][:16]}"
+                    for item in result.get("events", [])
+                )
+                return BotReply(
+                    f"🚚 پیگیری سفارش #{order.id}\n"
+                    f"وضعیت: {result['status']}\n"
+                    f"حمل‌کننده: {result.get('carrier') or 'ثبت نشده'}\n"
+                    f"کد رهگیری: {result.get('tracking_code') or 'ثبت نشده'}\n"
+                    f"{timeline}"[:4096],
+                    ((InlineAction("📦 جزئیات سفارش", f"ux:order:detail:{order.id}"),),),
+                )
+            rows = (await db.scalars(select(ShopOrderLine).where(
+                ShopOrderLine.order_id == order.id,
+            ).order_by(ShopOrderLine.id).limit(40))).all()
+            details = [
+                f"📦 سفارش #{order.id}",
+                f"وضعیت: {order.status}",
+                f"مبلغ قطعی: {order.total_irr:,} ریال",
+                f"بات مبدأ: {order.bot_id[:8]}",
+                f"نسخه شرایط خرید: {order.terms_version_snapshot or 'ثبت نشده'}",
+            ]
+            for item in rows:
+                details.append(
+                    f"• {item.product_name_snapshot[:100]} — "
+                    f"{item.quantity} {item.uom_code_snapshot}"
+                )
+            return BotReply(
+                "\n".join(details)[:4096],
+                (
+                    (InlineAction(
+                        "📍 وضعیت تحویل", f"ux:order:track:{order.id}",
+                    ),),
+                    (InlineAction("📦 سفارش‌های من", "shop:orders"),),
+                ),
             )
 
         # Customer, support and notifications are separate domain modules.
