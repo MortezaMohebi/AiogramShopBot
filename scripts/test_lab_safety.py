@@ -44,6 +44,18 @@ def require_isolated_lab() -> None:
                 f"Unsafe test lab configuration: {name} must be {expected!r}."
             )
 
+    # These newer processes also default off in older lab environment files.
+    # Enabling any of them must fail before importing their provider factories.
+    for name in (
+        "SHOP_BROADCAST_REGISTRY_ENABLED",
+        "MULTIBOT_V2_RUNTIME_ENABLED",
+        "SHOP_DIGITAL_DELIVERY_ENABLED",
+        "SHOP_CUSTOMER_NOTIFICATIONS_ENABLED",
+        "SHOP_RELAY_POOL_ENABLED",
+    ):
+        if os.environ.get(name, "false") != "false":
+            raise RuntimeError(f"Unsafe test lab: {name} must remain false.")
+
     forbidden = (
         "TOKEN",
         "BALE_BOT_TOKEN",

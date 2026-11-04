@@ -36,6 +36,9 @@ def test_existing_unknown_environment_is_not_replaced(tmp_path):
         ("TOKEN", "live-token"),
         ("POSTGRES_DB", "production"),
         ("SHOP_BROADCAST_WORKER_ENABLED", "true"),
+        ("SHOP_BROADCAST_REGISTRY_ENABLED", "true"),
+        ("MULTIBOT_V2_RUNTIME_ENABLED", "true"),
+        ("SHOP_DIGITAL_DELIVERY_ENABLED", "true"),
     ],
 )
 def test_beta_lab_guard_requires_exact_identity_and_inert_providers(
@@ -69,9 +72,7 @@ def test_beta_app_includes_real_admin_authorization_and_customer_routes(
     from scripts.beta_qa_environment import prepare_environment
 
     target = prepare_environment(tmp_path / "qa.env")
-    environment = dict(
-        line.split("=", 1) for line in target.read_text().splitlines()
-    )
+    environment = dict(line.split("=", 1) for line in target.read_text().splitlines())
     result = subprocess.run(
         [
             sys.executable,

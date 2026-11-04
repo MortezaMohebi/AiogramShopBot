@@ -38,9 +38,7 @@ def prepare_environment(target: Path = TARGET) -> Path:
             or any(values.get(key, "").strip() for key in PROVIDER_KEYS)
             or len(values.get("POSTGRES_PASSWORD", "")) < 32
         ):
-            raise RuntimeError(
-                "Existing file is not the isolated Beta QA environment."
-            )
+            raise RuntimeError("Existing file is not the isolated Beta QA environment.")
         target.chmod(0o600)
         return target
 
@@ -85,6 +83,7 @@ def prepare_environment(target: Path = TARGET) -> Path:
         "ADMIN_ID_LIST": "",
         "SHOP_CAMPAIGN_DISPATCH_ENABLED": "false",
         "SHOP_BROADCAST_WORKER_ENABLED": "false",
+        "SHOP_BROADCAST_REGISTRY_ENABLED": "false",
         "SHOP_CUSTOMER_NOTIFICATIONS_ENABLED": "false",
         "BALE_BROADCAST_PAID_ENABLED": "false",
         "TELEGRAM_STARS_REFUNDS_ENABLED": "false",
@@ -100,14 +99,10 @@ def prepare_environment(target: Path = TARGET) -> Path:
     # Exclusive creation preserves a concurrently prepared environment.
     descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(
-            "".join(f"{key}={value}\n" for key, value in values.items())
-        )
+        stream.write("".join(f"{key}={value}\n" for key, value in values.items()))
     return target
 
 
 if __name__ == "__main__":
     prepare_environment()
-    print(
-        "Isolated Beta QA environment prepared; provider credentials are empty."
-    )
+    print("Isolated Beta QA environment prepared; provider credentials are empty.")
