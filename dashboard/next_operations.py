@@ -6,11 +6,13 @@ staff RBAC and wallet accounting. Public Next.js routes never expose keys.
 
 from __future__ import annotations
 
+from typing import TypeVar
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from models.shop_admin_control import AdminProfile, AdminSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.datastructures import UploadFile
@@ -24,7 +26,11 @@ from dashboard.media_storage import (
     safe_media_path,
     save_media,
 )
-from dashboard.next_api import Db, Staff, require_staff
+from dashboard.next_api import (
+    Db, Staff, admin_store_context, campaign_for_store,
+    order_payment_data, require_staff, require_store_access,
+)
+from models.shop_multibot import DEFAULT_STORE_ID
 from models.shop_content import Product, ProductMedia, Testimonial, ShopIdentity
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignMedia, ShopReferralPolicy, ShopWalletAccount,
@@ -35,7 +41,8 @@ from models.shop_content import ShopOrder
 from models.shop_staff import ShopStaff
 from models.shop_staff_state import ShopStaffState
 from services.shop_payments import PaymentRejected
-from services.shop_refunds import ShopRefundService
+from services.shop_admin_refunds import resolve_admin_refund
+from services.shop_admin_security import SecurityRejected
 from services.shop_campaigns import ShopCampaignService
 from services.shop_broadcast_control import CampaignRejected
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
@@ -44,6 +51,51 @@ from services.shop_sequence import next_display_position
 
 router = APIRouter()
 MAX_UPLOAD_REQUEST = 50_100_000
+ContentMedia = TypeVar("ContentMedia", ProductMedia, Testimonial)
+
+
+async def product_for_store(
+    session: AsyncSession, product_id: int, *, write: bool = False,
+) -> Product:
+    """Prove the Product owner without trusting a cached ORM parent."""
+    scope = admin_store_context()
+    query = select(Product).where(
+        Product.id == product_id,
+        Product.store_id.in_(scope.active_store_ids),
+    )
+    if write:
+        query = query.with_for_update()
+    product = await session.scalar(query)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    require_store_access(scope, product.store_id, write=write)
+    return product
+
+
+async def content_media_for_store(
+    session: AsyncSession, model: type[ContentMedia], record_id: int,
+    *, write: bool = False,
+) -> ContentMedia:
+    """Authorize media through its real Product before reading or changing it.
+
+    Content child tables have no Store column and do not inherit the Product
+    record rule automatically. The explicit join also locks the parent on
+    mutations, so its ownership cannot change during a file operation.
+    """
+    scope = admin_store_context()
+    query = select(model, Product.store_id).join(
+        Product, Product.id == model.product_id,
+    ).where(
+        model.id == record_id, Product.store_id.in_(scope.active_store_ids),
+    )
+    if write:
+        query = query.with_for_update()
+    row = (await session.execute(query)).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Media not found")
+    record, store_id = row
+    require_store_access(scope, store_id, write=write)
+    return record
 
 
 def positive_id(raw: object) -> int:
@@ -110,8 +162,7 @@ async def product_media_for_editor(
 ) -> dict:
     """Load one product's private media for its integrated editor only."""
     require_staff(staff, "content")
-    if await session.get(Product, product_id) is None:
-        raise HTTPException(status_code=404, detail="Product not found")
+    await product_for_store(session, product_id)
     items = (
         await session.execute(
             select(ProductMedia)
@@ -185,23 +236,17 @@ async def upload_media(
 
             if target == "campaign":
                 campaign_id = positive_id(form.get("campaign_id"))
-                campaign = await session.scalar(
-                    select(ShopCampaign)
-                    .where(ShopCampaign.id == campaign_id).with_for_update()
+                campaign = await campaign_for_store(
+                    session, campaign_id, write=True, lock=True,
                 )
-                if campaign is None or campaign.status != "draft":
+                if campaign.status != "draft":
                     raise HTTPException(
                         status_code=409,
                         detail="فقط کمپین پیش‌نویس رسانه می‌پذیرد.",
                     )
             else:
                 product_id = positive_id(form.get("product_id"))
-                product = await session.scalar(
-                    select(Product)
-                    .where(Product.id == product_id).with_for_update()
-                )
-                if product is None:
-                    raise HTTPException(status_code=404, detail="Product not found")
+                await product_for_store(session, product_id, write=True)
 
             if uploaded is not None:
                 saved = await save_media(
@@ -278,12 +323,9 @@ async def update_media(
 ) -> dict:
     """Unpublish whenever the reviewed caption changes; approve separately."""
     require_staff(staff, "content")
-    record = await session.scalar(
-        select(ProductMedia)
-        .where(ProductMedia.id == media_id).with_for_update()
+    record = await content_media_for_store(
+        session, ProductMedia, media_id, write=True,
     )
-    if record is None:
-        raise HTTPException(status_code=404, detail="Media not found")
     changes = payload.model_dump(exclude_unset=True)
     if "caption" in changes:
         new_caption = (changes["caption"] or "").strip() or None
@@ -310,12 +352,9 @@ async def delete_unpublished_media(
 ) -> dict:
     """Delete only unapproved originals, never an already published asset."""
     require_staff(staff, "content")
-    record = await session.scalar(
-        select(ProductMedia)
-        .where(ProductMedia.id == media_id).with_for_update()
+    record = await content_media_for_store(
+        session, ProductMedia, media_id, write=True,
     )
-    if record is None:
-        raise HTTPException(status_code=404, detail="Media not found")
     if record.is_published:
         raise HTTPException(status_code=409, detail="Unpublish before deletion")
     key = record.storage_key
@@ -340,11 +379,9 @@ async def update_testimonial(
 ) -> dict:
     """Revoke approval on content edits and prevent empty testimonials."""
     require_staff(staff, "content")
-    record = await session.scalar(
-        select(Testimonial).where(Testimonial.id == review_id).with_for_update()
+    record = await content_media_for_store(
+        session, Testimonial, review_id, write=True,
     )
-    if record is None:
-        raise HTTPException(status_code=404, detail="Review not found")
     values = payload.model_dump(exclude_unset=True)
     if "text" in values:
         text = (values["text"] or "").strip() or None
@@ -373,11 +410,9 @@ async def delete_unapproved_testimonial(
 ) -> dict:
     """Only delete a testimonial while it is not approved."""
     require_staff(staff, "content")
-    record = await session.scalar(
-        select(Testimonial).where(Testimonial.id == review_id).with_for_update()
+    record = await content_media_for_store(
+        session, Testimonial, review_id, write=True,
     )
-    if record is None:
-        raise HTTPException(status_code=404, detail="Review not found")
     if record.is_approved:
         raise HTTPException(status_code=409, detail="Revoke approval before deletion")
     key = record.media_storage_key
@@ -395,19 +430,23 @@ async def preview_media(
     """Preview only stored originals with role-appropriate access."""
     if kind == "product":
         require_staff(staff, "content")
-        record = await session.get(ProductMedia, media_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail="Not found")
+        record = await content_media_for_store(session, ProductMedia, media_id)
         key, mime = record.storage_key, record.mime_type
     elif kind == "testimonial":
         require_staff(staff, "content")
-        record = await session.get(Testimonial, media_id)
-        if record is None or record.media_storage_key is None:
+        record = await content_media_for_store(session, Testimonial, media_id)
+        if record.media_storage_key is None:
             raise HTTPException(status_code=404, detail="Not found")
         key, mime = record.media_storage_key, record.media_mime_type
     elif kind == "campaign":
         require_staff(staff, "marketing")
-        record = await session.get(ShopCampaignMedia, media_id)
+        scope = admin_store_context(staff)
+        record = await session.scalar(select(ShopCampaignMedia).join(
+            ShopCampaign, ShopCampaign.id == ShopCampaignMedia.campaign_id,
+        ).where(
+            ShopCampaignMedia.id == media_id,
+            ShopCampaign.store_id.in_(scope.active_store_ids),
+        ))
         if record is None:
             raise HTTPException(status_code=404, detail="Not found")
         key, mime = record.storage_key, record.mime_type
@@ -422,9 +461,8 @@ async def campaign_media_list(
 ) -> dict:
     """List ordered files without exposing provider IDs or storage keys."""
     require_staff(staff, "marketing")
-    campaign = await session.get(ShopCampaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await campaign_for_store(session, campaign_id)
+    scope = admin_store_context(staff)
     files = (await session.execute(
         select(ShopCampaignMedia)
         .where(ShopCampaignMedia.campaign_id == campaign_id)
@@ -432,7 +470,11 @@ async def campaign_media_list(
         .limit(200)
     )).scalars().all()
     return {
-        "can_edit": campaign.status == "draft",
+        "can_edit": (
+            campaign.status == "draft"
+            and campaign.store_id == scope.current_store_id
+            and scope.current_store.access_level in {"editor", "manager"}
+        ),
         "items": [
             {
                 "id": row.id, "kind": row.kind,
@@ -451,11 +493,10 @@ async def delete_campaign_media(
 ) -> dict:
     """Do not alter approved, sending or previously sent campaign files."""
     require_staff(staff, "marketing")
-    campaign = await session.scalar(
-        select(ShopCampaign)
-        .where(ShopCampaign.id == campaign_id).with_for_update()
+    campaign = await campaign_for_store(
+        session, campaign_id, write=True, lock=True,
     )
-    if campaign is None or campaign.status != "draft":
+    if campaign.status != "draft":
         raise HTTPException(status_code=409, detail="Only draft attachments can change")
     file = await session.scalar(
         select(ShopCampaignMedia)
@@ -561,36 +602,19 @@ async def resolve_refund(
     case_id: int, payload: RefundDecision, request: Request,
     staff: Staff, session: Db,
 ) -> dict:
-    """Reuse the financial core; never simulate a provider refund."""
+    """Authorize the current Store and use the payment's original provider."""
     operator = require_staff(staff, "finance")
     required = "REFUND_STARS_EXECUTE" if payload.action == "stars" else "REFUND_VERIFIED"
     if payload.confirmation != required:
         raise HTTPException(status_code=422, detail="Explicit confirmation required")
-    reviewer = f"staff:{operator.id}"
     try:
-        if payload.action == "manual":
-            reference = payload.provider_reference.strip()
-            await ShopRefundService.confirm_manual(
-                session,
-                case_id=case_id,
-                provider_reference=reference,
-                reviewer=reviewer,
-            )
-        elif payload.action == "store_credit":
-            await ShopWalletService.refund_order(
-                session, case_id=case_id, actor=reviewer
-            )
-        else:
-            bot = getattr(request.app.state, "telegram_bot", None)
-            if bot is None:
-                raise PaymentRejected("Telegram bot is unavailable")
-            await ShopRefundService.refund_stars(
-                session,
-                case_id=case_id,
-                bot=bot,
-                enabled=config.TELEGRAM_STARS_REFUNDS_ENABLED,
-                reviewer=reviewer,
-            )
+        await resolve_admin_refund(
+            session, scope=admin_store_context(operator), case_id=case_id,
+            action=payload.action, provider_reference=payload.provider_reference,
+            legacy_telegram_bot=getattr(request.app.state, "telegram_bot", None),
+        )
+    except SecurityRejected as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.code) from None
     except (PaymentRejected, StoreCreditRejected) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     return {"ok": True}
@@ -707,6 +731,7 @@ async def order_review_queue(staff: Staff, session: Db) -> list[dict]:
             "platform": order.platform,
             "product_id": order.product_id,
             "total_irr": str(order.total_irr),
+            **order_payment_data(order),
         }
         for order in orders
     ]
@@ -804,12 +829,15 @@ async def prepare_bale_broadcast_media(
             status_code=409, detail="Private Bale seed chat is not configured"
         )
 
-    campaign = await session.scalar(
-        select(ShopCampaign)
-        .where(ShopCampaign.id == campaign_id)
-        .with_for_update()
+    campaign = await campaign_for_store(
+        session, campaign_id, write=True, lock=True,
     )
-    if campaign is None or campaign.status not in ("draft", "approved"):
+    if campaign.bot_id is not None or campaign.store_id != DEFAULT_STORE_ID:
+        raise HTTPException(
+            status_code=409,
+            detail="Registry campaigns require per-bot media preparation",
+        )
+    if campaign.status not in ("draft", "approved"):
         raise HTTPException(status_code=409, detail="Campaign cannot be prepared")
     try:
         attachments = await ShopCampaignService._attachments(session, campaign)

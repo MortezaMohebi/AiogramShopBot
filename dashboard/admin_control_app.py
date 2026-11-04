@@ -69,6 +69,10 @@ def permission_for(path: str, method: str) -> str | None:
         return "catalog.read" if method == "GET" else "catalog.write"
     if resource in {"products", "categories"}:
         return "catalog.read" if method == "GET" else "catalog.write"
+    if method == "GET" and re.fullmatch(
+        re.escape(PREFIX) + r"/media/preview/campaign/[1-9][0-9]*", path,
+    ):
+        return "campaigns.manage"
     return {
         "media": "media.manage", "testimonials": "media.manage",
         "upload": "campaigns.manage" if path.endswith("/campaign") else "media.manage",
@@ -101,6 +105,46 @@ def permission_for(path: str, method: str) -> str | None:
         "bot-connections": "bots.read" if method == "GET" else "bots.configure",
         "connection-changes": "bots.read" if method == "GET" else "bots.configure",
     }.get(resource)
+
+
+def store_scoped_campaign_route(path: str, method: str) -> bool:
+    """Allow guarded campaign routes and their read-only capability metadata.
+
+    In particular, a campaign upload must not widen unrelated upload targets,
+    private media previews or the external legacy Bale preparation endpoint.
+    """
+    route = path.removeprefix(PREFIX)
+    if method == "GET":
+        metadata = {"/campaigns", "/campaigns/bots", "/capabilities"}
+        return route in metadata or bool(re.fullmatch(
+            r"/(?:campaigns/[1-9][0-9]*/(?:deliveries|media)"
+            r"|media/preview/campaign/[1-9][0-9]*)", route,
+        ))
+    if method == "POST":
+        return route in {"/campaigns", "/upload/campaign"} or bool(re.fullmatch(
+            r"/campaigns/[1-9][0-9]*/(?:approve|start|pause|resume|cancel|reconcile)",
+            route,
+        ))
+    return method == "DELETE" and bool(re.fullmatch(
+        r"/campaigns/[1-9][0-9]*/media/[1-9][0-9]*", route,
+    ))
+
+
+def store_scoped_content_route(path: str, method: str) -> bool:
+    """Allow audited child mutations that prove their Product's Store owner."""
+    route = path.removeprefix(PREFIX)
+    if method == "POST":
+        return route in {"/upload/product", "/upload/testimonial"}
+    return method in {"PATCH", "DELETE"} and bool(re.fullmatch(
+        r"/(?:media|testimonials)/[1-9][0-9]*", route,
+    ))
+
+
+def store_scoped_refund_route(path: str, method: str) -> bool:
+    """Permit only the refund boundary that verifies its Order's Store owner."""
+    return method == "POST" and bool(re.fullmatch(
+        re.escape(PREFIX) + r"/refunds/[1-9][0-9]*/resolve", path,
+    ))
 
 
 def session_proof(token: str, bridge_signature: str, secret: str) -> str:
@@ -235,7 +279,12 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         multi_safe.update({
                             "media", "testimonials", "refunds", "wallets",
                         })
-                    if resource not in multi_safe and (
+                    if (
+                        resource not in multi_safe
+                        and not store_scoped_campaign_route(path, request.method)
+                        and not store_scoped_content_route(path, request.method)
+                        and not store_scoped_refund_route(path, request.method)
+                    ) and (
                         scope.current_store_id != DEFAULT_STORE_ID
                         or set(scope.active_store_ids) != {DEFAULT_STORE_ID}
                     ):
