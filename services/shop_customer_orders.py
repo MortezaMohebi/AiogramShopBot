@@ -14,6 +14,7 @@ from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import ShopIdentity, ShopOrder
+from services.shop_customer_access import customer_access_clause
 
 _MAX_LINKED_IDENTITIES = 100
 
@@ -58,7 +59,7 @@ async def verified_identity_keys(
     ).where(
         ShopIdentity.store_id == store_id,
         ShopIdentity.customer_id == customer_id,
-        ShopIdentity.is_blocked.is_(False),
+        customer_access_clause(),
     ).order_by(ShopIdentity.id).limit(_MAX_LINKED_IDENTITIES + 1))).all()
     if len(rows) > _MAX_LINKED_IDENTITIES:
         raise ValueError("Verified identity cluster is too large.")

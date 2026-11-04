@@ -24,6 +24,7 @@ from models.shop_multibot import ShopBot
 from services.shop_bot_catalog_acl import allowed_for_bot
 from services.shop_bot_context import BotContext
 from services.shop_customer_account import customer_for_bot
+from services.shop_customer_access import customer_access_allowed
 
 _VALID_TOPICS = frozenset({"order", "ticket", "stock", "marketing"})
 _EVENT_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9:_-]{6,119}\Z")
@@ -200,7 +201,7 @@ async def enqueue_notification(
         ShopIdentity.platform_user_id == user_id,
         ShopIdentity.store_id == context.store_id,
     ))
-    if identity is None or identity.is_blocked:
+    if not await customer_access_allowed(db, identity):
         return False
     if (
         not isinstance(event_key, str) or not _EVENT_KEY.fullmatch(event_key)

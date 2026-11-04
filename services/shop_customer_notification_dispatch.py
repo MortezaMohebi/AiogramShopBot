@@ -26,6 +26,7 @@ from models.shop_customer_support import ShopSupportTicket
 from models.shop_multibot import ShopBot, ShopStore
 from models.shop_payment import ShopPaymentAttempt
 from services.shop_bot_catalog_acl import allowed_for_bot
+from services.shop_customer_access import customer_access_allowed
 from services.shop_customer_notifications import (
     can_deliver_at_dispatch, claim_outbox_message,
     finish_outbox_message, stock_event_alert_id, stock_event_matches,
@@ -82,8 +83,8 @@ async def _preflight(
     ))
     owner_valid = bool(
         identity is not None
-        and identity.is_blocked is False
         and identity.customer_id is not None
+        and await customer_access_allowed(db, identity)
     )
     stock_subscribed = False
     if row.topic == "stock" and row.event_key.startswith("stock:"):

@@ -23,6 +23,7 @@ from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_store_commerce import ShopStoreCustomer
 from services.shop_bot_catalog_acl import allowed_for_bot, permitted_product_clause, resolve_scope
 from services.shop_bot_context import BotContext
+from services.shop_customer_access import customer_access_clause
 
 _CALLBACK_WISHLIST = re.compile(r"ux:wish:toggle:([1-9][0-9]{0,18})\Z")
 _CALLBACK_ADDRESS_CHOOSE = re.compile(r"ux:address:choose:([1-9][0-9]{0,18})\Z")
@@ -99,8 +100,9 @@ async def customer_for_bot(
         ShopIdentity.platform == context.platform.value,
         ShopIdentity.platform_user_id == platform_user_id,
         ShopIdentity.store_id == context.store_id,
+        customer_access_clause(),
     ))
-    if identity is None or identity.customer_id is None or identity.is_blocked:
+    if identity is None or identity.customer_id is None:
         raise ValueError("Customer account unavailable; please send /start.")
     customer = await db.get(ShopStoreCustomer, identity.customer_id)
     if customer is None or customer.store_id != context.store_id:
