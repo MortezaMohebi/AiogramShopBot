@@ -38,6 +38,7 @@ from dashboard.shop_store_commerce_api import router as store_commerce_router
 from dashboard.shop_store_context_api import router as store_context_router
 from dashboard.shop_uom_api import router as shop_uom_router
 from dashboard.shop_model_data_api import router as model_data_router
+from dashboard.shop_customer_experience_api import router as customer_experience_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 
@@ -87,6 +88,9 @@ def permission_for(path: str, method: str) -> str | None:
         "bot-catalog": "bots.read" if method == "GET" else "bots.configure",
         "relay-workers": "bots.read" if method == "GET" else "bots.configure",
         "store-customers": "bots.read",
+        "support-tickets": "customers.read",
+        "fulfillments": "orders.read" if method == "GET" else "orders.manage",
+        "customer-notifications": "bots.read",
         "payment-accounts": "bots.read" if method == "GET" else "bots.apply",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
@@ -219,6 +223,8 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "products", "categories", "orders", "customers",
                         "overview", "reports", "settings",
                         "shipping", "coupons", "data-models",
+                        "support-tickets", "fulfillments",
+                        "customer-notifications",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -272,6 +278,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(store_context_router)
     app.include_router(shop_uom_router)
     app.include_router(model_data_router)
+    app.include_router(customer_experience_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
     app.mount("/", legacy)

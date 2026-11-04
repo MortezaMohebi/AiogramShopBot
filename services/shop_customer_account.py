@@ -140,7 +140,7 @@ class CustomerAccountFlow:
                                "ux:addresses", "ux:wish", "ux:links",
                                "ux:notifications", "ux:notify",
                                "ux:language", "ux:privacy"))
-            or action in {"ux:wallet", "ux:referral"}
+            or action in {"ux:wallet", "ux:referral", "ux:phone"}
             or text in {"/account", "👤 حساب من", "/address", "/wishlist", "/profile"}
             or event.contact_phone is not None
         )

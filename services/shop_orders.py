@@ -11,7 +11,7 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import Product, ShopOrder
 from services.shop_checkout_policy import legal_credit_for_items

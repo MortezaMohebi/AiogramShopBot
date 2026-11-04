@@ -19,6 +19,20 @@ from models.shop_payment import ShopPaymentAttempt
 from models.shop_store_commerce import (
     ShopPaymentAccount, ShopStoreCustomer, ShopStoreSettings,
 )
+from models.shop_customer_navigation import (
+    ShopStoreMenuPolicy, ShopBotMenuPolicy, ShopCustomerChatState,
+)
+from models.shop_customer_account_data import (
+    ShopCustomerAddress, ShopCustomerWishlist, ShopCustomerPreference,
+)
+from models.shop_checkout_policy import ShopStoreCheckoutPolicy, ShopBotCheckoutPolicy
+from models.shop_customer_support import (
+    ShopSupportTicket, ShopSupportMessage,
+    ShopOrderFulfillment, ShopFulfillmentEvent,
+)
+from models.shop_customer_notifications import (
+    ShopStockAlert, ShopCustomerNotificationOutbox,
+)
 from services import shop_admin_security as security
 from services.shop_store_context import current_context
 
@@ -30,6 +44,12 @@ STORE_OWNED_MODELS = (
     ShopIdentity, ShopCart, ShopOrder, ShopWalletAccount, ShopCampaign,
     ShopPaymentAttempt, ShopStoreCustomer, ShopPaymentAccount,
     ShopStoreSettings,
+    ShopStoreMenuPolicy, ShopBotMenuPolicy, ShopCustomerChatState,
+    ShopCustomerAddress, ShopCustomerWishlist, ShopCustomerPreference,
+    ShopStoreCheckoutPolicy, ShopBotCheckoutPolicy,
+    ShopSupportTicket, ShopSupportMessage,
+    ShopOrderFulfillment, ShopFulfillmentEvent,
+    ShopStockAlert, ShopCustomerNotificationOutbox,
 )
 
 
