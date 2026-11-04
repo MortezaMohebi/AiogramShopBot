@@ -28,6 +28,7 @@ from services.shop_workflow_requests import (
     Operation,
     RestoreDraft,
     SaveDraft,
+    ValidateDraft,
     checked_payload,
 )
 from services.shop_workflow_validation import validate_definition
@@ -108,7 +109,11 @@ def _view(snapshot, row, scope, actor) -> dict:
 async def read_workflow(db, *, scope, actor, workflow_id: str, revision=None):
     """Read the current draft or one immutable revision inside active Store scope."""
     row = await _head(db, scope, actor, workflow_id)
-    record = await _revision(db, row, revision or row.revision)
+    if revision is not None and (type(revision) is not int or revision < 1):
+        raise security.SecurityRejected("workflow_invalid_request", 422)
+    record = await _revision(
+        db, row, revision if revision is not None else row.revision
+    )
     return _view(_snapshot(record), row, scope, actor)
 
 
@@ -310,6 +315,7 @@ async def _create_draft(
             digest=digest,
         )
         if replay:
+            await db.refresh(actor)
             row = await _head(db, scope, actor, replay.workflow_id)
             return _view(_snapshot(replay), row, scope, actor)
         raise security.SecurityRejected("workflow_key_exists", 409) from None
@@ -360,7 +366,8 @@ async def _mutate(
         payload.get("definition", base["definition"])
     )
     layout = EditorLayout.model_validate(payload.get("layout", base["layout"]))
-    await _check_document(db, row.store_id, definition, layout)
+    if action not in {"archive", "delete"}:
+        await _check_document(db, row.store_id, definition, layout)
     name = payload.get("name", base["name"]).strip()
     if not name:
         raise security.SecurityRejected("workflow_invalid_request", 422)
@@ -392,6 +399,9 @@ async def _mutate(
             digest=digest,
         )
         if replay:
+            # Rollback expires ORM identities even with expire_on_commit=False.
+            await db.refresh(actor)
+            authorize(actor, scope)
             await db.refresh(row)
             return _view(_snapshot(replay), row, scope, actor)
         raise security.SecurityRejected("workflow_revision_conflict", 409)
@@ -416,6 +426,9 @@ async def _mutate(
             digest=digest,
         )
         if replay:
+            # Rollback expires ORM identities even with expire_on_commit=False.
+            await db.refresh(actor)
+            authorize(actor, scope)
             await db.refresh(row)
             return _view(_snapshot(replay), row, scope, actor)
         raise security.SecurityRejected(
@@ -575,6 +588,11 @@ async def validate_workflow(db, *, scope, actor, workflow_id, definition=None):
         definition = Definition.model_validate(
             _snapshot(await _revision(db, row, row.revision))["definition"]
         )
+    definition = Definition.model_validate(
+        checked_payload(ValidateDraft, {"definition": definition})[
+            "definition"
+        ]
+    )
     await validate_bindings(db, store_id=row.store_id, definition=definition)
     return validate_definition(definition).model_dump(mode="json")
 

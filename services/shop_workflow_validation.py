@@ -14,6 +14,8 @@ from services.shop_workflow_catalog import (
 from services.shop_workflow_conditions import (
     PUBLIC_VARIABLES,
     condition_errors,
+    cast_value,
+    comparable,
 )
 from services.shop_workflow_schema import (
     Definition,
@@ -158,6 +160,18 @@ def validate_definition(
                 reverse[button["target"]].add(node.id)
         if node.type == "go_to_step" and node.config["target"]:
             target = node.config["target"]
+            if any(
+                edge.source == node.id
+                and edge.port == "next"
+                and edge.target != target
+                for edge in definition.edges
+            ):
+                add(
+                    "ambiguous_transition",
+                    "مقصد گره و اتصال خروجی یکسان نیستند.",
+                    node.id,
+                    "target",
+                )
             if target not in nodes:
                 add(
                     "invalid_transition_target",
@@ -340,7 +354,7 @@ def validate_definition(
                         platform,
                     )
                 if (
-                    button["type"] == "callback"
+                    button["type"] in {"callback", "action"}
                     and not any(
                         edge.source == node.id and edge.port == button["key"]
                         for edge in definition.edges
@@ -448,6 +462,95 @@ def validate_definition(
                         severity="warning",
                     )
             variable = declarations.get(config.get("variable", ""))
+            if (
+                node.type == "ask_text"
+                and config["min_length"] > config["max_length"]
+            ):
+                add(
+                    "invalid_text_bounds",
+                    "حداقل طول از حداکثر بیشتر است.",
+                    node.id,
+                    "min_length",
+                    platform,
+                )
+            if variable and node.type == "ask_number":
+                try:
+                    bounds = [
+                        (
+                            comparable(
+                                variable,
+                                cast_value(
+                                    variable, config[key], from_input=True
+                                ),
+                            )
+                            if config[key] is not None
+                            else None
+                        )
+                        for key in ("minimum", "maximum")
+                    ]
+                    if (
+                        all(bound is not None for bound in bounds)
+                        and bounds[0] > bounds[1]
+                    ):
+                        raise ValueError("reversed_bounds")
+                except (ValueError, TypeError):
+                    add(
+                        "invalid_number_bounds",
+                        "مقادیر کمینه و بیشینه با نوع عدد یا ترتیب محدوده سازگار نیستند.",
+                        node.id,
+                        "minimum",
+                        platform,
+                    )
+            if node.type in {"ask_choice", "switch"}:
+                choice_field = "cases" if node.type == "switch" else "choices"
+                choices = config.get(choice_field, [])
+                if len({choice["key"] for choice in choices}) != len(choices):
+                    add(
+                        "duplicate_choice_key",
+                        "کلید گزینه تکراری است.",
+                        node.id,
+                        choice_field,
+                        platform,
+                    )
+                if (
+                    node.type == "ask_choice"
+                    and config["choices_source"] == "static"
+                    and not choices
+                ):
+                    add(
+                        "missing_configuration",
+                        "گزینه‌های ثابت را اضافه کنید.",
+                        node.id,
+                        "choices",
+                        platform,
+                    )
+                if variable:
+                    for choice in choices:
+                        try:
+                            cast_value(variable, choice["value"])
+                        except (ValueError, TypeError):
+                            add(
+                                "choice_type_mismatch",
+                                "نوع مقدار گزینه با متغیر سازگار نیست.",
+                                node.id,
+                                choice_field,
+                                platform,
+                            )
+                    expected_reference = {
+                        "simulation_orders": "order_ref",
+                        "simulation_products": "product_ref",
+                    }.get(config.get("choices_source"))
+                    if (
+                        expected_reference
+                        and variable.type != expected_reference
+                    ):
+                        add(
+                            "input_type_mismatch",
+                            "متغیر باید مرجع نمونهٔ مناسب داشته باشد.",
+                            node.id,
+                            "variable",
+                            platform,
+                        )
             if variable:
                 expected = {
                     "ask_number": config.get("number_type"),

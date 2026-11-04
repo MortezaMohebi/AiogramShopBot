@@ -1,5 +1,5 @@
 "use client";
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -9,6 +9,7 @@ import {
   Handle,
   Position,
   useReactFlow,
+  useUpdateNodeInternals,
   type Node,
   type NodeProps,
   type NodeChange,
@@ -33,9 +34,13 @@ type CanvasData = {
 };
 type FlowNode = Node<CanvasData, "workflow">;
 const StudioNode = memo(function StudioNode({
+  id,
   data,
   selected,
 }: NodeProps<FlowNode>) {
+  const updateInternals = useUpdateNodeInternals();
+  const portKey = data.ports.join("|");
+  useEffect(() => updateInternals(id), [id, portKey, updateInternals]);
   return (
     <div
       dir="rtl"
@@ -95,6 +100,10 @@ interface Props {
 function FlowCanvas(props: Props) {
   const { screenToFlowPosition } = useReactFlow();
   const dragged = useRef(false);
+  const [selectedEdges, setSelectedEdges] = useState<string[]>([]);
+  const [measurements, setMeasurements] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
   const nodes = useMemo<FlowNode[]>(
     () =>
       props.document.definition.nodes.map((n) => ({
@@ -102,6 +111,7 @@ function FlowCanvas(props: Props) {
         type: "workflow",
         position: props.document.layout.positions[n.id] ?? { x: 0, y: 0 },
         selected: props.selected.includes(n.id),
+        measured: measurements[n.id],
         data: {
           domain: n,
           ports: nodePorts(
@@ -120,6 +130,7 @@ function FlowCanvas(props: Props) {
       props.selected,
       props.issues,
       props.activeNode,
+      measurements,
     ],
   );
   const edges = useMemo(
@@ -129,23 +140,51 @@ function FlowCanvas(props: Props) {
         source: e.source,
         target: e.target,
         sourceHandle: e.port,
+        selected: selectedEdges.includes(e.id),
         label: e.port,
         style: { stroke: "var(--color-muted-foreground)" },
         labelStyle: { fill: "var(--color-foreground)" },
         labelBgStyle: { fill: "var(--color-card)" },
       })),
-    [props.document.definition.edges],
+    [props.document.definition.edges, selectedEdges],
   );
   const onNodesChange = (changes: NodeChange<FlowNode>[]) => {
+    const dimensions = changes.filter(
+      (c) => c.type === "dimensions" && c.dimensions,
+    );
+    if (dimensions.length)
+      setMeasurements((current) => {
+        const next = { ...current };
+        let changed = false;
+        for (const c of dimensions)
+          if (
+            c.type === "dimensions" &&
+            c.dimensions &&
+            (current[c.id]?.width !== c.dimensions.width ||
+              current[c.id]?.height !== c.dimensions.height)
+          ) {
+            next[c.id] = c.dimensions;
+            changed = true;
+          }
+        return changed ? next : current;
+      });
     const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
     if (removed.length && !props.disabled) props.onRemoveNodes(removed);
-    const moves = changes.filter((c) => c.type === "position" && c.position);
+    const moves = changes.filter(
+      (c) =>
+        c.type === "position" &&
+        c.position &&
+        (props.document.layout.positions[c.id]?.x !== c.position.x ||
+          props.document.layout.positions[c.id]?.y !== c.position.y),
+    );
     if (moves.length && !props.disabled) {
       const positions = { ...props.document.layout.positions };
       for (const c of moves)
         if (c.type === "position" && c.position) positions[c.id] = c.position;
       props.onPositions(positions, dragged.current);
-      dragged.current = true;
+      dragged.current = moves.some(
+        (c) => c.type === "position" && c.dragging === true,
+      );
     }
     const selects = changes.filter((c) => c.type === "select");
     if (selects.length) {
@@ -159,6 +198,17 @@ function FlowCanvas(props: Props) {
     }
   };
   const onEdgesChange = (changes: EdgeChange[]) => {
+    const selects = changes.filter((c) => c.type === "select");
+    if (selects.length)
+      setSelectedEdges((current) => {
+        const next = new Set(current);
+        for (const c of selects)
+          if (c.type === "select") {
+            if (c.selected) next.add(c.id);
+            else next.delete(c.id);
+          }
+        return [...next];
+      });
     if (!props.disabled) {
       const ids = changes.filter((c) => c.type === "remove").map((c) => c.id);
       if (ids.length) props.onRemoveEdges(ids);
@@ -226,7 +276,11 @@ function FlowCanvas(props: Props) {
         snapGrid={[20, 20]}
         minZoom={0.15}
         maxZoom={2}
-        fitView
+        fitView={
+          props.document.layout.viewport.x === 0 &&
+          props.document.layout.viewport.y === 0 &&
+          props.document.layout.viewport.zoom === 1
+        }
         fitViewOptions={{ padding: 0.2 }}
         ariaLabelConfig={{
           "controls.zoomIn.ariaLabel": "بزرگ‌نمایی",

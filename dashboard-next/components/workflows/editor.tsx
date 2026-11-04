@@ -69,7 +69,9 @@ export function WorkflowEditor({
     [manualValidation, setValidation] = useState<ValidationReport | null>(null),
     [validationError, setValidationError] = useState(""),
     [validating, setValidating] = useState(false);
-  const clipboard = useRef<string[]>([]),
+  const clipboard = useRef<{ document: DraftDocument; ids: string[] } | null>(
+      null,
+    ),
     lastEdit = useRef({ key: "", at: 0 });
   const doc = state.document;
   const replace = useCallback(
@@ -219,13 +221,14 @@ export function WorkflowEditor({
     [disabled],
   );
   const paste = useCallback(() => {
-    if (!disabled && clipboard.current.length)
+    if (!disabled && clipboard.current?.ids.length)
       dispatch({
         type: "edit",
         document: cloneSelection(
           doc,
-          clipboard.current,
+          clipboard.current!.ids,
           `copy_${crypto.randomUUID().slice(0, 8)}`,
+          clipboard.current!.document,
         ),
       });
   }, [disabled, doc]);
@@ -248,7 +251,10 @@ export function WorkflowEditor({
       }
       if (k === "c") {
         e.preventDefault();
-        clipboard.current = selected;
+        clipboard.current = {
+          document: structuredClone(doc),
+          ids: [...selected],
+        };
       }
       if (k === "v") {
         e.preventDefault();
@@ -257,7 +263,7 @@ export function WorkflowEditor({
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [disabled, paste, selected]);
+  }, [disabled, paste, selected, doc]);
   const validate = async () => {
     setValidating(true);
     setValidationError("");
@@ -508,7 +514,10 @@ export function WorkflowEditor({
               aria-label="کپی گره‌های انتخاب‌شده"
               disabled={disabled || !selected.length}
               onClick={() => {
-                clipboard.current = selected;
+                clipboard.current = {
+                  document: structuredClone(doc),
+                  ids: [...selected],
+                };
               }}
             >
               <Copy />

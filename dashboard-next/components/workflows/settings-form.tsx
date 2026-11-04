@@ -176,7 +176,7 @@ export function WorkflowSettings({
           <Textarea
             aria-label="توضیحات فرایند"
             value={document.description}
-            maxLength={2000}
+            maxLength={4000}
             onChange={(e) =>
               onChange({ ...document, description: e.target.value })
             }

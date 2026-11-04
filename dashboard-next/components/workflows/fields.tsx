@@ -582,6 +582,35 @@ export function ButtonsEditor({
     </div>
   );
 }
+/** Keep the raw multiline value while normalizing portable enum choices. */
+function EnumOptions({
+  value,
+  onChange,
+  label,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  label: string;
+}) {
+  const normalize = (text: string) => [
+    ...new Set(text.split("\n").filter(Boolean)),
+  ];
+  const [raw, setRaw] = useState(value.join("\n"));
+  if (normalize(raw).join("\n") !== normalize(value.join("\n")).join("\n"))
+    setRaw(value.join("\n"));
+  return (
+    <Textarea
+      aria-label={label}
+      dir="ltr"
+      value={raw}
+      placeholder="هر مقدار در یک خط"
+      onChange={(e) => {
+        setRaw(e.target.value);
+        onChange(normalize(e.target.value));
+      }}
+    />
+  );
+}
 export function VariablesEditor({
   value,
   onChange,
@@ -644,18 +673,10 @@ export function VariablesEditor({
               }
             />
             {v.type === "enum" && (
-              <Textarea
-                aria-label={`مقادیر enum ${i + 1}`}
-                dir="ltr"
-                value={v.choices.join("\n")}
-                placeholder="هر مقدار در یک خط"
-                onChange={(e) =>
-                  update(i, {
-                    choices: [
-                      ...new Set(e.target.value.split("\n").filter(Boolean)),
-                    ],
-                  })
-                }
+              <EnumOptions
+                label={`مقادیر enum ${i + 1}`}
+                value={v.choices}
+                onChange={(choices) => update(i, { choices })}
               />
             )}
             <ValueField

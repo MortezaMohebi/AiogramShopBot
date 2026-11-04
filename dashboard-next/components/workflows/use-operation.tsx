@@ -1,10 +1,11 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   WorkflowError,
   errorText,
   workflowRequest,
 } from "@/lib/workflows/client";
+import { registerWorkflowGuard } from "@/lib/workflows/navigation";
 import type { WorkflowRecord } from "@/lib/workflows/types";
 interface Mutation {
   path: string;
@@ -22,6 +23,11 @@ export function useWorkflowOperation(
     [error, setError] = useState("");
   const pending = useRef<Mutation | null>(null),
     busy = useRef(false);
+  useEffect(
+    () =>
+      registerWorkflowGuard(() => status === "busy" || status === "unknown"),
+    [status],
+  );
   const accept = (record: WorkflowRecord) => {
     pending.current = null;
     setStatus("idle");

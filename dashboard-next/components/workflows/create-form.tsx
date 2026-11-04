@@ -56,13 +56,13 @@ export function CreateWorkflowForm({
         </Field>
         <Field
           label="کلید پایدار"
-          hint="با حرف انگلیسی شروع شود؛ فقط حروف، عدد، خط تیره و زیرخط."
+          hint="با حرف کوچک انگلیسی شروع شود؛ فقط حروف کوچک، عدد، خط تیره و زیرخط."
         >
           <Input
             aria-label="کلید فرایند"
             dir="ltr"
             required
-            pattern="[A-Za-z][A-Za-z0-9_-]{0,63}"
+            pattern="[a-z][a-z0-9_-]{0,63}"
             maxLength={64}
             value={key}
             onChange={(e) => setKey(e.target.value)}
@@ -73,7 +73,7 @@ export function CreateWorkflowForm({
           <Textarea
             aria-label="توضیحات فرایند جدید"
             value={description}
-            maxLength={2000}
+            maxLength={4000}
             onChange={(e) => setDescription(e.target.value)}
           />
         </Field>

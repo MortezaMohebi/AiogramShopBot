@@ -158,11 +158,12 @@ export function cloneSelection(
   document: DraftDocument,
   ids: string[],
   prefix: string,
+  source: DraftDocument = document,
 ): DraftDocument {
   const d = documentOf(document),
     mapping = new Map(ids.map((id, i) => [id, `${prefix}_${i}`]));
   if (d.definition.nodes.length + ids.length > 200) return d;
-  const copies = d.definition.nodes
+  const copies = source.definition.nodes
     .filter((n) => mapping.has(n.id))
     .map((n) => {
       const copy = structuredClone(n);
@@ -174,11 +175,11 @@ export function cloneSelection(
         copy.config.buttons = (copy.config.buttons as WorkflowButton[]).map(
           (b) => ({ ...b, target: mapping.get(b.target) ?? "" }),
         );
-      const p = d.layout.positions[n.id] ?? { x: 0, y: 0 };
+      const p = source.layout.positions[n.id] ?? { x: 0, y: 0 };
       d.layout.positions[copy.id] = { x: p.x + 50, y: p.y + 70 };
       return copy;
     });
-  const edges = d.definition.edges
+  const edges = source.definition.edges
     .filter((e) => mapping.has(e.source) && mapping.has(e.target))
     .map((e, i) => ({
       ...e,

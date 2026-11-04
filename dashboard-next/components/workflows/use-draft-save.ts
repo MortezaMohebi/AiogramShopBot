@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { registerWorkflowGuard } from "@/lib/workflows/navigation";
 import { canonical, documentOf, mergeSave } from "@/lib/workflows/state";
 import {
   WorkflowError,
@@ -146,45 +147,10 @@ export function useDraftSave(
       busy.current = false;
     }
   };
-  useEffect(() => {
-    const before = (e: BeforeUnloadEvent) => {
-      if (dirty || pending.current) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    const click = (e: MouseEvent) => {
-      const link =
-        e.target instanceof Element ? e.target.closest("a[href]") : null;
-      if (
-        !(dirty || pending.current) ||
-        !link ||
-        e.defaultPrevented ||
-        e.metaKey ||
-        e.ctrlKey ||
-        e.shiftKey ||
-        e.altKey
-      )
-        return;
-      const href = link.getAttribute("href");
-      if (
-        href &&
-        !href.startsWith("#") &&
-        !window.confirm(
-          "تغییر ذخیره‌نشده یا عملیات تأییدنشده دارید. پیش از خروج JSON را دریافت کنید. خروج از صفحه؟",
-        )
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-    window.addEventListener("beforeunload", before);
-    window.document.addEventListener("click", click, true);
-    return () => {
-      window.removeEventListener("beforeunload", before);
-      window.document.removeEventListener("click", click, true);
-    };
-  }, [dirty]);
+  useEffect(
+    () => registerWorkflowGuard(() => dirty || pending.current !== null),
+    [dirty],
+  );
   return {
     record,
     dirty,

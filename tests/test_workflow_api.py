@@ -551,3 +551,65 @@ async def test_simulation_is_pinned_scoped_and_does_not_mutate_saved_definitions
     )
     loaded = (await studio.request("GET", "/workflows/" + first["id"])).json()
     assert loaded["definition"] == first["definition"]
+
+
+@pytest.mark.asyncio
+async def test_revision_zero_is_not_an_alias_for_current_head(studio):
+    """Named immutable history cannot silently fall back to a different version."""
+    record = await create(studio)
+    response = await studio.request(
+        "GET", f'/workflows/{record["id"]}/revisions/0'
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_shared_validation_normalizes_a_future_adapter_dictionary(
+    studio,
+):
+    """Read-only service entry points validate the same definition as HTTP callers."""
+    from services.shop_store_context import resolve_context
+    from services.shop_workflows import validate_workflow
+
+    record = await create(studio)
+    adapter = AsyncDb(studio.db)
+    scope = await resolve_context(
+        adapter, staff_id=7, session_id=studio.session_id
+    )
+    result = await validate_workflow(
+        adapter,
+        scope=scope,
+        actor=studio.db.get(ShopStaff, 7),
+        workflow_id=record["id"],
+        definition=document(),
+    )
+    assert result["can_simulate"] is True
+
+
+@pytest.mark.asyncio
+async def test_obsolete_bot_binding_does_not_block_retiring_a_draft(studio):
+    """Disabling a Bot must not make a retained draft impossible to archive/delete."""
+    record = await create(studio)
+    definition = document()
+    definition["assignment"] = {"mode": "selected", "bot_ids": [BOT_A]}
+    response = await studio.request(
+        "PATCH",
+        "/workflows/" + record["id"],
+        payload=update(record, definition=definition),
+    )
+    assert response.status_code == 200
+    studio.db.get(ShopBot, BOT_A).status = "disabled"
+    studio.db.commit()
+    archived = await studio.request(
+        "POST",
+        f'/workflows/{record["id"]}/archive',
+        payload={"operation_id": str(uuid4()), "expected_revision": 2},
+    )
+    assert archived.status_code == 200, archived.text
+    deleted = await studio.request(
+        "DELETE",
+        "/workflows/" + record["id"],
+        payload={"operation_id": str(uuid4()), "expected_revision": 3},
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["revision"] == 4

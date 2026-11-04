@@ -179,3 +179,17 @@ test("reconciled historical operation never adopts a newer head as its save base
   assert.equal(result.revision, 2);
   assert.equal(result.concurrent, true);
 });
+test("a clipboard snapshot survives deleting or editing its original nodes", () => {
+  const original = connect(doc(), "buttons", "end", "ok", "edge1");
+  const current = editorReducer(initialEditor(original), {
+    type: "remove",
+    ids: ["buttons", "end"],
+  }).document;
+  const pasted = cloneSelection(current, ["buttons", "end"], "copy", original);
+  assert.equal(pasted.definition.nodes.length, 3);
+  assert.equal(
+    pasted.definition.nodes.find((n) => n.id === "copy_0")!.label,
+    "منو (کپی)",
+  );
+  assert.equal(pasted.definition.edges[0].target, "copy_1");
+});

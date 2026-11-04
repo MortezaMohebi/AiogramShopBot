@@ -10,7 +10,7 @@ export class WorkflowError extends Error {
     this.name = "WorkflowError";
   }
 }
-export async function workflowRequest<T>(
+async function dispatch<T>(
   path: string,
   method: "GET" | "POST" | "PATCH" | "DELETE" = "GET",
   payload?: unknown,
@@ -52,6 +52,24 @@ export async function workflowRequest<T>(
     );
   }
   return value as T;
+}
+/** Web Locks cover the cookie challenge and its dispatch across tabs. */
+let localQueue: Promise<unknown> = Promise.resolve();
+export async function workflowRequest<T>(
+  path: string,
+  method: "GET" | "POST" | "PATCH" | "DELETE" = "GET",
+  payload?: unknown,
+): Promise<T> {
+  if (method === "GET") return dispatch<T>(path, method, payload);
+  const send = () => dispatch<T>(path, method, payload);
+  if (typeof navigator !== "undefined" && navigator.locks)
+    return navigator.locks.request("shop-admin-workflow-csrf", send);
+  const result = localQueue.then(send, send);
+  localQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 const messages: Record<string, string> = {
   workflow_revision_conflict:

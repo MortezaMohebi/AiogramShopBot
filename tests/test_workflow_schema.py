@@ -465,3 +465,83 @@ def test_each_target_platform_needs_a_visible_button_and_supported_input_size():
         {"id": "last", "source": "menu", "target": "end", "port": "next"}
     )
     assert "platform_input_file_limit" in codes(value)
+
+
+@pytest.mark.parametrize(
+    ("kind", "config", "variable", "expected"),
+    [
+        (
+            "ask_choice",
+            {
+                "prompt": "انتخاب",
+                "variable": "answer",
+                "choices": [
+                    {"key": "a", "label": "گزینه", "value": "not-an-integer"}
+                ],
+            },
+            {"name": "answer", "type": "integer"},
+            "choice_type_mismatch",
+        ),
+        (
+            "ask_number",
+            {"prompt": "عدد", "variable": "answer", "minimum": "abc"},
+            {"name": "answer", "type": "integer"},
+            "invalid_number_bounds",
+        ),
+        (
+            "ask_number",
+            {
+                "prompt": "عدد",
+                "variable": "answer",
+                "minimum": "10",
+                "maximum": "2",
+            },
+            {"name": "answer", "type": "integer"},
+            "invalid_number_bounds",
+        ),
+        (
+            "ask_text",
+            {
+                "prompt": "متن",
+                "variable": "answer",
+                "min_length": 10,
+                "max_length": 2,
+            },
+            {"name": "answer", "type": "string"},
+            "invalid_text_bounds",
+        ),
+    ],
+)
+def test_input_literals_and_bounds_must_admit_valid_typed_answers(
+    kind, config, variable, expected
+):
+    """A graph must not claim simulation readiness when every answer is rejected."""
+    value = document()
+    value["nodes"].insert(
+        1, {"id": "question", "type": kind, "config": config}
+    )
+    value["variables"] = [variable]
+    value["edges"] = [
+        {"id": "first", "source": "s", "target": "question"},
+        {"id": "last", "source": "question", "target": "end"},
+    ]
+    assert expected in codes(value)
+
+
+def test_goto_destination_cannot_invent_a_terminal_exit():
+    """The validator and simulator must resolve exactly the same goto destination."""
+    value = document()
+    value["nodes"].insert(
+        1,
+        {
+            "id": "jump",
+            "type": "go_to_step",
+            "config": {"target": "jump"},
+            "max_visits": 2,
+        },
+    )
+    value["edges"] = [
+        {"id": "first", "source": "s", "target": "jump"},
+        {"id": "last", "source": "jump", "target": "end"},
+    ]
+    assert "ambiguous_transition" in codes(value)
