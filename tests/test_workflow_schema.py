@@ -376,3 +376,92 @@ def test_provider_secrets_cannot_hide_in_variable_defaults():
     ]
     with pytest.raises(ValidationError):
         parsed(value)
+
+
+def test_platform_override_cannot_change_topology_or_variable_binding():
+    """Per-platform copy/media may vary; structural contracts stay shared."""
+    value = document()
+    value["nodes"].insert(
+        1,
+        {
+            "id": "ask",
+            "type": "ask_text",
+            "config": {"variable": "name", "prompt": "نام"},
+            "platform_overrides": {"bale": {"variable": "other"}},
+        },
+    )
+    with pytest.raises(ValidationError):
+        parsed(value)
+
+
+def test_action_button_port_and_implicit_target_are_real_transitions():
+    """An action stub with a target must have the same graph semantics as a callback."""
+    value = document()
+    value["nodes"][0] = {"id": "s", "type": "start", "config": {}}
+    value["nodes"].insert(
+        1,
+        {
+            "id": "menu",
+            "type": "show_buttons",
+            "config": {
+                "text": "سبد",
+                "buttons": [
+                    {
+                        "key": "cart",
+                        "label": "سبد",
+                        "type": "action",
+                        "action": "view_cart",
+                        "target": "end",
+                    }
+                ],
+            },
+        },
+    )
+    value["edges"] = [
+        {"id": "first", "source": "s", "target": "menu", "port": "next"},
+        {"id": "second", "source": "menu", "target": "end", "port": "cart"},
+    ]
+    assert findings(value).can_simulate
+    value["edges"].pop()
+    assert findings(value).can_simulate
+
+
+def test_each_target_platform_needs_a_visible_button_and_supported_input_size():
+    """Catch deterministic platform failures before the user enters Preview."""
+    value = document()
+    value["nodes"].insert(
+        1,
+        {
+            "id": "menu",
+            "type": "show_buttons",
+            "config": {
+                "text": "منو",
+                "buttons": [
+                    {
+                        "key": "go",
+                        "label": "ادامه",
+                        "target": "end",
+                        "platforms": ["telegram"],
+                    }
+                ],
+            },
+        },
+    )
+    value["edges"] = [
+        {"id": "first", "source": "s", "target": "menu", "port": "next"}
+    ]
+    assert "platform_buttons_empty" in codes(value)
+    value["nodes"][1] = {
+        "id": "menu",
+        "type": "ask_document",
+        "config": {
+            "prompt": "فایل",
+            "variable": "file",
+            "max_bytes": 50_000_000,
+        },
+    }
+    value["variables"] = [{"name": "file", "type": "string"}]
+    value["edges"].append(
+        {"id": "last", "source": "menu", "target": "end", "port": "next"}
+    )
+    assert "platform_input_file_limit" in codes(value)

@@ -39,7 +39,9 @@ CAPABILITIES = {
         "message_editing": True,
         "media_group": True,
         "adapter_media_group": False,
-        "media_group_items": 10,
+        # Bale documentation does not specify an official album count ceiling.
+        "media_group_items": None,
+        "editor_media_group_items": 10,
         "native_payment": "bale_wallet_irr",
     },
 }

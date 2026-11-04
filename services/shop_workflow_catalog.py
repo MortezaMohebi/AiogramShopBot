@@ -94,6 +94,18 @@ INPUT_FIELDS = (
         default="پاسخ معتبر نیست؛ دوباره تلاش کنید.",
     ),
 )
+OVERRIDABLE_FIELDS = {
+    "text",
+    "prompt",
+    "caption",
+    "message",
+    "error_message",
+    "confirm_label",
+    "cancel_label",
+    "media_id",
+    "media_ids",
+}
+
 ACTION_SERVICES = {
     "show_categories": "services.shop_channel_catalog.CatalogFlow.reply",
     "show_products": "services.shop_channel_catalog.CatalogFlow.reply",
@@ -430,6 +442,7 @@ def node_catalog() -> dict:
                         "label": item.label,
                         "kind": item.kind,
                         "required": item.required,
+                        "overridable": item.key in OVERRIDABLE_FIELDS,
                         "options": list(item.options),
                         "help": item.help,
                         "show_if": item.show_if,

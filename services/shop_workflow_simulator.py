@@ -591,15 +591,27 @@ def simulate(
     """Replay a bounded immutable definition with synthetic, side-effect-free inputs."""
     definition = Definition.model_validate(definition)
     preview_context = SimulationContext.model_validate(context or {})
+    empty = {
+        "active_node_id": None,
+        "messages": [],
+        "buttons": [],
+        "input": None,
+        "values": {},
+        "visited": [],
+        "stub_actions": [],
+        "elapsed_seconds": 0,
+        "can_go_back": False,
+        "simulation_only": True,
+    }
     if platform not in definition.target_platforms:
-        return {
+        return empty | {
             "status": "invalid",
             "code": "workflow_platform_not_targeted",
             "simulation_only": True,
         }
     report = validate_definition(definition, [platform])
     if not report.can_simulate:
-        return {
+        return empty | {
             "status": "invalid",
             "code": "workflow_graph_invalid",
             "validation": report.model_dump(mode="json"),

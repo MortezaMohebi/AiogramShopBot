@@ -429,3 +429,14 @@ def test_delay_node_advances_only_the_preview_clock():
     )
     result = run(definition)
     assert result["status"] == "completed" and result["elapsed_seconds"] == 2
+
+
+def test_invalid_graph_keeps_a_complete_preview_response_envelope():
+    """An incomplete saved draft must render validation instead of crashing Preview."""
+    from services.shop_workflow_schema import Definition
+    from services.shop_workflow_simulator import simulate
+
+    result = simulate(Definition(), platform="telegram")
+    assert result["status"] == "invalid"
+    assert result["buttons"] == [] and result["input"] is None
+    assert result["values"] == {} and result["can_go_back"] is False

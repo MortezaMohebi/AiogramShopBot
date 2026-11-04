@@ -30,7 +30,7 @@ def node_ports(node, config: dict | None = None) -> set[str]:
         ports.update(
             button["key"]
             for button in config["buttons"]
-            if button["type"] == "callback"
+            if button["type"] in {"callback", "action"}
         )
     if node.type == "switch":
         ports.update(case["key"] for case in config["cases"])
@@ -138,7 +138,10 @@ def validate_definition(
         reverse[edge.target].add(edge.source)
     for node in definition.nodes:
         for button in node.config.get("buttons", []):
-            if button["type"] == "callback" and button["target"] in nodes:
+            if (
+                button["type"] in {"callback", "action"}
+                and button["target"] in nodes
+            ):
                 targets = {
                     edge.target
                     for edge in definition.edges
@@ -301,6 +304,20 @@ def validate_definition(
                     "buttons",
                     platform,
                 )
+            if (
+                node.type == "show_buttons"
+                and buttons
+                and not any(
+                    platform in button["platforms"] for button in buttons
+                )
+            ):
+                add(
+                    "platform_buttons_empty",
+                    "برای این پیام‌رسان دکمه‌ای وجود ندارد.",
+                    node.id,
+                    "buttons",
+                    platform,
+                )
             for button in buttons:
                 if (
                     button["type"] == "action"
@@ -368,6 +385,23 @@ def validate_definition(
                         platform,
                     )
             capabilities = CAPABILITIES[platform]
+            if node.type in {"ask_photo", "ask_document"} and config[
+                "max_bytes"
+            ] > min(
+                capabilities["download_bytes"],
+                (
+                    capabilities["photo_bytes"]
+                    if node.type == "ask_photo"
+                    else capabilities["file_bytes"]
+                ),
+            ):
+                add(
+                    "platform_input_file_limit",
+                    "حجم دریافت فایل از محدودیت این پیام‌رسان بیشتر است.",
+                    node.id,
+                    "max_bytes",
+                    platform,
+                )
             if (
                 len(config.get("text", config.get("prompt", "")))
                 > capabilities["text_characters"]

@@ -185,7 +185,10 @@ class WorkflowNode(StrictModel):
     @model_validator(mode="after")
     def type_configuration(self):
         """Validate base and partial overrides against one allowlisted node schema."""
-        from services.shop_workflow_catalog import NODE_SPECS
+        from services.shop_workflow_catalog import (
+            NODE_SPECS,
+            OVERRIDABLE_FIELDS,
+        )
 
         spec = NODE_SPECS.get(self.type)
         if spec is None:
@@ -194,6 +197,8 @@ class WorkflowNode(StrictModel):
             mode="json"
         )
         for override in self.platform_overrides.values():
+            if set(override) - OVERRIDABLE_FIELDS:
+                raise ValueError("platform_override_changes_contract")
             # Validating the merged value preserves partial override intent while
             # still rejecting unknown fields and wrong primitive types.
             spec.config_model.model_validate(self.config | override)
