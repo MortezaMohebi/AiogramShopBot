@@ -48,21 +48,16 @@ main_router = Router()
 
 @main_router.message(CommandStart())
 @main_router.message(Command("help"))
-async def start(message: Message, command: CommandObject, session: AsyncSession, language: Language):
-    shop_catalog_button = types.KeyboardButton(text="🛍 محصولات")
-    shop_wallet_button = types.KeyboardButton(text="💳 اعتبار من")
-    shop_referral_button = types.KeyboardButton(text="🎁 معرفی دوستان")
-    all_categories_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "all_categories"))
-    my_profile_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "my_profile"))
-    faq_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "faq"))
-    help_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "help"))
-    admin_menu_button = types.KeyboardButton(text=get_text(language, BotEntity.ADMIN, "menu"))
-    reviews_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "reviews"))
-    cart_button = types.KeyboardButton(text=get_text(language, BotEntity.USER, "cart"))
+async def start(
+    message: Message, command: CommandObject,
+    session: AsyncSession, language: Language,
+) -> None:
+    """Open the shared Telegram/Bale menu without separate legacy buttons."""
+    if message.from_user is None or message.chat.type != "private":
+        return
     telegram_id = message.from_user.id
     await register_customer(
-        session,
-        platform=Platform.TELEGRAM,
+        session, platform=Platform.TELEGRAM,
         platform_user_id=telegram_id,
         username=message.from_user.username,
         first_name=message.from_user.first_name,
@@ -74,6 +69,7 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
             parse_mode=None,
         )
         return
+
     referral_arg = (
         command.args.strip()
         if command.args and command.args.strip().upper().startswith("R-")
@@ -82,55 +78,34 @@ async def start(message: Message, command: CommandObject, session: AsyncSession,
     if referral_arg is not None:
         try:
             await ShopReferralService.claim(
-                session,
-                platform=Platform.TELEGRAM,
-                user_id=telegram_id,
-                code=referral_arg,
+                session, platform=Platform.TELEGRAM,
+                user_id=telegram_id, code=referral_arg,
             )
         except ReferralRejected:
-            # Starting the bot must remain possible even for invalid codes.
-            logging.info("Invalid shop referral code was ignored.")
+            # Invalid referral codes must never block the storefront Home.
+            logging.info("Shop referral code rejected during /start.")
+    # Preserve old profile initialization for legacy purchase/identity readers.
     await UserService.create_if_not_exist(UserDTO(
         telegram_username=message.from_user.username,
-        telegram_id=telegram_id,
-        language=language
+        telegram_id=telegram_id, language=language,
     ), None if referral_arg is not None else command.args, session)
-    keyboard = [[shop_catalog_button, cart_button],
-                [all_categories_button, my_profile_button],
-                [help_button, faq_button],
-                [shop_wallet_button, shop_referral_button],
-                [reviews_button]]
-    if telegram_id in config.ADMIN_ID_LIST:
-        keyboard.append([admin_menu_button])
-    start_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2, keyboard=keyboard)
-    bot_photo_id = get_bot_photo_id()
-    # The shop's own welcome copy comes from the admin dashboard.
-    settings = await session.get(ShopSettings, 1)
-    per_bot = await session.get(
-        ShopBotOperations, LEGACY_BOT_IDS["telegram"],
+
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id, user_id=telegram_id,
+        text="/support" if message.text and message.text.startswith("/help")
+        else "/start",
     )
-    welcome = (
-        per_bot.welcome_message
-        if per_bot and per_bot.welcome_message
-        else settings.welcome_message
-        if settings and settings.welcome_message
-        else get_text(language, BotEntity.COMMON, "start_message")
-    )
-    if bot_photo_id:
-        await message.answer_photo(
-            photo=bot_photo_id,
-            caption=welcome[:1024],
-            reply_markup=start_markup,
-            parse_mode=None,
-        )
+    if event.text == "/start":
+        reply = await CatalogFlow(
+            display_unit=config.SHOP_DISPLAY_UNIT,
+        ).reply(event, session)
     else:
-        # Brand-new Telegram bots can serve the shared catalog before
-        # their optional profile/legacy placeholder image is configured.
-        await message.answer(
-            text=welcome,
-            reply_markup=start_markup,
-            parse_mode=None,
-        )
+        from services.shop_customer_experience import CustomerExperienceFlow
+
+        reply = await CustomerExperienceFlow().reply(event, session)
+    if reply is not None:
+        await TelegramTransport(message.bot).send(event.chat_id, reply)
 
 
 @main_router.message(F.text.in_(KeyboardButton.get_localized_set(KeyboardButton.FAQ)), IsUserExistFilter())
