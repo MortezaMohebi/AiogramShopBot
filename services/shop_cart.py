@@ -945,10 +945,13 @@ class ShopCartFlow:
                 raise CartRejected(str(error)) from None
             stars_total = None
         else:
-            current_proof, pinned_files = await quote_signature(
-                session, cart=cart, quote=quote,
-                policy_token=policy.policy_token,
-            )
+            try:
+                current_proof, pinned_files = await quote_signature(
+                    session, cart=cart, quote=quote,
+                    policy_token=policy.policy_token,
+                )
+            except MixedCheckoutError as error:
+                raise CartRejected(str(error)) from None
             if current_proof != expected_policy_token:
                 raise CartRejected(
                     "قیمت، فایل یا شرایط خرید تغییر کرده؛ سفارش را تازه کنید."

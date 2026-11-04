@@ -24,6 +24,7 @@ from models.shop_content import ShopOrder
 from models.shop_uom import ShopUom
 from services.shop_checkout_policy import CheckoutRules
 from services.shop_digital_catalog import require_digital_supply
+from services.shop_digital_rules import DeliveryPolicyError
 from services.shop_mixed_checkout import (
     MixedCheckoutPlan, MixedCheckoutError, build_split_plan,
     checkout_quote_fingerprint,
@@ -60,9 +61,14 @@ async def quote_signature(
             product.product_type == "digital"
             and product.digital_delivery_mode == "file"
         ):
-            asset = await require_digital_supply(
-                db, product=product, quantity=line.quantity,
-            )
+            try:
+                asset = await require_digital_supply(
+                    db, product=product, quantity=line.quantity,
+                )
+            except DeliveryPolicyError:
+                raise MixedCheckoutError(
+                    "Private digital file changed or became unavailable."
+                ) from None
             if asset is None:
                 raise MixedCheckoutError("Digital file not available.")
             asset_ids[product.id] = asset.id
