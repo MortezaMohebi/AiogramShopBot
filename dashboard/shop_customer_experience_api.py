@@ -256,6 +256,38 @@ async def customer_addresses(
     }
 
 
+@router.get("/store-customers/{customer_id}/wishlist")
+async def customer_wishlist(
+    customer_id: int, request: Request, actor: Actor, db: Db,
+) -> dict:
+    """Show only registered Products of this authenticated StoreCustomer."""
+    require(actor, request, "customers.read")
+    from models.shop_store_commerce import ShopStoreCustomer
+
+    customer = await db.get(ShopStoreCustomer, customer_id)
+    if customer is None:
+        raise security.SecurityRejected("customer_not_found", 404)
+    require(actor, request, "customers.read", store_id=customer.store_id)
+    rows = (await db.execute(select(
+        Product.id, Product.name, Product.sku,
+        Product.is_published,
+    ).join(
+        ShopCustomerWishlist,
+        ShopCustomerWishlist.product_id == Product.id,
+    ).where(
+        Product.store_id == customer.store_id,
+        ShopCustomerWishlist.store_id == customer.store_id,
+        ShopCustomerWishlist.customer_id == customer.id,
+    ).order_by(Product.id.desc()).limit(100))).all()
+    return {
+        "customer_id": customer_id,
+        "items": [{
+            "id": product_id, "name": name, "sku": sku,
+            "is_published": published,
+        } for product_id, name, sku, published in rows],
+    }
+
+
 @router.get("/support-tickets")
 async def list_support(
     request: Request, actor: Actor, db: Db,
