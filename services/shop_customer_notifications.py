@@ -26,10 +26,11 @@ from services.shop_customer_account import customer_for_bot
 
 _VALID_TOPICS = frozenset({"order", "ticket", "stock", "marketing"})
 _OUTBOX_TRANSITIONS = {
-    "queued": frozenset({"processing"}),
-    "processing": frozenset({"sent", "needs_review"}),
+    "queued": frozenset({"processing", "cancelled"}),
+    "processing": frozenset({"sent", "needs_review", "cancelled"}),
     "sent": frozenset(),
     "needs_review": frozenset(),
+    "cancelled": frozenset(),
 }
 
 
@@ -45,6 +46,21 @@ def notification_permitted(
     if topic == "stock":
         return explicit_request is True
     return topic in {"order", "ticket"}
+
+
+def can_deliver_at_dispatch(
+    *, topic: str, advertising_consent: bool, explicit_request: bool,
+    bot_active: bool, owner_valid: bool,
+) -> bool:
+    """Recheck LIVE owner, bot state, and topic-specific consent at send time."""
+    return (
+        bot_active is True
+        and owner_valid is True
+        and notification_permitted(
+            topic=topic, advertising_consent=advertising_consent,
+            explicit_request=explicit_request,
+        )
+    )
 
 
 def validate_outbox_transition(current: str, new_status: str) -> bool:
@@ -244,6 +260,7 @@ async def claim_outbox_message(
 
 async def finish_outbox_message(
     db: AsyncSession, *, outbox_id: int, succeeded: bool,
+    cancelled: bool = False,
 ) -> None:
     """Mark sent/unknown; never enqueue ambiguous outbound requests again."""
     row = await db.scalar(select(ShopCustomerNotificationOutbox).where(
@@ -251,11 +268,18 @@ async def finish_outbox_message(
     ).with_for_update())
     if row is None:
         raise ValueError("Outbox receipt is missing.")
-    next_status = "sent" if succeeded else "needs_review"
+    # A deterministic pre-send revocation differs from a network timeout.
+    # A cancelled message was never sent and must not be retried either.
+    next_status = (
+        "cancelled" if cancelled else
+        "sent" if succeeded else "needs_review"
+    )
     validate_outbox_transition(row.status, next_status)
     row.status = next_status
     if succeeded:
         row.sent_at = datetime.now(timezone.utc)
+    elif cancelled:
+        row.failure_code = "authorization_revoked"
     else:
         row.failure_code = "provider_outcome_unknown"
     await db.commit()

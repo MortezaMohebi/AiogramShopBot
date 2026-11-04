@@ -105,7 +105,7 @@ class ShopCustomerNotificationOutbox(Base):
             name="ck_shop_outbox_topic",
         ),
         CheckConstraint(
-            "status IN ('queued','processing','sent','needs_review')",
+            "status IN ('queued','processing','sent','needs_review','cancelled')",
             name="ck_shop_outbox_status",
         ),
         CheckConstraint(
