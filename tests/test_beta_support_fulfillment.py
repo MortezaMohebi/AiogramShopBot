@@ -39,9 +39,12 @@ def test_digital_delivery_requires_settled_paid_receipt():
         validate_fulfillment_transition(
             "processing", "delivered", physical=False, paid=False,
         )
-    assert validate_fulfillment_transition(
-        "processing", "delivered", physical=False, paid=True,
-    )
+    # A paid receipt alone proves money, not a secure digital asset delivery.
+    # Until the media/license pipeline emits proof, "delivered" must be denied.
+    with pytest.raises(ValueError):
+        validate_fulfillment_transition(
+            "processing", "delivered", physical=False, paid=True,
+        )
 
 
 def test_ticket_body_rejects_control_characters_and_empty():
