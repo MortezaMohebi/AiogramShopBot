@@ -90,12 +90,19 @@ export async function saveCheckoutPolicy(form: FormData): Promise<void> {
   const prefix = selection.scope === "store"
     ? `/stores/${selection.id}/checkout-policy`
     : `/bot-registry/${selection.id}/checkout-policy`;
+  const terms_version = String(form.get("terms_version") ?? "").trim();
+  const terms_text = String(form.get("terms_text") ?? "").trim();
+  if (selection.scope === "store" && (mode === "inherit" ||
+      terms_version.length < 1 || terms_version.length > 32 ||
+      terms_text.length > 6000)) {
+    redirect(`${selection.url}?ux_error=validation`);
+  }
   const payload = selection.scope === "store"
     ? {
       expected_version,
       mode,
-      terms_version: String(form.get("terms_version") ?? "").trim(),
-      terms_text: String(form.get("terms_text") ?? "").trim(),
+      terms_version,
+      terms_text,
       ...proof(form),
     }
     : {
@@ -103,9 +110,7 @@ export async function saveCheckoutPolicy(form: FormData): Promise<void> {
       mode_override: mode === "inherit" ? null : mode,
       ...proof(form),
     };
-  if (selection.scope === "store" && (mode === "inherit" ||
-      payload.terms_version.length > 32 ||
-      payload.terms_text.length > 6000)) {
+  if (selection.scope === "store" && mode === "inherit") {
     redirect(`${selection.url}?ux_error=validation`);
   }
   try {
