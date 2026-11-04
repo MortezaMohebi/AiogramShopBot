@@ -148,7 +148,14 @@ class ShopPaymentService:
             )
         subtotal = sum(line.total_irr for line, _ in pairs)
         if (
-            type(order.total_irr) is not int or order.total_irr <= 0
+            type(order.total_irr) is not int or order.total_irr < 0
+            or (
+                order.total_irr == 0 and (
+                    platform != Platform.TELEGRAM
+                    or type(order.total_stars_snapshot) is not int
+                    or order.total_stars_snapshot <= 0
+                )
+            )
             or subtotal != order.subtotal_irr
             or order.total_irr != (
                 subtotal - (order.discount_irr or 0)
@@ -159,6 +166,20 @@ class ShopPaymentService:
             raise PaymentRejected("مبلغ سفارش با صورت‌حساب سازگار نیست.")
 
         types = {product.product_type for _, product in pairs}
+        if "digital" in types:
+            from services.shop_digital_catalog import require_digital_supply
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            try:
+                for line, product in pairs:
+                    if product.product_type == "digital":
+                        await require_digital_supply(
+                            session, product=product, quantity=line.quantity,
+                        )
+            except (DeliveryPolicyError, OSError):
+                raise PaymentRejected(
+                    "فایل یا موجودی لایسنس دیجیتال آمادهٔ تحویل نیست."
+                ) from None
         if not types <= {"physical", "digital"}:
             raise PaymentRejected("نوع کالا معتبر نیست.")
         for line, product in pairs:
@@ -452,6 +473,26 @@ class ShopPaymentService:
                 except CartRejected:
                     allocated = False
 
+        digital_only = bool(pairs) and all(
+            product.product_type == "digital" for _, product in pairs
+        )
+        if allocated and digital_only:
+            # Build all private claims only on a confirmed successful_payment.
+            # A failed reservation is quarantined as paid_unfulfilled; never
+            # lose the actual received payment receipt.
+            from services.shop_digital_fulfillment import (
+                queue_paid_digital_order,
+            )
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            order.status = "paid"
+            try:
+                async with session.begin_nested():
+                    await queue_paid_digital_order(
+                        session, order=order, pairs=pairs,
+                    )
+            except (DeliveryPolicyError, ValueError, OSError):
+                allocated = False
         if allocated:
             for line, product in pairs:
                 product.stock_quantity -= line.quantity

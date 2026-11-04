@@ -360,6 +360,24 @@ class ShopWalletService:
             except CartRejected:
                 raise StoreCreditRejected("اعتبار کد تخفیف تمام شده است.") from None
 
+        # A paid digital product on Bale must have private content ready
+        # BEFORE internally settled credit is deducted.
+        digital_only = all(
+            product.product_type == "digital" for _, product in pairs
+        )
+        if digital_only:
+            from services.shop_digital_catalog import require_digital_supply
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            try:
+                for line, product in pairs:
+                    await require_digital_supply(
+                        session, product=product, quantity=line.quantity,
+                    )
+            except (DeliveryPolicyError, OSError):
+                raise StoreCreditRejected(
+                    "فایل یا موجودی لایسنس دیجیتال آمادهٔ تحویل نیست."
+                ) from None
         await ShopWalletService.apply(
             session,
             identity_id=identity.id,
@@ -392,6 +410,22 @@ class ShopWalletService:
         order.payment_currency = "IRR"
         order.payment_amount = amount
         order.paid_at = now
+        if digital_only:
+            from services.shop_digital_fulfillment import (
+                queue_paid_digital_order,
+            )
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            try:
+                await session.flush()
+                await queue_paid_digital_order(
+                    session, order=order, pairs=pairs,
+                )
+            except (DeliveryPolicyError, OSError, ValueError):
+                await session.rollback()
+                raise StoreCreditRejected(
+                    "تأمین دیجیتال تغییر کرد؛ موجودی اعتبار از حساب کسر نشد."
+                ) from None
         await session.commit()
         return order, True
 
