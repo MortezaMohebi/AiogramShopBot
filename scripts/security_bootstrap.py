@@ -51,6 +51,8 @@ async def main() -> None:
     from models.shop_checkout_policy import CHECKOUT_POLICY_TABLES
     from models.shop_customer_support import SUPPORT_FULFILLMENT_TABLES
     from models.shop_customer_notifications import CUSTOMER_NOTIFICATION_TABLES
+    from models.shop_checkout_batch import CHECKOUT_BATCH_TABLES
+    from models.shop_digital_delivery import DIGITAL_DELIVERY_TABLES
     from services.shop_multibot_bootstrap import adopt_legacy_codespace
     from services.shop_bot_operations_bootstrap import upgrade_codespace_bot_operations
     from services.shop_uom import seed_store_units
@@ -66,7 +68,7 @@ async def main() -> None:
                 raise RuntimeError("Versioned databases must use their migrations")
         # These new tables are additive; neither existing product nor order
         # columns are changed. An existing Codespace keeps all its data.
-        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | set(CRM_TABLE_NAMES) | set(STAFF_PREFERENCES_TABLES) | set(BOT_PROFILE_TABLES) | set(PAYMENT_RAIL_TABLES) | set(CUSTOMER_LINK_TABLES) | set(STAFF_STATES_TABLES) | set(TELEGRAM_TRANSPORT_TABLES) | set(MULTIBOT_FOUNDATION_TABLES) | set(BOT_OPERATIONS_TABLES) | set(BOT_CATALOG_ACL_TABLES) | set(BOT_RUNTIME_TABLES) | set(RELAY_POOL_TABLES) | set(STORE_COMMERCE_TABLES) | set(STAFF_STORE_TABLES) | set(MODEL_IMPORT_TABLES) | set(CUSTOMER_NAV_TABLES) | set(CUSTOMER_ACCOUNT_TABLES) | set(CHECKOUT_POLICY_TABLES) | set(SUPPORT_FULFILLMENT_TABLES) | set(CUSTOMER_NOTIFICATION_TABLES) | {ShopUom.__tablename__, ShopUomCategory.__tablename__, "shop_product_visibility"}
+        additions = set(CONTROL_TABLE_NAMES) | set(STAFF_SECURITY_TABLE_NAMES) | set(SHOP_CHANNEL_FEATURE_TABLES) | set(CRM_TABLE_NAMES) | set(STAFF_PREFERENCES_TABLES) | set(BOT_PROFILE_TABLES) | set(PAYMENT_RAIL_TABLES) | set(CUSTOMER_LINK_TABLES) | set(STAFF_STATES_TABLES) | set(TELEGRAM_TRANSPORT_TABLES) | set(MULTIBOT_FOUNDATION_TABLES) | set(BOT_OPERATIONS_TABLES) | set(BOT_CATALOG_ACL_TABLES) | set(BOT_RUNTIME_TABLES) | set(RELAY_POOL_TABLES) | set(STORE_COMMERCE_TABLES) | set(STAFF_STORE_TABLES) | set(MODEL_IMPORT_TABLES) | set(CUSTOMER_NAV_TABLES) | set(CUSTOMER_ACCOUNT_TABLES) | set(CHECKOUT_POLICY_TABLES) | set(SUPPORT_FULFILLMENT_TABLES) | set(CUSTOMER_NOTIFICATION_TABLES) | set(CHECKOUT_BATCH_TABLES) | set(DIGITAL_DELIVERY_TABLES) | {ShopUom.__tablename__, ShopUomCategory.__tablename__, "shop_product_visibility"}
         missing = permitted_missing(tables, set(Base.metadata.tables), additions)
         if missing:
             await connection.run_sync(lambda sync: Base.metadata.create_all(sync,

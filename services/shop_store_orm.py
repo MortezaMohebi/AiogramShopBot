@@ -33,6 +33,10 @@ from models.shop_customer_support import (
 from models.shop_customer_notifications import (
     ShopStockAlert, ShopCustomerNotificationOutbox,
 )
+from models.shop_checkout_batch import ShopCheckoutBatch
+from models.shop_digital_delivery import (
+    ShopDigitalAsset, ShopDigitalDelivery, ShopDigitalLicenseKey,
+)
 from services import shop_admin_security as security
 from services.shop_store_context import current_context
 
@@ -50,6 +54,8 @@ STORE_OWNED_MODELS = (
     ShopSupportTicket, ShopSupportMessage,
     ShopOrderFulfillment, ShopFulfillmentEvent,
     ShopStockAlert, ShopCustomerNotificationOutbox,
+    ShopCheckoutBatch, ShopDigitalAsset, ShopDigitalDelivery,
+    ShopDigitalLicenseKey,
 )
 
 
