@@ -7,16 +7,20 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.filters import BaseFilter, Command
-from sqlalchemy import select
+from sqlalchemy import select, or_
+from datetime import datetime, timezone
 
 from db import get_db_session
-from models.shop_checkout import ShopCart
+from models.shop_checkout import ShopCart, ShopCartInputSession
+from models.shop_customer_navigation import ShopCustomerChatState
+from models.shop_multibot import LEGACY_TELEGRAM_BOT_ID
 from aiogram.types import CallbackQuery, Message, PreCheckoutQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_customer_experience import CustomerExperienceFlow
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
 from services.shop_engagement_flow import ShopEngagementFlow
@@ -42,13 +46,34 @@ class AwaitingShopInput(BaseFilter):
         ):
             return False
         async with get_db_session() as session:
-            return bool(await session.scalar(
-                select(ShopCart.id).where(
-                    ShopCart.platform == Platform.TELEGRAM.value,
-                    ShopCart.platform_user_id == message.from_user.id,
-                    ShopCart.awaiting_input.is_not(None),
-                )
-            ))
+            cart_pending = await session.scalar(select(ShopCart.id).where(
+                ShopCart.bot_id == LEGACY_TELEGRAM_BOT_ID,
+                ShopCart.platform_user_id == message.from_user.id,
+                ShopCart.awaiting_input.is_not(None),
+            ).limit(1))
+            if cart_pending is not None:
+                return True
+            shared_input = await session.scalar(
+                select(ShopCartInputSession.cart_id).where(
+                    ShopCartInputSession.bot_id == LEGACY_TELEGRAM_BOT_ID,
+                    ShopCartInputSession.platform_user_id == message.from_user.id,
+                    ShopCartInputSession.awaiting_input.is_not(None),
+                ).limit(1)
+            )
+            if shared_input is not None:
+                return True
+            chat_state = await session.get(
+                ShopCustomerChatState,
+                (LEGACY_TELEGRAM_BOT_ID, message.from_user.id),
+            )
+            return bool(
+                chat_state is not None and chat_state.action != "idle"
+                and (
+                    chat_state.expires_at.replace(tzinfo=timezone.utc)
+                    if chat_state.expires_at.tzinfo is None
+                    else chat_state.expires_at
+                ) > datetime.now(timezone.utc)
+            )
 
 
 async def _shop_reply(
@@ -77,6 +102,9 @@ async def _shop_reply(
     cart = await ShopCartFlow(config.SHOP_DISPLAY_UNIT).reply(event, session)
     if cart is not None:
         return cart
+    unified = await CustomerExperienceFlow().reply(event, session)
+    if unified is not None:
+        return unified
     return await _flow().reply(event, session)
 
 
@@ -166,6 +194,69 @@ async def shopping_basket_text(message: Message, session: AsyncSession) -> None:
     reply = await _shop_reply(event, session)
     if reply is not None:
         await TelegramTransport(message.bot).send(message.chat.id, reply)
+
+
+@shop_catalog_router.message(
+    Command(
+        "menu", "search", "account", "support", "paysupport",
+        "terms", "ticket", "address", "wishlist", "profile", "cancel",
+    )
+)
+@shop_catalog_router.message(F.text.in_({
+    "🔎 جستجوی محصول", "👤 حساب من", "🆘 پشتیبانی", "🏠 منوی اصلی",
+}))
+async def unified_customer_message(
+    message: Message, session: AsyncSession,
+) -> None:
+    """Use the same customer business router as Bale and registry bots."""
+    if message.from_user is None or message.chat.type != "private":
+        return
+    if await is_blocked(
+        session, platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+    ):
+        return
+    await register_customer(
+        session, platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id, user_id=message.from_user.id,
+        text=message.text,
+    )
+    reply = await _shop_reply(event, session)
+    if reply is not None:
+        await TelegramTransport(message.bot).send(event.chat_id, reply)
+
+
+@shop_catalog_router.message(F.contact)
+async def verified_customer_contact(
+    message: Message, session: AsyncSession,
+) -> None:
+    """Only Contact.user_id == message sender ID can verify a phone."""
+    if (
+        message.from_user is None or message.chat.type != "private"
+        or message.contact is None
+    ):
+        return
+    await register_customer(
+        session, platform=Platform.TELEGRAM,
+        platform_user_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+    )
+    event = InboundEvent(
+        platform=Platform.TELEGRAM,
+        chat_id=message.chat.id, user_id=message.from_user.id,
+        contact_phone=message.contact.phone_number,
+        contact_user_id=message.contact.user_id,
+    )
+    reply = await _shop_reply(event, session)
+    if reply is not None:
+        await TelegramTransport(message.bot).send(event.chat_id, reply)
 
 
 @shop_catalog_router.message(Command("catalog"))
