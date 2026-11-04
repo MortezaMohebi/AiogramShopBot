@@ -87,6 +87,8 @@ class ShopCustomerChatState(Base):
         String(32), nullable=False, default="idle", server_default="idle",
     )
     query_text: Mapped[str | None] = mapped_column(String(100))
+    # Opaque field/subject of the currently awaited chat form, never a Bot ID.
+    context_ref: Mapped[str | None] = mapped_column(String(100))
     query_field: Mapped[str] = mapped_column(
         String(16), nullable=False, default="all", server_default="all",
     )
