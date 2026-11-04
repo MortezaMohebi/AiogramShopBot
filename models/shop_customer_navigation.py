@@ -87,6 +87,9 @@ class ShopCustomerChatState(Base):
         String(32), nullable=False, default="idle", server_default="idle",
     )
     query_text: Mapped[str | None] = mapped_column(String(100))
+    query_field: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="all", server_default="all",
+    )
     page: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
     )
@@ -99,6 +102,10 @@ class ShopCustomerChatState(Base):
             name="ck_shop_chat_action",
         ),
         CheckConstraint("page BETWEEN 0 AND 10000", name="ck_shop_chat_page"),
+        CheckConstraint(
+            "query_field IN ('all','name','sku','description')",
+            name="ck_shop_chat_query_field",
+        ),
         CheckConstraint("platform_user_id > 0", name="ck_shop_chat_user"),
     )
 
