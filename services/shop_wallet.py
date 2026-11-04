@@ -26,6 +26,7 @@ from services.shop_bot_catalog_acl import (
 )
 from models.shop_scope import legacy_id
 from services.shop_money import MAX_RIALS, to_rials
+from services.shop_checkout_policy import legal_credit_for_items
 from services.shop_store_commerce import policy_for
 
 
@@ -317,6 +318,18 @@ class ShopWalletService:
             raise StoreCreditRejected(
                 "یک یا چند کالای سفارش در این بات دیگر قابل خرید نیستند."
             )
+        if not legal_credit_for_items(
+            platform, {product.product_type for _, product in pairs},
+        ):
+            raise StoreCreditRejected(
+                "کالای فیزیکی و دیجیتال باید جدا سفارش داده شوند."
+                if platform == Platform.BALE else
+                "پرداخت کالای دیجیتال تلگرام فقط با Telegram Stars مجاز است."
+            )
+        if order.terms_accepted_at is None:
+            raise StoreCreditRejected(
+                "شرایط فروش این سفارش تأیید نشده است."
+            )
         if any(
             not product.is_published
             or product.stock_quantity < line.quantity
@@ -349,6 +362,32 @@ class ShopWalletService:
             except CartRejected:
                 raise StoreCreditRejected("اعتبار کد تخفیف تمام شده است.") from None
 
+        # A paid digital product on Bale must have private content ready
+        # BEFORE internally settled credit is deducted.
+        digital_only = all(
+            product.product_type == "digital" for _, product in pairs
+        )
+        if digital_only:
+            from services.shop_digital_catalog import require_digital_supply
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            try:
+                for line, product in pairs:
+                    if (
+                        product.digital_delivery_mode == "file"
+                        and not line.digital_asset_id_snapshot
+                    ):
+                        raise DeliveryPolicyError(
+                            "Order has no approved private file version."
+                        )
+                    await require_digital_supply(
+                        session, product=product, quantity=line.quantity,
+                        pinned_asset_id=line.digital_asset_id_snapshot,
+                    )
+            except (DeliveryPolicyError, OSError):
+                raise StoreCreditRejected(
+                    "فایل یا موجودی لایسنس دیجیتال آمادهٔ تحویل نیست."
+                ) from None
         await ShopWalletService.apply(
             session,
             identity_id=identity.id,
@@ -381,6 +420,22 @@ class ShopWalletService:
         order.payment_currency = "IRR"
         order.payment_amount = amount
         order.paid_at = now
+        if digital_only:
+            from services.shop_digital_fulfillment import (
+                queue_paid_digital_order,
+            )
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            try:
+                await session.flush()
+                await queue_paid_digital_order(
+                    session, order=order, pairs=pairs,
+                )
+            except (DeliveryPolicyError, OSError, ValueError):
+                await session.rollback()
+                raise StoreCreditRejected(
+                    "تأمین دیجیتال تغییر کرد؛ موجودی اعتبار از حساب کسر نشد."
+                ) from None
         await session.commit()
         return order, True
 

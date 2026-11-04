@@ -208,6 +208,59 @@ class ShopCartItem(Base):
     )
 
 
+class ShopCheckoutGroup(Base):
+    """One atomic split checkout with two independently payable Orders.
+
+    Its immutable checkout key binds one Bot/customer/cart revision so a
+    duplicated callback never constructs two additional payment obligations.
+    """
+
+    __tablename__ = "shop_checkout_groups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    platform_user_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False,
+    )
+    cart_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_carts.id", ondelete="RESTRICT"), nullable=False,
+    )
+    checkout_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True,
+    )
+    quote_fingerprint: Mapped[str] = mapped_column(
+        String(12), nullable=False,
+    )
+    terms_version_snapshot: Mapped[str] = mapped_column(
+        String(32), nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(checkout_key) = 64",
+            name="ck_shop_checkout_group_key",
+        ),
+        CheckConstraint(
+            "length(quote_fingerprint) = 12",
+            name="ck_shop_checkout_group_proof",
+        ),
+        Index(
+            "ix_shop_checkout_group_owner",
+            "store_id", "bot_id", "platform_user_id",
+        ),
+    )
+
+
 class ShopOrderLine(Base):
     """Immutable product/price snapshots belonging to an order."""
 
@@ -228,6 +281,12 @@ class ShopOrderLine(Base):
         String(32), nullable=False, default="piece", server_default="piece",
     )
     unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unit_price_stars_snapshot: Mapped[int | None] = mapped_column(BigInteger)
+    # Never swap a customer's purchased file for a later Product upload.
+    # NULL for physical Products and one-time license SKUs.
+    digital_asset_id_snapshot: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_digital_assets.id", ondelete="RESTRICT"),
+    )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     order: Mapped["ShopOrder"] = relationship(
@@ -241,6 +300,11 @@ class ShopOrderLine(Base):
             "unit_price_irr >= 0", name="ck_shop_order_line_unit_price"
         ),
         CheckConstraint("total_irr >= 0", name="ck_shop_order_line_total"),
+        CheckConstraint(
+            "unit_price_stars_snapshot IS NULL OR "
+            "unit_price_stars_snapshot > 0",
+            name="ck_shop_order_line_stars",
+        ),
     )
 
 

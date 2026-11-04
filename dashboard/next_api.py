@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,14 +42,16 @@ from models.shop_engagement import (
 from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
-from services.shop_store_context import current_context
+from services.shop_store_context import StoreContext, current_context
 from services.shop_uom import validate_product_units
-from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_multibot import DEFAULT_STORE_ID, ShopBot, ShopStore
 from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
 )
+from services.shop_admin_security import SecurityRejected
+from services.shop_broadcast_scope import registry_dispatch_enabled
 from services.shop_campaigns import ShopCampaignService
 from utils.utils import verify_password
 
@@ -117,7 +120,15 @@ async def bounded_bridge_body(request: Request) -> bytes:
     Enforcing a bound before signature verification avoids unbounded memory.
     """
     path = request.url.path
-    upload = path.startswith("/internal/admin/v1/upload/")
+    import re
+
+    upload = (
+        path.startswith("/internal/admin/v1/upload/")
+        or bool(re.fullmatch(
+            r"/internal/admin/v1/products/[1-9][0-9]{0,18}/digital-file",
+            path,
+        )) and request.method == "POST"
+    )
     # Only the signed, typed model import endpoint may accept an 8 MiB
     # spreadsheet. All other admin API requests keep their previous limits.
     data_import = (
@@ -232,11 +243,23 @@ def product_data(item: Product) -> dict:
         "description": item.description,
         "price_irr": str(item.price),
         "price_stars": item.price_stars,
+        "digital_delivery_mode": item.digital_delivery_mode,
         "stock_quantity": item.stock_quantity,
         "requires_shipping": item.requires_shipping,
         "product_type": item.product_type,
         "position": item.position,
         "is_published": item.is_published,
+    }
+
+
+def order_payment_data(order: ShopOrder) -> dict[str, int | str | None]:
+    """Serialize frozen payment money separately from the IRR book value."""
+    return {
+        "total_stars_snapshot": order.total_stars_snapshot,
+        "payment_currency": order.payment_currency,
+        "payment_amount": (
+            str(order.payment_amount) if order.payment_amount is not None else None
+        ),
     }
 
 
@@ -326,12 +349,13 @@ def public_field_values(row: ShopProductVisibility | None) -> dict[str, bool]:
 
 
 class CampaignPayload(BaseModel):
-    """Unsending campaign draft controlled by the existing marketing core."""
+    """An unsent draft with an explicit Registry target or legacy audience."""
 
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=3000)
     audience: Literal["all", "telegram", "bale"] = "all"
+    bot_id: UUID | None = None
 
 
 class CampaignStart(BaseModel):
@@ -446,6 +470,7 @@ async def overview(staff: Staff, session: Db) -> dict:
                 "id": row.id, "platform": row.platform,
                 "name": row.product_name_snapshot, "status": row.status,
                 "total_irr": str(row.total_irr),
+                **order_payment_data(row),
                 "created_at": row.created_at.isoformat(),
             }
             for row in orders
@@ -497,10 +522,16 @@ async def edit_category(
     category_id: int, payload: CategoryPatch, staff: Staff, session: Db
 ) -> dict:
     """Edit one category and preserve all product foreign keys."""
-    require_staff(staff, "content")
-    record = await session.get(ShopCategory, category_id)
+    user = require_staff(staff, "content")
+    scope = admin_store_context(user)
+    record = await session.scalar(select(ShopCategory).where(
+        ShopCategory.id == category_id,
+        ShopCategory.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if record is None:
         raise HTTPException(status_code=404, detail="Category not found")
+    # Map ownership denial before the mounted legacy app starts a response.
+    require_store_access(scope, record.store_id, write=True)
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
@@ -628,11 +659,33 @@ async def edit_product(
     product_id: int, payload: ProductPatch, staff: Staff, session: Db
 ) -> dict:
     """Patch safe editable properties; do not modify historic order snapshots."""
-    require_staff(staff, "content")
-    record = await session.get(Product, product_id)
+    user = require_staff(staff, "content")
+    scope = admin_store_context(user)
+    record = await session.scalar(select(Product).where(
+        Product.id == product_id,
+        Product.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if record is None:
         raise HTTPException(status_code=404, detail="Product not found")
+    # A visibility-only patch dirties its child policy, so the Product's
+    # before-flush record rule cannot establish write ownership for it.
+    require_store_access(scope, record.store_id, write=True)
     fields = payload.model_dump(exclude_unset=True)
+    # License inventory is derived from sealed, unclaimed license rows;
+    # directly editing Product.stock_quantity would promise nonexistent
+    # codes and could charge a customer with no deliverable.
+    if record.digital_delivery_mode == "license" and (
+        "stock_quantity" in fields or fields.get("product_type", "digital") != "digital"
+    ):
+        raise HTTPException(
+            status_code=409, detail="digital_license_stock_managed",
+        )
+    if record.digital_delivery_mode == "file" and (
+        fields.get("product_type", "digital") != "digital"
+    ):
+        raise HTTPException(
+            status_code=409, detail="digital_file_in_use",
+        )
     visibility = {
         name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS
         if name in fields
@@ -726,6 +779,7 @@ async def orders(staff: Staff, session: Db, page: int = 1) -> dict:
                 "name": order.product_name_snapshot,
                 "status": order.status, "provider": order.provider,
                 "total_irr": str(order.total_irr),
+                **order_payment_data(order),
                 "created_at": order.created_at.isoformat(),
             }
             for order in items
@@ -766,16 +820,89 @@ async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
     }
 
 
+def admin_store_context(staff: ShopStaff | None = None) -> StoreContext:
+    """Require the verified device Store scope rather than legacy defaults."""
+    scope = current_context()
+    if scope is None or (staff is not None and scope.staff_id != staff.id):
+        raise HTTPException(status_code=403, detail="store_access_denied")
+    return scope
+
+
+def require_store_access(
+    scope: StoreContext, store_id: str, *, write: bool = False,
+) -> None:
+    """Map Store denial before a mounted legacy app starts its response."""
+    try:
+        scope.require(store_id, write=write)
+    except SecurityRejected as error:
+        raise HTTPException(status_code=error.status, detail=error.code) from None
+
+
+async def campaign_for_store(
+    session: AsyncSession, campaign_id: int, *, write: bool = False,
+    lock: bool = False,
+) -> ShopCampaign:
+    """Prove campaign ownership even when a parent is in the identity map.
+
+    Related media and delivery rows do not own a Store column. Their routes
+    must first authorize this parent; selecting several Stores only widens
+    reads, never the current Store that owns a mutation.
+    """
+    scope = admin_store_context()
+    query = select(ShopCampaign).where(
+        ShopCampaign.id == campaign_id,
+        ShopCampaign.store_id.in_(scope.active_store_ids),
+    )
+    if lock:
+        query = query.with_for_update()
+    campaign = await session.scalar(query)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    require_store_access(scope, campaign.store_id, write=write)
+    return campaign
+
+
+@router.get("/campaigns/bots")
+async def campaign_bot_options(staff: Staff, session: Db) -> dict:
+    """Expose only redacted active senders owned by the current Store."""
+    user = require_staff(staff, "marketing")
+    scope = admin_store_context(user)
+    store = await session.get(ShopStore, scope.current_store_id)
+    active = store is not None and store.state == "active"
+    bots = []
+    if active:
+        bots = (await session.execute(select(ShopBot).where(
+            ShopBot.store_id == scope.current_store_id,
+            ShopBot.runtime_owner == "registry", ShopBot.status == "active",
+        ).order_by(ShopBot.name, ShopBot.id))).scalars().all()
+    return {
+        "store_id": scope.current_store_id,
+        "store_name": store.name if store else scope.current_store.name,
+        "legacy_available": active and scope.current_store_id == DEFAULT_STORE_ID,
+        "bots": [
+            {"id": bot.id, "name": bot.name, "platform": bot.platform}
+            for bot in bots
+        ],
+    }
+
+
 @router.get("/campaigns")
 async def campaigns(staff: Staff, session: Db) -> list[dict]:
     """Read durable queue progress; campaign controls use existing core."""
-    require_staff(staff, "marketing")
+    user = require_staff(staff, "marketing")
+    scope = admin_store_context(user)
     items = (await session.execute(
-        select(ShopCampaign)
+        select(ShopCampaign, ShopStore.name, ShopBot.name, ShopBot.platform)
+        .join(ShopStore, ShopStore.id == ShopCampaign.store_id)
+        .outerjoin(ShopBot, (
+            (ShopBot.id == ShopCampaign.bot_id)
+            & (ShopBot.store_id == ShopCampaign.store_id)
+        ))
+        .where(ShopCampaign.store_id.in_(scope.active_store_ids))
         .order_by(ShopCampaign.id.desc()).limit(100)
-    )).scalars().all()
+    )).all()
     result: list[dict] = []
-    for item in items:
+    for item, store_name, bot_name, bot_platform in items:
         counts = (await session.execute(
             select(
                 ShopCampaignDelivery.status,
@@ -803,6 +930,9 @@ async def campaigns(staff: Staff, session: Db) -> list[dict]:
             "bale_recipients": int(bale_total or 0),
             "media_count": int(media_total or 0),
             "id": item.id, "title": item.title, "text": item.text,
+            "store_id": item.store_id, "store_name": store_name,
+            "bot_id": item.bot_id, "bot_name": bot_name,
+            "bot_platform": bot_platform,
             "audience": item.audience, "status": item.status,
             "bale_mode": item.bale_mode,
             "max_paid_calls": item.max_paid_calls,
@@ -817,8 +947,32 @@ async def create_campaign(
     payload: CampaignPayload, staff: Staff, session: Db
 ) -> dict:
     """Create only an unsent draft with no implicit audience approval."""
-    require_staff(staff, "marketing")
-    item = ShopCampaign(**payload.model_dump(), status="draft")
+    user = require_staff(staff, "marketing")
+    scope = admin_store_context(user)
+    require_store_access(scope, scope.current_store_id, write=True)
+    store = await session.get(ShopStore, scope.current_store_id)
+    if store is None or store.state != "active":
+        raise HTTPException(status_code=409, detail="store_not_active")
+    bot_id = str(payload.bot_id) if payload.bot_id is not None else None
+    if bot_id is None:
+        # Only the original Store may intentionally retain a dual-platform
+        # legacy audience. Registry campaigns never infer a bot or token.
+        if store.id != DEFAULT_STORE_ID:
+            raise HTTPException(status_code=422, detail="campaign_bot_required")
+    else:
+        bot = await session.scalar(select(ShopBot).where(
+            ShopBot.id == bot_id, ShopBot.store_id == store.id,
+        ))
+        if bot is None:
+            raise HTTPException(status_code=404, detail="bot_not_found")
+        if bot.runtime_owner != "registry" or bot.status != "active":
+            raise HTTPException(status_code=409, detail="bot_not_active")
+        if payload.audience not in {"all", bot.platform}:
+            raise HTTPException(status_code=422, detail="invalid_campaign_audience")
+    item = ShopCampaign(
+        title=payload.title, text=payload.text, audience=payload.audience,
+        store_id=store.id, bot_id=bot_id, status="draft",
+    )
     session.add(item)
     await session.commit()
     await session.refresh(item)
@@ -831,6 +985,7 @@ async def approve_campaign(
 ) -> dict:
     """Snapshot consenting recipients without starting an external send."""
     user = require_staff(staff, "marketing")
+    await campaign_for_store(session, campaign_id, write=True)
     try:
         total = await ShopCampaignService.approve(
             session, campaign_id=campaign_id,
@@ -847,6 +1002,7 @@ async def start_campaign(
 ) -> dict:
     """Freeze mode and upper paid-call cap before waking the worker."""
     user = require_staff(staff, "marketing")
+    await campaign_for_store(session, campaign_id, write=True)
     try:
         count = await BroadcastControl.start(
             session, campaign_id=campaign_id, actor=f"staff:{user.id}",
@@ -856,23 +1012,6 @@ async def start_campaign(
     except CampaignRejected as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
     return {"queued": count}
-
-
-@router.post("/campaigns/{campaign_id}/{action}")
-async def change_campaign(
-    campaign_id: int, action: Literal["pause", "resume", "cancel"],
-    staff: Staff, session: Db
-) -> dict:
-    """Pause/resume/cancel through the central audited Broadcast controller."""
-    user = require_staff(staff, "marketing")
-    try:
-        await BroadcastControl.change(
-            session, campaign_id=campaign_id,
-            actor=f"staff:{user.id}", action=action,
-        )
-    except CampaignRejected as error:
-        raise HTTPException(status_code=409, detail=str(error)) from None
-    return {"ok": True}
 
 
 @router.get("/settings")
@@ -960,6 +1099,11 @@ async def capabilities(staff: Staff) -> dict:
         "broadcast_worker_enabled": (
             config.SHOP_BROADCAST_WORKER_ENABLED
             and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+        ),
+        "broadcast_registry_enabled": bool(
+            config.SHOP_BROADCAST_WORKER_ENABLED
+            and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+            and registry_dispatch_enabled()
         ),
         "bale_business_enabled": (
             config.BALE_BROADCAST_MODE == "business"
@@ -1074,10 +1218,9 @@ async def refunds(staff: Staff, session: Db) -> list[dict]:
     """Review financial cases, never expose unverified refund confirmation."""
     require_staff(staff, "finance")
     scope = current_context()
-    query = select(
-        ShopRefundCase, ShopOrder.platform,
-        ShopOrder.total_irr, ShopOrder.provider,
-    ).join(ShopOrder, ShopOrder.id == ShopRefundCase.order_id)
+    query = select(ShopRefundCase, ShopOrder).join(
+        ShopOrder, ShopOrder.id == ShopRefundCase.order_id,
+    )
     if scope is not None:
         query = query.where(ShopOrder.store_id.in_(scope.active_store_ids))
     records = (await session.execute(
@@ -1086,11 +1229,13 @@ async def refunds(staff: Staff, session: Db) -> list[dict]:
     return [
         {
             "id": row.id, "order_id": row.order_id,
-            "platform": platform, "provider": provider, "status": row.status,
-            "reason": row.reason, "amount_irr": str(amount),
+            "platform": order.platform, "provider": order.provider,
+            "status": row.status, "reason": row.reason,
+            "amount_irr": str(order.total_irr),
+            **order_payment_data(order),
             "created_at": row.created_at.isoformat(),
         }
-        for row, platform, amount, provider in records
+        for row, order in records
     ]
 
 
@@ -1136,7 +1281,8 @@ async def campaign_deliveries(
 ) -> list[dict]:
     """Give staff bounded, actionable delivery receipts for uncertain messages."""
     require_staff(staff, "marketing")
-    result = await session.execute(
+    campaign = await campaign_for_store(session, campaign_id)
+    query = (
         select(
             ShopCampaignDelivery, ShopIdentity.platform,
             ShopIdentity.platform_user_id,
@@ -1145,9 +1291,16 @@ async def campaign_deliveries(
         .where(
             ShopCampaignDelivery.campaign_id == campaign_id,
             ShopCampaignDelivery.status == "unknown",
+            ShopIdentity.store_id == campaign.store_id,
         )
         .order_by(ShopCampaignDelivery.id.desc()).limit(100)
     )
+    if campaign.bot_id is not None:
+        query = query.where(
+            ShopIdentity.bot_id == campaign.bot_id,
+            ShopCampaignDelivery.bot_id == campaign.bot_id,
+        )
+    result = await session.execute(query)
     return [
         {
             "id": row.id, "platform": platform,
@@ -1168,6 +1321,7 @@ async def reconcile_campaign(
 ) -> dict:
     """Resolve uncertain sends with explicit staff evidence, without retry."""
     user = require_staff(staff, "marketing")
+    await campaign_for_store(session, campaign_id, write=True)
     try:
         await BroadcastControl.reconcile(
             session,
@@ -1176,6 +1330,24 @@ async def reconcile_campaign(
             actor=f"staff:{user.id}",
             resolution=payload.resolution,
             evidence=payload.evidence,
+        )
+    except CampaignRejected as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    return {"ok": True}
+
+
+@router.post("/campaigns/{campaign_id}/{action}")
+async def change_campaign(
+    campaign_id: int, action: Literal["pause", "resume", "cancel"],
+    staff: Staff, session: Db,
+) -> dict:
+    """Apply controls after the fixed reconciliation route is registered."""
+    user = require_staff(staff, "marketing")
+    await campaign_for_store(session, campaign_id, write=True)
+    try:
+        await BroadcastControl.change(
+            session, campaign_id=campaign_id,
+            actor=f"staff:{user.id}", action=action,
         )
     except CampaignRejected as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
@@ -1250,10 +1422,15 @@ async def edit_shipping(
     method_id: int, payload: ShippingPayload, staff: Staff, session: Db
 ) -> dict:
     """Update a method without changing past order shipping snapshots."""
-    require_staff(staff, "sales")
-    item = await session.get(ShopShippingMethod, method_id)
+    user = require_staff(staff, "sales")
+    scope = admin_store_context(user)
+    item = await session.scalar(select(ShopShippingMethod).where(
+        ShopShippingMethod.id == method_id,
+        ShopShippingMethod.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if item is None:
         raise HTTPException(status_code=404, detail="Shipping method not found")
+    require_store_access(scope, item.store_id, write=True)
     for key, value in payload.model_dump().items():
         setattr(item, key, value)
     try:
@@ -1298,10 +1475,15 @@ async def edit_coupon(
     coupon_id: int, payload: CouponPayload, staff: Staff, session: Db
 ) -> dict:
     """Edit a rule; consumed-count remains immutable through this interface."""
-    require_staff(staff, "marketing")
-    item = await session.get(ShopCoupon, coupon_id)
+    user = require_staff(staff, "marketing")
+    scope = admin_store_context(user)
+    item = await session.scalar(select(ShopCoupon).where(
+        ShopCoupon.id == coupon_id,
+        ShopCoupon.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if item is None:
         raise HTTPException(status_code=404, detail="Coupon not found")
+    require_store_access(scope, item.store_id, write=True)
     for key, value in normalize_coupon(payload).items():
         setattr(item, key, value)
     try:

@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
-import { formatIrr, statusLabel } from "@/lib/utils";
+import { statusLabel } from "@/lib/utils";
+import { formatOrderAmount, type OrderAmount } from "@/lib/order-money";
 import type { Order, Paginated } from "@/lib/types";
 
-type ReviewOrder = {
+type ReviewOrder = OrderAmount & {
   id: number; platform: string; status: string; product_id: number;
   total_irr: string;
 };
@@ -47,7 +48,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Param
               <div key={order.id} className="grid items-start gap-4 rounded-lg border border-border p-4 lg:grid-cols-[1fr_1.4fr]">
                 <div className="space-y-2">
                   <p className="text-sm font-semibold">سفارش #{order.id} · {order.platform === "bale" ? "بله" : "تلگرام"}</p>
-                  <p className="text-xs text-muted-foreground">محصول #{order.product_id} · {formatIrr(order.total_irr)}</p>
+                  <p className="text-xs text-muted-foreground">محصول #{order.product_id} · {formatOrderAmount(order)}</p>
                   <Badge tone="warning">{statusLabel(order.status)}</Badge>
                 </div>
                 <div className="flex flex-col gap-3">

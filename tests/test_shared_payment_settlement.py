@@ -6,7 +6,15 @@ a live database. Real provider callbacks are covered only by later live QA.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema, seed_test_units
+
+from contextlib import asynccontextmanager
 from uuid import uuid4
+from datetime import datetime, timezone
+
+from cryptography.fernet import Fernet
+from models.shop_digital_delivery import ShopDigitalLicense
+from services.shop_digital_crypto import seal_license
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -66,23 +74,19 @@ class OfflineDB:
         """Stage a new record."""
         self.session.add(obj)
 
+    @asynccontextmanager
+    async def begin_nested(self):
+        """Reserve digital supply within a real isolated SQLAlchemy savepoint."""
+        with self.session.begin_nested():
+            yield
+
 
 @pytest.fixture
-def db():
+def db(monkeypatch):
     """Create only payment-related tables, leaving all data disposable."""
+    monkeypatch.setenv("SHOP_SECURITY_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    tables = [
-        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
-        ShopBotOperations.__table__,
-        ShopCategory.__table__, Product.__table__,
-        ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
-        ShopCoupon.__table__,
-        ShopOrder.__table__,
-        ShopOrderLine.__table__,
-        ShopPaymentAttempt.__table__,
-        ShopRefundCase.__table__,
-    ]
-    Base.metadata.create_all(engine, tables=tables)
+    create_shop_schema(engine)
     with Session(engine) as session:
         session.add(ShopStore(
             id=DEFAULT_STORE_ID, slug="default",
@@ -97,6 +101,7 @@ def db():
             ) for platform, bot_id in LEGACY_BOT_IDS.items()
         ])
         session.commit()
+        seed_test_units(session)
         yield OfflineDB(session)
     engine.dispose()
 
@@ -128,7 +133,19 @@ def make_order(db, platform: Platform, *, digital=False, coupon=False):
         )
         db.add(discount)
         db.session.flush()
-    subtotal = 2000
+    stars = digital and platform == Platform.TELEGRAM
+    if digital:
+        product.digital_delivery_mode = "license"
+        for index in range(3):
+            ciphertext, fingerprint = seal_license(
+                store_id=product.store_id, product_id=product.id,
+                code=f"FIXTURE-{product.id}-LICENSE-{index}",
+            )
+            db.add(ShopDigitalLicense(
+                id=str(uuid4()), store_id=product.store_id, product_id=product.id,
+                ciphertext=ciphertext, code_fingerprint=fingerprint,
+            ))
+    subtotal = 0 if stars else 2000
     discounted = 200 if discount is not None else 0
     shipping = 0 if digital else 500
     order = ShopOrder(
@@ -138,7 +155,10 @@ def make_order(db, platform: Platform, *, digital=False, coupon=False):
         product_id=product.id,
         product_name_snapshot=product.name,
         quantity=2,
-        unit_price_irr=1000,
+        unit_price_irr=0 if stars else 1000,
+        total_stars_snapshot=50 if stars else None,
+        terms_version_snapshot="fixture-v1",
+        terms_accepted_at=datetime.now(timezone.utc),
         total_irr=subtotal - discounted + shipping,
         provider="manual_review",
         status="approved_unpaid",
@@ -159,9 +179,10 @@ def make_order(db, platform: Platform, *, digital=False, coupon=False):
             product_id=product.id,
             product_name_snapshot=product.name,
             sku_snapshot=product.sku,
-            unit_price_irr=1000,
+            unit_price_irr=0 if stars else 1000,
+            unit_price_stars_snapshot=25 if stars else None,
             quantity=2,
-            total_irr=2000,
+            total_irr=subtotal,
         )
     )
     db.session.commit()
@@ -262,7 +283,8 @@ async def test_telegram_stars_requires_independent_product_price(db):
     assert plan.provider == "telegram_stars"
     assert plan.currency == "XTR"
     assert plan.amount == 50
-    assert order.total_irr == 2000
+    assert order.total_irr == 0
+    assert order.total_stars_snapshot == 50
     with pytest.raises(PaymentRejected):
         await begin(db, Platform.TELEGRAM, order)
 

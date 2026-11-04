@@ -97,7 +97,11 @@ export function ProductEditor({
       price_irr: value("price_irr"),
       price_stars: kind === "digital" && value("price_stars")
         ? Number(value("price_stars")) : null,
-      stock_quantity: Number(value("stock_quantity")),
+      ...(
+        product?.digital_delivery_mode === "license"
+          ? {}
+          : { stock_quantity: Number(value("stock_quantity")) }
+      ),
       product_type: kind,
       requires_shipping: kind === "physical" && data.has("requires_shipping"),
       is_published: data.has("is_published"),
@@ -143,7 +147,7 @@ export function ProductEditor({
       if (!product) {
         // The persisted item now owns private media. Add images in the
         // same product-editing experience, without typing a numeric ID.
-        window.location.assign("/products/" + result.id + "/edit?created=1#media");
+        router.push("/products/" + result.id + "/edit?created=1#media");
       } else {
         setNotice({ ok: true, message: "تغییرات محصول در پایگاه داده ذخیره شد." });
         router.refresh();
@@ -275,10 +279,14 @@ export function ProductEditor({
                       initial={product?.show_stock ?? true} />
                   </div>
                   <Input id="product-stock" type="number" dir="ltr" name="stock_quantity"
-                    min={0} max={100000000} required
+                    min={0} max={100000000}
+                    disabled={product?.digital_delivery_mode === "license"}
+                    required={product?.digital_delivery_mode !== "license"}
                     defaultValue={product?.stock_quantity ?? 0} className="text-start" />
                   <p className="text-xs text-muted-foreground">
-                    هنگام ناموجودشدن، پیام «ناموجود» همیشه به مشتری نمایش داده می‌شود.
+                    {product?.digital_delivery_mode === "license"
+                      ? "موجودی این محصول از لایسنس‌های رمزنگاری‌شده محاسبه می‌شود."
+                      : "هنگام ناموجودشدن، پیام «ناموجود» همیشه به مشتری نمایش داده می‌شود."}
                   </p>
                 </div>
                 <label className="block space-y-2 text-sm font-medium">

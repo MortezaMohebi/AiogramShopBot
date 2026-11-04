@@ -6,6 +6,8 @@ run a Telegram crypto operation or contact a real payment provider.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema, seed_legacy_registry
+
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -93,26 +95,9 @@ class AsyncDB:
 def db():
     """Provision only required, isolated test tables in dependency order."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ShopChannelFeature.__table__, ShopPaymentRail.__table__,
-            ShopCategory.__table__,
-            Product.__table__,
-            ShopIdentity.__table__,
-            ShopOrder.__table__,
-            ShopCoupon.__table__,
-            ShopOrderLine.__table__,
-            ShopPaymentAttempt.__table__,
-            ShopWalletAccount.__table__,
-            ShopWalletEntry.__table__,
-            ShopReferralProfile.__table__,
-            ShopReferralAttribution.__table__,
-            ShopReferralPolicy.__table__,
-            ShopReferralReward.__table__,
-        ],
-    )
+    create_shop_schema(engine)
     with Session(engine) as session:
+        seed_legacy_registry(session)
         yield AsyncDB(session)
     engine.dispose()
 

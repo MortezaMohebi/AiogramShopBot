@@ -10,12 +10,20 @@ function text(form: FormData, key: string): string {
 
 /** Create a draft; no recipient ever receives a message at this stage. */
 export async function createCampaign(form: FormData) {
+  const target = text(form, "target");
+  const legacy = target.match(/^legacy:(all|telegram|bale)$/);
+  if (!legacy && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target)) {
+    redirect("/campaigns?error=create");
+  }
   let failed = false;
   try {
     await adminFetch("/campaigns", "POST", {
       title: text(form, "title"),
       text: text(form, "text"),
-      audience: text(form, "audience"),
+      // The API revalidates the current Store and live bot state. An explicit
+      // Registry target's audience never widens to other bots or platforms.
+      bot_id: legacy ? null : target,
+      audience: legacy ? legacy[1] : "all",
     });
   } catch {
     failed = true;

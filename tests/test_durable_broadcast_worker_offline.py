@@ -18,6 +18,7 @@ import db
 from channels.contracts import BotReply, Platform
 from models.base import Base
 from models.shop_content import ShopIdentity
+from models.shop_customer_crm import ShopCustomerProfile
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
     DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
@@ -115,6 +116,7 @@ def context(monkeypatch):
         ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
         ShopBotOperations.__table__,
         ShopIdentity.__table__, ShopCampaign.__table__,
+        ShopCustomerProfile.__table__,
         ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
         ShopCampaignAudit.__table__,
         ShopBroadcastRateSlot.__table__,

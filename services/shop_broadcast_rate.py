@@ -9,7 +9,7 @@ conservatively considered consumed; it is never reclaimed by guessing.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 import config
 from channels.contracts import Platform
 from models.shop_engagement import ShopBroadcastRateSlot
+from models.shop_scope import legacy_id
 from services.shop_media_delivery import bot_fingerprint
 
 
@@ -42,7 +43,12 @@ def slot_intervals(rate: int) -> tuple[timedelta, timedelta]:
 
 
 async def reserve_message_slot(
-    *, platform: Platform, token: str, user_id: int, bale_mode: str
+    *,
+    platform: Platform,
+    token: str,
+    user_id: int,
+    bale_mode: str,
+    bot_id: str | None = None,
 ) -> None:
     """Reserve and wait for one safe Bot API message time.
 
@@ -54,28 +60,27 @@ async def reserve_message_slot(
     from db import session_maker
 
     fingerprint = bot_fingerprint(token)
-    gap_global, gap_chat = slot_intervals(
-        channel_rate(platform, bale_mode=bale_mode)
-    )
+    owner_id = bot_id or legacy_id(platform.value)
+    gap_global, gap_chat = slot_intervals(channel_rate(platform, bale_mode=bale_mode))
     async with session_maker() as session:
         # Insert both rows first, always ordering by recipient ID to avoid
         # circular lock attempts when multiple worker processes compete.
         for scope_id in (0, user_id):
             stmt = insert(ShopBroadcastRateSlot).values(
                 platform=platform.value,
+                bot_id=owner_id,
                 bot_fingerprint=fingerprint,
                 recipient_id=scope_id,
-                next_send_at=datetime.now(timezone.utc),
+                next_send_at=datetime.now(UTC),
             )
             await session.execute(
-                stmt.on_conflict_do_nothing(
-                    constraint="uq_shop_broadcast_rate_slot"
-                )
+                stmt.on_conflict_do_nothing(constraint="uq_shop_broadcast_rate_slot")
             )
         result = await session.execute(
             select(ShopBroadcastRateSlot)
             .where(
                 ShopBroadcastRateSlot.platform == platform.value,
+                ShopBroadcastRateSlot.bot_id == owner_id,
                 ShopBroadcastRateSlot.bot_fingerprint == fingerprint,
                 ShopBroadcastRateSlot.recipient_id.in_((0, user_id)),
             )
@@ -90,7 +95,7 @@ async def reserve_message_slot(
         if now is None:
             raise RuntimeError("Database time is unavailable.")
         if now.tzinfo is None:
-            now = now.replace(tzinfo=timezone.utc)
+            now = now.replace(tzinfo=UTC)
         start = max(
             now,
             slots[0].next_send_at,

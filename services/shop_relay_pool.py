@@ -23,7 +23,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.shop_multibot import DEFAULT_STORE_ID, ShopBot, ShopBotCredential
+from models.shop_multibot import ShopBot, ShopStore, ShopBotCredential
 from models.shop_relay_pool import (
     ShopBotRelayRoute, ShopRelayCredential, ShopRelayEvent, ShopRelayWorker,
 )
@@ -261,9 +261,11 @@ async def assign_route(
         raise security.SecurityRejected("invalid_relay_priority", 422)
     bot = await db.get(ShopBot, bot_id)
     worker = await db.get(ShopRelayWorker, worker_id)
+    store = await db.get(ShopStore, bot.store_id) if bot else None
     if (
         bot is None or bot.runtime_owner != "registry"
-        or bot.platform != "telegram" or bot.store_id != DEFAULT_STORE_ID
+        or bot.platform != "telegram"
+        or store is None or store.state != "active"
         or worker is None or worker.status == "disabled"
     ):
         raise security.SecurityRejected("relay_route_not_supported", 409)
@@ -402,10 +404,12 @@ async def activate_route(
         ShopRelayCredential.version == credential_version,
         ShopRelayCredential.state.in_(("staged", "active")),
     ))
+    store = await db.get(ShopStore, bot.store_id) if bot else None
     if (
         worker is None or worker.status == "disabled"
         or bot is None or bot.runtime_owner != "registry"
-        or bot.platform != "telegram" or bot.store_id != DEFAULT_STORE_ID
+        or bot.platform != "telegram"
+        or store is None or store.state != "active"
         or bot.provider_bot_id is None or bot.verified_at is None
         or route is None or route.version != expected_version
         or credential is None

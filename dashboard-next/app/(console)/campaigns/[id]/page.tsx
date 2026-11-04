@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
+import type { Campaign } from "@/lib/campaigns";
 import { statusLabel } from "@/lib/utils";
 import { uploadErrorMessage } from "@/lib/upload-errors";
 
@@ -33,7 +34,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
   const staff = await currentStaff();
   if (!["superadmin", "marketing"].includes(staff.role)) notFound();
   const [campaigns, deliveries, media, capabilities] = await Promise.all([
-    adminFetch<Array<{ id: number; title: string; status: string; paid_calls_reserved: number; max_paid_calls: number }>>("/campaigns"),
+    adminFetch<Campaign[]>("/campaigns"),
     adminFetch<Delivery[]>(`/campaigns/${id}/deliveries`),
     adminFetch<{ can_edit: boolean; items: CampaignFile[] }>(`/campaigns/${id}/media`),
     adminFetch<{bale_prepare_ready: boolean}>("/capabilities"),
@@ -50,6 +51,8 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
           <CardHeader><CardTitle>وضعیت ارسال</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <Badge>{statusLabel(campaign.status)}</Badge>
+            <p className="text-sm text-muted-foreground">فروشگاه: {campaign.store_name}</p>
+            <p className="text-sm text-muted-foreground">ربات: {campaign.bot_id ? `${campaign.bot_name ?? "ربات انتخاب‌شده"} (${campaign.bot_platform === "bale" ? "بله" : "تلگرام"})` : "ربات‌های قدیمی فروشگاه"}</p>
             <p className="text-sm text-muted-foreground">درخواست‌های پولی رزروشده: {campaign.paid_calls_reserved} از {campaign.max_paid_calls}</p>
             {["approved", "sending", "paused", "needs_review"].includes(campaign.status) ? (
               <form action={changeCampaign} className="space-y-2">
@@ -92,7 +95,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
           </CardContent>
         </Card>
       </div>
-      {capabilities.bale_prepare_ready && ["draft", "approved"].includes(campaign.status) && media.items.length > 0 ? (
+      {campaign.bot_id === null && capabilities.bale_prepare_ready && ["draft", "approved"].includes(campaign.status) && media.items.length > 0 ? (
         <Card className="mt-6">
           <CardHeader><CardTitle>آماده‌سازی رسانه برای بله</CardTitle></CardHeader>
           <CardContent>

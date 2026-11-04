@@ -7,6 +7,8 @@ are executed.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema
+
 import asyncio
 from uuid import NAMESPACE_URL, uuid5
 
@@ -50,15 +52,7 @@ def db(monkeypatch):
     )
     monkeypatch.delenv("SHOP_BOT_SECRET_KEY", raising=False)
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[
-        ShopStaff.__table__,
-        AdminEvent.__table__,
-        ShopStore.__table__,
-        ShopBot.__table__,
-        ShopBotOperations.__table__,
-        ShopBotCredential.__table__,
-        ShopBotRegistryEvent.__table__,
-    ])
+    create_shop_schema(engine)
     with Session(engine) as session:
         session.add(ShopStaff(
             id=1, username="securityadmin", password_hash="test-only",

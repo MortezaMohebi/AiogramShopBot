@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDate, formatIrr, statusLabel } from "@/lib/utils";
+import { formatDate, statusLabel } from "@/lib/utils";
+import { formatOrderAmount } from "@/lib/order-money";
 import type { Order } from "@/lib/types";
 
 function tone(status: string): "success" | "warning" | "neutral" | "danger" {
@@ -36,7 +37,7 @@ export function OrderTable({ orders, title = "آخرین سفارش‌ها" }: {
                 <TableCell className="font-semibold tabular">#{order.id}</TableCell>
                 <TableCell>{order.platform === "bale" ? "بله" : "تلگرام"}</TableCell>
                 <TableCell className="max-w-48 truncate" title={order.name}>{order.name}</TableCell>
-                <TableCell className="whitespace-nowrap tabular">{formatIrr(order.total_irr)}</TableCell>
+                <TableCell className="whitespace-nowrap tabular">{formatOrderAmount(order)}</TableCell>
                 <TableCell><Badge tone={tone(order.status)}>{statusLabel(order.status)}</Badge></TableCell>
                 <TableCell className="whitespace-nowrap">{formatDate(order.created_at)}</TableCell>
               </TableRow>

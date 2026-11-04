@@ -63,7 +63,10 @@ def _public_host(host: str) -> bool:
         return bool(_HOST_RE.fullmatch(host) and "." in host and ".." not in host)
 
 
-def proxy_origin(\n    raw_url: str, *, permit_userinfo: bool = False,\n    permit_private: bool = False,\n) -> str:
+def proxy_origin(
+    raw_url: str, *, permit_userinfo: bool = False,
+    permit_private: bool = False,
+) -> str:
     """Normalize an HTTP CONNECT or SOCKS5 endpoint and its explicit TCP port."""
     try:
         value = urlsplit(raw_url.strip())
@@ -110,7 +113,9 @@ def approved_proxy_urls() -> tuple[str, ...]:
     for endpoint in entries:
         # A deployment misconfiguration does not accidentally widen policy.
         try:
-            approved.add(proxy_origin(\n                endpoint, permit_userinfo=True, permit_private=True,\n            ))
+            approved.add(proxy_origin(
+                endpoint, permit_userinfo=True, permit_private=True,
+            ))
         except security.SecurityRejected:
             continue
     return tuple(sorted(approved))

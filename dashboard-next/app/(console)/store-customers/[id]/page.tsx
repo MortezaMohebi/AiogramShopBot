@@ -15,7 +15,29 @@ export default async function StoreCustomerPage({
   if (staff.role !== "superadmin") notFound();
   const { id } = await params;
   if (!/^[1-9][0-9]{0,17}$/.test(id)) notFound();
-  const data = await adminFetch<StoreCustomerDetail>(`/store-customers/${id}`);
+  const [data, addresses, wishlist] = await Promise.all([
+    adminFetch<StoreCustomerDetail>(`/store-customers/${id}`),
+    adminFetch<{
+      customer_id: number;
+      items: Array<{
+        id: number;
+        label: string;
+        recipient: string;
+        phone: string;
+        city: string;
+        province: string;
+        full_address: string;
+        postal_code: string | null;
+        is_default: boolean;
+      }>;
+    }>(`/store-customers/${id}/addresses`),
+    adminFetch<{
+      customer_id: number;
+      items: Array<{
+        id: number; name: string; sku: string; is_published: boolean;
+      }>;
+    }>(`/store-customers/${id}/wishlist`),
+  ]);
   return <div className="space-y-6">
     <Button asChild variant="outline" size="sm">
       <Link href="/store-customers">بازگشت به مشتریان</Link>
@@ -48,6 +70,46 @@ export default async function StoreCustomerPage({
             <span dir="ltr">{wallet.balance_irr} IRR</span>
           </div>)}
         {!data.wallets.length ? <p>هنوز حساب اعتبار داخلی ثبت نشده است.</p> : null}
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader><CardTitle>نشانی‌های تأییدشدهٔ مشتری</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        {addresses.items.map(address =>
+          <div key={address.id} className="space-y-1 rounded-lg border p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <strong>{address.label}</strong>
+              {address.is_default ? <span className="text-xs text-muted-foreground">
+                پیش‌فرض
+              </span> : null}
+            </div>
+            <p>{address.province}، {address.city}، {address.full_address}</p>
+            <p className="text-xs text-muted-foreground">
+              گیرنده: {address.recipient} · تماس: {address.phone}
+            </p>
+          </div>)}
+        {!addresses.items.length ?
+          <p className="text-sm text-muted-foreground">مشتری هنوز نشانی‌ای ثبت نکرده است.</p>
+          : null}
+        <p className="text-xs text-muted-foreground">
+          نشانی‌های سفارش‌های قبلی Snapshot مستقل دارند؛ تغییر نشانی اینجا
+          سفارش پرداخت‌شده را بازنویسی نمی‌کند.
+        </p>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader><CardTitle>کالاهای علاقه‌مندی</CardTitle></CardHeader>
+      <CardContent className="space-y-2">
+        {wishlist.items.map(item =>
+          <div key={item.id} className="flex items-center justify-between gap-3 border-b p-2 text-sm">
+            <span>{item.name} · {item.sku || "بدون SKU"}</span>
+            <span className="text-xs text-muted-foreground">
+              {item.is_published ? "منتشرشده" : "منتشرنشده"}
+            </span>
+          </div>)}
+        {!wishlist.items.length ?
+          <p className="text-sm text-muted-foreground">مشتری محصولی ذخیره نکرده است.</p>
+          : null}
       </CardContent>
     </Card>
   </div>;

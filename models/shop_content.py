@@ -104,6 +104,10 @@ class Product(Base):
         String(12), nullable=False, default="physical"
     )
     price_stars: Mapped[int | None] = mapped_column(Integer)
+    # File vs one-time license supply is configured only in signed Admin.
+    digital_delivery_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="none", server_default="none",
+    )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -141,6 +145,14 @@ class Product(Base):
         CheckConstraint(
             "product_type IN ('physical','digital')",
             name="ck_shop_product_type",
+        ),
+        CheckConstraint(
+            "digital_delivery_mode IN ('none','file','license')",
+            name="ck_shop_product_digital_mode",
+        ),
+        CheckConstraint(
+            "product_type = 'digital' OR digital_delivery_mode = 'none'",
+            name="ck_shop_product_physical_no_delivery",
         ),
         CheckConstraint(
             "price_stars IS NULL OR price_stars > 0",
@@ -297,6 +309,9 @@ class ShopOrder(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Exact customer-approved Telegram Stars total; never derive again
+    # from a mutable Product.price_stars at invoice dispatch time.
+    total_stars_snapshot: Mapped[int | None] = mapped_column(BigInteger)
     provider: Mapped[str] = mapped_column(String(24), nullable=False)
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="pending_payment"
@@ -314,7 +329,19 @@ class ShopOrder(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Proof of the exact Store sales terms accepted at order creation.
+    terms_version_snapshot: Mapped[str | None] = mapped_column(String(32))
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
     checkout_key: Mapped[str | None] = mapped_column(String(80), unique=True)
+    # Null for ordinary Orders; one split group owns exactly one part of
+    # each required currency. The part's Bot/provider never changes.
+    checkout_group_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_checkout_groups.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    checkout_part_kind: Mapped[str | None] = mapped_column(String(10))
     subtotal_irr: Mapped[int | None] = mapped_column(BigInteger)
     discount_irr: Mapped[int | None] = mapped_column(BigInteger)
     shipping_irr: Mapped[int | None] = mapped_column(BigInteger)
@@ -336,7 +363,21 @@ class ShopOrder(Base):
         ),
         CheckConstraint("quantity > 0", name="ck_shop_order_qty_positive"),
         CheckConstraint("unit_price_irr >= 0", name="ck_shop_order_price_positive"),
-        CheckConstraint("total_irr > 0", name="ck_shop_order_total_positive"),
+        CheckConstraint(
+            "total_irr > 0 OR (platform = 'telegram' AND "
+            "total_irr = 0 AND total_stars_snapshot > 0)",
+            name="ck_shop_order_total_positive",
+        ),
+        UniqueConstraint(
+            "checkout_group_id", "checkout_part_kind",
+            name="uq_shop_order_split_part",
+        ),
+        CheckConstraint(
+            "(checkout_group_id IS NULL AND checkout_part_kind IS NULL) OR "
+            "(checkout_group_id IS NOT NULL AND "
+            "checkout_part_kind IN ('physical','digital'))",
+            name="ck_shop_order_split_part_kind",
+        ),
         CheckConstraint(
             "status IN ('pending_review','approved_unpaid','pending_payment','paid','paid_unfulfilled','cancelled','refunded')",
             name="ck_shop_order_status",

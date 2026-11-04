@@ -1,5 +1,5 @@
 import type { StaffRole } from "@/lib/types";
-import { BarChart3, Bot, Boxes, Ruler, Database, ClipboardList, ContactRound, Store, Wallet, Users, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, Image as ImageIcon, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Boxes, Ruler, Database, ClipboardList, ContactRound, Store, Wallet, Users, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, type LucideIcon } from "lucide-react";
 export interface NavigationItem { title: string; href: string; icon: LucideIcon; roles: StaffRole[] }
 const all: StaffRole[] = ["superadmin", "sales", "content", "finance", "marketing", "viewer"];
 /** Navigation reflects fixed server roles; never replaces server authorization. */
@@ -12,6 +12,9 @@ export const navigation: NavigationItem[] = [
   { title: "مرور داده و Import/Export", href: "/data-models/products", icon: Database, roles: ["superadmin", "content"] },
   { title: "دسته‌بندی‌ها", href: "/categories", icon: FolderTree, roles: ["superadmin", "content"] },
   { title: "سفارش‌ها", href: "/orders", icon: ClipboardList, roles: ["superadmin", "sales", "finance"] },
+  { title: "تحویل دیجیتال و رسیدها", href: "/digital-deliveries", icon: ClipboardList, roles: ["superadmin", "sales", "finance"] },
+  { title: "مدیریت ارسال و تحویل", href: "/fulfillments", icon: Truck, roles: ["superadmin", "sales"] },
+  { title: "پشتیبانی و تیکت‌ها", href: "/support-tickets", icon: MessagesSquare, roles: ["superadmin", "sales"] },
   { title: "مشتریان", href: "/customers", icon: ContactRound, roles: ["superadmin", "sales"] },
   { title: "ارسال کالا", href: "/shipping", icon: Truck, roles: ["superadmin", "sales"] },
   { title: "کد تخفیف", href: "/coupons", icon: TicketPercent, roles: ["superadmin", "marketing", "sales"] },
@@ -23,6 +26,7 @@ export const navigation: NavigationItem[] = [
   { title: "ربات‌ها", href: "/bots", icon: Bot, roles: ["superadmin"] },
   { title: "فروشگاه‌ها", href: "/stores", icon: Store, roles: ["superadmin"] },
   { title: "مشتریان یکپارچه", href: "/store-customers", icon: Users, roles: ["superadmin"] },
+  { title: "اعلان‌ها و موجودی", href: "/customer-notifications", icon: Megaphone, roles: ["superadmin"] },
   { title: "حساب‌های پرداخت", href: "/payment-accounts", icon: Wallet, roles: ["superadmin"] },
   { title: "زیرساخت اتصال", href: "/bot-connections", icon: Webhook, roles: ["superadmin"] },
   { title: "Relay Worker Pool", href: "/relay-workers", icon: Webhook, roles: ["superadmin"] },

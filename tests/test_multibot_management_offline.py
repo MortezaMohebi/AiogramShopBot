@@ -6,6 +6,8 @@ and all tests use a disposable SQLAlchemy SQLite transaction.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema
+
 import asyncio
 from uuid import uuid4
 
@@ -44,13 +46,7 @@ def db(monkeypatch):
     monkeypatch.delenv("TOKEN", raising=False)
     monkeypatch.delenv("BALE_BOT_TOKEN", raising=False)
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[
-        ShopStaff.__table__, AdminEvent.__table__,
-        ShopStore.__table__, ShopBot.__table__,
-        ShopBotCredential.__table__, ShopBotRegistryEvent.__table__,
-        ShopBotOperations.__table__, ShopBotOperationsEvent.__table__,
-        ShopBotProfile.__table__,
-    ])
+    create_shop_schema(engine)
     with Session(engine) as session:
         session.add(ShopStaff(
             id=1, username="owner", password_hash="test-only",

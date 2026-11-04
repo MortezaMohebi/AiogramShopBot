@@ -1,0 +1,345 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "timezone": "Asia/Tehran",
+  "repository": "MortezaMohebi/AiogramShopBot",
+  "pull_request": {
+    "number": 14,
+    "state": "draft",
+    "merged": false
+  },
+  "branch": "feat/beta-customer-experience-p0-p6-20261104",
+  "backend_verified_commit": "98bf71dc382757a9c18e721859bde867216e95a2",
+  "final_source_commit": "da9a232419cec67ca825d81369e3a0499d101784",
+  "phase_status": {
+    "P0": "PASS_NATIVE_FAKES",
+    "P1": "PASS_NATIVE_FAKES",
+    "P2": "PASS_NATIVE_FAKES",
+    "P3": "PASS_NATIVE_FAKES",
+    "P4": "PASS_NATIVE_FAKES",
+    "P5": "PASS_NATIVE_FAKES",
+    "P6": "PASS_OFFLINE_POSTGRESQL_NATIVE_FAKES_BROWSER"
+  },
+  "offline": {
+    "codespace_full_runner": {
+      "status": "PASS",
+      "exit_code": 0,
+      "python_passed": 784,
+      "python_failed": 0,
+      "python_skipped": 0,
+      "python_warnings": 3,
+      "relay_passed": 14,
+      "next_passed": 48,
+      "typecheck": "PASS",
+      "lint": "PASS",
+      "build": "PASS",
+      "commit": "98bf71dc382757a9c18e721859bde867216e95a2"
+    },
+    "post_ui_local_next": {
+      "typecheck": "PASS",
+      "lint": "PASS",
+      "tests_passed": 48,
+      "build": "PASS"
+    },
+    "final_local_full_runner": {
+      "status": "PASS",
+      "exit_code": 0,
+      "python_passed": 784,
+      "python_failed": 0,
+      "python_skipped": 0,
+      "python_warnings": 3,
+      "relay_passed": 14,
+      "next_passed": 48,
+      "typecheck": "PASS",
+      "lint": "PASS",
+      "build": "PASS",
+      "commit": "e1424000f55232d8d4d2b32b3eadbb939b413e8d"
+    }
+  },
+  "fresh_postgresql": {
+    "status": "PASS",
+    "version": 18,
+    "tables": 115,
+    "columns": 910,
+    "indexes": 281,
+    "constraints": 1316,
+    "public_schema_verified": true,
+    "transactional_probe_rolled_back": true,
+    "existing_rows_deleted": 0
+  },
+  "postgresql_native_fake_gates": {
+    "seed": "PASS",
+    "menus": "PASS",
+    "commerce": "PASS",
+    "refund_interleavings": "PASS",
+    "account_notifications_support": "PASS",
+    "registry_broadcast": "PASS",
+    "receiver_signed_admin": "PASS"
+  },
+  "broadcast": {
+    "bots": 3,
+    "stores": 2,
+    "workers": 2,
+    "sent": 3,
+    "opt_out_skipped": 1,
+    "unknown_quarantined": 1,
+    "rate_slots": 8,
+    "client_connections_closed": 5,
+    "synthetic_receivers_paused": 3
+  },
+  "browser": {
+    "status": "PASS",
+    "engine": "Chromium",
+    "next_version": "16.4.3",
+    "agent_browser_version": "0.41.2",
+    "desktop_routes": 18,
+    "mobile_routes": 18,
+    "desktop_rtl": true,
+    "mobile_dark": true,
+    "keyboard_focus": "PASS_CLOSED_SIDEBAR_OUTSIDE_TAB_ORDER",
+    "overlay_sizes": [
+      [
+        320,
+        568
+      ],
+      [
+        390,
+        844
+      ],
+      [
+        768,
+        1024
+      ],
+      [
+        1440,
+        1000
+      ]
+    ],
+    "overlay_bounds": [
+      {
+        "viewportWidth": 320,
+        "viewportHeight": 568,
+        "left": 16,
+        "right": 304,
+        "top": 64,
+        "bottom": 552,
+        "width": 288,
+        "height": 488
+      },
+      {
+        "viewportWidth": 390,
+        "viewportHeight": 844,
+        "left": 16,
+        "right": 374,
+        "top": 64,
+        "bottom": 567,
+        "width": 358,
+        "height": 503
+      },
+      {
+        "viewportWidth": 768,
+        "viewportHeight": 1024,
+        "left": 98.796875,
+        "right": 448.796875,
+        "top": 59.5,
+        "bottom": 562.5,
+        "width": 350,
+        "height": 503
+      },
+      {
+        "viewportWidth": 1440,
+        "viewportHeight": 1000,
+        "left": 98.796875,
+        "right": 448.796875,
+        "top": 59.5,
+        "bottom": 562.5,
+        "width": 350,
+        "height": 503
+      }
+    ],
+    "mcp_config_errors": 0,
+    "mcp_session_errors": 0,
+    "mcp_compilation_issues": 0,
+    "verified_commit": "da9a232419cec67ca825d81369e3a0499d101784",
+    "mcp_reader_regression": "PASS_OPEN_SSE_FRAGMENTED_CRLF_JSON_EOF",
+    "qa_mfa_read_timeout_ms": 45000,
+    "measured_cold_mfa_read_ms": 16277,
+    "infrastructure_incidents": [
+      "Stale prior scoped browser session: first action failed; a new isolated session was opened.",
+      "SSE response arrived but response.text awaited an open connection; fixed and tested.",
+      "Synthetic MFA read took 16277ms, above the old15000ms deadline; bounded to45000ms."
+    ],
+    "exit_code": 0,
+    "activation_fragment": "PASS_SCRUBBED_REACT_MOUNTED",
+    "login": "PASS_PASSWORD_MFA_REVOCABLE_SESSION",
+    "overlay_close": "PASS_SCOPED_CONTROL",
+    "routes": [
+      "dashboard",
+      "stores",
+      "bots",
+      "bots/:qa-telegram-bot",
+      "products",
+      "products/:qa-file/digital",
+      "products/:qa-license/digital",
+      "store-customers",
+      "support-tickets",
+      "fulfillments",
+      "digital-deliveries",
+      "customer-notifications",
+      "campaigns",
+      "campaigns/new",
+      "settings",
+      "payment-accounts",
+      "orders",
+      "finance"
+    ],
+    "screenshots": {
+      "desktop.png": {
+        "bytes": 132371
+      },
+      "mobile-dark.png": {
+        "bytes": 70539
+      }
+    },
+    "artifact_directory_in_codespace": "/tmp/beta-dashboard-evidence",
+    "artifact_readback_verified": true
+  },
+  "review": {
+    "store_http_scoped": "PASS",
+    "independent_related_tests_passed": 46,
+    "popup_css_scoped": "NO_CRITICAL_OR_IMPORTANT",
+    "viewport_metadata_minor": "CORRECTED",
+    "final_ui_and_mcp_scoped": "NO_SUBSTANTIVE_FINDINGS",
+    "independent_parser_scenarios_passed": 5
+  },
+  "live_provider_gates": {
+    "external_client_and_webhook": "BLOCKED_NOT_EXECUTED",
+    "real_settlement_and_refunds": "BLOCKED_NOT_EXECUTED",
+    "live_worker_or_broadcast_activation": "BLOCKED_NOT_EXECUTED"
+  },
+  "safety": {
+    "real_provider_calls": 0,
+    "real_payments": 0,
+    "public_bot_activation": false,
+    "live_broadcast": false,
+    "new_alembic_revisions": 0,
+    "database_reset": false
+  },
+  "limits": [
+    "Bale mixed physical/digital checkout is intentionally rejected.",
+    "Staff superadmin account lifecycle is a global control plane; business records stay Store-scoped.",
+    "No full WCAG or cross-browser-device certification is asserted."
+  ],
+  "qa_commits": [
+    {
+      "sha": "4ce38b3294b9efeadc318eebe2c951302b287a84",
+      "message": "fix: restore transport imports and full-suite ORM test initialization"
+    },
+    {
+      "sha": "946a0478659e112af946e075a71978334bfc9b38",
+      "message": "fix: reject private webhook origins and preserve receipts across token rotation"
+    },
+    {
+      "sha": "5390cc4f1c57fc19700f3a20af86056e47b382fd",
+      "message": "test: run complete beta suites and add guarded Codespace QA stack"
+    },
+    {
+      "sha": "c6341519b8be5a9c26054476d63a7495680cf92e",
+      "message": "test: bring legacy fixtures through full Store customer and checkout contracts"
+    },
+    {
+      "sha": "04dc7ed2c12da517d7c68031cb1ab40d1bf15061",
+      "message": "test: compose production admin authorization in the isolated QA runtime"
+    },
+    {
+      "sha": "06eca5c55df96c5be47c299a6fb1cf61a89cbda1",
+      "message": "fix: unblock Next builds and synchronize activation and Store selection state"
+    },
+    {
+      "sha": "6e9e680d7d9e9f986b0d4aac0a2e38ee667378a2",
+      "message": "test: add real PostgreSQL raw-dispatch Telegram and Bale QA scenarios"
+    },
+    {
+      "sha": "038d1c4e9368d197aace5d0cef60ea482f2995b3",
+      "message": "fix: build isolated beta runtime with branch-pinned dependencies"
+    },
+    {
+      "sha": "21439fe2e3ec4e7d1ccbd025d40eee598c56cd9c",
+      "message": "test: exercise native mixed payments and private delivery in real PostgreSQL"
+    },
+    {
+      "sha": "76633039b4e23b2e7a5c18fa722e1e2861b55c0f",
+      "message": "fix: preserve complete sales terms and recover concurrent customer enrollment"
+    },
+    {
+      "sha": "8015bd444bf54840c2e22124c0cb5d38ca1b8fd4",
+      "message": "test: verify live Next dashboard login, RTL routes and mobile rendering"
+    },
+    {
+      "sha": "d357a35c6f2183bb5c7cc2ff443cbada16535690",
+      "message": "fix: bind private delivery to exact settlement and serialize Stars refunds"
+    },
+    {
+      "sha": "29329ce0269d5328f254b9b4e958fb775684102c",
+      "message": "fix: expose isolated health routes before fallback and use valid dev origin"
+    },
+    {
+      "sha": "e77717bd120476a7f061d85519a364ec36d782ac",
+      "message": "feat: dispatch approved Registry broadcasts through scoped durable workers"
+    },
+    {
+      "sha": "f25b26a542bd7a9d9675eb8c33a8c1de1a78e15d",
+      "message": "fix: guard unsupported mixed Bale payments and show frozen payment currencies"
+    },
+    {
+      "sha": "19f41499c25efdc7f60fcb9aade1e26aa8c95685",
+      "message": "fix: unify customer form cancellation and durable notification generations"
+    },
+    {
+      "sha": "80edd462b31ba026642cc6f87a72f554977a28ac",
+      "message": "fix: enforce Store ownership for campaigns, media, refunds and order summaries"
+    },
+    {
+      "sha": "bf890862522ca29a1cb3da16fb39de24d214ce45",
+      "message": "fix: preserve provider sender aliases before polling offsets advance"
+    },
+    {
+      "sha": "e6e487099088d518c2b3897684ea7674fb71dc80",
+      "message": "fix: honor expiring customer restrictions across account, orders and notices"
+    },
+    {
+      "sha": "7394f473344591ccdaa90992f690d7ddf3ff9f44",
+      "message": "test: fail closed if any beta QA provider worker is enabled"
+    },
+    {
+      "sha": "0f7101dbad7ec9dfd693171908be78b6e4054e79",
+      "message": "fix: unify legacy support, paid notices, restriction expiry and QA cleanup"
+    },
+    {
+      "sha": "7f3823c6b9a93d04d8cf1dca8ca633ac34b40902",
+      "message": "fix: keep mobile Store selection visible and expand browser acceptance"
+    },
+    {
+      "sha": "b3349863c032bf611602ecfbd0e2ca7aa76bb620",
+      "message": "test: follow paginated support replies in provider acceptance"
+    },
+    {
+      "sha": "98bf71dc382757a9c18e721859bde867216e95a2",
+      "message": "fix: map Store write denials before legacy catalog policy mutations"
+    },
+    {
+      "sha": "e1424000f55232d8d4d2b32b3eadbb939b413e8d",
+      "message": "fix: bound mobile overlays and finish browser checks on MCP response"
+    },
+    {
+      "sha": "da9a232419cec67ca825d81369e3a0499d101784",
+      "message": "test: allow bounded cold-start time for Codespace QA MFA reads"
+    }
+  ],
+  "postgresql_native_fake_verified_commit": "98bf71dc382757a9c18e721859bde867216e95a2",
+  "final_runtime_files_match": {
+    "sidebar.tsx": "09e7d48ca4895fea8e278abcd8c0665622d65357",
+    "store-switcher.tsx": "5ef9059946cc02aa66f7eadcd10106642f984678",
+    "beta_dashboard_browser.mjs": "f10e5a616ecd5142a1568d0e2e4152f627e9411f"
+  }
+}

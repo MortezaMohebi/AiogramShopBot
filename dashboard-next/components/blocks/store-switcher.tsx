@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Store, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,12 @@ interface Props { context: StoreContextSnapshot }
 
 /** Odoo-style multi-selection with one current Store per browser session. */
 export function StoreSwitcher({ context }: Props) {
+  const key = `${context.version}:${context.current_store_id}:${context.active_store_ids.join(",")}`;
+  return <StoreSwitcherForm key={key} context={context} />;
+}
+
+/** A verified context refresh resets the draft without a cascading effect. */
+function StoreSwitcherForm({ context }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState(context.active_store_ids);
@@ -18,10 +24,7 @@ export function StoreSwitcher({ context }: Props) {
   const [notice, setNotice] = useState("");
   const [busy, startTransition] = useTransition();
 
-  useEffect(() => {
-    setSelection(context.active_store_ids);
-    setCurrent(context.current_store_id);
-  }, [context.active_store_ids, context.current_store_id]);
+
 
   const active = useMemo(() =>
     context.stores.find((item) => item.id === context.current_store_id),
@@ -31,18 +34,17 @@ export function StoreSwitcher({ context }: Props) {
   function toggle(id: string) {
     if (busy) return;
     setNotice("");
-    setSelection((old) => {
-      if (old.includes(id)) {
-        if (old.length === 1) {
-          setNotice("حداقل یک Store باید فعال باقی بماند.");
-          return old;
-        }
-        const next = old.filter((item) => item !== id);
-        if (current === id) setCurrent(next[0]);
-        return next;
+    if (selection.includes(id)) {
+      if (selection.length === 1) {
+        setNotice("حداقل یک Store باید فعال باقی بماند.");
+        return;
       }
-      return [...old, id];
-    });
+      const next = selection.filter((item) => item !== id);
+      setSelection(next);
+      if (current === id) setCurrent(next[0]);
+    } else {
+      setSelection([...selection, id]);
+    }
   }
 
   function chooseCurrent(id: string) {
@@ -81,12 +83,12 @@ export function StoreSwitcher({ context }: Props) {
     });
   }
 
-  return <div className="relative" dir="rtl">
+  return <div className="relative min-w-0" dir="rtl">
     <button type="button" disabled={busy}
       aria-haspopup="dialog" aria-expanded={open}
       aria-label="انتخاب یک یا چند فروشگاه فعال"
       onClick={() => setOpen(!open)}
-      className="flex h-10 max-w-64 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+      className="flex h-10 min-w-0 max-w-52 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:max-w-64">
       <Store className="size-4 shrink-0" aria-hidden="true" />
       <span className="truncate font-medium">{active?.name ?? "فروشگاه"}</span>
       {context.active_store_ids.length > 1 ?
@@ -95,8 +97,9 @@ export function StoreSwitcher({ context }: Props) {
         </span> : null}
       <ChevronsUpDown className="size-4 shrink-0 opacity-60" aria-hidden="true" />
     </button>
+    {/* A phone overlay spans the header; its trigger can sit near either edge. */}
     {open ? <div role="dialog" aria-label="Store Switcher"
-      className="absolute end-0 top-12 z-50 w-[min(350px,92vw)] space-y-4 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl">
+      className="fixed inset-x-4 top-16 z-50 max-h-[calc(100dvh-5rem)] space-y-4 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl sm:absolute sm:inset-x-auto sm:start-0 sm:top-12 sm:w-[350px]">
       <div>
         <p className="text-sm font-semibold">فروشگاه‌های مجاز من</p>
         <p className="mt-1 text-xs leading-6 text-muted-foreground">
@@ -118,6 +121,7 @@ export function StoreSwitcher({ context }: Props) {
           </label>
           <label title="Store جاری برای نوشتن" className="flex items-center gap-1 text-xs">
             <input type="radio" name="current-store" disabled={busy}
+              aria-label={`انتخاب ${store.name} برای ثبت تغییرات`}
               checked={current === store.id}
               onChange={() => chooseCurrent(store.id)} />
             <span>{current === store.id ? "جاری" : "انتخاب"}</span>

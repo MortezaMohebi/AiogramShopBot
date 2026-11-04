@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
 from models.shop_content import ShopOrder
+from models.shop_digital_delivery import ShopDigitalDelivery
 from models.shop_scope import legacy_id
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_payments import PaymentRejected
@@ -136,6 +137,8 @@ class ShopRefundService:
 
         This does NOT call or simulate any unsupported provider API. The
         reviewer is responsible for independently verifying actual settlement.
+        Evidence of money already returned remains recordable during an
+        uncertain digital delivery; recording it cannot cancel an accepted send.
         """
         case = await session.scalar(
             select(ShopRefundCase).where(ShopRefundCase.id == case_id)
@@ -168,20 +171,22 @@ class ShopRefundService:
 
         Mark `provider_pending` before the network call. On timeout, do
         not resend automatically; a human must reconcile provider status.
+        The shared Order lock excludes new digital claims until pending state
+        is durable. An already in-flight or unknown send requires review first.
         """
         if not enabled:
             raise PaymentRejected("بازپرداخت خودکار Stars غیرفعال است.")
         case = await session.scalar(
             select(ShopRefundCase).where(
                 ShopRefundCase.id == case_id
-            ).with_for_update()
+            ).with_for_update().execution_options(populate_existing=True)
         )
         if case is None or case.status != "requested":
             raise PaymentRejected("این درخواست بازپرداخت آماده اقدام نیست.")
         order = await session.scalar(
             select(ShopOrder).where(
                 ShopOrder.id == case.order_id
-            ).with_for_update()
+            ).with_for_update().execution_options(populate_existing=True)
         )
         if (
             order is None or order.platform != Platform.TELEGRAM.value
@@ -190,6 +195,20 @@ class ShopRefundService:
             or not order.telegram_payment_charge_id
         ):
             raise PaymentRejected("این سفارش قابل بازپرداخت Stars نیست.")
+        # A claim holds Delivery -> Order. Never lock Delivery here after
+        # taking Order: reading its committed state avoids a deadlock while
+        # the Order lock prevents queued work from becoming a new send.
+        uncertain_delivery = await session.scalar(
+            select(ShopDigitalDelivery.id).where(
+                ShopDigitalDelivery.order_id == order.id,
+                ShopDigitalDelivery.state.in_(("sending", "needs_review")),
+            ).limit(1)
+        )
+        if uncertain_delivery is not None:
+            raise PaymentRejected(
+                "نتیجهٔ تحویل دیجیتال هنوز مشخص نیست؛ "
+                "پیش از بازپرداخت، وضعیت تحویل را بررسی کنید."
+            )
         case.status = "provider_pending"
         await session.commit()
         try:

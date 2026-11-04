@@ -6,6 +6,8 @@ never call Telegram/Bale, create real orders, or change live webhook state.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema, seed_legacy_registry
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -43,22 +45,7 @@ from services.shop_bot_profiles import get_bot_options, validate_allowed_updates
 def session():
     """Build an isolated relational store with no provider side effects."""
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[
-        ShopStaff.__table__,
-        AdminEvent.__table__,
-        ShopIdentity.__table__,
-        ShopCustomerProfile.__table__,
-        ShopCustomerNote.__table__,
-        ShopCustomerConsentEvent.__table__,
-        ShopCustomerAudit.__table__,
-        ShopCustomerLinkRequest.__table__,
-        ShopCustomerIdentityLink.__table__,
-        ShopBotProfile.__table__,
-        ShopChannelFeature.__table__,
-        ShopPaymentRail.__table__,
-        ShopStaffState.__table__,
-        AdminSession.__table__,
-    ])
+    create_shop_schema(engine)
     with Session(engine) as db:
         db.add_all([
             ShopStaff(
@@ -85,6 +72,13 @@ def session():
                 is_blocked=False, allow_announcements=False,
             ),
         ])
+        seed_legacy_registry(db)
+        from models.shop_store_commerce import ShopStoreCustomer
+        for identity in db.query(ShopIdentity).all():
+            customer = ShopStoreCustomer(store_id=identity.store_id, display_name=identity.first_name)
+            db.add(customer)
+            db.flush()
+            identity.customer_id = customer.id
         db.commit()
         yield db
     engine.dispose()
@@ -105,9 +99,17 @@ class AsyncSessionAdapter:
         """Read one ORM scalar."""
         return self.db.scalar(statement)
 
+    async def execute(self, statement):
+        """Execute the real ownership-update statement inside a test transaction."""
+        return self.db.execute(statement)
+
     async def scalars(self, statement):
         """Read SQLAlchemy scalar results."""
         return self.db.scalars(statement)
+
+    async def flush(self):
+        """Flush profile ownership within the linking transaction."""
+        self.db.flush()
 
     async def commit(self):
         """Commit the current isolated transaction."""

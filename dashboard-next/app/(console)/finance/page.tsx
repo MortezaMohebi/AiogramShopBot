@@ -9,11 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import { formatIrr, statusLabel } from "@/lib/utils";
+import { formatOrderAmount } from "@/lib/order-money";
 
 type Wallet = { user_id: string; platform: string; balance_irr: string };
 type Refund = {
   id: number; order_id: number; platform: string; provider: string;
   amount_irr: string; reason: string; status: string;
+  total_stars_snapshot?: number | null;
+  payment_currency?: string | null;
+  payment_amount?: string | null;
 };
 type Ledger = {
   id: number; platform: string; user_id: string; delta_irr: string;
@@ -99,7 +103,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
             <div key={refund.id} className="grid gap-4 rounded-lg border border-border p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
               <div className="space-y-2 text-sm">
                 <p className="font-semibold">سفارش #{refund.order_id} · پرونده #{refund.id}</p>
-                <p>{refund.platform === "bale" ? "بله" : "تلگرام"} · {refund.provider} · {formatIrr(refund.amount_irr)}</p>
+                <p>{refund.platform === "bale" ? "بله" : "تلگرام"} · {refund.provider} · {formatOrderAmount({ ...refund, total_irr: refund.amount_irr })}</p>
                 <p className="break-words text-xs text-muted-foreground">{refund.reason}</p>
                 <Badge tone={refund.status === "confirmed" ? "success" : "warning"}>{statusLabel(refund.status)}</Badge>
               </div>

@@ -10,6 +10,13 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from services.shop_checkout_policy import checkout_rules
+from services.shop_checkout_copy import checkout_confirmation_text
+from services.shop_mixed_checkout import MixedCheckoutError
+from services.shop_mixed_checkout_orders import (
+    checkout_idempotency_key, create_split_orders,
+    existing_split_orders, mixed_quote, quote_signature,
+)
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -35,7 +42,7 @@ from models.shop_scope import legacy_id
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
 _PLACE_ACTION = re.compile(
-    r"shop:place:([1-9][0-9]{0,18}):([1-9][0-9]{0,18})\Z"
+    r"shop:place:([1-9][0-9]{0,18}):([1-9][0-9]{0,18}):([a-f0-9]{12})\Z"
 )
 _MAX_LINES = 20
 _SHIPPING_PAGE_SIZE = 10
@@ -72,6 +79,53 @@ class CartQuote:
 def button(text: str, action: str) -> InlineAction:
     """Build a platform-neutral inline keyboard action."""
     return InlineAction(text[:64], action)
+
+def telegram_stars_total(
+    platform: Platform, quote: CartQuote,
+) -> int | None:
+    """Return a legal XTR total or None for native IRR payment paths.
+
+    The bot must never show a fake IRR final price for Telegram digital
+    items or silently mix physical goods into the same Stars invoice.
+    """
+    if platform != Platform.TELEGRAM:
+        return None
+    kinds = {line.product.product_type for line in quote.lines}
+    if "digital" not in kinds:
+        return None
+    if kinds != {"digital"}:
+        raise CartRejected(
+            "کالاهای دیجیتال و فیزیکی تلگرام باید در دو سفارش جدا ثبت شوند."
+        )
+    if quote.discount or quote.shipping or quote.coupon_code:
+        raise CartRejected(
+            "تخفیف ریالی یا ارسال با Telegram Stars سازگار نیست."
+        )
+    total = 0
+    for line in quote.lines:
+        amount = line.product.price_stars
+        if type(amount) is not int or amount <= 0:
+            raise CartRejected(
+                "قیمت Telegram Stars این کالا هنوز تعیین نشده است."
+            )
+        total += amount * line.quantity
+    if not 1 <= total <= 999_999_999_999:
+        raise CartRejected("مبلغ Telegram Stars نامعتبر است.")
+    return total
+
+
+def validate_checkout_types(platform: Platform, quote: CartQuote) -> None:
+    """Refuse a Bale mixed Order until independent delivery paths support it."""
+    if (
+        platform == Platform.BALE
+        and {line.product.product_type for line in quote.lines}
+        == {"physical", "digital"}
+    ):
+        raise CartRejected(
+            "در بله، کالاهای فیزیکی و دیجیتال را در دو سفارش جدا ثبت کنید. "
+            "ابتدا یکی از این دو گروه را از سبد حذف کنید."
+        )
+
 
 
 def validate_coupon(coupon: ShopCoupon, subtotal: int) -> int:
@@ -173,7 +227,8 @@ class ShopCartFlow:
             match = _PLACE_ACTION.fullmatch(action)
             if match:
                 return await self._place_order(
-                    event, session, int(match.group(1)), int(match.group(2))
+                    event, session, int(match.group(1)),
+                    int(match.group(2)), match.group(3),
                 )
             if text in ("/cart", "🛒 سبد خرید"):
                 return await self._cart_reply(event, session)
@@ -290,7 +345,9 @@ class ShopCartFlow:
                 ShopOrder.platform_user_id == event.user_id,
             )
         return await session.scalar(select(ShopOrder).where(
-            *condition, ShopOrder.status == "pending_payment",
+            *condition, ShopOrder.status.in_((
+                "pending_review", "approved_unpaid", "pending_payment",
+            )),
         ).order_by(ShopOrder.id.desc()).limit(1))
 
     async def _change_item(
@@ -410,7 +467,23 @@ class ShopCartFlow:
             raise CartRejected("کد تخفیف به این فروشگاه تعلق ندارد.")
         discount = validate_coupon(coupon, subtotal) if coupon else 0
         total = subtotal + shipping - discount
-        if not 0 < total <= MAX_RIALS:
+        from models.shop_multibot import ShopBot
+
+        owner = await session.get(ShopBot, bot_id or cart.bot_id)
+        quote_platform_is_stars = bool(
+            owner is not None and owner.platform == "telegram"
+        )
+        if total == 0 and quote_platform_is_stars:
+            # Telegram digital goods may legitimately have a zero Rial price,
+            # because only their positive XTR amount is charged.
+            if not all(
+                line.product.product_type == "digital"
+                and type(line.product.price_stars) is int
+                and line.product.price_stars > 0
+                for line in lines
+            ) or coupon is not None or shipping:
+                raise CartRejected("مبلغ دیجیتال Telegram Stars معتبر نیست.")
+        elif not 0 < total <= MAX_RIALS:
             raise CartRejected("مبلغ سفارش معتبر نیست.")
         return CartQuote(
             tuple(lines), subtotal, discount, shipping, total,
@@ -457,13 +530,46 @@ class ShopCartFlow:
                 f"⚠️ {error}\nبرای اصلاح سبد یکی از گزینه‌ها را انتخاب کنید.",
                 tuple(rows),
             )
+        mixed = (
+            event.platform == Platform.TELEGRAM
+            and {line.product.product_type for line in quote.lines}
+            == {"physical", "digital"}
+        )
+        split_plan = None
+        try:
+            if mixed:
+                split_plan, _ = await mixed_quote(
+                    session, cart=cart, quote=quote,
+                    policy_token="cart-summary",
+                )
+                stars_total = split_plan.digital.total_stars
+            else:
+                stars_total = telegram_stars_total(event.platform, quote)
+        except (CartRejected, MixedCheckoutError) as error:
+            # Preserve deletion/edit actions rather than trapping a customer
+            # whose Star price or item mix is not yet legal to checkout.
+            return BotReply(
+                f"⚠️ {error}\n"
+                "لطفاً کالاهای ناسازگار را از سبد حذف کنید.",
+                tuple(
+                    (button(
+                        f"🗑 حذف {line.product.name[:32]}",
+                        f"shop:remove:{line.product.id}",
+                    ),) for line in quote.lines
+                ) + ((button("🏠 منوی اصلی", "shop:home"),),),
+            )
         rows = []
         details = ["🛒 سبد خرید"]
         for line in quote.lines:
             name = line.product.name[:70]
+            line_price = (
+                f"{line.product.price_stars * line.quantity} Stars (XTR)"
+                if stars_total is not None
+                and line.product.product_type == "digital"
+                else format_rials(line.line_total, self.display_unit)
+            )
             details.append(
-                f"• {name} × {line.quantity}: "
-                f"{format_rials(line.line_total, self.display_unit)}"
+                f"• {name} × {line.quantity}: {line_price}"
             )
             product_id = line.product.id
             rows.append((
@@ -471,19 +577,42 @@ class ShopCartFlow:
                 button("➕", f"shop:inc:{product_id}"),
                 button("🗑", f"shop:remove:{product_id}"),
             ))
-        details.append(
-            f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
-        )
-        if quote.discount:
+        if split_plan is not None:
             details.append(
-                f"تخفیف: {format_rials(quote.discount, self.display_unit)}"
+                "بخش فیزیکی: "
+                + format_rials(split_plan.physical.subtotal_irr, self.display_unit)
+            )
+            details.append(
+                f"بخش دیجیتال: {split_plan.digital.total_stars} Stars (XTR)"
+            )
+        elif stars_total is None:
+            details.append(
+                f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
+            )
+        discount = (
+            split_plan.physical.discount_irr
+            if split_plan is not None else quote.discount
+        )
+        if discount:
+            details.append(
+                f"تخفیف: {format_rials(discount, self.display_unit)}"
             )
         if quote.shipping:
             details.append(
                 f"ارسال: {format_rials(quote.shipping, self.display_unit)}"
             )
         details.append(
-            f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
+            (
+                "دو پرداخت مستقل: "
+                + format_rials(split_plan.physical.total_irr, self.display_unit)
+                + f" + {split_plan.digital.total_stars} Stars (XTR)"
+            )
+            if split_plan is not None
+            else (
+                f"مبلغ نهایی: {stars_total} Stars (XTR)"
+                if stars_total is not None
+                else f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
+            )
         )
         if quote.shipping_required:
             details.append(
@@ -662,32 +791,111 @@ class ShopCartFlow:
         quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
             )
+        validate_checkout_types(event.platform, quote)
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
         ):
             raise CartRejected("ابتدا نشانی و روش ارسال را در سبد ثبت کنید.")
+        policy = await checkout_rules(
+            session, bot_id=self._bot_id(event.platform),
+        )
+        from services.shop_digital_catalog import require_digital_supply
+        from services.shop_digital_rules import DeliveryPolicyError
+
+        try:
+            for line in quote.lines:
+                if line.product.product_type == "digital":
+                    await require_digital_supply(
+                        session, product=line.product, quantity=line.quantity,
+                    )
+        except (DeliveryPolicyError, OSError):
+            raise CartRejected(
+                "فایل یا لایسنس دیجیتال هنوز آمادهٔ خرید نیست."
+            ) from None
+        mixed = (
+            event.platform == Platform.TELEGRAM
+            and {line.product.product_type for line in quote.lines}
+            == {"physical", "digital"}
+        )
+        split_plan = None
+        try:
+            if mixed:
+                split_plan, approval_token = await mixed_quote(
+                    session, cart=cart, quote=quote,
+                    policy_token=policy.policy_token,
+                )
+                stars_total = split_plan.digital.total_stars
+            else:
+                stars_total = telegram_stars_total(event.platform, quote)
+                approval_token, _ = await quote_signature(
+                    session, cart=cart, quote=quote,
+                    policy_token=policy.policy_token,
+                )
+        except MixedCheckoutError as error:
+            raise CartRejected(str(error)) from None
+        if len(policy.terms_text) < 12:
+            return BotReply(
+                "شرایط فروش این Store هنوز توسط مدیر ثبت نشده؛ سفارش‌گیری "
+                "تا تکمیل قوانین فروش غیرفعال است.",
+                ((button("🆘 پشتیبانی", "ux:support"),),),
+            )
+        price_line = (
+            format_rials(split_plan.physical.total_irr, self.display_unit)
+            + f" + {split_plan.digital.total_stars} Stars (XTR)"
+            if split_plan is not None
+            else f"{stars_total} Stars (XTR)"
+            if stars_total is not None
+            else format_rials(quote.total, self.display_unit)
+        )
         return BotReply(
-            "تأیید سفارش بدون دریافت پول\n"
-            f"تعداد اقلام: {sum(line.quantity for line in quote.lines)}\n"
-            f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}\n"
-            "ثبت نهایی فقط یک درخواست بررسی برای فروشنده ایجاد می‌کند.",
+            checkout_confirmation_text(
+                item_count=sum(line.quantity for line in quote.lines),
+                price_label=price_line,
+                checkout_mode=policy.mode,
+                terms_version=policy.terms_version,
+                split=split_plan is not None,
+            ),
             ((
-                button("✅ ثبت درخواست سفارش", f"shop:place:{cart.id}:{cart.revision}"),
+                button(
+                    (
+                        "✅ پذیرش و ثبت دو سفارش"
+                        if split_plan is not None
+                        else "✅ پذیرش شرایط و ثبت سفارش"
+                    ),
+                    f"shop:place:{cart.id}:{cart.revision}:{approval_token}",
+                ),
                 button("انصراف", "shop:cart"),
-            ),),
+            ), (button(
+                "📜 مشاهده شرایط خرید",
+                f"ux:terms:{policy.policy_token}:0:checkout",
+            ),)),
         )
 
     async def _place_order(
         self, event: InboundEvent, session: AsyncSession,
-        cart_id: int, expected_revision: int
+        cart_id: int, expected_revision: int,
+        expected_policy_token: str,
     ) -> BotReply:
         """Atomically snapshot the basket and clear it, without taking money."""
         cart = await self._get_cart(event, session, lock=True)
         if cart is None or cart.id != cart_id:
             raise CartRejected("این سبد خرید به حساب شما تعلق ندارد.")
-        checkout_key = (
-            f"{self._bot_id(event.platform)}:{event.user_id}:{cart_id}:{expected_revision}"
+        checkout_key = checkout_idempotency_key(
+            bot_id=self._bot_id(event.platform), user_id=event.user_id,
+            cart_id=cart_id, revision=expected_revision,
         )
+        split_existing = await existing_split_orders(
+            session, checkout_key=checkout_key,
+            bot_id=self._bot_id(event.platform),
+            store_id=cart.store_id, user_id=event.user_id,
+        )
+        if split_existing is not None:
+            physical, digital = split_existing
+            return BotReply(
+                f"این خرید قبلاً به دو سفارش #{physical.id} (IRR) "
+                f"و #{digital.id} (XTR) تبدیل شده است.",
+                ((button("📦 سفارش‌های من", "shop:orders"),),),
+            )
         existing = await session.scalar(
             select(ShopOrder).where(ShopOrder.checkout_key == checkout_key)
         )
@@ -697,6 +905,13 @@ class ShopCartFlow:
             )
         if cart.revision != expected_revision:
             raise CartRejected("محتوای سبد تغییر کرده؛ دوباره سفارش را بررسی کنید.")
+        policy = await checkout_rules(
+            session, bot_id=self._bot_id(event.platform),
+        )
+        if len(policy.terms_text) < 12:
+            raise CartRejected(
+                "شرایط خرید هنوز معتبر نیست؛ دوباره سفارش را بررسی کنید."
+            )
         if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
         await lock_bot_catalog_policy(
@@ -705,62 +920,126 @@ class ShopCartFlow:
         quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
             )
+        validate_checkout_types(event.platform, quote)
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
         ):
             raise CartRejected("نشانی و روش ارسال را تکمیل کنید.")
 
-        first = quote.lines[0]
-        order = ShopOrder(
-            store_id=cart.store_id,
-            customer_id=cart.customer_id,
-            bot_id=self._bot_id(event.platform),
-            platform=event.platform.value,
-            platform_user_id=event.user_id,
-            chat_id=event.chat_id,
-            product_id=first.product.id,
-            product_name_snapshot=first.product.name,
-            quantity=first.quantity,
-            unit_price_irr=to_rials(first.product.price),
-            total_irr=quote.total,
-            provider="manual_review",
-            status="pending_review",
-            invoice_payload=secrets.token_urlsafe(32),
-            checkout_key=checkout_key,
-            subtotal_irr=quote.subtotal,
-            discount_irr=quote.discount,
-            shipping_irr=quote.shipping,
-            shipping_address=cart.shipping_address if quote.shipping_required else None,
-            shipping_method_snapshot=quote.shipping_label,
-            coupon_code_snapshot=quote.coupon_code,
-            coupon_id=cart.coupon_id,
+        # Even an old valid callback may arrive after an administrator
+        # disables digital inventory; recheck before creating either Order.
+        from services.shop_digital_catalog import require_digital_supply
+        from services.shop_digital_rules import DeliveryPolicyError
+
+        try:
+            for line in quote.lines:
+                if line.product.product_type == "digital":
+                    await require_digital_supply(
+                        session, product=line.product, quantity=line.quantity,
+                    )
+        except (DeliveryPolicyError, OSError):
+            raise CartRejected(
+                "موجودی فایل یا لایسنس تغییر کرده است؛ سفارش را تازه کنید."
+            ) from None
+
+        # Repeat the live quote, platform currency, Store ACL and policy
+        # under the locked order-creation transaction. The callback fingerprint
+        # binds product prices, coupon, shipping address and terms version.
+        mixed = (
+            event.platform == Platform.TELEGRAM
+            and {line.product.product_type for line in quote.lines}
+            == {"physical", "digital"}
         )
-        session.add(order)
-        await session.flush()
-        # Snapshot the unit code on every immutable line. A later Product
-        # unit edit must never change the meaning of a paid historical qty.
-        selected_units = {line.product.uom_id for line in quote.lines}
-        unit_codes = dict((await session.execute(select(
-            ShopUom.id, ShopUom.code,
-        ).where(
-            ShopUom.id.in_(selected_units),
-            ShopUom.store_id == cart.store_id,
-        ))).all())
-        if len(unit_codes) != len(selected_units):
-            raise CartRejected("واحد اندازه‌گیری یکی از اقلام معتبر نیست.")
-        for line in quote.lines:
-            session.add(
-                ShopOrderLine(
-                    order_id=order.id,
-                    product_id=line.product.id,
-                    product_name_snapshot=line.product.name,
-                    sku_snapshot=line.product.sku,
-                    uom_code_snapshot=unit_codes[line.product.uom_id],
-                    unit_price_irr=to_rials(line.product.price),
-                    quantity=line.quantity,
-                    total_irr=line.line_total,
+        split_parts = None
+        if mixed:
+            try:
+                split_parts = await create_split_orders(
+                    session, cart=cart, quote=quote, event=event,
+                    policy=policy, bot_id=self._bot_id(event.platform),
+                    checkout_key=checkout_key,
+                    proof=expected_policy_token,
                 )
+            except MixedCheckoutError as error:
+                raise CartRejected(str(error)) from None
+            stars_total = None
+        else:
+            try:
+                current_proof, pinned_files = await quote_signature(
+                    session, cart=cart, quote=quote,
+                    policy_token=policy.policy_token,
+                )
+            except MixedCheckoutError as error:
+                raise CartRejected(str(error)) from None
+            if current_proof != expected_policy_token:
+                raise CartRejected(
+                    "قیمت، فایل یا شرایط خرید تغییر کرده؛ سفارش را تازه کنید."
+                )
+            stars_total = telegram_stars_total(event.platform, quote)
+        if split_parts is None:
+            first = quote.lines[0]
+            order = ShopOrder(
+                store_id=cart.store_id,
+                customer_id=cart.customer_id,
+                bot_id=self._bot_id(event.platform),
+                platform=event.platform.value,
+                platform_user_id=event.user_id,
+                chat_id=event.chat_id,
+                product_id=first.product.id,
+                product_name_snapshot=first.product.name,
+                quantity=first.quantity,
+                unit_price_irr=to_rials(first.product.price),
+                total_irr=quote.total,
+                total_stars_snapshot=stars_total,
+                provider="manual_review",
+                status=(
+                    "approved_unpaid" if policy.mode == "instant"
+                    else "pending_review"
+                ),
+                terms_version_snapshot=policy.terms_version,
+                terms_accepted_at=datetime.now(timezone.utc),
+                invoice_payload=secrets.token_urlsafe(32),
+                checkout_key=checkout_key,
+                subtotal_irr=quote.subtotal,
+                discount_irr=quote.discount,
+                shipping_irr=quote.shipping,
+                shipping_address=cart.shipping_address if quote.shipping_required else None,
+                shipping_method_snapshot=quote.shipping_label,
+                coupon_code_snapshot=quote.coupon_code,
+                coupon_id=cart.coupon_id,
             )
+            session.add(order)
+            await session.flush()
+            # Snapshot the unit code on every immutable line. A later Product
+            # unit edit must never change the meaning of a paid historical qty.
+            selected_units = {line.product.uom_id for line in quote.lines}
+            unit_codes = dict((await session.execute(select(
+                ShopUom.id, ShopUom.code,
+            ).where(
+                ShopUom.id.in_(selected_units),
+                ShopUom.store_id == cart.store_id,
+            ))).all())
+            if len(unit_codes) != len(selected_units):
+                raise CartRejected("واحد اندازه‌گیری یکی از اقلام معتبر نیست.")
+            for line in quote.lines:
+                session.add(
+                    ShopOrderLine(
+                        order_id=order.id,
+                        product_id=line.product.id,
+                        product_name_snapshot=line.product.name,
+                        sku_snapshot=line.product.sku,
+                        uom_code_snapshot=unit_codes[line.product.uom_id],
+                        unit_price_irr=to_rials(line.product.price),
+                        unit_price_stars_snapshot=(
+                            line.product.price_stars
+                            if stars_total is not None else None
+                        ),
+                        digital_asset_id_snapshot=pinned_files.get(
+                            line.product.id,
+                        ),
+                        quantity=line.quantity,
+                        total_irr=line.line_total,
+                    )
+                )
         await session.execute(
             delete(ShopCartItem).where(ShopCartItem.cart_id == cart.id)
         )
@@ -774,8 +1053,30 @@ class ShopCartFlow:
             ).values(awaiting_input=None))
         cart.revision += 1
         await session.commit()
+        if split_parts is not None:
+            physical, digital = split_parts
+            step = (
+                "هر سفارش آمادهٔ پرداخت مستقل است."
+                if policy.mode == "instant"
+                else "هر دو سفارش در انتظار بررسی فروشنده هستند."
+            )
+            message = (
+                f"✅ خرید ترکیبی به دو سفارش جدا تبدیل شد.\n"
+                f"📦 فیزیکی #{physical.id}: "
+                f"{format_rials(physical.total_irr, self.display_unit)}\n"
+                f"💫 دیجیتال #{digital.id}: "
+                f"{digital.total_stars_snapshot} Stars (XTR)\n"
+                f"{step} پرداخت یکی، دیگری را پرداخت‌شده نمی‌کند."
+            )
+        else:
+            message = (
+                f"✅ سفارش #{order.id} ثبت و آمادهٔ پرداخت است.\n"
+                "از «سفارش‌های من» روش پرداخت مجاز را انتخاب کنید."
+                if policy.mode == "instant" else
+                f"✅ درخواست سفارش #{order.id} ثبت شد.\n"
+                "هنوز پرداختی دریافت نشده است. فروشنده سفارش را بررسی می‌کند."
+            )
         return BotReply(
-            f"✅ درخواست سفارش #{order.id} ثبت شد.\n"
-            "هنوز پرداختی دریافت نشده است. فروشنده سفارش را بررسی می‌کند.",
+            message,
             ((button("📦 سفارش‌های من", "shop:orders"),),),
         )

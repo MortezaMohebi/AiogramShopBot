@@ -51,6 +51,25 @@ from models.shop_staff_store import (
 )
 from models.shop_uom import ShopUomCategory, ShopUom
 from models.shop_model_import import ShopModelImportPreview
+from models.shop_digital_delivery import (
+    ShopDigitalAsset, ShopDigitalLicense, ShopDigitalDelivery,
+)
+from models.shop_customer_navigation import (
+    ShopStoreMenuPolicy, ShopBotMenuPolicy, ShopCustomerChatState,
+)
+from models.shop_customer_account_data import (
+    ShopCustomerAddress, ShopCustomerWishlist, ShopCustomerPreference,
+)
+from models.shop_checkout_policy import (
+    ShopStoreCheckoutPolicy, ShopBotCheckoutPolicy,
+)
+from models.shop_customer_support import (
+    ShopSupportTicket, ShopSupportMessage,
+    ShopOrderFulfillment, ShopFulfillmentEvent,
+)
+from models.shop_customer_notifications import (
+    ShopStockAlert, ShopCustomerNotificationOutbox,
+)
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )
@@ -71,7 +90,7 @@ For more information see https://stackoverflow.com/questions/7478403/sqlalchemy-
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopShippingMethod, ShopCoupon, ShopOrderLine,
-    ShopOrderReviewAudit,
+    ShopOrderReviewAudit, ShopCheckoutGroup,
 )
 from models.shop_content import Product, ProductMedia, ShopCategory, ShopIdentity, ShopOrder, ShopSettings, Testimonial
 from models.item import Item

@@ -34,7 +34,6 @@ async def claim_update(
     scope = (
         ShopInboundUpdate.bot_id == owner,
         ShopInboundUpdate.platform == platform.value,
-        ShopInboundUpdate.bot_fingerprint == fingerprint,
         ShopInboundUpdate.update_id == update_id,
     )
     async with session_maker() as session:
@@ -76,7 +75,6 @@ async def finish_update(
     """Mark a claimed update processed or pending manual investigation."""
     from db import session_maker
 
-    fingerprint = bot_fingerprint(token)
     from models.shop_scope import legacy_id
 
     owner = bot_id or legacy_id(platform.value)
@@ -85,7 +83,6 @@ async def finish_update(
             select(ShopInboundUpdate).where(
                 ShopInboundUpdate.bot_id == owner,
                 ShopInboundUpdate.platform == platform.value,
-                ShopInboundUpdate.bot_fingerprint == fingerprint,
                 ShopInboundUpdate.update_id == update_id,
             ).with_for_update()
         )

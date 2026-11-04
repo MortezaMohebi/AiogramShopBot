@@ -9,18 +9,27 @@ that server-provided identity, and settlement runs before maintenance gates.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 from channels.contracts import BotReply, InboundEvent, Platform, normalize_update
 from channels.shop_payment_dispatch import send_order_invoice
 from channels.telegram import TelegramTransport
 from db import session_maker
 from services.shop_bale_payments import (
-    settle_bale_payment, validate_bale_precheckout,
+    settle_bale_payment,
+    validate_bale_precheckout,
 )
 from services.shop_bot_context import BotContext
 from services.shop_cart import ShopCartFlow
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_customer_experience import (
+    CustomerExperienceFlow,
+    clear_pending_on_navigation,
+)
+from services.shop_customer_notification_dispatch import deliver_order_paid_once
+from services.shop_customer_support import CustomerSupportFlow, is_support_action
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_identity import is_blocked, register_customer
 from services.shop_orders import ShopOrdersFlow
@@ -28,6 +37,76 @@ from services.shop_payments import PaymentRejected, ShopPaymentService
 from services.shop_referrals import ShopReferralService
 
 LOG = logging.getLogger(__name__)
+_REFUND_ACTION = re.compile(r"shop:refundorder:([1-9][0-9]{0,18})\Z")
+_ORDER_READ_ACTION = re.compile(r"ux:order:(detail|track):([1-9][0-9]{0,18})\Z")
+
+
+async def _paused_service_route(db, context: BotContext, event: InboundEvent) -> str | None:
+    """Allow only bounded after-sale help while cart and payment entry stay gated."""
+    action = event.callback_data or ""
+    text = (event.text or "").strip()
+    if is_support_action(action) or text in {
+        "/support", "/paysupport", "/ticket", "🆘 پشتیبانی",
+    }:
+        return "support"
+    if action == "shop:orders" or _REFUND_ACTION.fullmatch(action) or text in {
+        "/orders", "📦 سفارش‌های من",
+    }:
+        return "orders"
+    if _ORDER_READ_ACTION.fullmatch(action):
+        return "order_detail"
+    if action == "shop:faq" or text == "/faq":
+        return "faq"
+    if text == "/cancel":
+        return "cancel"
+    if action or not text or text.startswith("/"):
+        return None
+    from models.shop_customer_navigation import ShopCustomerChatState
+
+    state = await db.get(ShopCustomerChatState, (context.bot_id, event.user_id))
+    if (
+        state is None or state.store_id != context.store_id
+        or state.action != "ticket_input"
+    ):
+        return None
+    expiry = state.expires_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    return "support" if expiry > datetime.now(UTC) else None
+
+
+async def paused_customer_reply(
+    db, *, context: BotContext, event: InboundEvent,
+) -> BotReply | None:
+    """Serve one exact after-sale route without entering shopping handlers.
+
+    Legacy and Registry receivers call this only after their effective
+    operation gate permits paused/maintenance service. Disabled/revoked
+    contexts and unrelated free text never gain a prefix-based bypass.
+    """
+    if context.status not in {"active", "legacy", "paused", "maintenance"}:
+        return None
+    route = await _paused_service_route(db, context, event)
+    if route is None:
+        return None
+    refund_request = bool(_REFUND_ACTION.fullmatch(event.callback_data or ""))
+    if await is_blocked(
+        db, bot_id=context.bot_id, platform=context.platform,
+        platform_user_id=event.user_id,
+    ) and not refund_request:
+        return None
+    await clear_pending_on_navigation(db, context=context, event=event)
+    if route == "faq":
+        return await CatalogFlow(bot_context=context)._settings_text(
+            db, key="faq", platform=context.platform.value,
+        )
+    flow = {
+        "support": CustomerSupportFlow,
+        "orders": ShopOrdersFlow,
+        "order_detail": CustomerExperienceFlow,
+        "cancel": CustomerExperienceFlow,
+    }[route](bot_context=context)
+    return await flow.reply(event, db)
 
 
 async def _send(context: BotContext, client, chat_id: int, reply: BotReply) -> None:
@@ -131,21 +210,31 @@ async def _settle(context: BotContext, client, payload: Mapping) -> dict:
     # This is an already committed financial transaction. Notification or
     # referral failure cannot trigger a second settlement or stock decrement.
     if changed:
-        await _send(
-            context, client, chat["id"],
-            BotReply(
-                f"✅ پرداخت سفارش #{order.id} تأیید شد."
-                if order.status == "paid"
-                else f"⚠️ رسید #{order.id} ثبت شد؛ بررسی فروشنده لازم است."
-            ),
-        )
+        try:
+            async with session_maker() as notice_db:
+                # Immediate confirmation and a later worker share the exact
+                # durable claim. An absent/final claim has no direct fallback;
+                # a timeout stays quarantined rather than being sent again.
+                transport = (
+                    TelegramTransport(client, bot_id=context.bot_id)
+                    if context.platform == Platform.TELEGRAM else client
+                )
+                await deliver_order_paid_once(
+                    notice_db, order_id=order.id, bot_id=context.bot_id,
+                    transport=transport,
+                )
+        except Exception:  # noqa: BLE001 - settlement is already committed
+            LOG.warning(
+                "Post-settlement notice needs review; order_id=%s bot_id=%s",
+                order.id, context.bot_id,
+            )
         if order.status == "paid":
             try:
                 async with session_maker() as reward_db:
                     await ShopReferralService.award_for_paid_order(
                         reward_db, order.id,
                     )
-            except Exception:
+            except Exception:  # noqa: BLE001 - referral cannot undo settlement
                 LOG.warning(
                     "Post-settlement referral needs review; order_id=%s",
                     order.id,
@@ -158,7 +247,7 @@ async def dispatch(
 ) -> dict:
     """Process one uniquely claimed provider update and return a safe status."""
     if not isinstance(payload, Mapping):
-        raise ValueError("Provider payload must be an object")
+        raise ValueError("Provider payload must be an object")  # noqa: TRY004
     if isinstance(payload.get("pre_checkout_query"), dict):
         return await _pre_checkout(context, client, payload)
     message = payload.get("message")
@@ -174,14 +263,16 @@ async def dispatch(
         await _acknowledge(context, client, event.callback_query_id)
 
     # A customer may request a refund on a paid order while shopping is off.
-    refund_request = (
-        bool(event.callback_data)
-        and event.callback_data.startswith("shop:refundorder:")
-    )
+    refund_request = bool(_REFUND_ACTION.fullmatch(event.callback_data or ""))
     async with session_maker() as db:
-        if not refund_request and context.status != "active":
-            if context.status == "disabled":
+        paused_route = None
+        if context.status != "active":
+            # Settlement is handled above this gate. Ordinary requests on a
+            # disabled/revoked runtime never gain a support-prefix bypass.
+            if context.status not in {"paused", "maintenance"}:
                 return {"status": "disabled"}
+            paused_route = await _paused_service_route(db, context, event)
+        if context.status != "active" and paused_route is None:
             from models.shop_bot_operations import ShopBotOperations
 
             options = await db.get(ShopBotOperations, context.bot_id)
@@ -193,7 +284,7 @@ async def dispatch(
             await _send(context, client, event.chat_id, BotReply(note))
             return {"status": "maintenance"}
 
-        if not refund_request:
+        if context.status == "active" and not refund_request:
             await register_customer(
                 db, bot_id=context.bot_id, platform=context.platform,
                 platform_user_id=event.user_id,
@@ -206,6 +297,9 @@ async def dispatch(
         ) and not refund_request:
             return {"status": "blocked"}
 
+        await clear_pending_on_navigation(
+            db, context=context, event=event,
+        )
         if event.callback_data and event.callback_data.startswith(
             "shop:pay:"
         ):
@@ -226,15 +320,19 @@ async def dispatch(
                 )
             return {"status": "invoice_requested"}
 
-        flows = (
+        flows = () if paused_route else (
             ShopOrdersFlow(bot_context=context),
         ) if refund_request else (
             ShopEngagementFlow(bot_context=context),
             ShopOrdersFlow(bot_context=context),
             ShopCartFlow(bot_context=context),
+            CustomerExperienceFlow(bot_context=context),
             CatalogFlow(bot_context=context),
         )
-        reply = None
+        reply = (
+            await paused_customer_reply(db, context=context, event=event)
+            if paused_route else None
+        )
         for flow in flows:
             reply = await flow.reply(event, db)
             if reply is not None:

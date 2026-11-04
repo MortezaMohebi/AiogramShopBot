@@ -3,7 +3,11 @@
 No platform tokens, network, real payments or production DB are involved.
 """
 
+from tests.schema_support import create_shop_schema, seed_test_units
+
 import re
+
+from contextlib import asynccontextmanager
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -69,24 +73,18 @@ class AsyncDatabase:
         """Remove one managed object."""
         self.session.delete(record)
 
+    @asynccontextmanager
+    async def begin_nested(self):
+        """Expose a real SQLAlchemy savepoint to the shared customer flow."""
+        with self.session.begin_nested():
+            yield
+
 
 @pytest.fixture
 def db():
     """Provide complete new checkout tables in disposable SQLite memory."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    tables = [
-        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
-        ShopChannelFeature.__table__, ShopBotOperations.__table__,
-        ShopCategory.__table__, Product.__table__,
-        ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
-        ShopShippingMethod.__table__,
-        ShopCoupon.__table__,
-        ShopCart.__table__,
-        ShopCartItem.__table__,
-        ShopOrder.__table__,
-        ShopOrderLine.__table__,
-    ]
-    Base.metadata.create_all(engine, tables=tables)
+    create_shop_schema(engine)
     with Session(engine) as session:
         session.add(ShopStore(
             id=DEFAULT_STORE_ID, slug="default",
@@ -101,6 +99,13 @@ def db():
             ) for platform, bot_id in LEGACY_BOT_IDS.items()
         ])
         session.commit()
+        from models.shop_checkout_policy import ShopStoreCheckoutPolicy
+        session.add(ShopStoreCheckoutPolicy(
+            store_id=DEFAULT_STORE_ID, mode="manual", terms_version="fixture-v1",
+            terms_text="شرایط فروش آزمایشی؛ سفارش تنها پس از تأیید و پرداخت انجام می‌شود.",
+        ))
+        session.commit()
+        seed_test_units(session)
         yield AsyncDatabase(session)
     engine.dispose()
 
@@ -160,9 +165,9 @@ async def test_cart_quote_shipping_coupon_and_order_are_common(db, platform):
     assert "4,550 ریال" in cart_page.text
 
     review = await flow.reply(event(platform, callback="shop:checkout"), db)
-    match = re.search(r"shop:place:(\d+):(\d+)", str(review.rows))
+    match = re.search(r"shop:place:(\d+):(\d+):([a-f0-9]{12})", str(review.rows))
     assert match is not None
-    action = f"shop:place:{match.group(1)}:{match.group(2)}"
+    action = match.group(0)
     confirmation = await flow.reply(event(platform, callback=action), db)
     assert "ثبت شد" in confirmation.text
     order = db.session.scalars(select(ShopOrder)).one()

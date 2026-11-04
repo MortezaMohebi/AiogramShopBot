@@ -5,17 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { currentStaff } from "@/lib/bridge";
+import { adminFetch, currentStaff } from "@/lib/bridge";
+import type { CampaignBotOptions } from "@/lib/campaigns";
 
 /** Only marketing staff can create a new, deliberately unsent campaign. */
 export default async function NewCampaignPage() {
   const staff = await currentStaff();
   if (!["superadmin", "marketing"].includes(staff.role)) notFound();
+  const options = await adminFetch<CampaignBotOptions>("/campaigns/bots");
+  const hasSender = options.legacy_available || options.bots.length > 0;
   return (
     <div>
       <PageHeading title="کمپین جدید" description="ساخت پیش‌نویس؛ مخاطبان تا زمان تأیید مدیر و شروع مستقل Worker هیچ پیامی دریافت نمی‌کنند." />
       <Card className="max-w-3xl">
-        <CardHeader><CardTitle>پیام Broadcast</CardTitle><CardDescription>متن فارسی و انتخاب پیام‌رسان، بدون اطلاعات ثابت در سورس.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>پیام کمپین</CardTitle><CardDescription>فروشگاه: {options.store_name}. پیام فقط برای مشتریان دارای رضایتِ ربات انتخاب‌شده آماده می‌شود.</CardDescription></CardHeader>
         <CardContent>
           <form action={createCampaign} className="space-y-5">
             <label className="block space-y-2 text-sm font-medium">عنوان داخلی کمپین
@@ -24,15 +27,24 @@ export default async function NewCampaignPage() {
             <label className="block space-y-2 text-sm font-medium">متن اعلان
               <Textarea name="text" minLength={1} maxLength={3000} required rows={8} />
             </label>
-            <label className="block space-y-2 text-sm font-medium">مخاطبان
-              <select name="audience" className="h-10 w-full rounded-md border border-input bg-background px-3">
-                <option value="all">مشتریان دارای رضایت، در هر دو پیام‌رسان</option>
-                <option value="telegram">فقط تلگرام</option>
-                <option value="bale">فقط بله</option>
+            <label className="block space-y-2 text-sm font-medium">ربات ارسال‌کننده
+              <select name="target" required defaultValue="" disabled={!hasSender} className="h-10 w-full rounded-md border border-input bg-background px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+                <option value="" disabled>ربات را انتخاب کنید</option>
+                {options.bots.map((bot) => (
+                  <option key={bot.id} value={bot.id}>{bot.name} — {bot.platform === "bale" ? "بله" : "تلگرام"}</option>
+                ))}
+                {options.legacy_available ? (
+                  <optgroup label="ربات‌های قدیمی همین فروشگاه">
+                    <option value="legacy:all">ربات‌های قدیمی — تلگرام و بله</option>
+                    <option value="legacy:telegram">ربات قدیمی تلگرام</option>
+                    <option value="legacy:bale">ربات قدیمی بله</option>
+                  </optgroup>
+                ) : null}
               </select>
             </label>
+            {!hasSender ? <p role="status" className="text-sm text-muted-foreground">برای این فروشگاه ربات فعالی در دسترس نیست. پس از فعال‌شدن ربات، می‌توانید پیش‌نویس بسازید.</p> : null}
             <p className="text-xs leading-7 text-muted-foreground">پس از ساخت، رسانه‌های کمپین را از صفحه جزئیات بارگذاری کنید؛ تأیید مخاطبان و شروع Worker مستقل‌اند.</p>
-            <Button type="submit">ساخت پیش‌نویس</Button>
+            <Button type="submit" disabled={!hasSender}>ساخت پیش‌نویس</Button>
           </form>
         </CardContent>
       </Card>

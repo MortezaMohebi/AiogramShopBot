@@ -6,6 +6,10 @@ No Telegram/Bale credential, real payment, file upload or network is needed.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema, seed_test_units
+
+from contextlib import asynccontextmanager
+
 import asyncio
 from uuid import uuid4
 
@@ -83,24 +87,18 @@ class AsyncDb:
         """Remove a managed ORM object."""
         self.session.delete(item)
 
+    @asynccontextmanager
+    async def begin_nested(self):
+        """Expose a real SQLAlchemy savepoint to the shared customer flow."""
+        with self.session.begin_nested():
+            yield
+
 
 @pytest.fixture
 def db():
     """Create actual ACL, catalog, cart and payment tables in private memory."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[
-        ShopStaff.__table__, AdminEvent.__table__,
-        ShopStore.__table__, ShopBot.__table__,
-        ShopBotOperations.__table__, ShopBotRegistryEvent.__table__,
-        ShopSettings.__table__, ShopCategory.__table__, Product.__table__,
-        ProductMedia.__table__, Testimonial.__table__,
-        ShopProductVisibility.__table__, ShopChannelFeature.__table__,
-        ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
-        ShopBotCatalogAudit.__table__, ShopShippingMethod.__table__,
-        ShopCoupon.__table__, ShopCart.__table__, ShopCartItem.__table__,
-        ShopOrder.__table__, ShopOrderLine.__table__,
-        ShopPaymentAttempt.__table__,
-    ])
+    create_shop_schema(engine)
     with Session(engine) as session:
         session.add(ShopStaff(
             id=1, username="admin", password_hash="unused-test-only",
@@ -149,6 +147,7 @@ def db():
             ),
         ])
         session.commit()
+        seed_test_units(session)
         yield session
     engine.dispose()
 
@@ -294,7 +293,7 @@ def test_paused_bot_and_unavailable_other_store_fail_closed(db):
             db, bot_id=other_bot.id, actor_id=1, expected_version=1,
             object_type="product", target_ids=[100], effect="allow",
         )
-    assert refused.value.code == "catalog_store_not_ready"
+    assert refused.value.code == "store_not_active"
 
 
 def test_old_product_and_media_callbacks_are_denied(db):

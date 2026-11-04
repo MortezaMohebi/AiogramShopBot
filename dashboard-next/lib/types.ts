@@ -31,6 +31,9 @@ export interface Order {
   status: string;
   provider?: string;
   total_irr: string;
+  total_stars_snapshot?: number | null;
+  payment_currency?: string | null;
+  payment_amount?: string | null;
   created_at: string;
 }
 
@@ -55,6 +58,7 @@ export interface Product {
   description: string;
   price_irr: string;
   price_stars: number | null;
+  digital_delivery_mode: "none" | "file" | "license";
   show_description?: boolean;
   show_stock?: boolean;
   show_media?: boolean;

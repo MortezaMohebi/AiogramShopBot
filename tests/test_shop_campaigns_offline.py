@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from models.base import Base
 from models.shop_content import ShopIdentity
+from models.shop_customer_crm import ShopCustomerProfile
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
@@ -46,6 +47,7 @@ def db():
         engine,
         tables=[
             ShopIdentity.__table__, ShopCampaign.__table__,
+            ShopCustomerProfile.__table__,
             ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
         ],
     )

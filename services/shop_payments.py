@@ -46,6 +46,31 @@ class InvoicePlan:
     description: str
 
 
+def frozen_stars_amount(pairs: list[tuple], *, expected_total: int | None) -> int:
+    """Charge only the exact per-Order Stars price the customer accepted.
+
+    A mutable Product.price_stars must never recalculate an approved
+    amount. Invoice creation can follow seller approval much later.
+    """
+    if type(expected_total) is not int or expected_total <= 0:
+        raise PaymentRejected("مبلغ Telegram Stars هنگام سفارش ثبت نشده است.")
+    value = 0
+    for line, product in pairs:
+        price = line.unit_price_stars_snapshot
+        if (
+            product.product_type != "digital"
+            or type(line.quantity) is not int or line.quantity <= 0
+            or type(price) is not int or price <= 0
+        ):
+            raise PaymentRejected("قیمت ذخیره‌شدهٔ Telegram Stars معتبر نیست.")
+        value += price * line.quantity
+    if value != expected_total or value > 999_999_999_999:
+        raise PaymentRejected(
+            "مبلغ فاکتور با مبلغ تأییدشدهٔ Telegram Stars مطابقت ندارد."
+        )
+    return value
+
+
 class ShopPaymentService:
     """Coordinate Telegram and Bale payments over one shared order ledger."""
 
@@ -88,6 +113,8 @@ class ShopPaymentService:
         bot = await session.get(ShopBot, owner)
         if bot is None or bot.platform != platform.value or bot.store_id != order.store_id:
             raise PaymentRejected("مالکیت فروشگاه سفارش معتبر نیست.")
+        if order.terms_accepted_at is None:
+            raise PaymentRejected("شرایط فروش این سفارش تأیید نشده است.")
         if order.provider != "manual_review" or order.status != "approved_unpaid":
             raise PaymentRejected(
                 "این سفارش آماده صدور فاکتور جدید نیست؛ "
@@ -121,7 +148,14 @@ class ShopPaymentService:
             )
         subtotal = sum(line.total_irr for line, _ in pairs)
         if (
-            type(order.total_irr) is not int or order.total_irr <= 0
+            type(order.total_irr) is not int or order.total_irr < 0
+            or (
+                order.total_irr == 0 and (
+                    platform != Platform.TELEGRAM
+                    or type(order.total_stars_snapshot) is not int
+                    or order.total_stars_snapshot <= 0
+                )
+            )
             or subtotal != order.subtotal_irr
             or order.total_irr != (
                 subtotal - (order.discount_irr or 0)
@@ -132,6 +166,32 @@ class ShopPaymentService:
             raise PaymentRejected("مبلغ سفارش با صورت‌حساب سازگار نیست.")
 
         types = {product.product_type for _, product in pairs}
+        if platform == Platform.BALE and types == {"physical", "digital"}:
+            raise PaymentRejected(
+                "کالای فیزیکی و دیجیتال در بله باید در سفارش‌های جدا ثبت شوند."
+            )
+        if "digital" in types:
+            from services.shop_digital_catalog import require_digital_supply
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            try:
+                for line, product in pairs:
+                    if product.product_type == "digital":
+                        if (
+                            product.digital_delivery_mode == "file"
+                            and not line.digital_asset_id_snapshot
+                        ):
+                            raise DeliveryPolicyError(
+                                "Order has no approved private file version."
+                            )
+                        await require_digital_supply(
+                            session, product=product, quantity=line.quantity,
+                            pinned_asset_id=line.digital_asset_id_snapshot,
+                        )
+            except (DeliveryPolicyError, OSError):
+                raise PaymentRejected(
+                    "فایل یا موجودی لایسنس دیجیتال آمادهٔ تحویل نیست."
+                ) from None
         if not types <= {"physical", "digital"}:
             raise PaymentRejected("نوع کالا معتبر نیست.")
         for line, product in pairs:
@@ -177,13 +237,8 @@ class ShopPaymentService:
                 raise PaymentRejected(
                     "تخفیف ریالی و ارسال با فاکتور Stars سازگار نیستند."
                 )
-            if any(
-                p.price_stars is None or p.price_stars <= 0
-                for _, p in pairs
-            ):
-                raise PaymentRejected("قیمت Stars تمام کالاها تعیین نشده است.")
-            amount = sum(
-                p.price_stars * line.quantity for line, p in pairs
+            amount = frozen_stars_amount(
+                pairs, expected_total=order.total_stars_snapshot,
             )
             provider, currency = "telegram_stars", "XTR"
         elif types == {"physical"}:
@@ -302,6 +357,10 @@ class ShopPaymentService:
             .where(ShopOrderLine.order_id == order.id)
         )
         pairs = lines_result.all()
+        if platform == Platform.BALE and {
+            product.product_type for _, product in pairs
+        } == {"physical", "digital"}:
+            return False, "کالای فیزیکی و دیجیتال بله باید جدا سفارش داده شوند."
         if not pairs or not await allowed_for_bot(
             session, bot_id or legacy_id(platform.value),
             [product.id for _, product in pairs],
@@ -407,7 +466,13 @@ class ShopPaymentService:
             .with_for_update(of=Product)
         )
         pairs = rows.all()
-        allocated = bool(pairs) and all(
+        # Historical mixed invoices can still produce valid paid receipts.
+        # Record the money and a refund obligation instead of consuming stock
+        # for an Order neither the shipping nor digital worker can fulfill.
+        mixed_delivery = {
+            product.product_type for _, product in pairs
+        } == {"physical", "digital"}
+        allocated = bool(pairs) and not mixed_delivery and all(
             line.quantity > 0 and product.stock_quantity >= line.quantity
             and product.is_published
             for line, product in pairs
@@ -430,6 +495,26 @@ class ShopPaymentService:
                 except CartRejected:
                     allocated = False
 
+        digital_only = bool(pairs) and all(
+            product.product_type == "digital" for _, product in pairs
+        )
+        if allocated and digital_only:
+            # Build all private claims only on a confirmed successful_payment.
+            # A failed reservation is quarantined as paid_unfulfilled; never
+            # lose the actual received payment receipt.
+            from services.shop_digital_fulfillment import (
+                queue_paid_digital_order,
+            )
+            from services.shop_digital_rules import DeliveryPolicyError
+
+            order.status = "paid"
+            try:
+                async with session.begin_nested():
+                    await queue_paid_digital_order(
+                        session, order=order, pairs=pairs,
+                    )
+            except (DeliveryPolicyError, ValueError, OSError):
+                allocated = False
         if allocated:
             for line, product in pairs:
                 product.stock_quantity -= line.quantity
@@ -460,5 +545,45 @@ class ShopPaymentService:
         order.paid_at = datetime.now(timezone.utc)
         intent.status = "paid"
         intent.completed_at = order.paid_at
+        # The payment ledger is authoritative. An operational notice is a
+        # best-effort Outbox append in a SAVEPOINT inside the same transaction;
+        # a notification failure must never undo a valid provider receipt.
+        try:
+            async with session.begin_nested():
+                from models.shop_multibot import ShopBot
+                from services.shop_bot_context import BotContext
+                from services.shop_customer_notifications import (
+                    enqueue_notification,
+                )
+
+                bot = await session.get(ShopBot, order.bot_id)
+                if bot is not None and bot.store_id == order.store_id:
+                    context = BotContext(
+                        bot_id=bot.id, store_id=bot.store_id,
+                        platform=platform, provider_bot_id=bot.provider_bot_id,
+                        status=bot.status, runtime_owner=bot.runtime_owner,
+                        credential_version=bot.credential_version,
+                        registry_version=bot.version,
+                    )
+                    notice = (
+                        f"✅ پرداخت سفارش #{order.id} تأیید شد."
+                        if order.status == "paid"
+                        else f"✅ پرداخت سفارش #{order.id} دریافت شد؛ "
+                             "برای تحویل نیازمند بررسی فروشنده است."
+                    )
+                    await enqueue_notification(
+                        session, context=context,
+                        user_id=payer_id, topic="order",
+                        event_key=f"order_paid:{order.id}:{intent.id}",
+                        body=notice,
+                    )
+        except Exception:
+            # Expose metadata only; no user message, Token or payment receipt.
+            import logging
+            logging.getLogger(__name__).exception(
+                "Order notice Outbox staging failed for order %s; "
+                "provider settlement is still authoritative.",
+                order.id,
+            )
         await session.commit()
         return order, True

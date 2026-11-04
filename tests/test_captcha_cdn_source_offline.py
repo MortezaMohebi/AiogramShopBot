@@ -29,7 +29,8 @@ def test_login_keeps_csrf_and_verifies_captcha_before_credentials() -> None:
         'bridgeFetch<StaffLogin>('
     )
     assert '"captcha_unavailable", 503' in route
-    assert '"captcha_failed", 403' in route
+    assert '"captcha_failed"' in route
+    assert 'verdict === "required" ? 422 : 403' in route
     assert "credentials.captchaToken" in route
 
 
@@ -39,7 +40,7 @@ def test_browser_never_receives_a_captcha_secret() -> None:
     widget = source(NEXT / "components/blocks/captcha-challenge.tsx")
     login = source(NEXT / "app/(auth)/login/page.tsx")
     assert "publicCaptchaConfig()" in login
-    assert "return { provider, siteKey }" in config
+    assert 'provider === "none" ? { provider } : { provider, siteKey }' in config
     assert "secretKey: process.env.NEXT_PUBLIC_" not in config
     assert "CAPTCHA_SECRET_KEY" not in widget
     assert "CAPTCHA_SECRET_KEY" not in login

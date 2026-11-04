@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
 import { readSession } from "@/lib/session";
 import type { Staff } from "@/lib/types";
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Restricted read-only provider status, without exposing Bot API tokens. */
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export async function GET(): Promise<NextResponse> {
   const session = await readSession();
   if (!session) {
     return NextResponse.json(

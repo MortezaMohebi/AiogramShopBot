@@ -43,7 +43,14 @@ async def register_customer(
         ShopIdentity.platform == platform.value,
         ShopIdentity.platform_user_id == platform_user_id,
     )
-    result = await session.execute(select(ShopIdentity).where(*condition))
+    # Serialize attachment for an existing legacy identity without a Customer.
+    # Refresh a preloaded ORM row after acquiring the lock so a competing
+    # attachment is not overwritten with an orphan Customer left behind.
+    # A missing row is protected by the unique Bot/user constraint below.
+    result = await session.execute(
+        select(ShopIdentity).where(*condition).with_for_update()
+        .execution_options(populate_existing=True)
+    )
     identity = result.scalar_one_or_none()
     if identity is None:
         identity = ShopIdentity(
@@ -63,15 +70,25 @@ async def register_customer(
             identity.username = username
         if first_name is not None:
             identity.first_name = first_name
-    if identity.customer_id is None:
-        await attach_new_customer(session, identity)
     try:
+        # Customer creation flushes all pending rows, including a new identity.
+        # Keep both flush and commit in the same recovery boundary so a racing
+        # /start rolls back its tentative Customer along with its identity.
+        if identity.customer_id is None:
+            await attach_new_customer(session, identity)
         await session.commit()
     except IntegrityError:
         await session.rollback()
         # Parallel /start events may race to create the same identity.
         result = await session.execute(select(ShopIdentity).where(*condition))
-        identity = result.scalar_one()
+        identity = result.scalar_one_or_none()
+        if (
+            identity is None or identity.store_id != store_id
+            or identity.customer_id is None
+        ):
+            # A different constraint failure must not become a successful
+            # enrollment or reuse another Bot's equal numeric user ID.
+            raise
     return identity
 
 

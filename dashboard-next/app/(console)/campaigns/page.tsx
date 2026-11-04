@@ -7,23 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
+import type { Campaign } from "@/lib/campaigns";
 import { statusLabel } from "@/lib/utils";
 
-interface Campaign {
-  id: number;
-  title: string;
-  text: string;
-  audience: "all" | "telegram" | "bale";
-  status: string;
-  bale_mode: string;
-  max_paid_calls: number;
-  paid_calls_reserved: number;
-  bale_recipients: number;
-  media_count: number;
-  counts: Record<string, number>;
-}
 interface Capabilities {
   broadcast_worker_enabled: boolean;
+  broadcast_registry_enabled: boolean;
   bale_business_enabled: boolean;
   max_paid_calls: number;
 }
@@ -48,7 +37,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
         action={manage ? <Button asChild><Link href="/campaigns/new"><Plus /> ساخت کمپین</Link></Button> : undefined}
       />
       {params.saved ? <p role="status" className="mb-4 rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">تغییرات کمپین ثبت شد.</p> : null}
-      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">درخواست اجرا نشد. عبارت تأیید، وضعیت کمپین، فعال‌بودن Worker و محدودیت پرداخت را بررسی کنید.</p> : null}
+      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{params.error === "create" ? "پیش‌نویس ساخته نشد. ربات فعال و دسترسی نوشتن در فروشگاه فعلی را بررسی کنید." : "درخواست اجرا نشد. عبارت تأیید، فروشگاه فعلی، وضعیت کمپین، فعال‌بودن Worker و محدودیت پرداخت را بررسی کنید."}</p> : null}
       <div className="mb-6 flex flex-wrap gap-3 rounded-xl border border-border bg-card p-4 text-sm">
         <span className={capabilities.broadcast_worker_enabled ? "text-emerald-600 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>
           <b>Worker:</b> {capabilities.broadcast_worker_enabled ? "مجوز اجرا فعال" : "غیرفعال تا تست عملی"}
@@ -63,14 +52,20 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
           const done = (count.sent ?? 0) + (count.skipped ?? 0);
           const progress = total ? Math.round((done / total) * 100) : 0;
           const requiredPaid = campaign.bale_recipients * (1 + campaign.media_count);
+          const canStart = capabilities.broadcast_worker_enabled && (
+            campaign.bot_id === null || capabilities.broadcast_registry_enabled
+          );
           return (
             <Card key={campaign.id}>
               <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
                 <div>
                   <CardTitle>{campaign.title}</CardTitle>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    #{campaign.id} · {campaign.audience === "all" ? "هر دو پیام‌رسان" : campaign.audience === "bale" ? "بله" : "تلگرام"}
+                    #{campaign.id} · {campaign.bot_id ? "مشتریان همین ربات" : campaign.audience === "all" ? "هر دو پیام‌رسان" : campaign.audience === "bale" ? "بله" : "تلگرام"}
                     {" · "}{total} مخاطب
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    فروشگاه: {campaign.store_name} · ربات: {campaign.bot_id ? `${campaign.bot_name ?? "ربات انتخاب‌شده"} (${campaign.bot_platform === "bale" ? "بله" : "تلگرام"})` : "ربات‌های قدیمی فروشگاه"}
                   </p>
                 </div>
                 <Badge tone={campaign.status === "completed" ? "success" : campaign.status === "needs_review" ? "danger" : campaign.status === "sending" ? "warning" : "neutral"}>
@@ -117,7 +112,8 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
                         <Input name="approved_paid_calls" type="number" min={0} max={capabilities.max_paid_calls} defaultValue={0} className="w-40" />
                       </label>
                       <Input name="confirmation" dir="ltr" required placeholder="START_CAMPAIGN / START_PAID_BALE" className="max-w-60 text-xs" />
-                      <Button size="sm" disabled={!capabilities.broadcast_worker_enabled} type="submit">شروع خودکار</Button>
+                      <Button size="sm" disabled={!canStart} type="submit">شروع خودکار</Button>
+                      {!canStart && campaign.bot_id !== null ? <p className="w-full text-xs text-muted-foreground">ارسال برای این ربات هنوز فعال نشده است.</p> : null}
                     </form>
                   ) : null}
                   {manage && ["sending", "paused"].includes(campaign.status) ? (

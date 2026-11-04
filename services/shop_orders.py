@@ -11,9 +11,13 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import ShopOrderLine
-from models.shop_content import ShopOrder
+from models.shop_content import Product, ShopIdentity, ShopOrder
+from services.shop_checkout_policy import legal_credit_for_items
+from services.shop_customer_orders import (
+    order_owner_clause, verified_identity_keys,
+)
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_payment_rails import rail_enabled
@@ -95,15 +99,34 @@ class ShopOrdersFlow:
         self, event: InboundEvent, session: AsyncSession
     ) -> BotReply:
         """Read only orders belonging to the current platform identity."""
-        result = await session.execute(
-            select(ShopOrder)
-            .where(
+        identity = await session.scalar(select(ShopIdentity).where(
+            ShopIdentity.bot_id == self._bot_id(event.platform),
+            ShopIdentity.platform == event.platform.value,
+            ShopIdentity.platform_user_id == event.user_id,
+        ))
+        if identity is not None and identity.customer_id is not None:
+            # Linking updates ShopIdentity.customer_id but deliberately
+            # does NOT rewrite historical Order.customer_id/payment ownership.
+            # Read through the verified per-Bot identity cluster instead.
+            keys = await verified_identity_keys(
+                session, store_id=identity.store_id,
+                customer_id=identity.customer_id,
+            )
+            conditions = (
+                order_owner_clause(
+                    store_id=identity.store_id,
+                    identity_keys=keys,
+                ),
+            )
+        else:
+            conditions = (
                 ShopOrder.bot_id == self._bot_id(event.platform),
                 ShopOrder.platform == event.platform.value,
                 ShopOrder.platform_user_id == event.user_id,
             )
-            .order_by(ShopOrder.id.desc())
-            .limit(10)
+        result = await session.execute(
+            select(ShopOrder).where(*conditions)
+            .order_by(ShopOrder.id.desc()).limit(20)
         )
         orders = result.scalars().all()
         if not orders:
@@ -122,13 +145,19 @@ class ShopOrdersFlow:
         # denies an unpaid order. A customer's paid/refundable history remains
         # visible, and cancellation of the unpaid request stays available.
         order_items = await session.execute(
-            select(ShopOrderLine.order_id, ShopOrderLine.product_id)
-            .where(ShopOrderLine.order_id.in_(ids))
+            select(
+                ShopOrderLine.order_id, ShopOrderLine.product_id,
+                Product.product_type,
+            ).join(
+                Product, Product.id == ShopOrderLine.product_id,
+            ).where(ShopOrderLine.order_id.in_(ids))
         )
         order_products: dict[int, set[int]] = {}
+        order_types: dict[int, set[str]] = {}
         all_products: set[int] = set()
-        for order_id, product_id in order_items.all():
+        for order_id, product_id, product_type in order_items.all():
             order_products.setdefault(order_id, set()).add(product_id)
+            order_types.setdefault(order_id, set()).add(product_type)
             all_products.add(product_id)
         allowed_products = await visible_product_ids(
             session,
@@ -150,44 +179,60 @@ class ShopOrdersFlow:
                 bot_id=owner,
             )
         )
-        external_ready = (
+        bale_ready = (
             config.BALE_WALLET_CHECKOUT_ENABLED
             and (not legacy or bool(config.BALE_WALLET_PROVIDER_TOKEN))
             and await rail_enabled(
                 session, "bale", "bale_wallet", bot_id=owner,
             )
-        ) if event.platform.value == "bale" else (
-            (
-                config.TELEGRAM_STARS_CHECKOUT_ENABLED
-                and await rail_enabled(
-                    session, "telegram", "telegram_stars", bot_id=owner,
-                )
-            ) or (
-                config.TELEGRAM_FIAT_CHECKOUT_ENABLED
-                and (not legacy or bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN))
-                and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
-                and await rail_enabled(
-                    session, "telegram", "telegram_fiat", bot_id=owner,
-                )
+        ) if event.platform == Platform.BALE else False
+        stars_ready = (
+            config.TELEGRAM_STARS_CHECKOUT_ENABLED
+            and await rail_enabled(
+                session, "telegram", "telegram_stars", bot_id=owner,
             )
-        )
+        ) if event.platform == Platform.TELEGRAM else False
+        fiat_ready = (
+            config.TELEGRAM_FIAT_CHECKOUT_ENABLED
+            and (not legacy or bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN))
+            and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
+            and await rail_enabled(
+                session, "telegram", "telegram_fiat", bot_id=owner,
+            )
+        ) if event.platform == Platform.TELEGRAM else False
         lines = ["📦 سفارش‌های من"]
         rows: list[tuple[InlineAction, ...]] = []
         for order in orders:
+            originates_here = order.bot_id == self._bot_id(event.platform)
             count = quantities.get(order.id, order.quantity)
+            money_label = (
+                f"{order.total_stars_snapshot} Stars (XTR)"
+                if order.platform == "telegram"
+                and order.total_stars_snapshot is not None
+                else format_rials(order.total_irr, self.display_unit)
+            )
             lines.append(
                 f"#{order.id} — {count} کالا — "
-                f"{format_rials(order.total_irr, self.display_unit)}\n"
+                f"{money_label}\n"
                 f"{STATUS_NAMES.get(order.status, 'در حال بررسی')}"
             )
-            if order.status in ("paid", "paid_unfulfilled"):
+            rows.append((
+                InlineAction(
+                    f"📄 جزئیات سفارش #{order.id}",
+                    f"ux:order:detail:{order.id}",
+                ),
+            ))
+            if (
+                originates_here
+                and order.status in ("paid", "paid_unfulfilled")
+            ):
                 rows.append((
                     InlineAction(
                         f"درخواست بازپرداخت #{order.id}",
                         f"shop:refundorder:{order.id}",
                     ),
                 ))
-            if order.status == "approved_unpaid":
+            if originates_here and order.status == "approved_unpaid":
                 # A denied order can still be cancelled or reconciled.
                 # Only the creation of new invoice intents is prohibited.
                 available_ids = order_products.get(order.id, set())
@@ -198,12 +243,23 @@ class ShopOrdersFlow:
                     )
                 else:
                     actions = []
+                    kinds = order_types.get(order.id, set())
+                    external_ready = (
+                        bale_ready and len(kinds) == 1
+                        if event.platform == Platform.BALE
+                        else stars_ready if kinds == {"digital"}
+                        else fiat_ready if kinds == {"physical"}
+                        else False
+                    )
                     if external_ready:
                         actions.append(InlineAction(
                             f"💳 پرداخت سفارش #{order.id}",
                             f"shop:pay:{order.id}",
                         ))
-                    if credit_available:
+                    if (
+                        credit_available
+                        and legal_credit_for_items(event.platform, kinds)
+                    ):
                         actions.append(InlineAction(
                             inline_credit_label(features),
                             f"shop:creditpay:{order.id}",
@@ -211,7 +267,8 @@ class ShopOrdersFlow:
                     if actions:
                         rows.append(tuple(actions))
             if (
-                order.provider == "manual_review"
+                originates_here
+                and order.provider == "manual_review"
                 and order.status in ("pending_review", "approved_unpaid")
             ):
                 rows.append((
