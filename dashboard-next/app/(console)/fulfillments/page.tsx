@@ -34,7 +34,12 @@ export default async function FulfillmentsPage({
           <p>وضعیت انجام: <strong>{order.status}</strong></p>
           <p>نوع: {order.kind ?? "تعیین‌نشده"} · مبلغ: {order.total_irr} IRR</p>
           {order.tracking_code ? <p>مرجع رهگیری: {order.tracking_code} / {order.carrier}</p> : null}
-          {canEdit && order.status !== "delivered" ? <form action={advanceFulfillment}
+          {order.kind === "digital" ? <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+            دریافت وجه تأیید شده، اما تحویل امن فایل/مجوز هنوز به
+            Pipeline تأییدشده متصل نیست؛ وضعیت «تحویل‌شده» صادر نمی‌شود.
+          </p> : null}
+          {canEdit && order.kind !== "digital" && order.status !== "delivered"
+            ? <form action={advanceFulfillment}
             className="space-y-3 rounded-lg border p-3">
             <input type="hidden" name="order_id" value={order.order_id} />
             <input type="hidden" name="expected_version" value={order.version} />
@@ -44,8 +49,8 @@ export default async function FulfillmentsPage({
                   order.status === "ready" ? "shipped" :
                   order.status === "shipped" ? "delivered" : "ready"}
                 className="block h-10 w-full rounded-md border bg-background px-3">
-                {order.kind !== "digital" && order.status === "processing" ||
-                 order.status === "not_started" ? <option value="ready">آماده‌شده</option> : null}
+                {(order.status === "processing" || order.status === "not_started")
+                  ? <option value="ready">آماده‌شده</option> : null}
                 {order.kind !== "digital" && order.status === "ready" ?
                   <option value="shipped">تحویل به حمل‌کننده</option> : null}
                 {order.status === "shipped" || order.kind === "digital" ?
