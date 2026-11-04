@@ -177,6 +177,64 @@ async def stage_digital_on_paid_receipt(
     return staged
 
 
+async def guard_unpaid_orders(
+    db: AsyncSession, *, store_id: str, product_id: int,
+) -> None:
+    """Protect already offered paid digital merchandise from mode swaps."""
+    pending = await db.scalar(select(ShopOrderLine.id).join(
+        ShopOrder, ShopOrder.id == ShopOrderLine.order_id,
+    ).where(
+        ShopOrderLine.product_id == product_id,
+        ShopOrder.store_id == store_id,
+        ShopOrder.status.in_((
+            "pending_review", "approved_unpaid", "pending_payment",
+        )),
+    ).limit(1))
+    if pending is not None:
+        raise DeliveryPolicyError(
+            "Resolve existing unpaid Orders before replacing this asset."
+        )
+
+
+async def activate_license_mode(
+    db: AsyncSession, *, product_id: int, store_id: str,
+) -> dict:
+    """Switch only after all offered Orders are resolved.
+
+    Existing paid file deliveries retain their earlier immutable Asset IDs.
+    A new license pool starts with zero available sellable units.
+    """
+    product = await db.scalar(select(Product).where(
+        Product.id == product_id,
+        Product.store_id == store_id,
+        Product.product_type == "digital",
+    ).with_for_update())
+    if product is None:
+        raise DeliveryPolicyError("Digital Product not found in current Store.")
+    await guard_unpaid_orders(db, store_id=store_id, product_id=product_id)
+    previous = await active_asset(
+        db, store_id=store_id, product_id=product_id, lock=True,
+    )
+    if previous is not None and previous.kind == "license":
+        return await asset_snapshot(
+            db, product_id=product_id, store_id=store_id,
+        )
+    version = previous.version + 1 if previous else 1
+    if previous is not None:
+        previous.is_active = False
+        await db.flush()
+    asset = ShopDigitalAsset(
+        store_id=store_id, product_id=product_id,
+        kind="license", is_active=True, version=version,
+    )
+    db.add(asset)
+    product.stock_quantity = 0
+    await db.commit()
+    return await asset_snapshot(
+        db, product_id=product_id, store_id=store_id,
+    )
+
+
 async def configure_file_asset(
     db: AsyncSession, *, product_id: int, store_id: str,
     source: PrivateDigitalFile,
@@ -189,11 +247,17 @@ async def configure_file_asset(
     ).with_for_update())
     if product is None:
         raise DeliveryPolicyError("Target must be a digital Product in this Store.")
+    await guard_unpaid_orders(
+        db, store_id=store_id, product_id=product_id,
+    )
     previous = await active_asset(
         db, store_id=store_id, product_id=product_id, lock=True,
     )
     if previous is not None:
         previous.is_active = False
+        if previous.kind == "license":
+            # License-backed stock cannot be inherited by a new file.
+            product.stock_quantity = 0
         await db.flush()
     asset = ShopDigitalAsset(
         store_id=store_id, product_id=product_id,
