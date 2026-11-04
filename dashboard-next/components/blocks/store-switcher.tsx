@@ -97,8 +97,9 @@ function StoreSwitcherForm({ context }: Props) {
         </span> : null}
       <ChevronsUpDown className="size-4 shrink-0 opacity-60" aria-hidden="true" />
     </button>
+    {/* A phone overlay spans the header; its trigger can sit near either edge. */}
     {open ? <div role="dialog" aria-label="Store Switcher"
-      className="absolute start-0 top-12 z-50 w-[min(350px,92vw)] space-y-4 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl">
+      className="fixed inset-x-4 top-16 z-50 max-h-[calc(100dvh-5rem)] space-y-4 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl sm:absolute sm:inset-x-auto sm:start-0 sm:top-12 sm:w-[350px]">
       <div>
         <p className="text-sm font-semibold">فروشگاه‌های مجاز من</p>
         <p className="mt-1 text-xs leading-6 text-muted-foreground">

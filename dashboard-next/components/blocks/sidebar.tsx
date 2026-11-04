@@ -37,7 +37,8 @@ export function Sidebar({ staff }: { staff: Staff }) {
         aria-label="ناوبری اصلی فروشگاه"
         className={cn(
           "fixed inset-y-0 start-0 z-50 flex w-[280px] flex-col border-e border-border bg-card transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
-          open ? "translate-x-0" : "translate-x-full lg:translate-x-0",
+          // A translated drawer remains focusable unless it is also hidden.
+          open ? "visible translate-x-0" : "invisible translate-x-full lg:visible lg:translate-x-0",
         )}
       >
         <div className="flex h-20 items-center justify-between border-b border-border px-5">

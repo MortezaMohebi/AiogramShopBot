@@ -54,8 +54,40 @@ async function mcp(name) {
     signal: AbortSignal.timeout(30000),
   });
   assert(response.ok, "Next MCP unavailable");
-  const raw = await response.text();
-  const payload = JSON.parse(raw.split("\n").find(line => line.startsWith("data: ")).slice(6));
+  let payload;
+  if (response.headers.get("content-type")?.includes("application/json")) {
+    payload = await response.json();
+  } else {
+    assert(response.body, "Next MCP returned no response body");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = "";
+    try {
+      // Streamable HTTP may keep SSE open after returning the RPC result.
+      // Consume complete events and stop at our response, without awaiting EOF.
+      while (!payload) {
+        const { value, done } = await reader.read();
+        assert(!done, `Next MCP ${name} ended before its response`);
+        buffered += decoder.decode(value, { stream: true });
+        buffered = buffered.replace(/\r\n/g, "\n");
+        assert(buffered.length <= 1024 * 1024, "Next MCP response exceeded the QA limit");
+        let boundary;
+        while ((boundary = buffered.indexOf("\n\n")) !== -1) {
+          const event = buffered.slice(0, boundary);
+          buffered = buffered.slice(boundary + 2);
+          const data = event.split("\n").filter(line => line.startsWith("data:"))
+            .map(line => line.slice(5).trimStart()).join("\n");
+          if (!data) continue;
+          const message = JSON.parse(data);
+          if (message.id === 1) { payload = message; break; }
+        }
+      }
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
+    }
+  }
+  assert(payload.id === 1 && payload.result, `Next MCP ${name} returned no result`);
   assert(!payload.error && !payload.result?.isError, `Next MCP ${name} failed`);
   return payload.result;
 }
@@ -107,12 +139,34 @@ try {
     const overflow = ab("eval", "document.documentElement.scrollWidth > innerWidth + 1");
     assert(overflow === "false", `Mobile viewport overflow at ${route}`);
   }
+  const openNavigation = reference(ab("snapshot", "-i"), 'button "بازکردن منوی مدیریت"');
+  ab("focus", openNavigation);
+  ab("press", "Enter");
+  const closeNavigation = reference(ab("snapshot", "-i", "-s", "aside"), 'button "بستن"');
+  ab("click", closeNavigation);
+  ab("wait", "--fn", `document.querySelector('button[aria-label="بازکردن منوی مدیریت"]').getAttribute('aria-expanded') === 'false'`);
+  ab("press", "Tab");
+  assert(ab("eval", "Boolean(document.activeElement?.closest('aside'))") === "false", "Closed mobile sidebar captured keyboard focus");
   ab("find", "role", "button", "click", "--name", "انتخاب یک یا چند فروشگاه فعال");
-  const dialog = JSON.parse(JSON.parse(ab("eval", "JSON.stringify(document.querySelector('[role=dialog]').getBoundingClientRect().toJSON())")));
-  assert(dialog.left >= 0 && dialog.right <= 390, "Store Switcher is clipped on mobile");
+  const overlayBounds = [];
+  for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1440, 1000]]) {
+    ab("set", "viewport", String(width), String(height));
+    const dialog = JSON.parse(JSON.parse(ab("eval", "JSON.stringify(document.querySelector('[role=dialog]').getBoundingClientRect().toJSON())")));
+    assert(dialog.left >= 0 && dialog.right <= width, `Store Switcher is clipped at ${width}px`);
+    assert(dialog.top >= 0 && dialog.bottom <= height, `Store Switcher actions exceed ${height}px height`);
+    overlayBounds.push({ viewportWidth: width, viewportHeight: height, ...dialog });
+  }
+  writeFileSync(`${output}/overlay-bounds.json`, JSON.stringify(overlayBounds, null, 2));
+  ab("set", "viewport", "390", "844");
   ab("snapshot", "-i");
   ab("screenshot", `${output}/mobile-dark.png`);
-  ab("click", '[role="dialog"] button:has-text("بستن")');
+  // Scope the accessible name to this overlay: the sidebar has the same
+  // close label, and native browser selectors do not implement :has-text.
+  const closeOverlay = reference(ab("snapshot", "-i", "-s", '[role="dialog"]'), 'button "بستن"');
+  ab("scrollintoview", closeOverlay);
+  ab("click", closeOverlay);
+  ab("wait", "--fn", "document.querySelector('[role=dialog]') === null");
+  assert(ab("eval", "document.querySelector('[role=dialog]') === null") === "true", "Store Switcher did not close");
   const errors = await mcp("get_errors");
   const compilation = await mcp("get_compilation_issues");
   const runtimeData = JSON.parse(errors.content.find(item => item.type === "text").text);
