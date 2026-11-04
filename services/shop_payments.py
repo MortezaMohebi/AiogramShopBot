@@ -482,5 +482,45 @@ class ShopPaymentService:
         order.paid_at = datetime.now(timezone.utc)
         intent.status = "paid"
         intent.completed_at = order.paid_at
+        # The payment ledger is authoritative. An operational notice is a
+        # best-effort Outbox append in a SAVEPOINT inside the same transaction;
+        # a notification failure must never undo a valid provider receipt.
+        try:
+            async with session.begin_nested():
+                from models.shop_multibot import ShopBot
+                from services.shop_bot_context import BotContext
+                from services.shop_customer_notifications import (
+                    enqueue_notification,
+                )
+
+                bot = await session.get(ShopBot, order.bot_id)
+                if bot is not None and bot.store_id == order.store_id:
+                    context = BotContext(
+                        bot_id=bot.id, store_id=bot.store_id,
+                        platform=platform, provider_bot_id=bot.provider_bot_id,
+                        status=bot.status, runtime_owner=bot.runtime_owner,
+                        credential_version=bot.credential_version,
+                        registry_version=bot.version,
+                    )
+                    notice = (
+                        f"✅ پرداخت سفارش #{order.id} تأیید شد."
+                        if order.status == "paid"
+                        else f"✅ پرداخت سفارش #{order.id} دریافت شد؛ "
+                             "برای تحویل نیازمند بررسی فروشنده است."
+                    )
+                    await enqueue_notification(
+                        session, context=context,
+                        user_id=payer_id, topic="order",
+                        event_key=f"order_paid:{order.id}:{intent.id}",
+                        body=notice,
+                    )
+        except Exception:
+            # Expose metadata only; no user message, Token or payment receipt.
+            import logging
+            logging.getLogger(__name__).exception(
+                "Order notice Outbox staging failed for order %s; "
+                "provider settlement is still authoritative.",
+                order.id,
+            )
         await session.commit()
         return order, True
