@@ -49,6 +49,21 @@ class CustomerExperienceFlow:
         action = event.callback_data or ""
         text = (event.text or "").strip()
         context = await self.context(db, event.platform)
+        if action in {"ux:terms"} or text == "/terms":
+            from services.shop_checkout_policy import checkout_rules
+
+            policy = await checkout_rules(db, bot_id=context.bot_id)
+            if len(policy.terms_text) < 12:
+                return BotReply(
+                    "شرایط فروش هنوز توسط مدیر ثبت نشده است. خرید جدید تا "
+                    "تعریف قوانین فروش غیرفعال می‌ماند.",
+                    ((InlineAction("🆘 پشتیبانی", "ux:support"),),),
+                )
+            return BotReply(
+                f"📜 شرایط خرید — نسخه {policy.terms_version}\n\n"
+                + policy.terms_text[:3900],
+                ((InlineAction("🏠 منوی اصلی", "shop:home"),),),
+            )
         if action in {"ux:home"} or text in {"/menu", "🏠 منوی اصلی"}:
             from services.shop_channel_catalog import CatalogFlow
 
