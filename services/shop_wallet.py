@@ -26,6 +26,7 @@ from services.shop_bot_catalog_acl import (
 )
 from models.shop_scope import legacy_id
 from services.shop_money import MAX_RIALS, to_rials
+from services.shop_checkout_policy import legal_credit_for_items
 from services.shop_store_commerce import policy_for
 
 
@@ -316,6 +317,16 @@ class ShopWalletService:
         ):
             raise StoreCreditRejected(
                 "یک یا چند کالای سفارش در این بات دیگر قابل خرید نیستند."
+            )
+        if not legal_credit_for_items(
+            platform, {product.product_type for _, product in pairs},
+        ):
+            raise StoreCreditRejected(
+                "پرداخت کالای دیجیتال تلگرام فقط با Telegram Stars مجاز است."
+            )
+        if order.terms_accepted_at is None:
+            raise StoreCreditRejected(
+                "شرایط فروش این سفارش تأیید نشده است."
             )
         if any(
             not product.is_published

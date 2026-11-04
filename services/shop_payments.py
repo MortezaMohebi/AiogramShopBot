@@ -88,6 +88,8 @@ class ShopPaymentService:
         bot = await session.get(ShopBot, owner)
         if bot is None or bot.platform != platform.value or bot.store_id != order.store_id:
             raise PaymentRejected("مالکیت فروشگاه سفارش معتبر نیست.")
+        if order.terms_accepted_at is None:
+            raise PaymentRejected("شرایط فروش این سفارش تأیید نشده است.")
         if order.provider != "manual_review" or order.status != "approved_unpaid":
             raise PaymentRejected(
                 "این سفارش آماده صدور فاکتور جدید نیست؛ "

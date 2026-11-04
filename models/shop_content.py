@@ -314,6 +314,11 @@ class ShopOrder(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Proof of the exact Store sales terms accepted at order creation.
+    terms_version_snapshot: Mapped[str | None] = mapped_column(String(32))
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
     checkout_key: Mapped[str | None] = mapped_column(String(80), unique=True)
     subtotal_irr: Mapped[int | None] = mapped_column(BigInteger)
     discount_irr: Mapped[int | None] = mapped_column(BigInteger)

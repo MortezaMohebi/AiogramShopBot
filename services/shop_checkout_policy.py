@@ -7,6 +7,7 @@ internal merchant credit wallet cannot bypass the platform payment rule.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,7 @@ class CheckoutRules:
     mode: str
     terms_version: str
     terms_text: str
+    policy_token: str
 
 
 def decide_checkout_mode(
@@ -81,11 +83,20 @@ async def checkout_rules(
     override = await db.get(ShopBotCheckoutPolicy, bot.id)
     if override is not None and override.store_id != store.id:
         raise security.SecurityRejected("checkout_store_mismatch", 409)
+    mode = decide_checkout_mode(default, override)
+    terms_version = default.terms_version if default else ""
+    terms_text = default.terms_text.strip() if default else ""
+    # Short fingerprint prevents stale Callback buttons from accepting a
+    # later edition of sales terms or a changed Store/Bot checkout policy.
+    digest = hashlib.sha256((
+        f"{store.id}:{bot.id}:{default.version if default else 0}:"
+        f"{override.version if override else 0}:{mode}:"
+        f"{terms_version}:{terms_text}"
+    ).encode("utf-8")).hexdigest()[:12]
     return CheckoutRules(
         store_id=store.id, bot_id=bot.id,
-        mode=decide_checkout_mode(default, override),
-        terms_version=default.terms_version if default else "",
-        terms_text=default.terms_text.strip() if default else "",
+        mode=mode, terms_version=terms_version,
+        terms_text=terms_text, policy_token=digest,
     )
 
 
