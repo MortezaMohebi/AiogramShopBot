@@ -7,9 +7,13 @@ import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { StoreRecord } from "@/lib/bot-registry";
 import type { StoreCommercePolicy } from "@/lib/store-commerce";
+import type { CustomerMenuPolicy, CheckoutPolicy } from "@/lib/customer-experience";
+import { CustomerExperiencePolicyPanel } from "@/components/blocks/customer-experience-policy-panel";
 import { saveStoreCommercePolicy } from "./commerce-actions";
 
-type Query = Promise<{ saved?: string; error?: string }>;
+type Query = Promise<{
+  saved?: string; error?: string; ux_saved?: string; ux_error?: string;
+}>;
 type StoreList = { items: StoreRecord[]; default_store_id: string };
 
 /** Configured Store boundaries, with explicit and conservative sharing. */
@@ -22,6 +26,12 @@ export default async function StoresPage({
   const stores = await adminFetch<StoreList>("/stores");
   const policies = await Promise.all(stores.items.map(item =>
     adminFetch<StoreCommercePolicy>(`/stores/${item.id}/commerce`),
+  ));
+  const menuPolicies = await Promise.all(stores.items.map(item =>
+    adminFetch<CustomerMenuPolicy>(`/stores/${item.id}/customer-menu`),
+  ));
+  const checkoutPolicies = await Promise.all(stores.items.map(item =>
+    adminFetch<CheckoutPolicy>(`/stores/${item.id}/checkout-policy`),
   ));
   const note = query.error === "legacy_credit_requires_reconciliation"
     ? "برای فعال‌سازی اعتبار مشترک، ابتدا ماندهٔ تمام حساب‌های قبلی باید با اسناد مالی و رضایت مشتری تطبیق داده شود."
@@ -42,6 +52,12 @@ export default async function StoresPage({
     </p> : null}
     {note ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
       {note}
+    </p> : null}
+    {query.ux_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
+      تنظیمات منوی مشترک یا سیاست Checkout فروشگاه ذخیره شد.
+    </p> : null}
+    {query.ux_error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
+      سیاست مشتری ثبت نشد؛ Store جاری، مجوزها، شرایط فروش و MFA را بررسی کنید.
     </p> : null}
     <p className="text-sm leading-7 text-muted-foreground">
       اشتراک Cart تنها برای هویت‌های متصل و تأییدشده عمل می‌کند. در حالت اشتراک،
@@ -90,5 +106,16 @@ export default async function StoresPage({
         </Card>;
       })}
     </div>
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold">منو و سیاست خرید هر Store</h2>
+      {stores.items.map((store, index) =>
+        <div key={store.id} className="space-y-3 rounded-xl border p-4">
+          <h3 className="font-semibold">{store.name}</h3>
+          <CustomerExperiencePolicyPanel
+            scope="store" id={store.id}
+            menu={menuPolicies[index]} checkout={checkoutPolicies[index]}
+          />
+        </div>)}
+    </section>
   </div>;
 }

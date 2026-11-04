@@ -5,6 +5,8 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
 import { BotReceiverPanel } from "@/components/blocks/bot-receiver-panel";
 import { BotCommercePanel } from "@/components/blocks/bot-commerce-panel";
+import { CustomerExperiencePolicyPanel } from "@/components/blocks/customer-experience-policy-panel";
+import type { CustomerMenuPolicy, CheckoutPolicy } from "@/lib/customer-experience";
 import { BotRelayRoutesPanel } from "@/components/blocks/bot-relay-routes-panel";
 import type { BotCatalogRuleList } from "@/lib/bot-catalog-acl";
 import type { BotRelaySnapshot, RelayWorkersSnapshot } from "@/lib/relay-pool";
@@ -37,6 +39,7 @@ type Query = Promise<{
   saved?: string; error?: string; acl_saved?: string;
   relay_saved?: string; relay_error?: string;
   commerce_saved?: string; commerce_error?: string;
+  ux_saved?: string; ux_error?: string;
   acl_error?: string; acl_q?: string;
   acl_kind?: string; acl_page?: string;
 }>;
@@ -96,7 +99,7 @@ export default async function BotDetailPage({
   });
   const [
     detail, members, acl, aclAudit, receiver, workers, routes,
-    commercePolicy, paymentAccounts,
+    commercePolicy, paymentAccounts, customerMenu, checkoutPolicy,
   ] = await Promise.all([
     adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
@@ -109,6 +112,8 @@ export default async function BotDetailPage({
     adminFetch<BotRelaySnapshot>(`/bot-registry/${id}/relay-routes`),
     adminFetch<BotCommercePolicy>(`/bot-registry/${id}/commerce`),
     adminFetch<BotPaymentList>(`/bot-registry/${id}/payment-accounts`),
+    adminFetch<CustomerMenuPolicy>(`/bot-registry/${id}/customer-menu`),
+    adminFetch<CheckoutPolicy>(`/bot-registry/${id}/checkout-policy`),
   ]);
   const { bot, health, events, state_events } = detail;
   const legacy = bot.runtime_owner === "legacy";
@@ -298,6 +303,15 @@ export default async function BotDetailPage({
     </p> : null}
     <BotCommercePanel bot={bot} policy={commercePolicy}
       paymentAccounts={paymentAccounts} />
+    {query.ux_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
+      تنظیمات منوی مشتری یا Checkout این بات ذخیره شد.
+    </p> : null}
+    {query.ux_error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
+      ذخیره تنظیمات تجربهٔ مشتری انجام نشد؛ مجوز Store، نسخه و MFA را بررسی کنید.
+    </p> : null}
+    <CustomerExperiencePolicyPanel
+      scope="bot" id={bot.id} menu={customerMenu} checkout={checkoutPolicy}
+    />
     {query.relay_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
       تغییر مسیر Relay ثبت شد؛ هیچ پیام یا پرداختی از این عملیات صادر نمی‌شود.
     </p> : null}
