@@ -360,6 +360,13 @@ class CatalogFlow:
                     (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),)
                 )
             rows.append((_button("🛒 مشاهده سبد", "shop:cart"),))
+        rows.append(
+            (_button("♡ علاقه‌مندی‌ها", f"ux:wish:toggle:{product.id}"),)
+        )
+        if product.stock_quantity <= 0:
+            rows.append(
+                (_button("🔔 اطلاع از موجودشدن", f"ux:stock:toggle:{product.id}"),)
+            )
         rows.append((_button("📦 سفارش‌های من", "shop:orders"),))
         # Hide the navigation controls as well as the underlying data.
         if show_media:

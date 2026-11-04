@@ -21,6 +21,7 @@ from services.shop_bale_payments import (
 from services.shop_bot_context import BotContext
 from services.shop_cart import ShopCartFlow
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_customer_experience import CustomerExperienceFlow
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_identity import is_blocked, register_customer
 from services.shop_orders import ShopOrdersFlow
@@ -232,6 +233,7 @@ async def dispatch(
             ShopEngagementFlow(bot_context=context),
             ShopOrdersFlow(bot_context=context),
             ShopCartFlow(bot_context=context),
+            CustomerExperienceFlow(bot_context=context),
             CatalogFlow(bot_context=context),
         )
         reply = None

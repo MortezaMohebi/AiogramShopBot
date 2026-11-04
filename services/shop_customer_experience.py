@@ -12,7 +12,7 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
-from models.shop_multibot import LEGACY_BOT_IDS
+from models.shop_customer_navigation import ShopCustomerChatState
 from services.shop_bot_context import BotContext, resolve_legacy_bot_context
 from services import shop_customer_search as search
 
@@ -69,7 +69,23 @@ class CustomerExperienceFlow:
                 db, context, event, page=int(match.group(1)),
             )
         if action == "ux:search:stop" or text == "/cancel":
-            return await search.stop(db, context, event)
+            # A single cancel command stops the currently active bot-owned
+            # form, regardless of whether it is address, ticket or search.
+            state = await db.get(
+                ShopCustomerChatState,
+                (context.bot_id, event.user_id),
+            )
+            if state is not None:
+                if state.store_id != context.store_id:
+                    raise ValueError("Customer chat state Store mismatch.")
+                state.action = "idle"
+                state.context_ref = None
+                state.query_text = None
+                await db.commit()
+            return BotReply(
+                "عملیات متوقف شد.",
+                ((InlineAction("🏠 منوی اصلی", "shop:home"),),),
+            )
 
         # Customer, support and notifications are separate domain modules.
         # Late imports avoid circular business dependencies and keep the

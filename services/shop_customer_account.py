@@ -140,7 +140,8 @@ class CustomerAccountFlow:
                                "ux:addresses", "ux:wish", "ux:links",
                                "ux:notifications", "ux:notify",
                                "ux:language", "ux:privacy"))
-            or action in {"ux:wallet", "ux:referral", "ux:phone"}
+            or action in {"ux:wallet", "ux:referral", "ux:phone", "ux:stock:list"}
+            or action.startswith("ux:stock:toggle:")
             or text in {"/account", "👤 حساب من", "/address", "/wishlist", "/profile"}
             or event.contact_phone is not None
         )
@@ -239,6 +240,7 @@ class CustomerAccountFlow:
                     ("🔗 حساب‌های متصل", "ux:links"),
                     ("🎁 معرفی دوستان", "ux:referral"),
                     ("🔔 اطلاعیه‌ها", "ux:notifications"),
+                    ("📦 اعلان موجودی", "ux:stock:list"),
                     ("🌐 زبان", "ux:language"),
                     ("🔒 حریم خصوصی", "ux:privacy"),
                     ("🏠 منوی اصلی", "shop:home"),
@@ -480,6 +482,26 @@ class CustomerAccountFlow:
                 platform=event.platform, chat_id=event.chat_id,
                 user_id=event.user_id, text="/linkstart",
             ), db)
+
+        if action == "ux:stock:list":
+            from services.shop_customer_notifications import list_stock_alerts
+
+            return await list_stock_alerts(
+                db, context=self.context, user_id=event.user_id,
+            )
+        if action.startswith("ux:stock:toggle:"):
+            from services.shop_customer_notifications import toggle_stock_alert
+
+            try:
+                product_id = int(action.removeprefix("ux:stock:toggle:"))
+            except ValueError:
+                return BotReply("شناسه کالا معتبر نیست.")
+            if product_id <= 0:
+                return BotReply("شناسه کالا معتبر نیست.")
+            return await toggle_stock_alert(
+                db, context=self.context, user_id=event.user_id,
+                product_id=product_id,
+            )
 
         if action in {"ux:wallet", "ux:referral"}:
             from services.shop_engagement_flow import ShopEngagementFlow
