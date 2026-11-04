@@ -426,6 +426,16 @@ async def seed() -> dict:
 
         await db.run_sync(enroll)
         await db.commit()
+        from models.shop_staff_store import ShopStaffStorePreference
+        from services.shop_store_context import save_default
+
+        preference = await db.get(ShopStaffStorePreference, admin.id)
+        await save_default(
+            db,
+            staff_id=admin.id,
+            store_id=fixture["stores"][0],
+            expected_version=preference.version if preference else 0,
+        )
     MANIFEST.write_text(json.dumps(fixture), encoding="utf-8")
     print(
         "PASS  Seed: two PostgreSQL Stores, four Bots, private assets, explicit payment grants"
