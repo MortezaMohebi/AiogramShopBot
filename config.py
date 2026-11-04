@@ -91,6 +91,12 @@ BALE_WALLET_CHECKOUT_ENABLED = (
     os.environ.get("BALE_WALLET_CHECKOUT_ENABLED", "false").lower() == "true"
 )
 SHOP_MEDIA_ROOT = os.environ.get("SHOP_MEDIA_ROOT", "./media_data")
+# Paid digital content must use a separate, absolute directory not served
+# by Product Media/CDN routes. Unconfigured deployments fail closed.
+SHOP_DIGITAL_ROOT = os.environ.get("SHOP_DIGITAL_ROOT", "")
+SHOP_DIGITAL_DELIVERY_ENABLED = (
+    os.environ.get("SHOP_DIGITAL_DELIVERY_ENABLED", "false").lower() == "true"
+)
 # Legacy screens require a Telegram image ID; never fetch stock photos.
 DEFAULT_MEDIA_FILE_ID = os.environ.get("DEFAULT_MEDIA_FILE_ID", "").strip()
 # Bale official multipart limits: photos <=10,000,000 bytes; all other

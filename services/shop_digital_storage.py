@@ -84,7 +84,7 @@ def _mime_for_content(ext: str, header: bytes) -> str:
     if ext not in _MIMES:
         raise DeliveryPolicyError("Unsupported digital asset extension.")
     supported = (
-        ext in _ZIPPED and header.startswith(b"PK\\x03\\x04".replace(b"\\x03", b"\x03").replace(b"\\x04", b"\x04"))
+        ext in _ZIPPED and header.startswith(bytes((0x50, 0x4B, 0x03, 0x04)))
         or ext == ".pdf" and header.startswith(b"%PDF-")
         or ext == ".png" and header.startswith(b"\x89PNG\r\n\x1a\n")
         or ext == ".jpg" and header.startswith(b"\xff\xd8\xff")

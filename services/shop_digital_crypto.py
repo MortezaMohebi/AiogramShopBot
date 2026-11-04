@@ -8,6 +8,7 @@ identity is checked separately at payment/delivery.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -25,7 +26,7 @@ def _license_key(store_id: str, product_id: int) -> bytes:
     raw = os.environ.get("SHOP_SECURITY_ENCRYPTION_KEY", "")
     try:
         secret = base64.urlsafe_b64decode(raw.encode("ascii"))
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, binascii.Error):
         raise DeliveryPolicyError("Digital license encryption key unavailable.") from None
     if len(secret) != 32 or not store_id or type(product_id) is not int:
         raise DeliveryPolicyError("Invalid digital-license encryption context.")
