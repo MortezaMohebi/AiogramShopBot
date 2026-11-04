@@ -486,3 +486,68 @@ async def test_read_only_membership_can_validate_without_appending_a_revision(
     assert (await studio.request("GET", "/workflows/" + first["id"])).json()[
         "revision"
     ] == 1
+
+
+@pytest.mark.asyncio
+async def test_simulation_is_pinned_scoped_and_does_not_mutate_saved_definitions(
+    studio,
+):
+    """Both platforms preview stored evidence without commerce or revision mutations."""
+    from models.shop_workflow import ShopWorkflowRevision
+
+    first = await create(studio, template="return_request")
+    bale_id = str(uuid4())
+    studio.db.add(
+        ShopBot(
+            id=bale_id,
+            store_id=STORE_A,
+            name="Bale preview",
+            slug="bale-preview",
+            platform="bale",
+            status="draft",
+            runtime_owner="registry",
+        )
+    )
+    studio.db.commit()
+    for platform, bot_id in (("telegram", BOT_A), ("bale", bale_id)):
+        response = await studio.request(
+            "POST",
+            f'/workflows/{first["id"]}/simulate',
+            payload={
+                "revision": 1,
+                "bot_id": bot_id,
+                "platform": platform,
+                "events": [],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert (
+            response.json()["status"] == "waiting"
+            and response.json()["active_node_id"] == "order"
+        )
+        assert (
+            response.json()["simulation_only"]
+            and response.json()["revision"] == 1
+        )
+    denied = await studio.request(
+        "POST",
+        f'/workflows/{first["id"]}/simulate',
+        payload={
+            "revision": 1,
+            "bot_id": BOT_B,
+            "platform": "telegram",
+            "events": [],
+        },
+    )
+    assert (
+        denied.status_code == 422
+        and denied.json()["detail"] == "workflow_bot_not_available"
+    )
+    assert (
+        studio.db.scalar(
+            select(func.count()).select_from(ShopWorkflowRevision)
+        )
+        == 1
+    )
+    loaded = (await studio.request("GET", "/workflows/" + first["id"])).json()
+    assert loaded["definition"] == first["definition"]

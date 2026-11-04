@@ -577,3 +577,49 @@ async def validate_workflow(db, *, scope, actor, workflow_id, definition=None):
         )
     await validate_bindings(db, store_id=row.store_id, definition=definition)
     return validate_definition(definition).model_dump(mode="json")
+
+
+async def simulate_workflow(db, *, scope, actor, workflow_id, payload):
+    """Read an owned revision and replay synthetic inputs without business effects."""
+    from models.shop_multibot import ShopBot
+    from services.shop_workflow_simulator import SimulationRequest, simulate
+
+    row = await _head(db, scope, actor, workflow_id)
+    data = checked_payload(SimulationRequest, payload)
+    snapshot = _snapshot(await _revision(db, row, data["revision"]))
+    definition = Definition.model_validate(snapshot["definition"])
+    await validate_bindings(db, store_id=row.store_id, definition=definition)
+    bot = await db.scalar(
+        select(ShopBot).where(
+            ShopBot.id == data["bot_id"],
+            ShopBot.store_id == row.store_id,
+            ShopBot.platform == data["platform"],
+            ShopBot.status != "disabled",
+        )
+    )
+    if (
+        bot is None
+        or data["platform"] not in definition.target_platforms
+        or definition.assignment.mode == "selected"
+        and bot.id not in definition.assignment.bot_ids
+    ):
+        raise security.SecurityRejected("workflow_bot_not_available", 422)
+    owner = next(
+        item for item in scope.allowed_stores if item.id == row.store_id
+    )
+    context = data["context"] | {
+        "store_name": owner.name,
+        "bot_name": bot.name,
+    }
+    return simulate(
+        definition,
+        platform=data["platform"],
+        context=context,
+        events=data["events"],
+    ) | {
+        "workflow_id": row.id,
+        "revision": data["revision"],
+        "head_revision": row.revision,
+        "bot_id": bot.id,
+        "platform": bot.platform,
+    }

@@ -14,6 +14,7 @@ from services import shop_admin_security as security
 from services import shop_workflows as workflows
 from services.shop_workflow_bindings import bot_choices, media_choices
 from services.shop_workflow_catalog import node_catalog
+from services.shop_workflow_simulator import SimulationRequest
 from services.shop_workflow_requests import (
     CreateDraft,
     DuplicateDraft,
@@ -355,3 +356,19 @@ async def publish(workflow_id: UUID, request: Request, actor: Actor, db: Db):
         db, scope=scope, actor=staff, workflow_id=str(workflow_id)
     )
     raise security.SecurityRejected("workflow_runtime_unavailable", 409)
+
+
+@router.post("/{workflow_id}/simulate")
+async def simulate(workflow_id: UUID, request: Request, actor: Actor, db: Db):
+    """Preview an owned revision without provider or customer-affecting operations."""
+    staff, scope = require(actor, request, "workflows.read")
+    data = await payload(request, SimulationRequest)
+    return respond(
+        await workflows.simulate_workflow(
+            db,
+            scope=scope,
+            actor=staff,
+            workflow_id=str(workflow_id),
+            payload=data.model_dump(mode="json"),
+        )
+    )
