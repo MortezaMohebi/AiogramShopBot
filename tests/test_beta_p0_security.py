@@ -57,7 +57,7 @@ def test_registered_bot_in_nondefault_store_can_resolve_scope() -> None:
         status="active", runtime_owner="registry",
         credential_version=1,
     )
-    store = ShopStore(id=store_id, slug="another", name="Another")
+    store = ShopStore(id=store_id, slug="another", name="Another", state="active")
     scope = asyncio.run(resolve_scope(CatalogDb(bot, store), bot_id=bot.id))
     assert scope.available
     assert scope.store_id == store_id

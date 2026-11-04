@@ -1,4 +1,6 @@
 """Behavioral security tests: real SQLAlchemy rows, no provider requests."""
+
+from tests.schema_support import create_shop_schema
 from datetime import datetime, timedelta, timezone
 from importlib.util import find_spec
 from types import SimpleNamespace
@@ -31,7 +33,7 @@ def test_session_lifecycle_and_isolation():
     sec = security()
     from models.shop_admin_control import AdminSession
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     user = SimpleNamespace(id=1, session_version=1, is_active=True, role='viewer')
     with Session(engine) as db:
@@ -55,7 +57,7 @@ def test_session_lifecycle_and_isolation():
 def test_idle_absolute_and_version_expiry():
     sec = security()
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     user = SimpleNamespace(id=1, session_version=2, is_active=True, role='sales')
     now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     with Session(engine) as db:
@@ -85,7 +87,7 @@ def test_totp_rfc_vector_and_recovery_are_single_use(monkeypatch):
     # RFC 6238 SHA-1 T=59, 8-digit code 94287082 -> six digits 287082.
     assert sec.totp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 59) == '287082'
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     with Session(engine) as db:
         profile = sec.profile_for(db, 1)
@@ -108,7 +110,7 @@ def test_connection_changes_are_idempotent_and_state_guarded():
     from models.shop_admin_control import ConnectionChange
     from services.shop_connection_control import stage_change, transition
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     with Session(engine) as db:
         first = stage_change(db, actor_id=1, platform='telegram', current_mode='webhook', requested_mode='polling', key='00000000-0000-4000-8000-000000000001')
         same = stage_change(db, actor_id=1, platform='telegram', current_mode='webhook', requested_mode='polling', key='00000000-0000-4000-8000-000000000001')
@@ -127,7 +129,7 @@ def test_revoke_others_preserves_current_session_and_records_event():
     sec = security()
     from models.shop_admin_control import AdminEvent
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     user = SimpleNamespace(id=1, session_version=1, is_active=True, role='content')
     with Session(engine) as db:
         first = sec.issue_session(db, user, 'A')
@@ -144,7 +146,7 @@ def test_expiry_is_absolute_even_when_session_has_recent_activity():
     sec = security()
     from models.shop_admin_control import AdminSession
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     user = SimpleNamespace(id=1, session_version=1, is_active=True, role='viewer')
     with Session(engine) as db:
@@ -158,7 +160,7 @@ def test_expiry_is_absolute_even_when_session_has_recent_activity():
 def test_disabled_account_and_foreign_revocation_fail_closed():
     sec = security()
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     user = SimpleNamespace(id=1, session_version=1, is_active=True, role='viewer')
     with Session(engine) as db:
         token = sec.issue_session(db, user, 'A')
@@ -174,7 +176,7 @@ def test_recent_authentication_and_device_cap():
     sec = security()
     from models.shop_admin_control import AdminSession
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     user = SimpleNamespace(id=1, session_version=1, is_active=True, role='superadmin')
     now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     with Session(engine) as db:
@@ -191,7 +193,7 @@ def test_recent_authentication_and_device_cap():
 def test_profile_validates_timezone_and_preserves_identity():
     sec = security()
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     with Session(engine) as db:
         profile = sec.update_profile(db, 1, '  Operator  ', 'Asia/Tehran')
         assert profile.display_name == 'Operator'
@@ -205,7 +207,7 @@ def test_mfa_expiry_and_recovery_secrets_are_not_stored(monkeypatch):
     import base64
     monkeypatch.setenv('SHOP_SECURITY_ENCRYPTION_KEY', base64.urlsafe_b64encode(b'x'*32).decode())
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     with Session(engine) as db:
         profile = sec.profile_for(db, 1)
@@ -226,7 +228,7 @@ def test_connection_conflicts_cancellation_and_unknown_reconciliation():
     from services.shop_connection_control import stage_change, transition
     from models.shop_admin_control import ConnectionConfig
     engine = create_engine('sqlite:///:memory:')
-    Base.metadata.create_all(engine)
+    create_shop_schema(engine)
     with Session(engine) as db:
         first = stage_change(db, actor_id=1, platform='bale', current_mode='webhook', requested_mode='polling', key='00000000-0000-4000-8000-000000000002')
         with pytest.raises(sec.SecurityRejected):

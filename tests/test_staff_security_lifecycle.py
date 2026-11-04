@@ -6,6 +6,8 @@ not browser mocks or provider API integrations.
 
 from __future__ import annotations
 
+from tests.schema_support import create_shop_schema, seed_legacy_registry
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -38,20 +40,7 @@ NOW = datetime(2026, 11, 3, tzinfo=timezone.utc)
 def db():
     """Create an isolated relational schema for capability lifecycle tests."""
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ShopStaff.__table__,
-            ShopSettings.__table__,
-            AdminProfile.__table__,
-            AdminSession.__table__,
-            AdminEvent.__table__,
-            ShopPasswordPolicy.__table__,
-            ShopStaffInvitation.__table__,
-            ShopStaffPasswordReset.__table__,
-            ShopChannelFeature.__table__,
-        ],
-    )
+    create_shop_schema(engine)
     with Session(engine) as session:
         session.add_all([
             ShopStaff(
@@ -63,6 +52,7 @@ def db():
                 role="viewer", is_active=True, session_version=1,
             ),
         ])
+        seed_legacy_registry(session)
         session.commit()
         yield session
     engine.dispose()

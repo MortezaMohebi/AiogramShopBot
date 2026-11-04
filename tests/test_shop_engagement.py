@@ -5,6 +5,10 @@ No live Bot API, PostgreSQL, merchant charge or background job is executed.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from tests.schema_support import create_shop_schema, seed_legacy_registry
+
 from contextlib import asynccontextmanager
 from uuid import uuid4
 from types import SimpleNamespace
@@ -92,21 +96,7 @@ class OfflineDB:
 def db():
     """Create only the related shop tables in isolated SQLite memory."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    tables = [
-        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
-        ShopBotOperations.__table__, ShopChannelFeature.__table__,
-        ShopPaymentRail.__table__, ShopBotProductRule.__table__,
-        ShopBotCategoryRule.__table__,
-        ShopCategory.__table__, Product.__table__,
-        ShopIdentity.__table__, ShopCoupon.__table__,
-        ShopOrder.__table__, ShopOrderLine.__table__,
-        ShopPaymentAttempt.__table__, ShopRefundCase.__table__,
-        ShopWalletAccount.__table__, ShopWalletEntry.__table__,
-        ShopReferralProfile.__table__, ShopReferralAttribution.__table__,
-        ShopReferralPolicy.__table__, ShopReferralReward.__table__,
-        ShopCampaign.__table__, ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
-    ]
-    Base.metadata.create_all(engine, tables=tables)
+    create_shop_schema(engine)
     with Session(engine, expire_on_commit=False) as session:
         session.add(ShopStore(
             id=DEFAULT_STORE_ID, slug="default",
@@ -154,6 +144,8 @@ def product_and_order(db, platform, user_id, *, status="approved_unpaid"):
         product_name_snapshot=product.name,
         quantity=1, unit_price_irr=1000, total_irr=1000,
         subtotal_irr=1000, discount_irr=0, shipping_irr=0,
+        terms_version_snapshot="fixture-v1",
+        terms_accepted_at=datetime.now(timezone.utc),
         status=status,
         provider="manual_review",
         invoice_payload=uuid4().hex,

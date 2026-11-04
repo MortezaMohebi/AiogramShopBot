@@ -174,12 +174,13 @@ def test_proxy_safe_login_requires_host_bound_csrf_and_structured_errors() -> No
     assert "__Host-shop_login_challenge" in security
     assert "timingSafeEqual" in security
 
-    assert "onSubmit={handleSubmit}" in client
+    assert "onSubmit={submit}" in client
     assert 'role="alert"' in client
     assert "aria-busy={working}" in client
     assert "requestBrowserChallenge()" in client
     assert 'redirect: "error"' in client
-    assert "setIssue(loginIssue(result, response.status))" in client
+    assert "normalizeLoginError(reply.code)" in client
+    assert "!response.ok || reply.ok !== true" in client
 
     assert (root / "app/error.tsx").is_file()
     assert (root / "app/global-error.tsx").is_file()

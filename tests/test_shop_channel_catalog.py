@@ -1,5 +1,7 @@
 """Contract and catalog tests without a real Telegram or Bale token."""
 
+from tests.schema_support import create_shop_schema, seed_test_units
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -48,16 +50,7 @@ class AsyncSessionProxy:
 def session():
     """Provide isolated catalog rows and clean up after every test."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine, tables=[
-            ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
-            ShopCategory.__table__, Product.__table__,
-            ProductMedia.__table__, Testimonial.__table__,
-            ShopSettings.__table__, ShopProductVisibility.__table__,
-            ShopChannelFeature.__table__, ShopBotOperations.__table__,
-            ShopBotProductRule.__table__, ShopBotCategoryRule.__table__,
-        ]
-    )
+    create_shop_schema(engine)
     with Session(engine) as db:
         db.add(ShopStore(
             id=DEFAULT_STORE_ID, slug="default",
@@ -72,6 +65,7 @@ def session():
             ) for platform, bot_id in LEGACY_BOT_IDS.items()
         ])
         db.commit()
+        seed_test_units(db)
         yield db
     engine.dispose()
 
