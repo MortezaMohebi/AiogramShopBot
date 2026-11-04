@@ -551,7 +551,11 @@ class ShopCartFlow:
                 tuple(rows),
             )
         try:
-            stars_total = telegram_stars_total(event.platform, quote)
+            split = await self._telegram_split(event, session, cart, quote)
+            stars_total = (
+                None if split is not None
+                else telegram_stars_total(event.platform, quote)
+            )
         except CartRejected as error:
             # Preserve deletion/edit actions rather than trapping a customer
             # whose Star price or item mix is not yet legal to checkout.
@@ -571,7 +575,11 @@ class ShopCartFlow:
             name = line.product.name[:70]
             line_price = (
                 f"{line.product.price_stars * line.quantity} Stars (XTR)"
-                if stars_total is not None
+                if (
+                    stars_total is not None
+                    or split is not None
+                    and line.product.product_type == "digital"
+                )
                 else format_rials(line.line_total, self.display_unit)
             )
             details.append(
@@ -583,23 +591,43 @@ class ShopCartFlow:
                 button("➕", f"shop:inc:{product_id}"),
                 button("🗑", f"shop:remove:{product_id}"),
             ))
-        if stars_total is None:
+        if split is not None:
             details.append(
-                f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
+                "این سبد به دو سفارش مستقل تقسیم خواهد شد:"
             )
-        if quote.discount:
             details.append(
-                f"تخفیف: {format_rials(quote.discount, self.display_unit)}"
+                "فیزیکی: "
+                + format_rials(split.physical.total_irr, self.display_unit)
             )
+            details.append(
+                f"دیجیتال: {split.digital.total_stars} Stars (XTR)"
+            )
+            if split.physical.discount_irr:
+                details.append(
+                    "تخفیف فقط روی کالای فیزیکی: "
+                    + format_rials(
+                        split.physical.discount_irr, self.display_unit,
+                    )
+                )
+        else:
+            if stars_total is None:
+                details.append(
+                    f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
+                )
+            if quote.discount:
+                details.append(
+                    f"تخفیف: {format_rials(quote.discount, self.display_unit)}"
+                )
         if quote.shipping:
             details.append(
                 f"ارسال: {format_rials(quote.shipping, self.display_unit)}"
             )
-        details.append(
-            f"مبلغ نهایی: {stars_total} Stars (XTR)"
-            if stars_total is not None
-            else f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
-        )
+        if split is None:
+            details.append(
+                f"مبلغ نهایی: {stars_total} Stars (XTR)"
+                if stars_total is not None
+                else f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
+            )
         if quote.shipping_required:
             details.append(
                 "نشانی ارسال: " +
@@ -784,7 +812,11 @@ class ShopCartFlow:
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
-        stars_total = telegram_stars_total(event.platform, quote)
+        split = await self._telegram_split(event, session, cart, quote)
+        stars_total = (
+            None if split is not None
+            else telegram_stars_total(event.platform, quote)
+        )
         if len(policy.terms_text) < 12:
             return BotReply(
                 "شرایط فروش این Store هنوز توسط مدیر ثبت نشده؛ سفارش‌گیری "
@@ -795,15 +827,27 @@ class ShopCartFlow:
             "ثبت و آماده‌سازی پرداخت" if policy.mode == "instant"
             else "ثبت درخواست بررسی فروشنده"
         )
-        price_line = (
-            f"{stars_total} Stars (XTR)"
-            if stars_total is not None
-            else format_rials(quote.total, self.display_unit)
+        if split is not None:
+            price_line = (
+                "دو سفارش با پرداخت مستقل:\n"
+                "فیزیکی: "
+                + format_rials(split.physical.total_irr, self.display_unit)
+                + f"\nدیجیتال: {split.digital.total_stars} Stars (XTR)\n"
+                "تخفیف ریالی فقط روی بخش فیزیکی اعمال می‌شود."
+            )
+        else:
+            price_line = (
+                f"{stars_total} Stars (XTR)"
+                if stars_total is not None
+                else format_rials(quote.total, self.display_unit)
+            )
+        quote_token = self._quote_token(
+            quote, policy.policy_token, cart, split=split,
         )
         return BotReply(
             "🧾 بررسی نهایی سفارش\n"
             f"تعداد اقلام: {sum(line.quantity for line in quote.lines)}\n"
-            f"مبلغ نهایی: {price_line}\n"
+            f"مبلغ‌ها: {price_line}\n"
             f"مسیر: {intent}\n"
             f"شرایط خرید: نسخهٔ {policy.terms_version}\n"
             "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
@@ -811,7 +855,7 @@ class ShopCartFlow:
             ((
                 button(
                     "✅ پذیرش شرایط و ثبت سفارش",
-                    f"shop:place:{cart.id}:{cart.revision}:{policy.policy_token}",
+                    f"shop:place:{cart.id}:{cart.revision}:{quote_token}",
                 ),
                 button("انصراف", "shop:cart"),
             ),),
