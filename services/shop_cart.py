@@ -6,8 +6,10 @@ This phase creates review-only orders, never takes money or reserves stock.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
+from uuid import uuid4
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from services.shop_checkout_policy import checkout_rules
@@ -20,6 +22,11 @@ from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import (
     ShopCart, ShopCartInputSession, ShopCartItem, ShopCoupon,
     ShopOrderLine, ShopShippingMethod,
+)
+from models.shop_checkout_batch import ShopCheckoutBatch
+from services.shop_mixed_checkout import (
+    MixedCheckoutError, MixedCheckoutPlan,
+    build_split_plan, checkout_quote_fingerprint,
 )
 from models.shop_content import Product, ShopIdentity, ShopOrder
 from models.shop_uom import ShopUom
@@ -455,6 +462,54 @@ class ShopCartFlow:
             needs_shipping, method.name if method and needs_shipping else None,
             coupon.code if coupon else None,
         )
+
+    async def _telegram_split(
+        self, event: InboundEvent, session: AsyncSession,
+        cart: ShopCart, quote: CartQuote,
+    ) -> MixedCheckoutPlan | None:
+        """Prepare independent fiat/Star prices, limiting coupons to physical goods."""
+        kinds = {line.product.product_type for line in quote.lines}
+        if event.platform != Platform.TELEGRAM or kinds != {"physical", "digital"}:
+            return None
+        physical_subtotal = sum(
+            line.line_total for line in quote.lines
+            if line.product.product_type == "physical"
+        )
+        coupon = (
+            await session.get(ShopCoupon, cart.coupon_id)
+            if cart.coupon_id is not None else None
+        )
+        discount = validate_coupon(coupon, physical_subtotal) if coupon else 0
+        try:
+            return build_split_plan(
+                quote.lines, shipping_irr=quote.shipping,
+                physical_discount_irr=discount,
+                coupon_code=quote.coupon_code,
+                shipping_label=quote.shipping_label,
+            )
+        except MixedCheckoutError as error:
+            raise CartRejected(str(error)) from None
+
+    @staticmethod
+    def _quote_token(
+        quote: CartQuote, policy_token: str, cart: ShopCart,
+        *, split: MixedCheckoutPlan | None,
+    ) -> str:
+        """Fingerprint the customer-visible amounts and shipping before confirmation."""
+        try:
+            return checkout_quote_fingerprint(
+                quote.lines, shipping_irr=quote.shipping,
+                physical_discount_irr=(
+                    split.physical.discount_irr if split is not None
+                    else quote.discount
+                ),
+                policy_token=policy_token,
+                coupon_code=quote.coupon_code,
+                shipping_label=quote.shipping_label,
+                shipping_address=cart.shipping_address,
+            )
+        except MixedCheckoutError as error:
+            raise CartRejected(str(error)) from None
 
     async def _cart_reply(
         self, event: InboundEvent, session: AsyncSession
