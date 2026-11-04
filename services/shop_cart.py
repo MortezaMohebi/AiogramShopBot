@@ -740,15 +740,16 @@ class ShopCartFlow:
             "ثبت و آماده‌سازی پرداخت" if policy.mode == "instant"
             else "ثبت درخواست بررسی فروشنده"
         )
+        price_line = (
+            f"{stars_total} Stars (XTR)"
+            if stars_total is not None
+            else format_rials(quote.total, self.display_unit)
+        )
         return BotReply(
             "🧾 بررسی نهایی سفارش\n"
             f"تعداد اقلام: {sum(line.quantity for line in quote.lines)}\n"
-            (
-                f"مبلغ نهایی: {stars_total} Stars (XTR)\n"
-                if stars_total is not None else
-                f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}\n"
-            )
-            + f"مسیر: {intent}\n"
+            f"مبلغ نهایی: {price_line}\n"
+            f"مسیر: {intent}\n"
             f"شرایط خرید: نسخهٔ {policy.terms_version}\n"
             "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
             "متن کامل از /terms قابل مشاهده است؛ هنوز وجهی دریافت نشده.",
