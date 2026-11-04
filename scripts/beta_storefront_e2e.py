@@ -458,13 +458,14 @@ async def context(fixture: dict, bot_key: str):
 async def menus(fixture: dict) -> None:
     """Exercise actual raw dispatch, six menus, forms, ACL and native keyboards."""
     identity_customers = []
+    # Deliberately reuse the same native numeric ID on the two providers.
+    user_id = 700_000_000 + uuid4().int % 1_000_000
     for bot_key in ("telegram", "bale"):
         scope = await context(fixture, bot_key)
         native = FakeTelegram() if bot_key == "telegram" else FakeBaleSession()
         client = (
             native if bot_key == "telegram" else BaleTransport("qa-fake-token", native)
         )
-        user_id = 700_000_000 + uuid4().int % 1_000_000
 
         async def ask(*, action=None, message=None, contact=None):
             outcome = await dispatch(

@@ -31,6 +31,9 @@ export interface Order {
   status: string;
   provider?: string;
   total_irr: string;
+  total_stars_snapshot?: number | null;
+  payment_currency?: string | null;
+  payment_amount?: string | null;
   created_at: string;
 }
 

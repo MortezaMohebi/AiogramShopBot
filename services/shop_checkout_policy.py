@@ -58,10 +58,11 @@ def terms_configured(policy: ShopStoreCheckoutPolicy | None) -> bool:
 def legal_credit_for_items(
     platform: Platform, types: set[str],
 ) -> bool:
-    """Never sell Telegram digital items using IRR internal Store Credit."""
+    """Allow only fulfillable orders and honor Telegram's Stars-only digital rule."""
     return (
         bool(types)
         and types <= {"physical", "digital"}
+        and len(types) == 1
         and not (
             platform == Platform.TELEGRAM
             and "digital" in types

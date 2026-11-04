@@ -166,6 +166,10 @@ class ShopPaymentService:
             raise PaymentRejected("مبلغ سفارش با صورت‌حساب سازگار نیست.")
 
         types = {product.product_type for _, product in pairs}
+        if platform == Platform.BALE and types == {"physical", "digital"}:
+            raise PaymentRejected(
+                "کالای فیزیکی و دیجیتال در بله باید در سفارش‌های جدا ثبت شوند."
+            )
         if "digital" in types:
             from services.shop_digital_catalog import require_digital_supply
             from services.shop_digital_rules import DeliveryPolicyError
@@ -353,6 +357,10 @@ class ShopPaymentService:
             .where(ShopOrderLine.order_id == order.id)
         )
         pairs = lines_result.all()
+        if platform == Platform.BALE and {
+            product.product_type for _, product in pairs
+        } == {"physical", "digital"}:
+            return False, "کالای فیزیکی و دیجیتال بله باید جدا سفارش داده شوند."
         if not pairs or not await allowed_for_bot(
             session, bot_id or legacy_id(platform.value),
             [product.id for _, product in pairs],
@@ -458,7 +466,13 @@ class ShopPaymentService:
             .with_for_update(of=Product)
         )
         pairs = rows.all()
-        allocated = bool(pairs) and all(
+        # Historical mixed invoices can still produce valid paid receipts.
+        # Record the money and a refund obligation instead of consuming stock
+        # for an Order neither the shipping nor digital worker can fulfill.
+        mixed_delivery = {
+            product.product_type for _, product in pairs
+        } == {"physical", "digital"}
+        allocated = bool(pairs) and not mixed_delivery and all(
             line.quantity > 0 and product.stock_quantity >= line.quantity
             and product.is_published
             for line, product in pairs

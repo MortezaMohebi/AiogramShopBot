@@ -83,12 +83,12 @@ function StoreSwitcherForm({ context }: Props) {
     });
   }
 
-  return <div className="relative" dir="rtl">
+  return <div className="relative min-w-0" dir="rtl">
     <button type="button" disabled={busy}
       aria-haspopup="dialog" aria-expanded={open}
       aria-label="انتخاب یک یا چند فروشگاه فعال"
       onClick={() => setOpen(!open)}
-      className="flex h-10 max-w-64 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+      className="flex h-10 min-w-0 max-w-52 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring sm:max-w-64">
       <Store className="size-4 shrink-0" aria-hidden="true" />
       <span className="truncate font-medium">{active?.name ?? "فروشگاه"}</span>
       {context.active_store_ids.length > 1 ?
@@ -120,6 +120,7 @@ function StoreSwitcherForm({ context }: Props) {
           </label>
           <label title="Store جاری برای نوشتن" className="flex items-center gap-1 text-xs">
             <input type="radio" name="current-store" disabled={busy}
+              aria-label={`انتخاب ${store.name} برای ثبت تغییرات`}
               checked={current === store.id}
               onChange={() => chooseCurrent(store.id)} />
             <span>{current === store.id ? "جاری" : "انتخاب"}</span>

@@ -322,6 +322,8 @@ class ShopWalletService:
             platform, {product.product_type for _, product in pairs},
         ):
             raise StoreCreditRejected(
+                "کالای فیزیکی و دیجیتال باید جدا سفارش داده شوند."
+                if platform == Platform.BALE else
                 "پرداخت کالای دیجیتال تلگرام فقط با Telegram Stars مجاز است."
             )
         if order.terms_accepted_at is None:

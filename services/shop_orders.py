@@ -245,7 +245,8 @@ class ShopOrdersFlow:
                     actions = []
                     kinds = order_types.get(order.id, set())
                     external_ready = (
-                        bale_ready if event.platform == Platform.BALE
+                        bale_ready and len(kinds) == 1
+                        if event.platform == Platform.BALE
                         else stars_ready if kinds == {"digital"}
                         else fiat_ready if kinds == {"physical"}
                         else False
