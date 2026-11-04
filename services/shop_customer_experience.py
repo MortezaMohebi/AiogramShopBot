@@ -22,6 +22,22 @@ _SEARCH_FIELD = re.compile(r"ux:search:field:(all|name|sku|description)\Z")
 _ORDER_DETAIL = re.compile(r"ux:order:detail:([1-9][0-9]{0,18})\Z")
 _ORDER_TRACK = re.compile(r"ux:order:track:([1-9][0-9]{0,18})\Z")
 
+def should_clear_chat_state(callback: str, text: str) -> bool:
+    """End stale free-text forms when a customer navigates elsewhere.
+
+    State is always scoped to (bot_id, platform_user_id); neither a generic
+    chat ID nor a callback's supplied Store ID is used for this decision.
+    """
+    return (
+        callback in {
+            "shop:home", "shop:categories", "shop:cart", "shop:orders",
+            "ux:account", "ux:support",
+        }
+        or callback.startswith("shop:item:")
+        or text in {"/start", "/menu", "🏠 منوی اصلی"}
+    )
+
+
 
 class CustomerExperienceFlow:
     """Apply the same semantic Home/Search/Account/Support routes to each bot."""
@@ -49,6 +65,18 @@ class CustomerExperienceFlow:
         action = event.callback_data or ""
         text = (event.text or "").strip()
         context = await self.context(db, event.platform)
+        if should_clear_chat_state(action, text):
+            state = await db.get(
+                ShopCustomerChatState,
+                (context.bot_id, event.user_id),
+            )
+            if state is not None and state.action != "idle":
+                if state.store_id != context.store_id:
+                    raise ValueError("Customer chat Store mismatch.")
+                state.action = "idle"
+                state.context_ref = None
+                state.query_text = None
+                await db.commit()
         if action in {"ux:terms"} or text == "/terms":
             from services.shop_checkout_policy import checkout_rules
 
