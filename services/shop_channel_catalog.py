@@ -161,24 +161,18 @@ class CatalogFlow:
             if settings and settings.welcome_message
             else "به فروشگاه خوش آمدید."
         )
-        features = await get_features(
-            session, platform,
-            bot_id=(
-                self.bot_context.bot_id if self.bot_context
-                else LEGACY_BOT_IDS[platform]
-            ),
+        from services.shop_customer_menu import effective_menu
+
+        # The current Bot's Store owns the default layout. A Bot override may
+        # only reorder/disable known actions, never bypass payment/cart ACL.
+        owner = (
+            self.bot_context.bot_id if self.bot_context
+            else LEGACY_BOT_IDS[platform]
         )
-        rows = [
-            (_button("🛍 محصولات", "shop:categories"),),
-            (_button("📦 سفارش‌های من", "shop:orders"),),
-        ]
-        if features.cart_enabled:
-            rows.append((_button("🛒 سبد خرید", "shop:cart"),))
-        rows.extend([
-            (_button("🆘 پشتیبانی", "shop:help"),),
-            (_button("❓ پرسش‌های متداول", "shop:faq"),),
-        ])
-        return BotReply(text=welcome[:4096], rows=tuple(rows))
+        rows = await effective_menu(
+            session, bot_id=owner, platform=Platform(platform),
+        )
+        return BotReply(text=welcome[:4096], rows=rows)
 
     async def _settings_text(
         self, session: AsyncSession, *, key: str, platform: str
