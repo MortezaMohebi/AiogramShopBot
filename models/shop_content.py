@@ -297,6 +297,9 @@ class ShopOrder(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Exact customer-approved Telegram Stars total; never derive again
+    # from a mutable Product.price_stars at invoice dispatch time.
+    total_stars_snapshot: Mapped[int | None] = mapped_column(BigInteger)
     provider: Mapped[str] = mapped_column(String(24), nullable=False)
     status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="pending_payment"

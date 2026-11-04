@@ -46,6 +46,31 @@ class InvoicePlan:
     description: str
 
 
+def frozen_stars_amount(pairs: list[tuple], *, expected_total: int | None) -> int:
+    """Charge only the exact per-Order Stars price the customer accepted.
+
+    A mutable Product.price_stars must never recalculate an approved
+    amount. Invoice creation can follow seller approval much later.
+    """
+    if type(expected_total) is not int or expected_total <= 0:
+        raise PaymentRejected("مبلغ Telegram Stars هنگام سفارش ثبت نشده است.")
+    value = 0
+    for line, product in pairs:
+        price = line.unit_price_stars_snapshot
+        if (
+            product.product_type != "digital"
+            or type(line.quantity) is not int or line.quantity <= 0
+            or type(price) is not int or price <= 0
+        ):
+            raise PaymentRejected("قیمت ذخیره‌شدهٔ Telegram Stars معتبر نیست.")
+        value += price * line.quantity
+    if value != expected_total or value > 999_999_999_999:
+        raise PaymentRejected(
+            "مبلغ فاکتور با مبلغ تأییدشدهٔ Telegram Stars مطابقت ندارد."
+        )
+    return value
+
+
 class ShopPaymentService:
     """Coordinate Telegram and Bale payments over one shared order ledger."""
 
@@ -179,13 +204,8 @@ class ShopPaymentService:
                 raise PaymentRejected(
                     "تخفیف ریالی و ارسال با فاکتور Stars سازگار نیستند."
                 )
-            if any(
-                p.price_stars is None or p.price_stars <= 0
-                for _, p in pairs
-            ):
-                raise PaymentRejected("قیمت Stars تمام کالاها تعیین نشده است.")
-            amount = sum(
-                p.price_stars * line.quantity for line, p in pairs
+            amount = frozen_stars_amount(
+                pairs, expected_total=order.total_stars_snapshot,
             )
             provider, currency = "telegram_stars", "XTR"
         elif types == {"physical"}:

@@ -228,6 +228,7 @@ class ShopOrderLine(Base):
         String(32), nullable=False, default="piece", server_default="piece",
     )
     unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    unit_price_stars_snapshot: Mapped[int | None] = mapped_column(BigInteger)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     order: Mapped["ShopOrder"] = relationship(
@@ -241,6 +242,11 @@ class ShopOrderLine(Base):
             "unit_price_irr >= 0", name="ck_shop_order_line_unit_price"
         ),
         CheckConstraint("total_irr >= 0", name="ck_shop_order_line_total"),
+        CheckConstraint(
+            "unit_price_stars_snapshot IS NULL OR "
+            "unit_price_stars_snapshot > 0",
+            name="ck_shop_order_line_stars",
+        ),
     )
 
 

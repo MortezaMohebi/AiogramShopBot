@@ -808,7 +808,7 @@ class ShopCartFlow:
 
         # Repeat exact currency, coupon, type and Stars validation under
         # the locked order-creation transaction; stale callbacks are denied.
-        telegram_stars_total(event.platform, quote)
+        stars_total = telegram_stars_total(event.platform, quote)
         first = quote.lines[0]
         order = ShopOrder(
             store_id=cart.store_id,
@@ -822,6 +822,7 @@ class ShopCartFlow:
             quantity=first.quantity,
             unit_price_irr=to_rials(first.product.price),
             total_irr=quote.total,
+            total_stars_snapshot=stars_total,
             provider="manual_review",
             status=(
                 "approved_unpaid" if policy.mode == "instant"
@@ -861,6 +862,10 @@ class ShopCartFlow:
                     sku_snapshot=line.product.sku,
                     uom_code_snapshot=unit_codes[line.product.uom_id],
                     unit_price_irr=to_rials(line.product.price),
+                    unit_price_stars_snapshot=(
+                        line.product.price_stars
+                        if stars_total is not None else None
+                    ),
                     quantity=line.quantity,
                     total_irr=line.line_total,
                 )
