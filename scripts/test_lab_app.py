@@ -7,59 +7,12 @@ side effects. It exposes the actual signed Next.js administration router.
 
 from __future__ import annotations
 
-import os
-
 from fastapi import FastAPI, HTTPException
 from redis.asyncio import Redis
 from sqlalchemy import text
 
 
-def require_isolated_lab() -> None:
-    """Fail before importing any application modules if safety gates differ."""
-    required = {
-        "SHOP_TEST_LAB": "1",
-        "POSTGRES_DB": "shop_lab_test",
-        "POSTGRES_USER": "shop_lab",
-        "DB_HOST": "postgres",
-        "WEBHOOK_HOST": "https://disabled.invalid",
-        "NEXT_ADMIN_BRIDGE_ENABLED": "true",
-        "SHOP_CAMPAIGN_DISPATCH_ENABLED": "false",
-        "SHOP_BROADCAST_WORKER_ENABLED": "false",
-        "BALE_BROADCAST_PAID_ENABLED": "false",
-        "TELEGRAM_STARS_REFUNDS_ENABLED": "false",
-        "TELEGRAM_STARS_CHECKOUT_ENABLED": "false",
-        "TELEGRAM_FIAT_CHECKOUT_ENABLED": "false",
-        "BALE_WALLET_CHECKOUT_ENABLED": "false",
-        "CRYPTO_FORWARDING_MODE": "false",
-        "SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR": "0",
-        "BALE_BROADCAST_PREPARE_CHAT_ID": "0",
-    }
-    for name, expected in required.items():
-        if os.environ.get(name) != expected:
-            raise RuntimeError(
-                f"Unsafe test lab configuration: {name} must be {expected!r}."
-            )
-
-    forbidden = (
-        "TOKEN",
-        "BALE_BOT_TOKEN",
-        "BALE_WALLET_PROVIDER_TOKEN",
-        "TELEGRAM_FIAT_PROVIDER_TOKEN",
-        "TELEGRAM_WORKER_SECRET",
-        "BALE_WEBHOOK_SECRET",
-        "KRYPTO_EXPRESS_API_KEY",
-    )
-    for name in forbidden:
-        if os.environ.get(name, "").strip():
-            raise RuntimeError(
-                f"Unsafe test lab: provider credential {name} is populated."
-            )
-
-    if len(os.environ.get("NEXT_ADMIN_BRIDGE_SECRET", "")) < 32:
-        raise RuntimeError("The test bridge must use a strong unique key.")
-
-    if len(os.environ.get("JWT_SECRET_KEY", "")) < 32:
-        raise RuntimeError("The admin test secret is missing.")
+from scripts.test_lab_safety import lab_database_identity, require_isolated_lab
 
 
 require_isolated_lab()
@@ -82,7 +35,7 @@ async def health() -> dict[str, object]:
     """Check the actual test PostgreSQL and Redis without contacting bots."""
     async with session_maker() as session:
         database_name = await session.scalar(text("SELECT current_database()"))
-        if database_name != "shop_lab_test":
+        if database_name != lab_database_identity()[0]:
             raise HTTPException(
                 status_code=503, detail="Not an isolated test database."
             )
