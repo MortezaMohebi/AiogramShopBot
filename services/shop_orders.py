@@ -205,9 +205,15 @@ class ShopOrdersFlow:
         for order in orders:
             originates_here = order.bot_id == self._bot_id(event.platform)
             count = quantities.get(order.id, order.quantity)
+            money_label = (
+                f"{order.total_stars_snapshot} Stars (XTR)"
+                if order.platform == "telegram"
+                and order.total_stars_snapshot is not None
+                else format_rials(order.total_irr, self.display_unit)
+            )
             lines.append(
                 f"#{order.id} — {count} کالا — "
-                f"{format_rials(order.total_irr, self.display_unit)}\n"
+                f"{money_label}\n"
                 f"{STATUS_NAMES.get(order.status, 'در حال بررسی')}"
             )
             rows.append((

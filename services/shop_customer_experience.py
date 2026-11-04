@@ -153,7 +153,12 @@ class CustomerExperienceFlow:
             details = [
                 f"📦 سفارش #{order.id}",
                 f"وضعیت: {order.status}",
-                f"مبلغ قطعی: {order.total_irr:,} ریال",
+                (
+                    f"مبلغ تأییدشده: {order.total_stars_snapshot} Stars (XTR)"
+                    if order.platform == "telegram"
+                    and order.total_stars_snapshot is not None
+                    else f"مبلغ قطعی: {order.total_irr:,} ریال"
+                ),
                 f"بات مبدأ: {order.bot_id[:8]}",
                 f"نسخه شرایط خرید: {order.terms_version_snapshot or 'ثبت نشده'}",
             ]

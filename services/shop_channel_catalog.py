@@ -339,9 +339,24 @@ class CatalogFlow:
         unit = await session.get(ShopUom, product.uom_id)
         if unit is None or unit.store_id != product.store_id:
             return BotReply("واحد اندازه‌گیری این محصول معتبر نیست.")
+        telegram_digital = (
+            platform == "telegram" and product.product_type == "digital"
+        )
+        stars_ready = (
+            not telegram_digital
+            or type(product.price_stars) is int
+            and product.price_stars > 0
+        )
+        price_label = (
+            f"{product.price_stars} Stars (XTR)"
+            if telegram_digital and stars_ready
+            else "قیمت Stars تعیین نشده"
+            if telegram_digital else
+            format_rials(product.price, self.display_unit)
+        )
         body = product_message(
             product,
-            price_label=format_rials(product.price, self.display_unit),
+            price_label=price_label,
             unit_symbol=unit.symbol,
             show_description=show_description,
             show_stock=show_stock,
@@ -355,7 +370,7 @@ class CatalogFlow:
         )
         rows = []
         if features.cart_enabled:
-            if product.stock_quantity > 0:
+            if product.stock_quantity > 0 and stars_ready:
                 rows.append(
                     (_button("🛒 افزودن به سبد", f"shop:add:{product.id}"),)
                 )
