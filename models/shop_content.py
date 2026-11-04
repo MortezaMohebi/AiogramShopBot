@@ -349,7 +349,11 @@ class ShopOrder(Base):
         ),
         CheckConstraint("quantity > 0", name="ck_shop_order_qty_positive"),
         CheckConstraint("unit_price_irr >= 0", name="ck_shop_order_price_positive"),
-        CheckConstraint("total_irr > 0", name="ck_shop_order_total_positive"),
+        CheckConstraint(
+            "total_irr > 0 OR (total_irr = 0 "
+            "AND platform = 'telegram' AND total_stars_snapshot > 0)",
+            name="ck_shop_order_total_positive",
+        ),
         UniqueConstraint(
             "checkout_batch_id", "checkout_part",
             name="uq_shop_order_batch_part",

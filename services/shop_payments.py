@@ -25,6 +25,10 @@ from services.shop_bot_catalog_acl import (
 )
 from models.shop_scope import legacy_id
 from services.shop_money import MAX_RIALS, to_rials
+from services.shop_digital_assets import (
+    require_digital_assets, stage_digital_on_paid_receipt,
+)
+from services.shop_digital_rules import DeliveryPolicyError
 
 
 class PaymentRejected(ValueError):
@@ -148,7 +152,15 @@ class ShopPaymentService:
             )
         subtotal = sum(line.total_irr for line, _ in pairs)
         if (
-            type(order.total_irr) is not int or order.total_irr <= 0
+            type(order.total_irr) is not int
+            or (
+                order.total_irr <= 0 and not (
+                    platform == Platform.TELEGRAM
+                    and order.total_irr == 0
+                    and type(order.total_stars_snapshot) is int
+                    and order.total_stars_snapshot > 0
+                )
+            )
             or subtotal != order.subtotal_irr
             or order.total_irr != (
                 subtotal - (order.discount_irr or 0)
@@ -221,6 +233,13 @@ class ShopPaymentService:
             raise PaymentRejected(
                 "کالاهای دیجیتال و فیزیکی در تلگرام باید جدا پرداخت شوند."
             )
+
+        try:
+            await require_digital_assets(session, order_lines=pairs)
+        except DeliveryPolicyError:
+            raise PaymentRejected(
+                "فایل یا کد لایسنس محصول دیجیتال آمادهٔ تحویل نیست."
+            ) from None
 
         # Telegram requires a positive integer at most 12 decimal digits.
         if type(amount) is not int or not 1 <= amount <= 999_999_999_999:
@@ -335,6 +354,10 @@ class ShopPaymentService:
             for line, product in pairs
         ):
             return False, "موجودی سفارش کافی نیست."
+        try:
+            await require_digital_assets(session, order_lines=pairs)
+        except DeliveryPolicyError:
+            return False, "فایل یا کد لایسنس محصول دیجیتال آمادهٔ تحویل نیست."
         if order.coupon_id is not None:
             coupon = await session.get(ShopCoupon, order.coupon_id)
             if coupon is None:
@@ -452,6 +475,17 @@ class ShopPaymentService:
                 except CartRejected:
                     allocated = False
 
+        if allocated:
+            # Reserve paid digital keys atomically before stock deduction.
+            # A failed reservation after a valid payment moves the Order to
+            # paid_unfulfilled/refund review; it never pretends fulfillment.
+            try:
+                async with session.begin_nested():
+                    await stage_digital_on_paid_receipt(
+                        session, order=order, order_lines=pairs,
+                    )
+            except DeliveryPolicyError:
+                allocated = False
         if allocated:
             for line, product in pairs:
                 product.stock_quantity -= line.quantity
