@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,25 +9,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 
-const FRAGMENT = /^#(invite|reset)=([A-Za-z0-9_-]{43})$/;
-type Claim = { kind: "invite" | "reset"; token: string };
+import { createActivationStore } from "@/lib/activation-fragment";
 
 /** Read the raw capability from a URL fragment, never a server-visible query. */
 export default function ActivateAccountPage() {
   const router = useRouter();
-  const [claim, setClaim] = useState<Claim | null>(null);
+  const [activation] = useState(createActivationStore);
+  const claim = useSyncExternalStore(
+    activation.subscribe, activation.getSnapshot, activation.getServerSnapshot,
+  );
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
 
-  useEffect(() => {
-    const match = FRAGMENT.exec(window.location.hash);
-    if (match) {
-      setClaim({ kind: match[1] as Claim["kind"], token: match[2] });
-      // Remove the sensitive fragment from browser history after capture.
-      window.history.replaceState(null, "", "/activate");
-    }
-  }, []);
+
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,7 +57,7 @@ export default function ActivateAccountPage() {
         return;
       }
       setCompleted(true);
-      setClaim(null);
+      activation.clear();
       setMessage("رمز حساب تنظیم شد؛ اکنون وارد شوید.");
     } catch {
       setMessage("اتصال به سرویس برقرار نشد؛ بدون ارسال دوبارهٔ خودکار، وضعیت را بررسی کنید.");

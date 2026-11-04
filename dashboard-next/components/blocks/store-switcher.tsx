@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Store, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,12 @@ interface Props { context: StoreContextSnapshot }
 
 /** Odoo-style multi-selection with one current Store per browser session. */
 export function StoreSwitcher({ context }: Props) {
+  const key = `${context.version}:${context.current_store_id}:${context.active_store_ids.join(",")}`;
+  return <StoreSwitcherForm key={key} context={context} />;
+}
+
+/** A verified context refresh resets the draft without a cascading effect. */
+function StoreSwitcherForm({ context }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState(context.active_store_ids);
@@ -18,10 +24,7 @@ export function StoreSwitcher({ context }: Props) {
   const [notice, setNotice] = useState("");
   const [busy, startTransition] = useTransition();
 
-  useEffect(() => {
-    setSelection(context.active_store_ids);
-    setCurrent(context.current_store_id);
-  }, [context.active_store_ids, context.current_store_id]);
+
 
   const active = useMemo(() =>
     context.stores.find((item) => item.id === context.current_store_id),
@@ -31,18 +34,17 @@ export function StoreSwitcher({ context }: Props) {
   function toggle(id: string) {
     if (busy) return;
     setNotice("");
-    setSelection((old) => {
-      if (old.includes(id)) {
-        if (old.length === 1) {
-          setNotice("حداقل یک Store باید فعال باقی بماند.");
-          return old;
-        }
-        const next = old.filter((item) => item !== id);
-        if (current === id) setCurrent(next[0]);
-        return next;
+    if (selection.includes(id)) {
+      if (selection.length === 1) {
+        setNotice("حداقل یک Store باید فعال باقی بماند.");
+        return;
       }
-      return [...old, id];
-    });
+      const next = selection.filter((item) => item !== id);
+      setSelection(next);
+      if (current === id) setCurrent(next[0]);
+    } else {
+      setSelection([...selection, id]);
+    }
   }
 
   function chooseCurrent(id: string) {

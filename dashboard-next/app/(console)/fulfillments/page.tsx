@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ export default async function FulfillmentsPage({
   const canEdit = ["superadmin", "sales"].includes(user.role);
   return <div className="space-y-5">
     <PageHeading title="آماده‌سازی و ارسال سفارش‌ها"
-      description="ثبت مراحل انجام فقط برای سفارش‌های با پرداخت تأییدشده؛ دیجیتال تنها بعد از دریافت وجه و بدون ادعای تحویل فایل." />
+      description="ثبت مراحل انجام فقط برای سفارش‌های با پرداخت تأییدشده؛ تحویل دیجیتال تنها پس از تأیید پرداخت و ثبت رسید ارسال انجام می‌شود." />
     {query.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
       مرحله انجام سفارش ثبت شد؛ وضعیت مالی تغییر نکرد.
     </p> : null}
@@ -35,8 +36,8 @@ export default async function FulfillmentsPage({
           <p>نوع: {order.kind ?? "تعیین‌نشده"} · مبلغ: {order.total_irr} IRR</p>
           {order.tracking_code ? <p>مرجع رهگیری: {order.tracking_code} / {order.carrier}</p> : null}
           {order.kind === "digital" ? <p className="rounded-lg border p-3 text-sm text-muted-foreground">
-            دریافت وجه تأیید شده، اما تحویل امن فایل/مجوز هنوز به
-            Pipeline تأییدشده متصل نیست؛ وضعیت «تحویل‌شده» صادر نمی‌شود.
+            تحویل فایل یا لایسنس از صف امن انجام می‌شود و رسید آن جداگانه ثبت می‌شود.
+            <Link href="/digital-deliveries" className="ms-1 underline underline-offset-4">مشاهدهٔ رسید تحویل</Link>
           </p> : null}
           {canEdit && order.kind !== "digital" && order.status !== "delivered"
             ? <form action={advanceFulfillment}
@@ -45,26 +46,25 @@ export default async function FulfillmentsPage({
             <input type="hidden" name="expected_version" value={order.version} />
             <label className="block space-y-2">مرحلهٔ بعد
               <select name="next_status" required
-                defaultValue={order.kind === "digital" ? "delivered" :
-                  order.status === "ready" ? "shipped" :
+                defaultValue={order.status === "ready" ? "shipped" :
                   order.status === "shipped" ? "delivered" : "ready"}
                 className="block h-10 w-full rounded-md border bg-background px-3">
                 {(order.status === "processing" || order.status === "not_started")
                   ? <option value="ready">آماده‌شده</option> : null}
-                {order.kind !== "digital" && order.status === "ready" ?
+                {order.status === "ready" ?
                   <option value="shipped">تحویل به حمل‌کننده</option> : null}
-                {order.status === "shipped" || order.kind === "digital" ?
+                {order.status === "shipped" ?
                   <option value="delivered">تکمیل انجام سفارش</option> : null}
               </select>
             </label>
-            {order.kind !== "digital" ? <>
+            <>
               <label className="block space-y-2">نام شرکت حمل در مرحله ارسال
                 <Input name="carrier" maxLength={80} placeholder="شرکت حمل" />
               </label>
               <label className="block space-y-2">کد رهگیری
                 <Input name="tracking_code" maxLength={120} placeholder="کد واقعی، نه ساختگی" />
               </label>
-            </> : null}
+            </>
             <Button type="submit" variant="outline">ثبت مرحله</Button>
           </form> : null}
         </CardContent>

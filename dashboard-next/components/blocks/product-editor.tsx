@@ -147,7 +147,7 @@ export function ProductEditor({
       if (!product) {
         // The persisted item now owns private media. Add images in the
         // same product-editing experience, without typing a numeric ID.
-        window.location.assign("/products/" + result.id + "/edit?created=1#media");
+        router.push("/products/" + result.id + "/edit?created=1#media");
       } else {
         setNotice({ ok: true, message: "تغییرات محصول در پایگاه داده ذخیره شد." });
         router.refresh();

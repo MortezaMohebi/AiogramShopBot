@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import {
@@ -31,7 +32,7 @@ export default async function BotConnectionsPage({
     {params.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">تنظیمات بات ثبت شد.</p> : null}
     {params.verified ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">شناسهٔ Provider با getMe تأیید شد.</p> : null}
     {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[params.error] ?? "درخواست انجام نشد."}</p> : null}
-    <p className="rounded-lg border bg-muted/30 p-4 text-sm">تنظیمات هر بات، روشن/خاموش‌کردن و تأیید هویت اکنون در <a className="font-semibold underline" href="/bots">مدیریت ربات‌ها</a> قرار دارند. این صفحه فقط زیرساخت اتصال و مسیرهای API را کنترل می‌کند.</p>
+    <p className="rounded-lg border bg-muted/30 p-4 text-sm">تنظیمات هر بات، روشن/خاموش‌کردن و تأیید هویت اکنون در <Link className="font-semibold underline" href="/bots">مدیریت ربات‌ها</Link> قرار دارند. این صفحه فقط زیرساخت اتصال و مسیرهای API را کنترل می‌کند.</p>
     <TelegramTransportPanel initial={telegramTransport} />
     <ConnectionControlPanel initial={operations} />
   </div>;
