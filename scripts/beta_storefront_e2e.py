@@ -101,9 +101,7 @@ class FakeTelegram:
         document = payload["document"]
         self.documents.append(
             {
-                "sha256": hashlib.sha256(
-                    Path(document.path).read_bytes()
-                ).hexdigest(),
+                "sha256": hashlib.sha256(Path(document.path).read_bytes()).hexdigest(),
                 "chat_id": payload["chat_id"],
                 "protected": payload.get("protect_content"),
             }
@@ -187,9 +185,7 @@ class FakeBaleSession:
             fields = {field[0]["name"]: field[2] for field in data._fields}
             self.documents.append(
                 {
-                    "sha256": hashlib.sha256(
-                        fields["document"].read()
-                    ).hexdigest(),
+                    "sha256": hashlib.sha256(fields["document"].read()).hexdigest(),
                     "chat_id": int(fields["chat_id"]),
                 }
             )
@@ -239,17 +235,12 @@ async def seed() -> dict:
     suffix = uuid4().hex[:10]
     fixture = {"stores": [str(uuid4()), str(uuid4())], "bots": {}}
     async with session_maker() as db:
-        assert (
-            await db.scalar(text("SELECT current_database()"))
-            == "shop_codespace"
-        )
+        assert await db.scalar(text("SELECT current_database()")) == "shop_codespace"
         assert await db.scalar(text("SELECT current_user")) == "shop_codespace"
         admin = await db.scalar(
             select(ShopStaff).where(ShopStaff.username == "shopadmin")
         )
-        assert admin is not None, (
-            "Guarded bootstrap must create the QA administrator"
-        )
+        assert admin is not None, "Guarded bootstrap must create the QA administrator"
         fixture["admin_id"] = admin.id
         for index, store_id in enumerate(fixture["stores"]):
             db.add(
@@ -262,9 +253,7 @@ async def seed() -> dict:
             )
         await db.flush()
         for store_id in fixture["stores"]:
-            await db.run_sync(
-                lambda sync, sid=store_id: seed_store_units(sync, sid)
-            )
+            await db.run_sync(lambda sync, sid=store_id: seed_store_units(sync, sid))
             db.add(
                 ShopStaffStoreAccess(
                     staff_id=admin.id,
@@ -309,9 +298,7 @@ async def seed() -> dict:
                     bot_id=bot_id, cart_enabled=True, credit_enabled=True
                 )
             )
-        category = ShopCategory(
-            store_id=fixture["stores"][0], name="دستهٔ آزمایشی"
-        )
+        category = ShopCategory(store_id=fixture["stores"][0], name="دستهٔ آزمایشی")
         db.add(category)
         await db.flush()
         fixture["products"] = {}
@@ -465,11 +452,9 @@ async def menus(fixture: dict) -> None:
         scope = await context(fixture, bot_key)
         native = FakeTelegram() if bot_key == "telegram" else FakeBaleSession()
         client = (
-            native
-            if bot_key == "telegram"
-            else BaleTransport("qa-fake-token", native)
+            native if bot_key == "telegram" else BaleTransport("qa-fake-token", native)
         )
-        user_id = 700_000_001
+        user_id = 700_000_000 + uuid4().int % 1_000_000
 
         async def ask(*, action=None, message=None, contact=None):
             outcome = await dispatch(
@@ -482,29 +467,32 @@ async def menus(fixture: dict) -> None:
                     contact=contact,
                 ),
             )
-            assert outcome["status"] == "processed", (
-                "A visible menu action was ignored"
-            )
+            assert outcome["status"] == "processed", "A visible menu action was ignored"
             answer = native.messages[-1]
             assert 1 <= len(answer["text"]) <= 4096
-            assert all(
-                1 <= len(value.encode()) <= 64 for value in callbacks(answer)
-            )
+            assert all(1 <= len(value.encode()) <= 64 for value in callbacks(answer))
             return answer
 
         home = await ask(message="/start")
-        assert set(callbacks(home)) == HOME, (
-            "The six Home actions differ by platform"
-        )
+        assert set(callbacks(home)) == HOME, "The six Home actions differ by platform"
         for action in HOME:
             await ask(action=action)
             await ask(action="shop:home")
         await ask(action="ux:search")
         found = await ask(message="توضیح فارسی")
-        assert "آزمایشی" in found["text"], (
-            "Persian product search returned no match"
+        assert any(value.startswith("shop:item:") for value in callbacks(found)), (
+            "Persian product search returned no match",
+            found["text"],
         )
-        assert "محرمانه" not in found["text"], "Cross-Store search data leaked"
+        assert f"shop:item:{fixture['foreign_product']}" not in callbacks(found), (
+            "Cross-Store search result button leaked"
+        )
+        async with session_maker() as db:
+            product = await db.get(Product, fixture["products"]["physical"])
+            sku = product.sku
+        await ask(action="ux:search:field:sku")
+        by_sku = await ask(message=sku)
+        assert callbacks(by_sku).count(f"shop:item:{product.id}") == 1
         await ask(action="shop:home")
         await ask(action=f"shop:item:{fixture['foreign_product']}")
         assert "محرمانه" not in native.messages[-1]["text"], (
@@ -533,9 +521,7 @@ async def menus(fixture: dict) -> None:
         await ask(action=f"ux:wish:toggle:{fixture['products']['physical']}")
         await ask(action="ux:wishlist")
         await ask(action="ux:phone")
-        await ask(
-            contact={"user_id": user_id + 1, "phone_number": "09123456789"}
-        )
+        await ask(contact={"user_id": user_id + 1, "phone_number": "09123456789"})
         await ask(contact={"user_id": user_id, "phone_number": "09123456789"})
         await ask(action="ux:notify:on")
         await ask(action="ux:notify:off")
@@ -559,8 +545,7 @@ async def menus(fixture: dict) -> None:
                     select(func.count())
                     .select_from(ShopCustomerWishlist)
                     .where(
-                        ShopCustomerWishlist.customer_id
-                        == identity.customer_id,
+                        ShopCustomerWishlist.customer_id == identity.customer_id,
                     )
                 )
                 == 1
@@ -577,9 +562,7 @@ async def menus(fixture: dict) -> None:
 async def main() -> int:
     """Run only requested, isolated scenarios and return failure on any assertion."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--stage", choices=("seed", "menus", "all"), default="all"
-    )
+    parser.add_argument("--stage", choices=("seed", "menus", "all"), default="all")
     args = parser.parse_args()
     try:
         fixture = (
