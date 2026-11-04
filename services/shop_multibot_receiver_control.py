@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, ShopBot, ShopBotCredential, ShopBotRegistryEvent,
+    ShopBot, ShopStore, ShopBotCredential, ShopBotRegistryEvent,
 )
 from models.shop_multibot_receiver import (
     ShopBotReceiver, ShopBotReceiverEvent,
@@ -53,8 +53,9 @@ async def stage_receiver(
     bot = await db.scalar(select(ShopBot).where(
         ShopBot.id == bot_id,
     ).with_for_update())
+    store = await db.get(ShopStore, bot.store_id) if bot else None
     if (
-        bot is None or bot.store_id != DEFAULT_STORE_ID
+        bot is None or store is None or store.state != "active"
         or bot.runtime_owner != "registry" or bot.status != "draft"
         or bot.provider_bot_id is None or bot.verified_at is None
     ):
