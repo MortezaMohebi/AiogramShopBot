@@ -663,7 +663,8 @@ async def support_replies(fixture: dict, tg: Journey, bale: Journey,
     for journey in (tg, bale):
         await journey.ask("ux:ticket:new")
         await journey.ask("ux:ticket:topic:general")
-        created = await journey.ask(message=f"درخواست پشتیبانی آزمایشی {run}")
+        customer_body = f"درخواست پشتیبانی آزمایشی {run}"
+        created = await journey.ask(message=customer_body)
         detail = next(
             action for action in callbacks(created) if action.startswith("ux:ticket:view:")
         )
@@ -689,14 +690,35 @@ async def support_replies(fixture: dict, tg: Journey, bale: Journey,
                 ShopSupportMessage.ticket_id == ticket_id,
                 ShopSupportMessage.sender_kind == "staff",
             )) == 1
-        visible = await journey.ask(detail)
-        assert answer_body in visible["text"]
-        denied = await outsider.ask(detail)
-        assert answer_body not in denied["text"]
+        first_page = await journey.ask(detail)
+        assert customer_body in first_page["text"]
+        # Follow the provider's visible navigation rather than assuming that
+        # all messages in a paginated thread appear on its opening page.
+        next_buttons = [
+            button["callback_data"]
+            for row in first_page["reply_markup"]["inline_keyboard"]
+            for button in row
+            if button.get("text") == "بعدی"
+        ]
+        assert len(next_buttons) == 1, "Staff reply navigation was not rendered"
+        staff_page = await journey.ask(next_buttons[0])
+        assert answer_body in staff_page["text"]
+        previous_buttons = [
+            button["callback_data"]
+            for row in staff_page["reply_markup"]["inline_keyboard"]
+            for button in row
+            if button.get("text") == "قبلی"
+        ]
+        assert len(previous_buttons) == 1, "Thread return navigation was not rendered"
+        assert customer_body in (await journey.ask(previous_buttons[0]))["text"]
+        for action in (detail, next_buttons[0]):
+            denied = await outsider.ask(action)
+            assert answer_body not in denied["text"]
+            assert customer_body not in denied["text"]
         await harness.drain()
         await harness.drain()
         assert harness.sent(journey, notice) == 1
-    stage("PASS  Support: staff message + outbox atomic, customer-only text, one native notice")
+    stage("PASS  Support: paginated staff reply, next/previous, foreign denial, atomic outbox, one native notice")
 
 
 async def main() -> None:
