@@ -15,6 +15,9 @@ from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import Product, ShopIdentity, ShopOrder
 from services.shop_checkout_policy import legal_credit_for_items
+from services.shop_customer_orders import (
+    order_owner_clause, verified_identity_keys,
+)
 from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_payment_rails import rail_enabled
@@ -102,9 +105,18 @@ class ShopOrdersFlow:
             ShopIdentity.platform_user_id == event.user_id,
         ))
         if identity is not None and identity.customer_id is not None:
+            # Linking updates ShopIdentity.customer_id but deliberately
+            # does NOT rewrite historical Order.customer_id/payment ownership.
+            # Read through the verified per-Bot identity cluster instead.
+            keys = await verified_identity_keys(
+                session, store_id=identity.store_id,
+                customer_id=identity.customer_id,
+            )
             conditions = (
-                ShopOrder.store_id == identity.store_id,
-                ShopOrder.customer_id == identity.customer_id,
+                order_owner_clause(
+                    store_id=identity.store_id,
+                    identity_keys=keys,
+                ),
             )
         else:
             conditions = (

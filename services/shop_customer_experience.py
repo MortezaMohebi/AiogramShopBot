@@ -112,6 +112,7 @@ class CustomerExperienceFlow:
             from models.shop_checkout import ShopOrderLine
             from models.shop_content import ShopOrder
             from services.shop_customer_account import customer_for_bot
+            from services.shop_customer_orders import order_visible_to_customer
             from services.shop_fulfillment import customer_tracking
 
             try:
@@ -121,11 +122,10 @@ class CustomerExperienceFlow:
             except ValueError:
                 return BotReply("برای مشاهده سفارش ابتدا /start را اجرا کنید.")
             order_id = int((detail or tracking).group(1))
-            order = await db.scalar(select(ShopOrder).where(
-                ShopOrder.id == order_id,
-                ShopOrder.customer_id == customer.id,
-                ShopOrder.store_id == context.store_id,
-            ))
+            order = await order_visible_to_customer(
+                db, store_id=context.store_id,
+                customer_id=customer.id, order_id=order_id,
+            )
             if order is None:
                 return BotReply("سفارش متعلق به این حساب پیدا نشد.")
             if tracking:
