@@ -114,6 +114,19 @@ def telegram_stars_total(
     return total
 
 
+def validate_checkout_types(platform: Platform, quote: CartQuote) -> None:
+    """Refuse a Bale mixed Order until independent delivery paths support it."""
+    if (
+        platform == Platform.BALE
+        and {line.product.product_type for line in quote.lines}
+        == {"physical", "digital"}
+    ):
+        raise CartRejected(
+            "در بله، کالاهای فیزیکی و دیجیتال را در دو سفارش جدا ثبت کنید. "
+            "ابتدا یکی از این دو گروه را از سبد حذف کنید."
+        )
+
+
 
 def validate_coupon(coupon: ShopCoupon, subtotal: int) -> int:
     """Calculate a bounded product-only discount or reject an invalid coupon."""
@@ -778,6 +791,7 @@ class ShopCartFlow:
         quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
             )
+        validate_checkout_types(event.platform, quote)
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
         ):
@@ -906,6 +920,7 @@ class ShopCartFlow:
         quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
             )
+        validate_checkout_types(event.platform, quote)
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
         ):

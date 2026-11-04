@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
+from models.shop_checkout import ShopCart, ShopCartInputSession
 from models.shop_customer_navigation import ShopCustomerChatState
 from services.shop_bot_context import BotContext, resolve_legacy_bot_context
 from services import shop_customer_search as search
@@ -67,22 +69,70 @@ def should_clear_chat_state(callback: str, text: str) -> bool:
 async def clear_pending_on_navigation(
     db: AsyncSession, *, context: BotContext, event: InboundEvent,
 ) -> None:
-    """Clear stale per-Bot free-text state before ANY commerce flow handles a click."""
+    """End all owned form inputs before navigation or a different form starts.
+
+    Cart input runs before account/search/support routing. Clear both private
+    and shared cart input records alongside the UX state so an old address or
+    coupon prompt cannot consume the next form's text. Shared input remains
+    independently scoped to this authenticated Bot and user.
+    """
     action = event.callback_data or ""
     text = (event.text or "").strip()
-    if not should_clear_chat_state(action, text):
+    starts_form = (
+        action in {
+            "shop:address", "shop:coupon", "ux:search", "ux:search:stop",
+            "ux:address:new", "ux:phone",
+        }
+        or _SEARCH_FIELD.fullmatch(action) is not None
+        or action.startswith(("ux:ticket:topic:", "ux:ticket:reply:"))
+        or text in {
+            "/cancel", "/search", "/address", "/ticket", "/support",
+            "/paysupport", "/account", "/profile", "/wishlist",
+            "🔎 جستجوی محصول", "👤 حساب من", "🆘 پشتیبانی",
+        }
+    )
+    account_navigation = action.startswith((
+        "ux:profile", "ux:addresses", "ux:address:choose:",
+        "ux:address:delete:", "ux:wish", "ux:links", "ux:notifications",
+        "ux:notify:", "ux:stock:", "ux:language", "ux:privacy",
+        "ux:ticket:", "ux:tickets", "ux:terms",
+        "shop:list:", "shop:category:", "shop:categories:",
+    ))
+    if not (
+        should_clear_chat_state(action, text) or starts_form or account_navigation
+    ):
         return
+    changed = False
     state = await db.get(
         ShopCustomerChatState, (context.bot_id, event.user_id),
     )
-    if state is None or state.action == "idle":
-        return
-    if state.store_id != context.store_id:
-        raise ValueError("Customer chat Store mismatch.")
-    state.action = "idle"
-    state.context_ref = None
-    state.query_text = None
-    await db.commit()
+    if state is not None:
+        if state.store_id != context.store_id:
+            raise ValueError("Customer chat Store mismatch.")
+        if state.action != "idle" or state.context_ref or state.query_text:
+            state.action = "idle"
+            state.context_ref = None
+            state.query_text = None
+            changed = True
+    private = await db.execute(update(ShopCart).where(
+        ShopCart.store_id == context.store_id,
+        ShopCart.bot_id == context.bot_id,
+        ShopCart.platform == context.platform.value,
+        ShopCart.platform_user_id == event.user_id,
+        ShopCart.is_shared.is_(False),
+        ShopCart.awaiting_input.is_not(None),
+    ).values(awaiting_input=None))
+    shared = await db.execute(update(ShopCartInputSession).where(
+        ShopCartInputSession.bot_id == context.bot_id,
+        ShopCartInputSession.platform_user_id == event.user_id,
+        ShopCartInputSession.awaiting_input.is_not(None),
+        ShopCartInputSession.cart_id.in_(select(ShopCart.id).where(
+            ShopCart.store_id == context.store_id,
+            ShopCart.is_shared.is_(True),
+        )),
+    ).values(awaiting_input=None))
+    if changed or private.rowcount or shared.rowcount:
+        await db.commit()
 
 
 class CustomerExperienceFlow:

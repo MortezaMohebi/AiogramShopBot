@@ -17,16 +17,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply
-from models.shop_content import Product, ShopIdentity
+from models.shop_content import Product, ShopIdentity, ShopOrder
+from models.shop_bot_operations import ShopBotOperations
 from models.shop_customer_notifications import (
     ShopCustomerNotificationOutbox, ShopStockAlert,
 )
 from models.shop_customer_support import ShopSupportTicket
 from models.shop_multibot import ShopBot, ShopStore
+from models.shop_payment import ShopPaymentAttempt
 from services.shop_bot_catalog_acl import allowed_for_bot
 from services.shop_customer_notifications import (
     can_deliver_at_dispatch, claim_outbox_message,
-    finish_outbox_message,
+    finish_outbox_message, stock_event_alert_id, stock_event_matches,
 )
 
 _logger = logging.getLogger(__name__)
@@ -50,9 +52,27 @@ async def _preflight(
         or bot.store_id != row.store_id
     ):
         return False
+    operations = await db.get(ShopBotOperations, row.bot_id)
+    if operations is not None and (
+        operations.desired_state == "disabled"
+        or (
+            operations.desired_state in {"paused", "maintenance"}
+            and row.topic not in {"order", "ticket"}
+        )
+    ):
+        return False
     active = (
         (bot.status == "legacy" and bot.runtime_owner == "legacy")
-        or (bot.status == "active" and bot.runtime_owner == "registry")
+        or (
+            bot.runtime_owner == "registry"
+            and (
+                bot.status == "active"
+                or (
+                    row.topic in {"order", "ticket"}
+                    and bot.status in {"paused", "maintenance"}
+                )
+            )
+        )
     )
     identity = await db.scalar(select(ShopIdentity).where(
         ShopIdentity.store_id == row.store_id,
@@ -67,9 +87,8 @@ async def _preflight(
     )
     stock_subscribed = False
     if row.topic == "stock" and row.event_key.startswith("stock:"):
-        try:
-            alert_id = int(row.event_key.removeprefix("stock:"))
-        except ValueError:
+        alert_id = stock_event_alert_id(row.event_key)
+        if alert_id is None:
             return False
         alert = await db.get(ShopStockAlert, alert_id)
         if (
@@ -78,6 +97,7 @@ async def _preflight(
             or alert.platform_user_id != row.platform_user_id
             or alert.status != "queued"
             or identity is None or alert.customer_id != identity.customer_id
+            or not stock_event_matches(alert, row)
         ):
             return False
         product = await db.get(Product, alert.product_id)
@@ -118,6 +138,7 @@ async def _preflight(
 async def deliver_once(
     db: AsyncSession, *, bot_id: str,
     transport: NotificationTransport,
+    event_key: str | None = None,
 ) -> bool:
     """Process at most one queued message; return whether a row was claimed.
 
@@ -125,7 +146,7 @@ async def deliver_once(
     automatically retry after any exception. The only automatic retry
     scenario is a request that was never claimed in the database.
     """
-    row = await claim_outbox_message(db, bot_id=bot_id)
+    row = await claim_outbox_message(db, bot_id=bot_id, event_key=event_key)
     if row is None:
         return False
     if not await _preflight(db, row):
@@ -154,3 +175,49 @@ async def deliver_once(
         db, outbox_id=row.id, succeeded=True,
     )
     return True
+
+
+async def deliver_order_paid_once(
+    db: AsyncSession, *, order_id: int, bot_id: str,
+    transport: NotificationTransport,
+) -> bool:
+    """Consume exactly one persisted paid notice for its original Bot.
+
+    The immediate success reply and the scheduled worker share this durable
+    claim, including timeout quarantine. Neither can resend the other's send
+    or consume an unrelated queued notification while handling a payment.
+    """
+    result = await db.execute(select(
+        ShopPaymentAttempt, ShopOrder.platform_user_id,
+    ).join(
+        ShopOrder, ShopOrder.id == ShopPaymentAttempt.order_id,
+    ).join(
+        ShopBot, ShopBot.id == ShopOrder.bot_id,
+    ).where(
+        ShopOrder.id == order_id,
+        ShopOrder.bot_id == bot_id,
+        ShopOrder.store_id == ShopBot.store_id,
+        ShopOrder.platform == ShopBot.platform,
+        ShopOrder.status.in_(("paid", "paid_unfulfilled")),
+        ShopPaymentAttempt.bot_id == bot_id,
+        ShopPaymentAttempt.store_id == ShopOrder.store_id,
+        ShopPaymentAttempt.platform == ShopOrder.platform,
+        ShopPaymentAttempt.status == "paid",
+    ))
+    record = result.first()
+    if record is None:
+        return False
+    attempt, user_id = record
+    event_key = f"order_paid:{order_id}:{attempt.id}"
+    owned = await db.scalar(select(ShopCustomerNotificationOutbox.id).where(
+        ShopCustomerNotificationOutbox.event_key == event_key,
+        ShopCustomerNotificationOutbox.topic == "order",
+        ShopCustomerNotificationOutbox.store_id == attempt.store_id,
+        ShopCustomerNotificationOutbox.bot_id == bot_id,
+        ShopCustomerNotificationOutbox.platform_user_id == user_id,
+    ))
+    if owned is None:
+        return False
+    return await deliver_once(
+        db, bot_id=bot_id, event_key=event_key, transport=transport,
+    )

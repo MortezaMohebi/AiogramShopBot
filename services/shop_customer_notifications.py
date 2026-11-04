@@ -8,7 +8,8 @@ automatically, avoiding accidental duplicate provider messages.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,8 @@ from services.shop_bot_context import BotContext
 from services.shop_customer_account import customer_for_bot
 
 _VALID_TOPICS = frozenset({"order", "ticket", "stock", "marketing"})
+_EVENT_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9:_-]{6,119}\Z")
+_STOCK_EVENT = re.compile(r"stock:([1-9][0-9]{0,18})(?::([0-9]{20}))?\Z")
 _OUTBOX_TRANSITIONS = {
     "queued": frozenset({"processing", "cancelled"}),
     "processing": frozenset({"sent", "needs_review", "cancelled"}),
@@ -32,6 +35,43 @@ _OUTBOX_TRANSITIONS = {
     "needs_review": frozenset(),
     "cancelled": frozenset(),
 }
+
+
+def _utc(value: datetime) -> datetime:
+    """Normalize stored subscription timestamps without losing microseconds."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def stock_event_alert_id(event_key: str) -> int | None:
+    """Read a bounded stock owner from legacy or generation-specific keys."""
+    match = _STOCK_EVENT.fullmatch(event_key)
+    if match is None:
+        return None
+    alert_id = int(match.group(1))
+    return alert_id if alert_id <= 2**63 - 1 else None
+
+
+def stock_event_matches(
+    alert: ShopStockAlert, row: ShopCustomerNotificationOutbox,
+) -> bool:
+    """Bind a queued/send receipt to the current explicit subscription.
+
+    First-generation keys retain their historical format. Later requests use
+    the refreshed subscription timestamp as their durable generation, while
+    old unversioned notices are valid only before a newer explicit request.
+    """
+    if stock_event_alert_id(row.event_key) != alert.id:
+        return False
+    base = f"stock:{alert.id}"
+    if row.event_key == base:
+        return bool(
+            row.created_at is not None and alert.created_at is not None
+            and _utc(row.created_at) >= _utc(alert.created_at)
+        )
+    generation = _utc(alert.created_at).strftime("%Y%m%d%H%M%S%f")
+    return row.event_key == f"{base}:{generation}"
 
 
 def notification_permitted(
@@ -99,6 +139,12 @@ async def toggle_stock_alert(
         )
     elif existing is not None:
         existing.status = "active"
+        # A fresh customer request creates a distinct delivery authorization.
+        # Keep timestamps monotonic even on a low-resolution system clock.
+        existing.created_at = max(
+            datetime.now(timezone.utc),
+            _utc(existing.created_at) + timedelta(microseconds=1),
+        )
         response = "✅ هنگام موجودشدن محصول از همین بات اطلاع‌رسانی می‌کنیم."
     else:
         db.add(ShopStockAlert(
@@ -157,7 +203,7 @@ async def enqueue_notification(
     if identity is None or identity.is_blocked:
         return False
     if (
-        len(event_key) < 8 or len(event_key) > 120
+        not isinstance(event_key, str) or not _EVENT_KEY.fullmatch(event_key)
         or not 1 <= len(body) <= 4000
         or not notification_permitted(
             topic=topic,
@@ -228,10 +274,17 @@ async def prepare_stock_alerts(
         if not await allowed_for_bot(db, context.bot_id, [alert.product_id]):
             continue
         product = await db.get(Product, alert.product_id)
+        event_key = f"stock:{alert.id}"
+        prior = await db.scalar(select(ShopCustomerNotificationOutbox.id).where(
+            ShopCustomerNotificationOutbox.event_key == event_key,
+        ))
+        if prior is not None:
+            generation = _utc(alert.created_at).strftime("%Y%m%d%H%M%S%f")
+            event_key = f"{event_key}:{generation}"
         accepted = await enqueue_notification(
             db, context=context,
             user_id=alert.platform_user_id, topic="stock",
-            event_key=f"stock:{alert.id}",
+            event_key=event_key,
             body=f"📦 «{product.name[:180]}» دوباره موجود شده است.",
             explicit_request=True,
         )
@@ -243,13 +296,18 @@ async def prepare_stock_alerts(
 
 
 async def claim_outbox_message(
-    db: AsyncSession, *, bot_id: str,
+    db: AsyncSession, *, bot_id: str, event_key: str | None = None,
 ) -> ShopCustomerNotificationOutbox | None:
     """Claim a queued message durably *before* its provider API request."""
-    row = await db.scalar(select(ShopCustomerNotificationOutbox).where(
+    statement = select(ShopCustomerNotificationOutbox).where(
         ShopCustomerNotificationOutbox.bot_id == bot_id,
         ShopCustomerNotificationOutbox.status == "queued",
-    ).order_by(
+    )
+    if event_key is not None:
+        statement = statement.where(
+            ShopCustomerNotificationOutbox.event_key == event_key,
+        )
+    row = await db.scalar(statement.order_by(
         ShopCustomerNotificationOutbox.id,
     ).with_for_update(skip_locked=True).limit(1))
     if row is None:
@@ -288,16 +346,18 @@ async def finish_outbox_message(
     if row.topic == "stock" and row.event_key.startswith("stock:"):
         # Stock alerts are one-shot; once delivered or revoked, they must
         # never be resent due to a later inventory change.
-        try:
-            alert_id = int(row.event_key.removeprefix("stock:"))
-        except ValueError:
-            alert_id = None
-        alert = await db.get(ShopStockAlert, alert_id) if alert_id else None
+        alert_id = stock_event_alert_id(row.event_key)
+        alert = await db.scalar(select(ShopStockAlert).where(
+            ShopStockAlert.id == alert_id,
+        ).with_for_update().execution_options(
+            populate_existing=True,
+        )) if alert_id else None
         if (
             alert is not None and alert.bot_id == row.bot_id
             and alert.store_id == row.store_id
             and alert.platform_user_id == row.platform_user_id
             and alert.status == "queued"
+            and stock_event_matches(alert, row)
         ):
             if succeeded:
                 alert.status = "notified"
