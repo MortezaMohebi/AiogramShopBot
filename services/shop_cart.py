@@ -11,6 +11,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from services.shop_checkout_policy import checkout_rules
+from services.shop_checkout_copy import checkout_confirmation_text
 from services.shop_mixed_checkout import MixedCheckoutError
 from services.shop_mixed_checkout_orders import (
     checkout_idempotency_key, create_split_orders,
@@ -821,10 +822,6 @@ class ShopCartFlow:
                 "تا تکمیل قوانین فروش غیرفعال است.",
                 ((button("🆘 پشتیبانی", "ux:support"),),),
             )
-        intent = (
-            "ثبت و آماده‌سازی پرداخت" if policy.mode == "instant"
-            else "ثبت درخواست بررسی فروشنده"
-        )
         price_line = (
             format_rials(split_plan.physical.total_irr, self.display_unit)
             + f" + {split_plan.digital.total_stars} Stars (XTR)"
@@ -834,17 +831,13 @@ class ShopCartFlow:
             else format_rials(quote.total, self.display_unit)
         )
         return BotReply(
-            "🧾 بررسی نهایی سفارش\n"
-            f"تعداد اقلام: {sum(line.quantity for line in quote.lines)}\n"
-            f"مبلغ نهایی: {price_line}\n"
-            f"مسیر: {intent}\n"
-            f"شرایط خرید: نسخهٔ {policy.terms_version}\n"
-            (
-                "با تأیید، دو سفارش جدا ثبت می‌شود؛ پرداخت هرکدام مستقل است. "
-                if split_plan is not None else ""
-            )
-            + "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
-            "متن کامل از /terms قابل مشاهده است؛ هنوز وجهی دریافت نشده.",
+            checkout_confirmation_text(
+                item_count=sum(line.quantity for line in quote.lines),
+                price_label=price_line,
+                checkout_mode=policy.mode,
+                terms_version=policy.terms_version,
+                split=split_plan is not None,
+            ),
             ((
                 button(
                     (
