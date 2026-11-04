@@ -282,4 +282,22 @@ async def finish_outbox_message(
         row.failure_code = "authorization_revoked"
     else:
         row.failure_code = "provider_outcome_unknown"
+    if row.topic == "stock" and row.event_key.startswith("stock:"):
+        # Stock alerts are one-shot; once delivered or revoked, they must
+        # never be resent due to a later inventory change.
+        try:
+            alert_id = int(row.event_key.removeprefix("stock:"))
+        except ValueError:
+            alert_id = None
+        alert = await db.get(ShopStockAlert, alert_id) if alert_id else None
+        if (
+            alert is not None and alert.bot_id == row.bot_id
+            and alert.store_id == row.store_id
+            and alert.platform_user_id == row.platform_user_id
+            and alert.status == "queued"
+        ):
+            if succeeded:
+                alert.status = "notified"
+            elif cancelled:
+                alert.status = "cancelled"
     await db.commit()
