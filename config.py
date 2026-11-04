@@ -204,6 +204,10 @@ if BALE_BROADCAST_PREPARE_CHAT_ID < 0:
 SHOP_BROADCAST_WORKER_ENABLED = (
     os.environ.get("SHOP_BROADCAST_WORKER_ENABLED", "false").lower() == "true"
 )
+# Registry campaigns additionally require the CLI's per-bot transport factory.
+SHOP_BROADCAST_REGISTRY_ENABLED = (
+    os.environ.get("SHOP_BROADCAST_REGISTRY_ENABLED", "false").lower() == "true"
+)
 SHOP_BROADCAST_TELEGRAM_MPS = int(
     os.environ.get("SHOP_BROADCAST_TELEGRAM_MPS", "5")
 )

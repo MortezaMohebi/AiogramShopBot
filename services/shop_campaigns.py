@@ -6,23 +6,33 @@ enforces global/per-chat pacing and prevents ambiguous retries.
 
 from __future__ import annotations
 
-
 from sqlalchemy import func, insert, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import config
 from channels.contracts import MediaAttachment
 from channels.media_policy import MediaLimitError, bale_media_method
 from dashboard.media_storage import safe_media_path
-import config
 from models.shop_content import ShopIdentity
-from models.shop_multibot import LEGACY_BOT_IDS, ShopBot
 from models.shop_engagement import (
-    ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
+    ShopCampaign,
+    ShopCampaignDelivery,
+    ShopCampaignMedia,
 )
+from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore
 
 
 class CampaignRejected(ValueError):
     """Campaign approval or dispatch failed without silently resending."""
+
+
+def require_campaign_scope(campaign: ShopCampaign) -> None:
+    """Enforce the current trusted Store even for already-loaded ORM rows."""
+    from services.shop_store_context import current_context
+
+    scope = current_context()
+    if scope is not None:
+        scope.require(campaign.store_id, write=True)
 
 
 class ShopCampaignService:
@@ -69,21 +79,18 @@ class ShopCampaignService:
         return tuple(attachments)
 
     @staticmethod
-    async def approve(
-        session: AsyncSession, *, campaign_id: int, approver: str
-    ) -> int:
+    async def approve(session: AsyncSession, *, campaign_id: int, approver: str) -> int:
         """Materialize recipients only after explicit marketing approval."""
         if type(campaign_id) is not int or campaign_id <= 0:
             raise CampaignRejected("شناسه کمپین نامعتبر است.")
         if not 1 <= len(approver) <= 120:
             raise CampaignRejected("شناسه تأییدکننده معتبر نیست.")
         campaign = await session.scalar(
-            select(ShopCampaign).where(
-                ShopCampaign.id == campaign_id
-            ).with_for_update()
+            select(ShopCampaign).where(ShopCampaign.id == campaign_id).with_for_update()
         )
         if campaign is None or campaign.status != "draft":
             raise CampaignRejected("کمپین قابل تأیید نیست.")
+        require_campaign_scope(campaign)
         if not 1 <= len(campaign.title) <= 120:
             raise CampaignRejected("عنوان کمپین معتبر نیست.")
         if not 1 <= len(campaign.text) <= 3000:
@@ -93,30 +100,47 @@ class ShopCampaignService:
         await ShopCampaignService._attachments(session, campaign)
 
         clause = [
+            # INSERT SELECT bypasses ORM write hooks; scope it explicitly.
+            ShopIdentity.store_id == campaign.store_id,
             ShopIdentity.allow_announcements.is_(True),
             ShopIdentity.is_blocked.is_(False),
         ]
         if campaign.bot_id is not None:
             bot = await session.get(ShopBot, campaign.bot_id)
             if (
-                bot is None or bot.runtime_owner != "registry"
+                bot is None
+                or bot.runtime_owner != "registry"
                 or bot.status != "active"
+                or bot.store_id != campaign.store_id
                 or campaign.audience not in ("all", bot.platform)
             ):
-                raise CampaignRejected(
-                    "بات مقصد فعال نیست یا کانال کمپین نامعتبر است."
+                raise CampaignRejected("بات مقصد فعال نیست یا کانال کمپین نامعتبر است.")
+            store = await session.get(ShopStore, bot.store_id)
+            if store is None or store.state != "active":
+                raise CampaignRejected("فروشگاه مقصد فعال نیست.")
+            clause.extend(
+                (
+                    ShopIdentity.bot_id == bot.id,
+                    ShopIdentity.platform == bot.platform,
                 )
-            clause.append(ShopIdentity.bot_id == bot.id)
+            )
         else:
             # An old cross-provider campaign must NEVER consume the opt-ins
             # of newly registered bots and deliver via legacy credentials.
+            if campaign.store_id != DEFAULT_STORE_ID:
+                raise CampaignRejected("بات مقصد کمپین را انتخاب کنید.")
             clause.append(
-                ShopIdentity.bot_id.in_(tuple(LEGACY_BOT_IDS.values()))
+                (
+                    (ShopIdentity.platform == "telegram")
+                    & (ShopIdentity.bot_id == LEGACY_BOT_IDS["telegram"])
+                )
+                | (
+                    (ShopIdentity.platform == "bale")
+                    & (ShopIdentity.bot_id == LEGACY_BOT_IDS["bale"])
+                )
             )
         if campaign.audience != "all":
-            clause.append(
-                ShopIdentity.platform == campaign.audience
-            )
+            clause.append(ShopIdentity.platform == campaign.audience)
         stmt = insert(ShopCampaignDelivery).from_select(
             ["campaign_id", "identity_id", "bot_id", "status"],
             select(
@@ -124,13 +148,13 @@ class ShopCampaignService:
                 ShopIdentity.id,
                 ShopIdentity.bot_id,
                 literal("queued"),
-            ).where(*clause)
+            ).where(*clause),
         )
         await session.execute(stmt)
         count = await session.scalar(
-            select(func.count()).select_from(ShopCampaignDelivery).where(
-                ShopCampaignDelivery.campaign_id == campaign.id
-            )
+            select(func.count())
+            .select_from(ShopCampaignDelivery)
+            .where(ShopCampaignDelivery.campaign_id == campaign.id)
         )
         campaign.approved_by = approver
         campaign.status = "approved" if count else "completed"

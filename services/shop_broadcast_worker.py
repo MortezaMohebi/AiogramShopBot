@@ -11,28 +11,40 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, true
+from sqlalchemy import false, or_, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
 from channels.bale import BaleTransport
 from channels.contracts import BotReply, MediaAttachment, Platform
 from channels.telegram import TelegramTransport
 from models.shop_content import ShopIdentity
-from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_engagement import (
-    ShopCampaign, ShopCampaignDelivery, ShopBroadcastWorkerHeartbeat,
+    ShopBroadcastWorkerHeartbeat,
+    ShopCampaign,
+    ShopCampaignDelivery,
 )
+from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot
+from services.shop_bot_operations import legacy_state
 from services.shop_broadcast_control import (
-    _business_media_ready, delivery_counts, record_audit,
+    _business_media_ready,
+    delivery_counts,
+    record_audit,
 )
 from services.shop_broadcast_rate import reserve_message_slot
-from services.shop_bot_operations import legacy_state
+from services.shop_broadcast_scope import (
+    ready_legacy_bot,
+    ready_registry_bot,
+    registry_dispatch_enabled,
+)
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +56,93 @@ class ClaimedRecipient:
     platform: Platform
     user_id: int
     bale_mode: str
+    bot_id: str
+    store_id: str
+    identity_id: int
+    credential_version: int | None
+    provider_bot_id: int | None
+    skip_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignTransport:
+    """One explicit bot-bound provider connection; never expose its token."""
+
+    bot_id: str
+    platform: Platform
+    credential_version: int | None
+    token: str = field(repr=False)
+    transport: TelegramTransport | BaleTransport = field(repr=False)
+
+
+@asynccontextmanager
+async def registry_transport(
+    claim: ClaimedRecipient,
+) -> AsyncIterator[CampaignTransport]:
+    """Open the exact claimed Registry credential with guaranteed cleanup.
+
+    The CLI injects this factory only after deployment opt-in. Provider
+    creation does not activate receivers, verify tokens or send any message.
+    """
+    from aiohttp import ClientSession, ClientTimeout
+
+    from db import session_maker
+    from services.shop_bot_secrets import resolve_active_token
+    from services.shop_multibot_client import provider_client
+
+    if not registry_dispatch_enabled():
+        raise CampaignRejected("Registry broadcast transport is disabled.")
+    async with session_maker() as session:
+        bot = await session.scalar(
+            ready_registry_bot(
+                bot_id=claim.bot_id,
+                store_id=claim.store_id,
+            )
+        )
+        if (
+            bot is None
+            or bot.platform != claim.platform.value
+            or bot.credential_version != claim.credential_version
+            or bot.provider_bot_id != claim.provider_bot_id
+        ):
+            raise CampaignRejected("Registry broadcast ownership changed.")
+        token = await session.run_sync(
+            lambda sync: resolve_active_token(
+                sync,
+                bot_id=claim.bot_id,
+            )
+        )
+
+    if claim.platform == Platform.TELEGRAM:
+        async with provider_client(
+            "telegram",
+            token,
+            bot_id=claim.bot_id,
+        ) as client:
+            yield CampaignTransport(
+                bot_id=claim.bot_id,
+                platform=claim.platform,
+                credential_version=claim.credential_version,
+                token=token,
+                transport=TelegramTransport(client, bot_id=claim.bot_id),
+            )
+    else:
+        async with ClientSession(
+            timeout=ClientTimeout(total=120),
+            trust_env=False,
+        ) as session:
+            yield CampaignTransport(
+                bot_id=claim.bot_id,
+                platform=claim.platform,
+                credential_version=claim.credential_version,
+                token=token,
+                transport=BaleTransport(
+                    token,
+                    session,
+                    bot_id=claim.bot_id,
+                    business_mode=claim.bale_mode == "business",
+                ),
+            )
 
 
 class BroadcastWorker:
@@ -54,19 +153,26 @@ class BroadcastWorker:
         *,
         telegram: TelegramTransport | None,
         bale_session,
-        telegram_transport_sync=None,
+        telegram_transport_sync: Callable[[], Awaitable[None]] | None = None,
+        registry_transport_factory: Callable[
+            [ClaimedRecipient], AbstractAsyncContextManager[CampaignTransport]
+        ]
+        | None = None,
     ) -> None:
-        """Reuse one Telegram Bot and one optional Bale aiohttp client."""
+        """Reuse legacy clients and optionally allow explicit Registry transports."""
         self.telegram = telegram
         self.bale_session = bale_session
         self.telegram_transport_sync = telegram_transport_sync
+        # No factory means this instance remains a legacy-token worker even
+        # when another deployment has enabled Registry campaign controls.
+        self.registry_transport_factory = registry_transport_factory
         self.worker_id = secrets.token_hex(16)
 
     async def heartbeat(self) -> None:
         """Expose a low-cost liveness signal without any external API call."""
         from db import session_maker
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stmt = insert(ShopBroadcastWorkerHeartbeat).values(
             worker_id=self.worker_id, started_at=now, last_seen_at=now
         )
@@ -88,7 +194,7 @@ class BroadcastWorker:
         """
         from db import session_maker
 
-        cutoff = datetime.now(timezone.utc) - timedelta(
+        cutoff = datetime.now(UTC) - timedelta(
             seconds=config.SHOP_BROADCAST_STALE_SECONDS
         )
         async with session_maker() as session:
@@ -102,7 +208,8 @@ class BroadcastWorker:
                         ShopCampaignDelivery.campaign_id == ShopCampaign.id,
                         ShopCampaignDelivery.status == "sending",
                         ShopCampaignDelivery.claimed_at < cutoff,
-                    ).exists()
+                    )
+                    .exists()
                 )
                 .order_by(ShopCampaign.id)
                 .limit(25)
@@ -112,20 +219,26 @@ class BroadcastWorker:
             for campaign in campaigns.scalars().all():
                 changed_campaign = 0
                 rows = await session.execute(
-                    select(ShopCampaignDelivery).where(
+                    select(ShopCampaignDelivery)
+                    .where(
                         ShopCampaignDelivery.campaign_id == campaign.id,
                         ShopCampaignDelivery.status == "sending",
                         ShopCampaignDelivery.claimed_at < cutoff,
-                    ).order_by(ShopCampaignDelivery.id)
-                    .limit(25).with_for_update(skip_locked=True)
+                    )
+                    .order_by(ShopCampaignDelivery.id)
+                    .limit(25)
+                    .with_for_update(skip_locked=True)
                 )
                 for delivery in rows.scalars().all():
                     delivery.status = "unknown"
                     delivery.last_error_code = "stale_after_restart"
                     record_audit(
-                        session, campaign_id=campaign.id,
-                        delivery_id=delivery.id, actor="worker",
-                        action="quarantine", old_status="sending",
+                        session,
+                        campaign_id=campaign.id,
+                        delivery_id=delivery.id,
+                        actor="worker",
+                        action="quarantine",
+                        old_status="sending",
                         new_status="unknown",
                         reason="In-flight delivery exceeded stale threshold.",
                     )
@@ -133,7 +246,7 @@ class BroadcastWorker:
                     changed_campaign += 1
                 if changed_campaign and campaign.status == "sending":
                     campaign.status = "paused"
-                    campaign.paused_at = datetime.now(timezone.utc)
+                    campaign.paused_at = datetime.now(UTC)
                     campaign.last_error_code = "stale_after_restart"
             if changed:
                 await session.commit()
@@ -144,26 +257,69 @@ class BroadcastWorker:
         from db import session_maker
 
         async with session_maker() as session:
-            # Do not consume queued deliveries for a paused/disabled bot.
-            # Each legacy platform remains independent until bot_id migration.
+            # Registry-only deployments need not have either legacy token or
+            # profile. Do not consult legacy policy for unavailable clients.
             available_platforms = [
-                platform for platform in ("telegram", "bale")
+                platform
+                for platform in ("telegram", "bale")
+                if (
+                    self.telegram is not None
+                    if platform == "telegram"
+                    else self.bale_session is not None
+                )
                 if (await legacy_state(session, platform)).state == "active"
+                if await session.scalar(ready_legacy_bot(platform)) is not None
             ]
-            if not available_platforms:
+            registry_enabled = (
+                registry_dispatch_enabled()
+                and self.registry_transport_factory is not None
+            )
+            if not available_platforms and not registry_enabled:
                 return None
-            # This legacy worker has only the two original provider tokens.
-            # Registry-owned deliveries remain queued for a future bot-aware
-            # worker and must never be sent with a legacy credential.
-            eligible_bot_ids = tuple(
-                LEGACY_BOT_IDS[platform] for platform in available_platforms
+
+            legacy_owner = (
+                or_(
+                    false(),
+                    *(
+                        (ShopIdentity.platform == platform)
+                        & (ShopIdentity.bot_id == LEGACY_BOT_IDS[platform])
+                        for platform in available_platforms
+                    ),
+                )
+                & (ShopCampaign.store_id == DEFAULT_STORE_ID)
+                & (
+                    ShopCampaign.bot_id.is_(None)
+                    | (ShopCampaign.bot_id == ShopIdentity.bot_id)
+                )
+            )
+            registry_owner = (
+                (ShopCampaign.bot_id == ShopIdentity.bot_id)
+                & ready_registry_bot(
+                    bot_id=ShopIdentity.bot_id,
+                    store_id=ShopCampaign.store_id,
+                )
+                .where(
+                    ShopBot.platform == ShopIdentity.platform,
+                )
+                .correlate(ShopIdentity, ShopCampaign)
+                .exists()
+                if registry_enabled
+                else false()
+            )
+            scope = (
+                ShopCampaignDelivery.status == "queued",
+                ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
+                ShopIdentity.store_id == ShopCampaign.store_id,
+                or_(
+                    ShopCampaign.audience == "all",
+                    ShopCampaign.audience == ShopIdentity.platform,
+                ),
+                or_(legacy_owner, registry_owner),
             )
             active = await session.scalar(
                 select(ShopCampaign)
                 .where(
                     ShopCampaign.status == "sending",
-                    ShopCampaign.bot_id.in_(eligible_bot_ids)
-                    | ShopCampaign.bot_id.is_(None),
                     select(ShopCampaignDelivery.id)
                     .join(
                         ShopIdentity,
@@ -171,14 +327,7 @@ class BroadcastWorker:
                     )
                     .where(
                         ShopCampaignDelivery.campaign_id == ShopCampaign.id,
-                        ShopCampaignDelivery.status == "queued",
-                        ShopIdentity.platform.in_(available_platforms),
-                        ShopIdentity.bot_id.in_(eligible_bot_ids),
-                        ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
-                        (
-                            ShopCampaign.bot_id.is_(None)
-                            | (ShopCampaign.bot_id == ShopIdentity.bot_id)
-                        ),
+                        *scope,
                     )
                     .exists(),
                 )
@@ -194,40 +343,31 @@ class BroadcastWorker:
                     ShopIdentity,
                     ShopIdentity.id == ShopCampaignDelivery.identity_id,
                 )
+                .join(ShopCampaign, ShopCampaign.id == ShopCampaignDelivery.campaign_id)
                 .where(
                     ShopCampaignDelivery.campaign_id == active.id,
-                    ShopCampaignDelivery.status == "queued",
-                    ShopIdentity.platform.in_(available_platforms),
-                    ShopIdentity.bot_id.in_(eligible_bot_ids),
-                    ShopCampaignDelivery.bot_id == ShopIdentity.bot_id,
-                    (
-                        ShopIdentity.bot_id == active.bot_id
-                        if active.bot_id is not None else true()
-                    ),
+                    *scope,
                 )
                 .order_by(ShopCampaignDelivery.id)
                 .limit(1)
-                .with_for_update(
-                    of=ShopCampaignDelivery, skip_locked=True
-                )
+                .with_for_update(of=ShopCampaignDelivery, skip_locked=True)
             )
             pair = row.one_or_none()
             if pair is None:
                 return None
             delivery, identity = pair
-            if (
-                identity.platform not in ("telegram", "bale")
-                or (active.bot_id is not None
-                    and active.bot_id != identity.bot_id)
-            ):
-                delivery.status = "skipped"
-                delivery.last_error_code = "unknown_platform"
-                await session.commit()
-                return None
-
-            delivery.status = "sending"
+            is_registry = identity.bot_id not in LEGACY_BOT_IDS.values()
+            bot = await session.get(ShopBot, identity.bot_id) if is_registry else None
+            # A revoked opt-in is terminal before any factory sees the claim.
+            skip_reason = (
+                "consent_revoked"
+                if identity.is_blocked or not identity.allow_announcements
+                else None
+            )
+            delivery.status = "skipped" if skip_reason else "sending"
+            delivery.last_error_code = skip_reason
             delivery.worker_id = self.worker_id
-            delivery.claimed_at = datetime.now(timezone.utc)
+            delivery.claimed_at = datetime.now(UTC)
             delivery.completed_steps = 0
             await session.commit()
             return ClaimedRecipient(
@@ -236,10 +376,17 @@ class BroadcastWorker:
                 platform=Platform(identity.platform),
                 user_id=identity.platform_user_id,
                 bale_mode=active.bale_mode,
+                bot_id=identity.bot_id,
+                store_id=active.store_id,
+                identity_id=identity.id,
+                credential_version=bot.credential_version if bot else None,
+                provider_bot_id=bot.provider_bot_id if bot else None,
+                skip_reason=skip_reason,
             )
 
     async def _step_allowed(
-        self, claim: ClaimedRecipient,
+        self,
+        claim: ClaimedRecipient,
     ) -> tuple[bool, int]:
         """Check current opt-in and pause/cancel state before each API call."""
         from db import session_maker
@@ -266,13 +413,48 @@ class BroadcastWorker:
             if row is None:
                 return False, 0
             delivery, identity, campaign = row
-            operations = await legacy_state(session, identity.platform)
+            same_owner = (
+                identity.id == claim.identity_id
+                and identity.bot_id == claim.bot_id
+                and identity.store_id == claim.store_id
+                and identity.platform == claim.platform.value
+                and identity.platform_user_id == claim.user_id
+                and delivery.bot_id == claim.bot_id
+                and campaign.store_id == claim.store_id
+                and campaign.bale_mode == claim.bale_mode
+                and campaign.audience in ("all", claim.platform.value)
+            )
+            if claim.bot_id in LEGACY_BOT_IDS.values():
+                operations = await legacy_state(session, claim.platform.value)
+                bot = await session.scalar(ready_legacy_bot(claim.platform.value))
+                runtime_allowed = (
+                    operations.state == "active"
+                    and bot is not None
+                    and claim.bot_id == LEGACY_BOT_IDS[claim.platform.value]
+                    and claim.store_id == DEFAULT_STORE_ID
+                    and campaign.bot_id in (None, claim.bot_id)
+                )
+            else:
+                bot = await session.scalar(
+                    ready_registry_bot(
+                        bot_id=claim.bot_id,
+                        store_id=claim.store_id,
+                    )
+                )
+                runtime_allowed = (
+                    registry_dispatch_enabled()
+                    and self.registry_transport_factory is not None
+                    and bot is not None
+                    and bot.platform == claim.platform.value
+                    and bot.credential_version == claim.credential_version
+                    and bot.provider_bot_id == claim.provider_bot_id
+                    and campaign.bot_id == claim.bot_id
+                )
             return (
-                operations.state == "active"
-                and identity.bot_id == LEGACY_BOT_IDS.get(identity.platform)
-                and delivery.bot_id == identity.bot_id
-                and (campaign.bot_id is None
-                     or campaign.bot_id == identity.bot_id)
+                config.SHOP_BROADCAST_WORKER_ENABLED
+                and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+                and same_owner
+                and runtime_allowed
                 and campaign.status == "sending"
                 and identity.is_blocked is False
                 and identity.allow_announcements is True,
@@ -286,15 +468,17 @@ class BroadcastWorker:
 
         async with session_maker() as session:
             delivery = await session.scalar(
-                select(ShopCampaignDelivery).where(
+                select(ShopCampaignDelivery)
+                .where(
                     ShopCampaignDelivery.id == delivery_id,
                     ShopCampaignDelivery.status == "sending",
-                ).with_for_update()
+                )
+                .with_for_update()
             )
             if delivery is None:
                 raise RuntimeError("In-flight delivery was unexpectedly changed.")
             delivery.completed_steps += 1
-            delivery.claimed_at = datetime.now(timezone.utc)
+            delivery.claimed_at = datetime.now(UTC)
             await session.commit()
 
     @staticmethod
@@ -312,9 +496,9 @@ class BroadcastWorker:
 
         async with session_maker() as session:
             campaign = await session.scalar(
-                select(ShopCampaign).where(
-                    ShopCampaign.id == claim.campaign_id
-                ).with_for_update()
+                select(ShopCampaign)
+                .where(ShopCampaign.id == claim.campaign_id)
+                .with_for_update()
             )
             if (
                 campaign is None
@@ -348,9 +532,9 @@ class BroadcastWorker:
             if delivery_id_parent is None:
                 return
             campaign = await session.scalar(
-                select(ShopCampaign).where(
-                    ShopCampaign.id == delivery_id_parent
-                ).with_for_update()
+                select(ShopCampaign)
+                .where(ShopCampaign.id == delivery_id_parent)
+                .with_for_update()
             )
             delivery = await session.scalar(
                 select(ShopCampaignDelivery)
@@ -362,18 +546,21 @@ class BroadcastWorker:
             delivery.status = status
             delivery.last_error_code = error_code
             if status == "sent":
-                delivery.sent_at = datetime.now(timezone.utc)
+                delivery.sent_at = datetime.now(UTC)
             if status == "unknown":
                 record_audit(
-                    session, campaign_id=delivery.campaign_id,
+                    session,
+                    campaign_id=delivery.campaign_id,
                     delivery_id=delivery.id,
-                    actor="worker", action="delivery_uncertain",
-                    old_status="sending", new_status="unknown",
+                    actor="worker",
+                    action="delivery_uncertain",
+                    old_status="sending",
+                    new_status="unknown",
                     reason=error_code,
                 )
                 if campaign is not None and campaign.status == "sending":
                     campaign.status = "paused"
-                    campaign.paused_at = datetime.now(timezone.utc)
+                    campaign.paused_at = datetime.now(UTC)
                     campaign.last_error_code = error_code or "unknown_delivery"
             await session.commit()
 
@@ -399,43 +586,104 @@ class BroadcastWorker:
                 campaign.status = (
                     "needs_review" if counts.get("unknown") else "completed"
                 )
-                campaign.finished_at = datetime.now(timezone.utc)
+                campaign.finished_at = datetime.now(UTC)
                 record_audit(
-                    session, campaign_id=campaign.id,
-                    actor="worker", action="finish",
-                    old_status=old, new_status=campaign.status,
+                    session,
+                    campaign_id=campaign.id,
+                    actor="worker",
+                    action="finish",
+                    old_status=old,
+                    new_status=campaign.status,
                 )
                 done += 1
             if done:
                 await session.commit()
             return done
 
-    async def _send_one(
-        self, claim: ClaimedRecipient, *,
-        text: str, attachments: tuple[MediaAttachment, ...]
-    ) -> None:
-        """Send text and attachments with durable pacing at every API step."""
+    @asynccontextmanager
+    async def _outbound(
+        self,
+        claim: ClaimedRecipient,
+    ) -> AsyncIterator[CampaignTransport]:
+        """Never substitute a legacy token for a claimed Registry bot."""
+        if claim.bot_id not in LEGACY_BOT_IDS.values():
+            if (
+                not registry_dispatch_enabled()
+                or self.registry_transport_factory is None
+            ):
+                raise CampaignRejected("Registry broadcast transport is disabled.")
+            async with self.registry_transport_factory(claim) as outbound:
+                if (
+                    outbound.bot_id != claim.bot_id
+                    or outbound.platform != claim.platform
+                    or outbound.credential_version != claim.credential_version
+                    or getattr(outbound.transport, "bot_id", None) != claim.bot_id
+                ):
+                    raise CampaignRejected("Registry transport ownership mismatch.")
+                yield outbound
+            return
+        if claim.bot_id != LEGACY_BOT_IDS.get(claim.platform.value):
+            raise CampaignRejected("Legacy transport ownership mismatch.")
         if claim.platform == Platform.TELEGRAM:
             if self.telegram is None:
                 raise CampaignRejected("Telegram transport is unavailable.")
             token = self.telegram.bot.token
+            transport = self.telegram
         else:
             if not config.BALE_BOT_TOKEN or self.bale_session is None:
                 raise CampaignRejected("Bale transport is unavailable.")
             token = config.BALE_BOT_TOKEN
-
-        bale = (
-            BaleTransport(
-                config.BALE_BOT_TOKEN,
+            transport = BaleTransport(
+                token,
                 self.bale_session,
                 business_mode=claim.bale_mode == "business",
             )
-            if claim.platform == Platform.BALE else None
+        yield CampaignTransport(
+            bot_id=claim.bot_id,
+            platform=claim.platform,
+            credential_version=None,
+            token=token,
+            transport=transport,
         )
+
+    async def _send_one(
+        self,
+        claim: ClaimedRecipient,
+        *,
+        text: str,
+        attachments: tuple[MediaAttachment, ...],
+    ) -> None:
+        """Send text and attachments using only the explicit scoped transport."""
+        allowed, progress = await self._step_allowed(claim)
+        if not allowed:
+            await self._complete(
+                claim.delivery_id,
+                status="unknown" if progress else "skipped",
+                error_code="paused_or_consent_revoked",
+            )
+            return
+        async with self._outbound(claim) as outbound:
+            await self._send_steps(
+                claim,
+                outbound=outbound,
+                text=text,
+                attachments=attachments,
+            )
+
+    async def _send_steps(
+        self,
+        claim: ClaimedRecipient,
+        *,
+        outbound: CampaignTransport,
+        text: str,
+        attachments: tuple[MediaAttachment, ...],
+    ) -> None:
+        """Recheck ownership and consent around every durable pacing wait."""
         all_steps = (None, *attachments)
         for step in all_steps:
             if (
                 claim.platform == Platform.TELEGRAM
+                and claim.bot_id in LEGACY_BOT_IDS.values()
                 and self.telegram_transport_sync is not None
             ):
                 # Fail closed before any external delivery using stale config.
@@ -451,12 +699,14 @@ class BroadcastWorker:
             # Each Bot API *message* has one global and one private-chat slot.
             await reserve_message_slot(
                 platform=claim.platform,
-                token=token,
+                token=outbound.token,
+                bot_id=claim.bot_id,
                 user_id=claim.user_id,
                 bale_mode=claim.bale_mode,
             )
             if (
                 claim.platform == Platform.TELEGRAM
+                and claim.bot_id in LEGACY_BOT_IDS.values()
                 and self.telegram_transport_sync is not None
             ):
                 # A rate-limit wait may have outlived a successful switch.
@@ -474,16 +724,22 @@ class BroadcastWorker:
             # Charge reservations are made before the request, even if the
             # provider times out: no hidden retries or unbounded fees.
             await self._paid_reservation(claim)
+            # Reserving the paid budget may wait for a campaign-row lock.
+            # Keep that conservative reservation, but never treat it as
+            # consent if the recipient or operations changed meanwhile.
+            allowed, progress = await self._step_allowed(claim)
+            if not allowed:
+                await self._complete(
+                    claim.delivery_id,
+                    status="unknown" if progress else "skipped",
+                    error_code="consent_changed_during_budget_wait",
+                )
+                return
             if step is None:
                 reply = BotReply(text)
-                if claim.platform == Platform.TELEGRAM:
-                    await self.telegram.send(claim.user_id, reply)
-                else:
-                    await bale.send(claim.user_id, reply)
-            elif claim.platform == Platform.TELEGRAM:
-                await self.telegram.send_media(claim.user_id, step)
+                await outbound.transport.send(claim.user_id, reply)
             else:
-                await bale.send_media(claim.user_id, step)
+                await outbound.transport.send_media(claim.user_id, step)
             await self._mark_step(claim.delivery_id)
             await self.heartbeat()
 
@@ -503,42 +759,41 @@ class BroadcastWorker:
         claim = await self._claim_one()
         if claim is None:
             return False
+        if claim.skip_reason is not None:
+            return True
 
         try:
             from db import session_maker
 
             async with session_maker() as session:
                 campaign = await session.get(ShopCampaign, claim.campaign_id)
-                attachments = await ShopCampaignService._attachments(
-                    session, campaign
-                )
-                if (
-                    claim.platform == Platform.BALE
-                    and claim.bale_mode == "business"
-                ):
+                attachments = await ShopCampaignService._attachments(session, campaign)
+                if claim.platform == Platform.BALE and claim.bale_mode == "business":
                     await _business_media_ready(session, campaign)
                 body = campaign.text
-            await self._send_one(
-                claim, text=body, attachments=attachments
-            )
+            await self._send_one(claim, text=body, attachments=attachments)
         except asyncio.CancelledError:
             # Cancellation during a network call is always an uncertain
             # external outcome. Preserve it and re-raise for clean shutdown.
             await self._complete(
-                claim.delivery_id, status="unknown",
+                claim.delivery_id,
+                status="unknown",
                 error_code="worker_cancelled",
             )
             raise
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - Quarantine every unclassified outcome.
             # Do not log provider errors containing token-bearing URLs, chat
             # text, or external message bodies.
-            logging.warning(
+            LOG.warning(
                 "Broadcast paused after uncertain delivery: campaign=%s "
                 "delivery=%s error_type=%s",
-                claim.campaign_id, claim.delivery_id, type(error).__name__,
+                claim.campaign_id,
+                claim.delivery_id,
+                type(error).__name__,
             )
             await self._complete(
-                claim.delivery_id, status="unknown",
+                claim.delivery_id,
+                status="unknown",
                 error_code="outbound_or_preflight_error",
             )
         return True
