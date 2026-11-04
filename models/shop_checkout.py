@@ -208,6 +208,59 @@ class ShopCartItem(Base):
     )
 
 
+class ShopCheckoutGroup(Base):
+    """One atomic split checkout with two independently payable Orders.
+
+    Its immutable checkout key binds one Bot/customer/cart revision so a
+    duplicated callback never constructs two additional payment obligations.
+    """
+
+    __tablename__ = "shop_checkout_groups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    platform_user_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False,
+    )
+    cart_id: Mapped[int] = mapped_column(
+        ForeignKey("shop_carts.id", ondelete="RESTRICT"), nullable=False,
+    )
+    checkout_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True,
+    )
+    quote_fingerprint: Mapped[str] = mapped_column(
+        String(12), nullable=False,
+    )
+    terms_version_snapshot: Mapped[str] = mapped_column(
+        String(32), nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(checkout_key) = 64",
+            name="ck_shop_checkout_group_key",
+        ),
+        CheckConstraint(
+            "length(quote_fingerprint) = 12",
+            name="ck_shop_checkout_group_proof",
+        ),
+        Index(
+            "ix_shop_checkout_group_owner",
+            "store_id", "bot_id", "platform_user_id",
+        ),
+    )
+
+
 class ShopOrderLine(Base):
     """Immutable product/price snapshots belonging to an order."""
 
