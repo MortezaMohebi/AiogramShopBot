@@ -408,7 +408,8 @@ class ShopCartFlow:
         return await self._cart_reply(event, session)
 
     async def _quote(
-        self, cart: ShopCart, session: AsyncSession, *, bot_id: str | None = None,
+        self, cart: ShopCart, session: AsyncSession, *,
+        bot_id: str | None = None, platform: Platform | None = None,
     ) -> CartQuote:
         """Calculate current product prices and optional shipping and coupon."""
         result = await session.execute(
@@ -461,7 +462,18 @@ class ShopCartFlow:
             raise CartRejected("کد تخفیف به این فروشگاه تعلق ندارد.")
         discount = validate_coupon(coupon, subtotal) if coupon else 0
         total = subtotal + shipping - discount
-        if not 0 < total <= MAX_RIALS:
+        # A Telegram digital Product may legitimately have no IRR price:
+        # the actual customer-facing invoice is exclusively XTR Stars.
+        zero_rial_stars = (
+            platform == Platform.TELEGRAM and total == 0
+            and all(line.product.product_type == "digital" for line in lines)
+            and all(
+                type(line.product.price_stars) is int
+                and line.product.price_stars > 0 for line in lines
+            )
+            and coupon is None and shipping == 0
+        )
+        if not (0 < total <= MAX_RIALS or zero_rial_stars):
             raise CartRejected("مبلغ سفارش معتبر نیست.")
         return CartQuote(
             tuple(lines), subtotal, discount, shipping, total,
@@ -527,6 +539,7 @@ class ShopCartFlow:
         try:
             quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
+                platform=event.platform,
             )
         except CartRejected as error:
             if str(error) == "سبد خرید خالی است.":
@@ -810,6 +823,7 @@ class ShopCartFlow:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
         quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
+                platform=event.platform,
             )
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
@@ -932,6 +946,7 @@ class ShopCartFlow:
         )
         quote = await self._quote(
                 cart, session, bot_id=self._bot_id(event.platform),
+                platform=event.platform,
             )
         if quote.shipping_required and (
             not cart.shipping_address or not quote.shipping_label
