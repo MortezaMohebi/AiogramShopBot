@@ -167,6 +167,26 @@ class CustomerAccountFlow:
             )
 
         if event.contact_phone is not None:
+            # Unsolicited Contact cards must not change account data.
+            # Only the verified owner who clicked the current phone action
+            # may complete verification within its short-lived Bot FSM.
+            state = await db.get(
+                ShopCustomerChatState,
+                (self.context.bot_id, event.user_id),
+            )
+            expiry = state.expires_at if state is not None else None
+            if expiry is not None and expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if (
+                state is None or state.store_id != self.context.store_id
+                or state.action != "phone_verification"
+                or expiry is None or expiry <= datetime.now(timezone.utc)
+            ):
+                return BotReply(
+                    "برای تأیید شماره، ابتدا از «مشخصات من» "
+                    "دکمهٔ تأیید شماره تماس را انتخاب کنید.",
+                    _actions(("🪪 مشخصات من", "ux:profile")),
+                )
             try:
                 phone = verified_contact(event)
             except ValueError:
@@ -176,6 +196,8 @@ class CustomerAccountFlow:
                 )
             customer.phone = phone
             customer.phone_verified_at = datetime.now(timezone.utc)
+            state.action = "idle"
+            state.context_ref = None
             await db.commit()
             return BotReply(
                 "✅ شمارهٔ تماس متعلق به حساب پیام‌رسان شما تأیید و ثبت شد.",
@@ -264,6 +286,24 @@ class CustomerAccountFlow:
                 ),
             )
         if action == "ux:phone":
+            state = await db.get(
+                ShopCustomerChatState,
+                (self.context.bot_id, event.user_id),
+            )
+            if state is None:
+                state = ShopCustomerChatState(
+                    bot_id=self.context.bot_id,
+                    platform_user_id=event.user_id,
+                    store_id=self.context.store_id,
+                    expires_at=datetime.now(timezone.utc) + _ADDRESS_TTL,
+                )
+                db.add(state)
+            if state.store_id != self.context.store_id:
+                raise ValueError("Contact verification Store mismatch.")
+            state.action = "phone_verification"
+            state.context_ref = None
+            state.expires_at = datetime.now(timezone.utc) + _ADDRESS_TTL
+            await db.commit()
             return BotReply(
                 "برای تأیید مالکیت شماره، از دکمهٔ رسمی اشتراک شمارهٔ تماس "
                 "در پیام‌رسان استفاده کنید. ارسال شماره به صورت متن تأیید محسوب نمی‌شود.",

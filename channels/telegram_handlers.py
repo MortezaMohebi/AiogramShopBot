@@ -67,7 +67,10 @@ class AwaitingShopInput(BaseFilter):
                 (LEGACY_TELEGRAM_BOT_ID, message.from_user.id),
             )
             return bool(
-                chat_state is not None and chat_state.action != "idle"
+                chat_state is not None and chat_state.action in {
+                    "product_search", "address_input", "ticket_input",
+                    "phone_verification",
+                }
                 and (
                     chat_state.expires_at.replace(tzinfo=timezone.utc)
                     if chat_state.expires_at.tzinfo is None

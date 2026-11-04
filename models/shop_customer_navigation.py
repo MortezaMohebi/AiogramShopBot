@@ -100,7 +100,8 @@ class ShopCustomerChatState(Base):
     )
     __table_args__ = (
         CheckConstraint(
-            "action IN ('idle','product_search','address_input','ticket_input')",
+            "action IN ('idle','product_search','address_input','ticket_input'," 
+            "'phone_verification')",
             name="ck_shop_chat_action",
         ),
         CheckConstraint("page BETWEEN 0 AND 10000", name="ck_shop_chat_page"),
