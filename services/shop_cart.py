@@ -11,6 +11,11 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from services.shop_checkout_policy import checkout_rules
+from services.shop_mixed_checkout import MixedCheckoutError
+from services.shop_mixed_checkout_orders import (
+    checkout_idempotency_key, create_split_orders,
+    existing_split_orders, mixed_quote,
+)
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -495,9 +500,22 @@ class ShopCartFlow:
                 f"⚠️ {error}\nبرای اصلاح سبد یکی از گزینه‌ها را انتخاب کنید.",
                 tuple(rows),
             )
+        mixed = (
+            event.platform == Platform.TELEGRAM
+            and {line.product.product_type for line in quote.lines}
+            == {"physical", "digital"}
+        )
+        split_plan = None
         try:
-            stars_total = telegram_stars_total(event.platform, quote)
-        except CartRejected as error:
+            if mixed:
+                split_plan, _ = await mixed_quote(
+                    session, cart=cart, quote=quote,
+                    policy_token="cart-summary",
+                )
+                stars_total = split_plan.digital.total_stars
+            else:
+                stars_total = telegram_stars_total(event.platform, quote)
+        except (CartRejected, MixedCheckoutError) as error:
             # Preserve deletion/edit actions rather than trapping a customer
             # whose Star price or item mix is not yet legal to checkout.
             return BotReply(
@@ -517,6 +535,7 @@ class ShopCartFlow:
             line_price = (
                 f"{line.product.price_stars * line.quantity} Stars (XTR)"
                 if stars_total is not None
+                and line.product.product_type == "digital"
                 else format_rials(line.line_total, self.display_unit)
             )
             details.append(
@@ -528,22 +547,42 @@ class ShopCartFlow:
                 button("➕", f"shop:inc:{product_id}"),
                 button("🗑", f"shop:remove:{product_id}"),
             ))
-        if stars_total is None:
+        if split_plan is not None:
+            details.append(
+                "بخش فیزیکی: "
+                + format_rials(split_plan.physical.subtotal_irr, self.display_unit)
+            )
+            details.append(
+                f"بخش دیجیتال: {split_plan.digital.total_stars} Stars (XTR)"
+            )
+        elif stars_total is None:
             details.append(
                 f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
             )
-        if quote.discount:
+        discount = (
+            split_plan.physical.discount_irr
+            if split_plan is not None else quote.discount
+        )
+        if discount:
             details.append(
-                f"تخفیف: {format_rials(quote.discount, self.display_unit)}"
+                f"تخفیف: {format_rials(discount, self.display_unit)}"
             )
         if quote.shipping:
             details.append(
                 f"ارسال: {format_rials(quote.shipping, self.display_unit)}"
             )
         details.append(
-            f"مبلغ نهایی: {stars_total} Stars (XTR)"
-            if stars_total is not None
-            else f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
+            (
+                "دو پرداخت مستقل: "
+                + format_rials(split_plan.physical.total_irr, self.display_unit)
+                + f" + {split_plan.digital.total_stars} Stars (XTR)"
+            )
+            if split_plan is not None
+            else (
+                f"مبلغ نهایی: {stars_total} Stars (XTR)"
+                if stars_total is not None
+                else f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
+            )
         )
         if quote.shipping_required:
             details.append(
@@ -729,7 +768,24 @@ class ShopCartFlow:
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
-        stars_total = telegram_stars_total(event.platform, quote)
+        mixed = (
+            event.platform == Platform.TELEGRAM
+            and {line.product.product_type for line in quote.lines}
+            == {"physical", "digital"}
+        )
+        split_plan = None
+        try:
+            if mixed:
+                split_plan, approval_token = await mixed_quote(
+                    session, cart=cart, quote=quote,
+                    policy_token=policy.policy_token,
+                )
+                stars_total = split_plan.digital.total_stars
+            else:
+                stars_total = telegram_stars_total(event.platform, quote)
+                approval_token = policy.policy_token
+        except MixedCheckoutError as error:
+            raise CartRejected(str(error)) from None
         if len(policy.terms_text) < 12:
             return BotReply(
                 "شرایط فروش این Store هنوز توسط مدیر ثبت نشده؛ سفارش‌گیری "
@@ -741,7 +797,10 @@ class ShopCartFlow:
             else "ثبت درخواست بررسی فروشنده"
         )
         price_line = (
-            f"{stars_total} Stars (XTR)"
+            format_rials(split_plan.physical.total_irr, self.display_unit)
+            + f" + {split_plan.digital.total_stars} Stars (XTR)"
+            if split_plan is not None
+            else f"{stars_total} Stars (XTR)"
             if stars_total is not None
             else format_rials(quote.total, self.display_unit)
         )
@@ -751,12 +810,20 @@ class ShopCartFlow:
             f"مبلغ نهایی: {price_line}\n"
             f"مسیر: {intent}\n"
             f"شرایط خرید: نسخهٔ {policy.terms_version}\n"
-            "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
+            (
+                "با تأیید، دو سفارش جدا ثبت می‌شود؛ پرداخت هرکدام مستقل است. "
+                if split_plan is not None else ""
+            )
+            + "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
             "متن کامل از /terms قابل مشاهده است؛ هنوز وجهی دریافت نشده.",
             ((
                 button(
-                    "✅ پذیرش شرایط و ثبت سفارش",
-                    f"shop:place:{cart.id}:{cart.revision}:{policy.policy_token}",
+                    (
+                        "✅ پذیرش و ثبت دو سفارش"
+                        if split_plan is not None
+                        else "✅ پذیرش شرایط و ثبت سفارش"
+                    ),
+                    f"shop:place:{cart.id}:{cart.revision}:{approval_token}",
                 ),
                 button("انصراف", "shop:cart"),
             ),),
