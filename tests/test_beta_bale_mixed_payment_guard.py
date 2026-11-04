@@ -150,20 +150,28 @@ async def test_bale_mixed_store_credit_is_hidden_and_cannot_debit(db, monkeypatc
     monkeypatch.setattr(shop_wallet, "rail_enabled", enabled)
     order, physical, digital = mixed_order(db)
     identity = ShopIdentity(
-        store_id=order.store_id, bot_id=order.bot_id,
-        platform="bale", platform_user_id=101,
+        store_id=order.store_id,
+        bot_id=order.bot_id,
+        platform="bale",
+        platform_user_id=101,
     )
     db.add(identity)
     await db.commit()
     await ShopWalletService.apply(
-        db, identity_id=identity.id, delta_irr=10000,
+        db,
+        identity_id=identity.id,
+        delta_irr=10000,
         operation_key="qa-mixed-funding-" + uuid4().hex,
-        reason="Synthetic fixture", actor="qa",
+        reason="Synthetic fixture",
+        actor="qa",
     )
     await db.commit()
     with pytest.raises(StoreCreditRejected):
         await ShopWalletService.pay_order(
-            db, platform=Platform.BALE, user_id=101, order_id=order.id,
+            db,
+            platform=Platform.BALE,
+            user_id=101,
+            order_id=order.id,
         )
     assert not legal_credit_for_items(Platform.BALE, {"physical", "digital"})
     assert await ShopWalletService.balance(db, Platform.BALE, 101) == 10000

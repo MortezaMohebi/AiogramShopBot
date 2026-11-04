@@ -98,7 +98,7 @@ function StoreSwitcherForm({ context }: Props) {
       <ChevronsUpDown className="size-4 shrink-0 opacity-60" aria-hidden="true" />
     </button>
     {open ? <div role="dialog" aria-label="Store Switcher"
-      className="absolute end-0 top-12 z-50 w-[min(350px,92vw)] space-y-4 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl">
+      className="absolute start-0 top-12 z-50 w-[min(350px,92vw)] space-y-4 rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl">
       <div>
         <p className="text-sm font-semibold">فروشگاه‌های مجاز من</p>
         <p className="mt-1 text-xs leading-6 text-muted-foreground">

@@ -83,7 +83,7 @@ try {
   console.log("PASS  Browser: password + one-time MFA + revocable session login");
 
   const fixture = JSON.parse(execFileSync("docker", ["compose", "-f", "compose.beta-qa.yml", "exec", "-T", "api", "cat", "/qa/beta-fixture.json"], { encoding: "utf8" }));
-  const routes = ["dashboard", "stores", "bots", `bots/${fixture.bots.telegram}`, "products", `products/${fixture.products.file}/digital`, `products/${fixture.products.license}/digital`, "store-customers", "support-tickets", "fulfillments", "digital-deliveries", "customer-notifications", "campaigns", "campaigns/new", "settings", "payment-accounts"];
+  const routes = ["dashboard", "stores", "bots", `bots/${fixture.bots.telegram}`, "products", `products/${fixture.products.file}/digital`, `products/${fixture.products.license}/digital`, "store-customers", "support-tickets", "fulfillments", "digital-deliveries", "customer-notifications", "campaigns", "campaigns/new", "settings", "payment-accounts", "orders", "finance"];
   const results = [];
   for (const route of routes) {
     ab("open", "http://localhost:3001/" + route);
@@ -101,15 +101,24 @@ try {
   ab("screenshot", `${output}/desktop.png`);
   ab("set", "viewport", "390", "844");
   ab("set", "media", "dark");
-  for (const route of ["dashboard", "products", "digital-deliveries", "support-tickets"]) {
+  for (const route of routes) {
     ab("open", "http://localhost:3001/" + route);
     ab("wait", "--load", "networkidle");
     const overflow = ab("eval", "document.documentElement.scrollWidth > innerWidth + 1");
     assert(overflow === "false", `Mobile viewport overflow at ${route}`);
   }
+  ab("find", "role", "button", "click", "--name", "انتخاب یک یا چند فروشگاه فعال");
+  const dialog = JSON.parse(JSON.parse(ab("eval", "JSON.stringify(document.querySelector('[role=dialog]').getBoundingClientRect().toJSON())")));
+  assert(dialog.left >= 0 && dialog.right <= 390, "Store Switcher is clipped on mobile");
+  ab("snapshot", "-i");
   ab("screenshot", `${output}/mobile-dark.png`);
+  ab("click", '[role="dialog"] button:has-text("بستن")');
   const errors = await mcp("get_errors");
   const compilation = await mcp("get_compilation_issues");
+  const runtimeData = JSON.parse(errors.content.find(item => item.type === "text").text);
+  const compilerData = JSON.parse(compilation.content.find(item => item.type === "text").text);
+  assert(runtimeData.configErrors.length === 0 && runtimeData.sessionErrors.length === 0, "Next MCP reported a runtime error");
+  assert(compilerData.issues.length === 0, "Next MCP reported a compilation error");
   writeFileSync(`${output}/next-errors.json`, JSON.stringify({ errors, compilation }, null, 2));
   writeFileSync(`${output}/routes.json`, JSON.stringify(results, null, 2));
   console.log(`PASS  Browser: ${routes.length} routes, desktop RTL, mobile dark layout; Next MCP evidence saved`);
