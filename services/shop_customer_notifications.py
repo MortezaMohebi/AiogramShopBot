@@ -173,16 +173,19 @@ async def enqueue_notification(
     ))
     if exists is not None:
         return False
-    db.add(ShopCustomerNotificationOutbox(
-        store_id=context.store_id, bot_id=context.bot_id,
-        platform_user_id=user_id,
-        topic=topic, event_key=event_key,
-        body=body, status="queued",
-    ))
+    # A concurrent enqueue may win the event-key uniqueness race. Use a
+    # SAVEPOINT so the duplicate does not roll back an atomic parent
+    # transaction containing the staff reply or commerce state changes.
     try:
-        await db.flush()
+        async with db.begin_nested():
+            db.add(ShopCustomerNotificationOutbox(
+                store_id=context.store_id, bot_id=context.bot_id,
+                platform_user_id=user_id,
+                topic=topic, event_key=event_key,
+                body=body, status="queued",
+            ))
+            await db.flush()
     except IntegrityError:
-        await db.rollback()
         return False
     return True
 
