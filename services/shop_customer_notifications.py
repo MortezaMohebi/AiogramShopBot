@@ -89,7 +89,7 @@ async def toggle_stock_alert(
         ShopStockAlert.product_id == product_id,
         ShopStockAlert.store_id == context.store_id,
     ).with_for_update())
-    if existing is not None and existing.status == "active":
+    if existing is not None and existing.status in {"active", "queued"}:
         existing.status = "cancelled"
         response = "✅ درخواست اطلاع‌رسانی موجودی لغو شد."
     elif product.stock_quantity > 0:
@@ -130,7 +130,7 @@ async def list_stock_alerts(
         ShopStockAlert.customer_id == customer.id,
         ShopStockAlert.bot_id == context.bot_id,
         ShopStockAlert.platform_user_id == user_id,
-        ShopStockAlert.status == "active",
+        ShopStockAlert.status.in_(("active", "queued")),
     ).order_by(ShopStockAlert.id.desc()).limit(20))).all()
     buttons = tuple((
         InlineAction(
