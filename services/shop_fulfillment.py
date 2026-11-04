@@ -59,8 +59,9 @@ async def ensure_fulfillment(
         ShopOrderLine, ShopOrderLine.product_id == Product.id,
     ).where(ShopOrderLine.order_id == order.id))).all()
     types = set(rows)
-    if len(types) != 1 or not types <= {"digital", "physical"}:
-        raise ValueError("Mixed/unknown Order fulfillment is not supported.")
+    if not types or not types <= {"digital", "physical"}:
+        raise ValueError("Unknown Order fulfillment type.")
+    kind = types.pop() if len(types) == 1 else "mixed"
     existing = await db.scalar(select(ShopOrderFulfillment).where(
         ShopOrderFulfillment.order_id == order_id,
         ShopOrderFulfillment.store_id == store_id,
@@ -69,7 +70,7 @@ async def ensure_fulfillment(
         return existing
     row = ShopOrderFulfillment(
         store_id=store_id, order_id=order_id,
-        kind=types.pop(), status="processing",
+        kind=kind, status="processing",
     )
     db.add(row)
     await db.flush()
@@ -90,7 +91,7 @@ async def advance_fulfillment(
         raise ValueError("Fulfillment record was changed by another operator.")
     validate_fulfillment_transition(
         record.status, next_status,
-        physical=record.kind == "physical", paid=True,
+        physical=record.kind in {"physical", "mixed"}, paid=True,
     )
     if record.kind == "physical" and next_status == "shipped":
         if (

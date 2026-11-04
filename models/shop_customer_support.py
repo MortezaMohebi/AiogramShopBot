@@ -159,7 +159,7 @@ class ShopOrderFulfillment(Base):
     )
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('physical','digital')",
+            "kind IN ('physical','digital','mixed')",
             name="ck_shop_fulfillment_kind",
         ),
         CheckConstraint(
@@ -193,11 +193,21 @@ class ShopFulfillmentEvent(Base):
     )
     previous_status: Mapped[str] = mapped_column(String(16), nullable=False)
     next_status: Mapped[str] = mapped_column(String(16), nullable=False)
-    actor_id: Mapped[int] = mapped_column(
-        ForeignKey("shop_staff.id", ondelete="RESTRICT"), nullable=False,
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shop_staff.id", ondelete="RESTRICT"), nullable=True,
+    )
+    actor_kind: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="staff", server_default="staff",
     )
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "(actor_kind = 'staff' AND actor_id IS NOT NULL) OR "
+            "(actor_kind = 'system' AND actor_id IS NULL)",
+            name="ck_shop_fulfillment_event_actor",
+        ),
     )
 
 
