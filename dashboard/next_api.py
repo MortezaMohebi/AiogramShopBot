@@ -120,6 +120,12 @@ async def bounded_bridge_body(request: Request) -> bytes:
     upload = path.startswith("/internal/admin/v1/upload/")
     # Only the signed, typed model import endpoint may accept an 8 MiB
     # spreadsheet. All other admin API requests keep their previous limits.
+    digital_upload = (
+        request.method == "POST"
+        and path.startswith("/internal/admin/v1/digital-products/")
+        and path.endswith("/file")
+        and len(path.split("/")) == 7
+    )
     data_import = (
         request.method == "POST"
         and path.startswith("/internal/admin/v1/data-models/")
@@ -127,7 +133,7 @@ async def bounded_bridge_body(request: Request) -> bytes:
         and len(path.split("/")) == 7
     )
     limit = (
-        50_100_000 if upload else
+        50_100_000 if upload or digital_upload else
         8 * 1024 * 1024 if data_import else
         256 * 1024
     )

@@ -74,6 +74,9 @@ const SAFE_CODES = new Set([
   "invalid_import_value",
   "invalid_external_reference", "import_empty_file",
   "invalid_import_request",
+  "invalid_digital_file", "digital_asset_not_ready",
+  "digital_asset_change_blocked", "digital_license_import_denied",
+  "checkout_batch_not_found",
   "confirmation_required",
 ]);
 export class ApiError extends Error {
