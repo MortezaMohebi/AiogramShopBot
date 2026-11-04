@@ -193,7 +193,7 @@ class BaleTransport:
                 raise BaleApiError("Private license was not available.")
             answer = await self._call("sendMessage", {
                 "chat_id": payload.chat_id,
-                "text": f"{payload.caption}\\n{payload.license_text}",
+                "text": f"{payload.caption}\n{payload.license_text}",
             })
         elif payload.kind == "file":
             if payload.asset_path is None or not payload.filename:

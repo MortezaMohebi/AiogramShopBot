@@ -67,7 +67,7 @@ async def _transport_for_bot(
             api_session = create_telegram_session()
         client = create_bot(token, api_session)
         try:
-            yield TelegramTransport(client)
+            yield TelegramTransport(client, bot_id=bot_id)
         finally:
             await client.session.close()
         return

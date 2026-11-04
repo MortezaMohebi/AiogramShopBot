@@ -28,7 +28,7 @@ from models.shop_digital_delivery import (
     ShopDigitalAsset, ShopDigitalDelivery, ShopDigitalLicense,
 )
 from models.shop_multibot import ShopBot, ShopStore
-from models.shop_payment import ShopPaymentAttempt
+from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_digital_catalog import require_digital_supply
 from services.shop_digital_crypto import unseal_license
 from services.shop_digital_rules import (
@@ -54,15 +54,22 @@ class DigitalSend:
 
 
 def _paid_in_ledger(order: ShopOrder, receipt: ShopPaymentAttempt | None) -> bool:
-    """A precheckout/invoice-only record must never unlock paid content."""
+    """Require the exact completed invoice rather than a matching paid flag."""
     return bool(
         order.status == "paid"
         and order.paid_at is not None
         and receipt is not None and receipt.status == "paid"
+        and receipt.completed_at is not None
         and receipt.order_id == order.id
         and receipt.bot_id == order.bot_id
         and receipt.store_id == order.store_id
         and receipt.provider == order.provider
+        and receipt.platform == order.platform
+        and receipt.payload == order.invoice_payload
+        and receipt.currency == order.payment_currency
+        and type(order.payment_amount) is int
+        and order.payment_amount > 0
+        and receipt.amount == order.payment_amount
     )
 
 
@@ -152,7 +159,13 @@ async def _preflight(
     db: AsyncSession, row: ShopDigitalDelivery,
 ) -> DigitalSend | None:
     """Check exact paid receipt, original Bot/Store and immutable asset key."""
-    order = await db.get(ShopOrder, row.order_id)
+    # Claims lock Delivery -> Order; refunds lock Case -> Order and only read
+    # delivery state. The shared Order lock serializes these decisions without
+    # a cycle, and refresh discards a paid identity cached before a refund.
+    order = await db.get(
+        ShopOrder, row.order_id,
+        with_for_update=True, populate_existing=True,
+    )
     line = await db.get(ShopOrderLine, row.order_line_id)
     product = await db.get(Product, row.product_id)
     bot = await db.get(ShopBot, row.bot_id)
@@ -183,6 +196,15 @@ async def _preflight(
     )
     paid = bool(order and _paid_in_ledger(order, receipt))
     if not owner_valid or not paid:
+        return None
+    # A provider-pending refund may already have returned the buyer's money.
+    # Its Order/attempt stay paid until reconciliation; those flags alone must
+    # not authorize a new private send in that interval.
+    refund = await db.scalar(select(ShopRefundCase.id).where(
+        ShopRefundCase.order_id == row.order_id,
+        ShopRefundCase.status.in_(("provider_pending", "confirmed")),
+    ).limit(1))
+    if refund is not None:
         return None
     if row.kind == "file":
         asset = await db.get(ShopDigitalAsset, row.asset_id)

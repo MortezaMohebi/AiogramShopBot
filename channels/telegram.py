@@ -127,7 +127,7 @@ class TelegramTransport:
                 raise ValueError("Missing sealed license payload.")
             result = await self.bot.send_message(
                 chat_id=payload.chat_id,
-                text=f"{payload.caption}\\n{payload.license_text}",
+                text=f"{payload.caption}\n{payload.license_text}",
                 parse_mode=None, protect_content=True,
             )
         else:
