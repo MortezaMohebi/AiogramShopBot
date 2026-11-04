@@ -51,6 +51,9 @@ from models.shop_staff_store import (
 )
 from models.shop_uom import ShopUomCategory, ShopUom
 from models.shop_model_import import ShopModelImportPreview
+from models.shop_digital_delivery import (
+    ShopDigitalAsset, ShopDigitalLicense, ShopDigitalDelivery,
+)
 from models.shop_customer_navigation import (
     ShopStoreMenuPolicy, ShopBotMenuPolicy, ShopCustomerChatState,
 )

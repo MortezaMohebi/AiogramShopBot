@@ -28,6 +28,9 @@ from models.shop_customer_account_data import (
     ShopCustomerAddress, ShopCustomerWishlist, ShopCustomerPreference,
 )
 from models.shop_checkout_policy import ShopStoreCheckoutPolicy, ShopBotCheckoutPolicy
+from models.shop_digital_delivery import (
+    ShopDigitalAsset, ShopDigitalLicense, ShopDigitalDelivery,
+)
 from models.shop_customer_support import (
     ShopSupportTicket, ShopSupportMessage,
     ShopOrderFulfillment, ShopFulfillmentEvent,
@@ -53,6 +56,7 @@ STORE_OWNED_MODELS = (
     ShopSupportTicket, ShopSupportMessage,
     ShopOrderFulfillment, ShopFulfillmentEvent,
     ShopStockAlert, ShopCustomerNotificationOutbox,
+    ShopDigitalAsset, ShopDigitalLicense, ShopDigitalDelivery,
 )
 
 

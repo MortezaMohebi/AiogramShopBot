@@ -104,6 +104,10 @@ class Product(Base):
         String(12), nullable=False, default="physical"
     )
     price_stars: Mapped[int | None] = mapped_column(Integer)
+    # File vs one-time license supply is configured only in signed Admin.
+    digital_delivery_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="none", server_default="none",
+    )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
@@ -141,6 +145,14 @@ class Product(Base):
         CheckConstraint(
             "product_type IN ('physical','digital')",
             name="ck_shop_product_type",
+        ),
+        CheckConstraint(
+            "digital_delivery_mode IN ('none','file','license')",
+            name="ck_shop_product_digital_mode",
+        ),
+        CheckConstraint(
+            "product_type = 'digital' OR digital_delivery_mode = 'none'",
+            name="ck_shop_product_physical_no_delivery",
         ),
         CheckConstraint(
             "price_stars IS NULL OR price_stars > 0",
