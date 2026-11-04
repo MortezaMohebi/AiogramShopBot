@@ -23,6 +23,8 @@ from services.shop_referrals import (
     ShopReferralService, ReferralRejected,
 )
 from services.shop_channel_catalog import CatalogFlow
+from services.shop_customer_experience import clear_pending_on_navigation
+from services.shop_bot_context import resolve_legacy_bot_context
 from middleware.database import DBSessionMiddleware
 from middleware.shop_bot_gate import ShopBotOperationMiddleware
 from middleware.language import I18nMiddleware
@@ -97,6 +99,12 @@ async def start(
         else "/start",
     )
     if event.text == "/start":
+        context = await resolve_legacy_bot_context(
+            session, authenticated_platform=Platform.TELEGRAM,
+        )
+        await clear_pending_on_navigation(
+            session, context=context, event=event,
+        )
         reply = await CatalogFlow(
             display_unit=config.SHOP_DISPLAY_UNIT,
         ).reply(event, session)

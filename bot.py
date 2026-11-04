@@ -24,7 +24,10 @@ from admin import authentication_backend
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, Platform, normalize_update
 from services.shop_channel_catalog import CatalogFlow
-from services.shop_customer_experience import CustomerExperienceFlow
+from services.shop_customer_experience import (
+    CustomerExperienceFlow, clear_pending_on_navigation,
+)
+from services.shop_bot_context import resolve_legacy_bot_context
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
 from services.shop_bot_operations import legacy_state
@@ -540,6 +543,12 @@ async def _process_bale_update(request: Request, payload: dict):
                 ) from None
             return {"status": "invoice_handled"}
 
+        context = await resolve_legacy_bot_context(
+            session, authenticated_platform=event.platform,
+        )
+        await clear_pending_on_navigation(
+            session, context=context, event=event,
+        )
         reply = await ShopEngagementFlow(
             display_unit=config.SHOP_DISPLAY_UNIT
         ).reply(event, session)

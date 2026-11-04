@@ -20,7 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import BotReply, InboundEvent, Platform
 from channels.telegram import TelegramTransport
 from services.shop_channel_catalog import CatalogFlow
-from services.shop_customer_experience import CustomerExperienceFlow
+from services.shop_customer_experience import (
+    CustomerExperienceFlow, clear_pending_on_navigation,
+)
+from services.shop_bot_context import resolve_legacy_bot_context
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
 from services.shop_engagement_flow import ShopEngagementFlow
@@ -94,6 +97,12 @@ async def _shop_reply(
     options = await get_bot_options(session, event.platform.value)
     if options.maintenance_enabled:
         return BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید.")
+    context = await resolve_legacy_bot_context(
+        session, authenticated_platform=event.platform,
+    )
+    await clear_pending_on_navigation(
+        session, context=context, event=event,
+    )
     engagement = await ShopEngagementFlow(
         config.SHOP_DISPLAY_UNIT
     ).reply(event, session)

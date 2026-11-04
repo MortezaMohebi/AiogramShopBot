@@ -21,7 +21,9 @@ from services.shop_bale_payments import (
 from services.shop_bot_context import BotContext
 from services.shop_cart import ShopCartFlow
 from services.shop_channel_catalog import CatalogFlow
-from services.shop_customer_experience import CustomerExperienceFlow
+from services.shop_customer_experience import (
+    CustomerExperienceFlow, clear_pending_on_navigation,
+)
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_identity import is_blocked, register_customer
 from services.shop_orders import ShopOrdersFlow
@@ -207,6 +209,9 @@ async def dispatch(
         ) and not refund_request:
             return {"status": "blocked"}
 
+        await clear_pending_on_navigation(
+            db, context=context, event=event,
+        )
         if event.callback_data and event.callback_data.startswith(
             "shop:pay:"
         ):
