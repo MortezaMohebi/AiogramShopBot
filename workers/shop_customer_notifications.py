@@ -28,6 +28,7 @@ from services.shop_bot_secrets import resolve_active_token
 from services.shop_customer_notification_dispatch import (
     NotificationTransport, deliver_once,
 )
+from services.shop_customer_notifications import prepare_stock_alerts
 from utils.telegram import create_bot, create_telegram_session
 
 _logger = logging.getLogger(__name__)
@@ -100,6 +101,24 @@ async def _active_bot_ids() -> list[str]:
         return (await db.scalars(query)).all()
 
 
+async def _queue_stock_alerts() -> None:
+    """Produce bounded, per-Store stock notices before the normal Outbox pass."""
+    async with session_maker() as db:
+        stores = (await db.scalars(select(ShopStore.id).where(
+            ShopStore.state == "active",
+        ).order_by(ShopStore.id).limit(100))).all()
+    for store_id in stores:
+        async with session_maker() as db:
+            try:
+                await prepare_stock_alerts(db, store_id=store_id, limit=50)
+            except Exception:
+                # Failure must not create duplicate messages or stop all Bots.
+                await db.rollback()
+                _logger.exception(
+                    "Stock alert staging failed for Store %s", store_id,
+                )
+
+
 async def main() -> None:
     """Continuously dispatch bounded notifications only when opted in."""
     if os.environ.get("SHOP_CUSTOMER_NOTIFICATIONS_ENABLED") != "true":
@@ -118,7 +137,12 @@ async def main() -> None:
             pass
 
     try:
+        next_stock_scan = 0.0
         while not stop.is_set():
+            now = loop.time()
+            if now >= next_stock_scan:
+                await _queue_stock_alerts()
+                next_stock_scan = now + 60.0
             bot_ids = await _active_bot_ids()
             for bot_id in bot_ids:
                 if stop.is_set():
