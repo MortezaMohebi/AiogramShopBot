@@ -101,6 +101,32 @@ class TelegramTransport:
                 logging.warning("Telegram media cache write failed.")
 
 
+    async def send_private_document(
+        self, chat_id: int, path, *,
+        filename: str, caption: str,
+    ) -> int:
+        """Send one paid file as a document, returning its provider message ID.
+
+        No auto-retry is attempted after an uncertain request; the caller
+        owns a durable, already-claimed digital-delivery receipt.
+        """
+        from aiogram.types import FSInputFile
+
+        if (
+            not path.is_file() or not 0 < path.stat().st_size <= 50_000_000
+            or not filename or len(filename) > 200
+        ):
+            raise ValueError("Paid document is missing or exceeds Bot limits.")
+        message = await self.bot.send_document(
+            chat_id=chat_id,
+            document=FSInputFile(path, filename=filename),
+            caption=caption[:1024], parse_mode=None,
+        )
+        result = getattr(message, "message_id", None)
+        if type(result) is not int or result <= 0:
+            raise ValueError("Paid document delivery receipt is unavailable.")
+        return result
+
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send plain text with an optional inline keyboard."""
         from aiogram.types import (
