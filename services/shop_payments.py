@@ -173,8 +173,16 @@ class ShopPaymentService:
             try:
                 for line, product in pairs:
                     if product.product_type == "digital":
+                        if (
+                            product.digital_delivery_mode == "file"
+                            and not line.digital_asset_id_snapshot
+                        ):
+                            raise DeliveryPolicyError(
+                                "Order has no approved private file version."
+                            )
                         await require_digital_supply(
                             session, product=product, quantity=line.quantity,
+                            pinned_asset_id=line.digital_asset_id_snapshot,
                         )
             except (DeliveryPolicyError, OSError):
                 raise PaymentRejected(

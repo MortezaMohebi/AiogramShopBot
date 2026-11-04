@@ -33,7 +33,7 @@ from services.shop_digital_catalog import require_digital_supply
 from services.shop_digital_crypto import unseal_license
 from services.shop_digital_rules import (
     DeliveryPolicyError, allow_digital_delivery,
-    validate_delivery_transition,
+    validate_delivery_transition, validate_pinned_asset,
 )
 from services.shop_digital_storage import digital_root, safe_digital_path
 
@@ -92,8 +92,16 @@ async def queue_paid_digital_order(
     for line, product in pairs:
         if type(line.quantity) is not int or line.quantity < 1:
             raise DeliveryPolicyError("Invalid digital OrderLine quantity.")
+        if (
+            product.digital_delivery_mode == "file"
+            and not line.digital_asset_id_snapshot
+        ):
+            raise DeliveryPolicyError(
+                "Purchased private file version was not saved."
+            )
         asset = await require_digital_supply(
             db, product=product, quantity=line.quantity,
+            pinned_asset_id=line.digital_asset_id_snapshot,
         )
         if product.digital_delivery_mode == "file":
             if asset is None:
@@ -145,6 +153,7 @@ async def _preflight(
 ) -> DigitalSend | None:
     """Check exact paid receipt, original Bot/Store and immutable asset key."""
     order = await db.get(ShopOrder, row.order_id)
+    line = await db.get(ShopOrderLine, row.order_line_id)
     product = await db.get(Product, row.product_id)
     bot = await db.get(ShopBot, row.bot_id)
     store = await db.get(ShopStore, row.store_id)
@@ -155,8 +164,11 @@ async def _preflight(
         ShopPaymentAttempt.status == "paid",
     ).limit(1))
     owner_valid = bool(
-        order and product and bot and store
+        order and line and product and bot and store
         and store.state == "active"
+        and line.order_id == order.id
+        and line.product_id == product.id
+        and 0 <= row.unit_index < line.quantity
         and product.store_id == row.store_id
         and product.product_type == "digital"
         and order.store_id == row.store_id
@@ -174,10 +186,18 @@ async def _preflight(
         return None
     if row.kind == "file":
         asset = await db.get(ShopDigitalAsset, row.asset_id)
-        asset_ready = bool(
-            asset is not None and asset.store_id == row.store_id
-            and asset.product_id == row.product_id
-        )
+        try:
+            asset_ready = validate_pinned_asset(
+                expected_asset_id=line.digital_asset_id_snapshot,
+                actual_asset_id=asset.id if asset is not None else None,
+                expected_store_id=row.store_id,
+                actual_store_id=asset.store_id if asset is not None else "",
+                expected_product_id=row.product_id,
+                actual_product_id=asset.product_id if asset is not None else -1,
+                asset_exists=asset is not None,
+            )
+        except DeliveryPolicyError:
+            return None
         allow_digital_delivery(
             paid=paid, correct_store=owner_valid, correct_bot=owner_valid,
             asset_ready=asset_ready, refunded=False,
