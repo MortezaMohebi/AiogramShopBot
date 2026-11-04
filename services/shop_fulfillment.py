@@ -32,7 +32,14 @@ def validate_fulfillment_transition(
     """Only permit forward transitions after confirmed payment settlement."""
     if not paid:
         raise ValueError("A paid receipt is required before fulfillment.")
-    allowed = _PHYSICAL_NEXT if physical else _DIGITAL_NEXT
+    if not physical:
+        # No secure license/file delivery confirmation is connected yet.
+        # Marking a paid digital Order delivered here would falsely claim
+        # that the customer received an asset. Keep it in processing.
+        raise ValueError(
+            "Digital delivery requires a verified secure asset receipt."
+        )
+    allowed = _PHYSICAL_NEXT
     if allowed.get(current) != next_status:
         raise ValueError("Invalid or out-of-order fulfillment transition.")
     return True
