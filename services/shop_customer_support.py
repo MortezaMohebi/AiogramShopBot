@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_customer_support import ShopSupportMessage, ShopSupportTicket
+from models.shop_content import ShopIdentity
 from services.shop_bot_context import BotContext
 from services.shop_customer_account import customer_for_bot
 
@@ -45,6 +46,15 @@ def ticket_actions(
     return tuple((InlineAction(label, action),) for label, action in pairs)
 
 
+def _verified_ticket_owners(context: BotContext, customer_id: int):
+    """Resolve all explicitly linked Bot Identity PKs, not numeric IDs."""
+    return select(ShopIdentity.id).where(
+        ShopIdentity.store_id == context.store_id,
+        ShopIdentity.customer_id == customer_id,
+        ShopIdentity.is_blocked.is_(False),
+    )
+
+
 async def customer_ticket(
     db: AsyncSession, context: BotContext, *,
     customer_id: int, ticket_id: int,
@@ -53,7 +63,9 @@ async def customer_ticket(
     return await db.scalar(select(ShopSupportTicket).where(
         ShopSupportTicket.id == ticket_id,
         ShopSupportTicket.store_id == context.store_id,
-        ShopSupportTicket.customer_id == customer_id,
+        ShopSupportTicket.origin_identity_id.in_(
+            _verified_ticket_owners(context, customer_id),
+        ),
     ))
 
 
@@ -223,7 +235,9 @@ class CustomerSupportFlow:
         if action == "ux:tickets":
             rows = (await db.scalars(select(ShopSupportTicket).where(
                 ShopSupportTicket.store_id == self.context.store_id,
-                ShopSupportTicket.customer_id == customer.id,
+                ShopSupportTicket.origin_identity_id.in_(
+                    _verified_ticket_owners(self.context, customer.id),
+                ),
             ).order_by(
                 ShopSupportTicket.id.desc(),
             ).limit(20))).all()
