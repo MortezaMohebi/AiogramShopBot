@@ -7,9 +7,11 @@ overrides in this process; no receiver, webhook or real provider is activated.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hashlib
 import json
+import re
 import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -46,6 +48,7 @@ from services.shop_broadcast_worker import BroadcastWorker, registry_transport
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
 
 RESULT = Path("/qa/beta-broadcast-result.json")
+CLEANUP_RESULT = Path("/qa/beta-broadcast-cleanup-result.json")
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,14 +306,96 @@ async def deliveries(campaign_id: int) -> list[ShopCampaignDelivery]:
         )
 
 
-async def run() -> dict:
+async def pause_synthetic_bots(*, bot_ids: set[str] | None = None) -> dict:
+    """Pause only this runner's proven synthetic QA rows, with no provider calls.
+
+    An explicit ID set is used in a run's finally block. Retrospective cleanup
+    scans only the private broadcast Store prefix, then verifies every Store,
+    Bot, receiver and encrypted credential marker before mutating any row.
+    It never deletes financial, campaign, identity or credential evidence.
+    """
+    if any(getattr(config, flag, False) for flag in (
+        "MULTIBOT_V2_RUNTIME_ENABLED", "SHOP_CAMPAIGN_DISPATCH_ENABLED",
+        "SHOP_BROADCAST_WORKER_ENABLED", "SHOP_BROADCAST_REGISTRY_ENABLED",
+        "BALE_BROADCAST_PAID_ENABLED",
+    )):
+        raise RuntimeError("Broadcast cleanup requires disabled public runtime flags")
+    async with session_maker() as db:
+        if (
+            await db.scalar(text("SELECT current_database()")) != "shop_codespace"
+            or await db.scalar(text("SELECT current_user")) != "shop_codespace"
+        ):
+            raise RuntimeError("Broadcast cleanup requires the isolated QA database")
+        query = select(ShopBot, ShopStore).join(
+            ShopStore, ShopStore.id == ShopBot.store_id,
+        ).where(ShopStore.slug.like("qa-broadcast-%"))
+        if bot_ids is not None:
+            query = query.where(ShopBot.id.in_(bot_ids))
+        rows = (await db.execute(query.with_for_update())).all()
+        if bot_ids is not None and {bot.id for bot, _ in rows} != bot_ids:
+            raise RuntimeError("A requested cleanup Bot lacks synthetic ownership proof")
+        verified = []
+        for bot, store in rows:
+            marker = re.fullmatch(r"qa-broadcast-([a-f0-9]{12})-([01])", store.slug)
+            bot_marker = re.fullmatch(
+                r"qa-(telegram-alpha|telegram-beta|bale-alpha)-([a-f0-9]{12})",
+                bot.slug,
+            )
+            operations = await db.get(ShopBotOperations, bot.id)
+            receiver = await db.get(ShopBotReceiver, bot.id)
+            credentials = (await db.scalars(select(ShopBotCredential).where(
+                ShopBotCredential.bot_id == bot.id,
+            ))).all()
+            label = bot_marker.group(1) if bot_marker else None
+            credential = credentials[0] if len(credentials) == 1 else None
+            valid = bool(
+                marker and bot_marker
+                and marker.group(1) == bot_marker.group(2)
+                and store.name == f"Synthetic broadcast Store {marker.group(2)}"
+                and marker.group(2) == ("1" if label == "telegram-beta" else "0")
+                and bot.name == f"Synthetic {label}"
+                and bot.platform == ("bale" if label == "bale-alpha" else "telegram")
+                and bot.runtime_owner == "registry"
+                and bot.status in {"active", "paused", "maintenance"}
+                and bot.credential_version == 1
+                and bot.provider_bot_id is not None
+                and 8_000_000_000 <= bot.provider_bot_id < 18_000_000_000
+                and operations is not None and operations.environment == "staging"
+                and operations.desired_state in {"active", "paused", "maintenance"}
+                and receiver is not None and receiver.mode == "webhook"
+                and receiver.state in {"active", "paused"}
+                and receiver.credential_version == 1
+                and credential is not None and credential.version == 1
+                and credential.source == "encrypted" and credential.state == "active"
+                and credential.ciphertext
+                and credential.verified_bot_id == bot.provider_bot_id
+            )
+            if not valid:
+                raise RuntimeError("Synthetic broadcast fixture markers do not match")
+            verified.append((bot, operations, receiver))
+        # Validation is complete for every selected row before the first write.
+        for bot, operations, receiver in verified:
+            if bot.status != "paused":
+                bot.status = "paused"
+                bot.version += 1
+            operations.desired_state = "paused"
+            if receiver.state != "paused":
+                receiver.state = "paused"
+                receiver.version += 1
+        await db.commit()
+        return {
+            "result": "cleaned", "paused_synthetic_bots": len(verified),
+            "provider_calls": 0, "rows_deleted": 0,
+        }
+
+
+async def _run_with_bots(bots: list[SyntheticBot]) -> dict:
     """Verify bot isolation, native adapters, consent and at-most-once outcomes."""
     assert not config.SHOP_CAMPAIGN_DISPATCH_ENABLED
     assert not config.SHOP_BROADCAST_WORKER_ENABLED
     assert not config.SHOP_BROADCAST_REGISTRY_ENABLED
     assert not config.BALE_BROADCAST_PAID_ENABLED
     assert not config.MULTIBOT_V2_RUNTIME_ENABLED
-    bots = await seed()
     fake = FakeConnections(bots)
     normal = []
     user_id = 810_000_000 + uuid4().int % 10_000_000
@@ -531,11 +616,34 @@ async def run() -> dict:
     }
 
 
+async def run() -> dict:
+    """Exercise fresh synthetic Bots and pause only their receivers on every exit."""
+    assert not config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+    assert not config.SHOP_BROADCAST_WORKER_ENABLED
+    assert not config.SHOP_BROADCAST_REGISTRY_ENABLED
+    assert not config.BALE_BROADCAST_PAID_ENABLED
+    assert not config.MULTIBOT_V2_RUNTIME_ENABLED
+    bots = await seed()
+    try:
+        report = await _run_with_bots(bots)
+    finally:
+        cleanup = await pause_synthetic_bots(bot_ids={bot.id for bot in bots})
+    report["synthetic_receivers_paused"] = cleanup["paused_synthetic_bots"]
+    return report
+
+
 async def main() -> None:
     """Write non-secret acceptance evidence and always release the DB pool."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--cleanup", action="store_true",
+        help="Pause only verified synthetic broadcast fixtures; do not send or delete",
+    )
+    arguments = parser.parse_args()
     try:
-        report = await run()
-        RESULT.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        report = await pause_synthetic_bots() if arguments.cleanup else await run()
+        result_path = CLEANUP_RESULT if arguments.cleanup else RESULT
+        result_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report, sort_keys=True))
     finally:
         await engine.dispose()

@@ -43,6 +43,7 @@ from services.shop_broadcast_scope import (
     registry_dispatch_enabled,
 )
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
+from services.shop_customer_access import customer_access_allowed
 
 LOG = logging.getLogger(__name__)
 
@@ -361,7 +362,8 @@ class BroadcastWorker:
             # A revoked opt-in is terminal before any factory sees the claim.
             skip_reason = (
                 "consent_revoked"
-                if identity.is_blocked or not identity.allow_announcements
+                if not identity.allow_announcements
+                or not await customer_access_allowed(session, identity)
                 else None
             )
             delivery.status = "skipped" if skip_reason else "sending"
@@ -456,7 +458,7 @@ class BroadcastWorker:
                 and same_owner
                 and runtime_allowed
                 and campaign.status == "sending"
-                and identity.is_blocked is False
+                and await customer_access_allowed(session, identity)
                 and identity.allow_announcements is True,
                 delivery.completed_steps,
             )

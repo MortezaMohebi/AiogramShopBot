@@ -19,6 +19,7 @@ import config
 from aiogram import Dispatcher
 from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 
 from admin import authentication_backend
 from channels.bale import BaleApiError, BaleTransport
@@ -31,6 +32,9 @@ from services.shop_bot_context import resolve_legacy_bot_context
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
 from services.shop_bot_operations import legacy_state
+from services.shop_customer_notification_dispatch import deliver_order_paid_once
+from services.shop_multibot_dispatch import paused_customer_reply
+from models.shop_multibot import LEGACY_BOT_IDS
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.bale_wallet import BaleWalletService, CheckoutRejected
@@ -70,6 +74,7 @@ from models.shop_checkout import (
     ShopCouponAdmin, ShopOrderLineAdmin, ShopOrderReviewAuditAdmin,
 )
 from models.shop_payment import (
+    ShopPaymentAttempt,
     ShopPaymentAttemptAdmin,
     ShopRefundCaseAdmin,
 )
@@ -434,6 +439,13 @@ async def _process_bale_update(request: Request, payload: dict):
             async with get_db_session() as session:
                 # Blocked customers can pay a previously issued invoice;
                 # reconcile the receipt instead of abandoning real funds.
+                shop_intent = await session.scalar(select(ShopPaymentAttempt.id).where(
+                    ShopPaymentAttempt.payload == payment_message[
+                        "successful_payment"
+                    ].get("invoice_payload"),
+                    ShopPaymentAttempt.bot_id == LEGACY_BOT_IDS["bale"],
+                    ShopPaymentAttempt.platform == Platform.BALE.value,
+                ))
                 order, changed = await settle_bale_payment(
                     session,
                     transport,
@@ -450,22 +462,35 @@ async def _process_bale_update(request: Request, payload: dict):
                 status_code=502, detail="Bale payment inquiry unavailable"
             ) from None
         if changed:
-            note = (
-                f"✅ پرداخت سفارش #{order.id} تأیید شد."
-                if order.status == "paid"
-                else (
-                    f"⚠️ پرداخت سفارش #{order.id} ثبت شد، اما موجودی نیاز به "
-                    "بررسی فروشنده دارد. سفارش برای پیگیری نگه داشته شده است."
+            if shop_intent is not None:
+                try:
+                    async with get_db_session() as notice_session:
+                        await deliver_order_paid_once(
+                            notice_session, order_id=order.id,
+                            bot_id=LEGACY_BOT_IDS["bale"], transport=transport,
+                        )
+                except Exception:
+                    logging.warning(
+                        "Post-settlement notice needs review; order_id=%s bot_id=%s",
+                        order.id, LEGACY_BOT_IDS["bale"],
+                    )
+            else:
+                # Preserve the original direct-item Wallet ledger. Its orders
+                # have no ShopPaymentAttempt/notification Outbox receipt.
+                note = (
+                    f"✅ پرداخت سفارش #{order.id} تأیید شد."
+                    if order.status == "paid"
+                    else (
+                        f"⚠️ پرداخت سفارش #{order.id} ثبت شد، اما موجودی نیاز به "
+                        "بررسی فروشنده دارد. سفارش برای پیگیری نگه داشته شده است."
+                    )
                 )
-            )
-            try:
-                await transport.send(chat["id"], BotReply(note))
-            except BaleApiError:
-                # Payment settlement is already durable. Retries are safe:
-                # confirm_success will not deduct inventory twice.
-                raise HTTPException(
-                    status_code=502, detail="Payment notice delivery failed"
-                ) from None
+                try:
+                    await transport.send(chat["id"], BotReply(note))
+                except BaleApiError:
+                    raise HTTPException(
+                        status_code=502, detail="Payment notice delivery failed"
+                    ) from None
         if changed and order.status == "paid":
             # A referral error must not cause a successful payment to be
             # reported as a failed transfer or retried by the sender.
@@ -489,19 +514,22 @@ async def _process_bale_update(request: Request, payload: dict):
     customer = source.get("from") if isinstance(source, dict) else {}
     async with get_db_session() as session:
         status = await legacy_state(session, "bale")
-        refund_request = bool(
-            event.callback_data
-            and event.callback_data.startswith("shop:refundorder:")
-        )
-        if status.state != "active" and not refund_request:
+        if status.state == "disabled":
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)
-            if status.state != "disabled":
-                await transport.send(
-                    event.chat_id,
-                    BotReply(status.message),
-                )
-            return {"status": status.state}
+            return {"status": "disabled"}
+        options = await get_bot_options(session, Platform.BALE.value)
+        if status.state in {"paused", "maintenance"} or options.maintenance_enabled:
+            context = await resolve_legacy_bot_context(
+                session, authenticated_platform=event.platform,
+            )
+            reply = await paused_customer_reply(session, context=context, event=event)
+            if event.callback_query_id:
+                await transport.acknowledge(event.callback_query_id)
+            await transport.send(event.chat_id, reply or BotReply(status.message))
+            return {"status": "ok" if reply else (
+                status.state if status.state != "active" else "maintenance"
+            )}
         await register_customer(
             session,
             platform=Platform.BALE,
@@ -514,15 +542,6 @@ async def _process_bale_update(request: Request, payload: dict):
             platform_user_id=event.user_id,
         ):
             return {"status": "blocked"}
-        options = await get_bot_options(session, Platform.BALE.value)
-        if options.maintenance_enabled and not refund_request:
-            if event.callback_query_id:
-                await transport.acknowledge(event.callback_query_id)
-            await transport.send(
-                event.chat_id,
-                BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید."),
-            )
-            return {"status": "maintenance"}
         if event.callback_data and event.callback_data.startswith("shop:pay:"):
             if event.callback_query_id:
                 await transport.acknowledge(event.callback_query_id)

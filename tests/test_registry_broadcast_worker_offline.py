@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from channels.contracts import BotReply, MediaAttachment
 from models.base import Base
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_content import ShopIdentity
+from models.shop_customer_crm import ShopCustomerProfile
 from models.shop_engagement import (
     ShopBroadcastWorkerHeartbeat,
     ShopCampaign,
@@ -105,6 +107,7 @@ def registry(monkeypatch):
             ShopBotOperations.__table__,
             ShopBotReceiver.__table__,
             ShopIdentity.__table__,
+            ShopCustomerProfile.__table__,
             ShopCampaign.__table__,
             ShopCampaignDelivery.__table__,
             ShopCampaignMedia.__table__,
@@ -957,3 +960,62 @@ async def test_cli_factory_resolves_exact_encrypted_credential_and_closes_client
         ("opened", bot.platform, bot.id),
         ("closed", bot.platform, bot.id),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bot_index", [0, 2])
+@pytest.mark.parametrize("restriction", ["expired", "future", "permanent"])
+@pytest.mark.parametrize("stage", ["approval", "claim", "rate_wait"])
+async def test_campaign_rechecks_effective_restrictions_at_every_send_boundary(
+    registry, monkeypatch, bot_index, restriction, stage,
+):
+    """CRM expiry restores consent eligibility; current/permanent restrictions deny."""
+    bot = registry.bots[bot_index]
+    person = registry.db.session.scalar(select(ShopIdentity).where(
+        ShopIdentity.bot_id == bot.id,
+    ))
+
+    def restrict():
+        """Preserve the audit flag while applying the exact identity's expiry."""
+        person.is_blocked = True
+        registry.db.add(ShopCustomerProfile(
+            identity_id=person.id,
+            restriction_until=(
+                None if restriction == "permanent" else
+                datetime.now(UTC) + timedelta(minutes=-1 if restriction == "expired" else 5)
+            ),
+        ))
+        registry.db.session.commit()
+
+    campaign = draft(registry, bot)
+    if stage == "approval":
+        restrict()
+        count = await ShopCampaignService.approve(
+            registry.db, campaign_id=campaign.id, approver="offline-staff:1",
+        )
+        assert count == (1 if restriction == "expired" else 0)
+        if count == 0:
+            assert campaign.status == "completed"
+            return
+        await BroadcastControl.start(
+            registry.db, campaign_id=campaign.id, actor="offline-staff:1",
+        )
+    else:
+        await start(registry, campaign)
+        if stage == "claim":
+            restrict()
+        else:
+            async def reserve(**kwargs):
+                """Change real CRM state after the worker reserves its rate slot."""
+                registry.pacing.append(kwargs)
+                restrict()
+
+            monkeypatch.setattr("services.shop_broadcast_worker.reserve_message_slot", reserve)
+    sent = []
+    worker = BroadcastWorker(
+        telegram=None, bale_session=None,
+        registry_transport_factory=fake_factory(registry, sent),
+    )
+    assert await worker.process_next()
+    assert bool(sent) is (restriction == "expired")
+    assert person.is_blocked is True

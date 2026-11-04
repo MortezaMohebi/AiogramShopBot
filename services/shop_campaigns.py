@@ -20,6 +20,7 @@ from models.shop_engagement import (
     ShopCampaignMedia,
 )
 from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore
+from services.shop_customer_access import customer_access_clause
 
 
 class CampaignRejected(ValueError):
@@ -103,7 +104,7 @@ class ShopCampaignService:
             # INSERT SELECT bypasses ORM write hooks; scope it explicitly.
             ShopIdentity.store_id == campaign.store_id,
             ShopIdentity.allow_announcements.is_(True),
-            ShopIdentity.is_blocked.is_(False),
+            customer_access_clause(),
         ]
         if campaign.bot_id is not None:
             bot = await session.get(ShopBot, campaign.bot_id)

@@ -7,13 +7,18 @@ suppressed, because previously issued invoices still require reconciliation.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Update
 
+from channels.contracts import Platform, normalize_update
+from channels.telegram import TelegramTransport
 from db import session_maker
+from services.shop_bot_context import resolve_legacy_bot_context
 from services.shop_bot_operations import legacy_state
+from services.shop_multibot_dispatch import paused_customer_reply
 
 
 class ShopBotOperationMiddleware(BaseMiddleware):
@@ -33,10 +38,6 @@ class ShopBotOperationMiddleware(BaseMiddleware):
         if event.pre_checkout_query is not None or (
             event.message is not None
             and event.message.successful_payment is not None
-        ) or (
-            event.callback_query is not None
-            and isinstance(event.callback_query.data, str)
-            and event.callback_query.data.startswith("shop:refundorder:")
         ):
             return await handler(event, data)
         message = event.message
@@ -46,6 +47,26 @@ class ShopBotOperationMiddleware(BaseMiddleware):
 
         async with session_maker() as db:
             status = await legacy_state(db, "telegram")
+            if status.state in {"paused", "maintenance"}:
+                normalized = normalize_update(
+                    Platform.TELEGRAM,
+                    event.model_dump(mode="json", by_alias=True, exclude_none=True),
+                )
+                if normalized is not None:
+                    context = await resolve_legacy_bot_context(
+                        db, authenticated_platform=Platform.TELEGRAM,
+                    )
+                    reply = await paused_customer_reply(
+                        db, context=context, event=normalized,
+                    )
+                    if reply is not None:
+                        if callback is not None:
+                            await callback.answer()
+                        client = callback.bot if callback is not None else message.bot
+                        await TelegramTransport(
+                            client, bot_id=context.bot_id,
+                        ).send(normalized.chat_id, reply)
+                        return None
         if status.state == "active":
             return await handler(event, data)
 

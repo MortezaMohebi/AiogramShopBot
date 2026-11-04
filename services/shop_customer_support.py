@@ -8,22 +8,55 @@ request, and staff notes never appear in customer history accidentally.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction
+from models.shop_content import ShopIdentity
 from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_customer_support import ShopSupportMessage, ShopSupportTicket
-from models.shop_content import ShopIdentity
 from services.shop_bot_context import BotContext
+from services.shop_customer_access import customer_access_clause
 from services.shop_customer_account import customer_for_bot
 
 _TICKET_ID = re.compile(r"ux:ticket:view:([1-9][0-9]{0,18})\Z")
 _TICKET_REPLY = re.compile(r"ux:ticket:reply:([1-9][0-9]{0,18})\Z")
 _TICKET_TOPIC = re.compile(r"ux:ticket:topic:(general|order|payment|delivery|refund)\Z")
+_TICKET_PAGE = re.compile(
+    r"ux:ticket:page:([1-9][0-9]{0,18}):([1-9][0-9]{0,18}):([0-9])\Z"
+)
 _TICKET_TTL = timedelta(minutes=15)
+_MESSAGE_PAGE_UNITS = 3500
+_MAX_DATABASE_ID = 9_223_372_036_854_775_807
+
+
+def is_support_action(action: str) -> bool:
+    """Recognize only bounded support callbacks, including complete thread pages."""
+    if action in {"ux:support", "ux:tickets", "ux:ticket:new"} or _TICKET_TOPIC.fullmatch(action):
+        return True
+    for pattern in (_TICKET_ID, _TICKET_REPLY, _TICKET_PAGE):
+        match = pattern.fullmatch(action)
+        if match and all(int(value) <= _MAX_DATABASE_ID for value in match.groups()):
+            return True
+    return False
+
+
+def _message_pages(body: str) -> tuple[str, ...]:
+    """Preserve every Unicode character within both providers' UTF-16 limits."""
+    pages = []
+    start = 0
+    units = 0
+    for position, character in enumerate(body):
+        width = 2 if ord(character) > 0xFFFF else 1
+        if units + width > _MESSAGE_PAGE_UNITS:
+            pages.append(body[start:position])
+            start = position
+            units = 0
+        units += width
+    pages.append(body[start:])
+    return tuple(pages)
 
 
 def validate_ticket_body(value: str) -> str:
@@ -31,7 +64,7 @@ def validate_ticket_body(value: str) -> str:
     if (
         not isinstance(value, str) or not 1 <= len(value.strip()) <= 4000
         or any(
-            not char.isprintable() and char not in {"\n", "\t"}
+            not char.isprintable() and char not in {"\n", "\t", "\u200c", "\u200d"}
             for char in value
         )
     ):
@@ -51,7 +84,7 @@ def _verified_ticket_owners(context: BotContext, customer_id: int):
     return select(ShopIdentity.id).where(
         ShopIdentity.store_id == context.store_id,
         ShopIdentity.customer_id == customer_id,
-        ShopIdentity.is_blocked.is_(False),
+        customer_access_clause(),
     )
 
 
@@ -60,6 +93,8 @@ async def customer_ticket(
     customer_id: int, ticket_id: int,
 ) -> ShopSupportTicket | None:
     """Never return a ticket by ID alone, including after identity linking."""
+    if type(ticket_id) is not int or not 1 <= ticket_id <= _MAX_DATABASE_ID:
+        return None
     return await db.scalar(select(ShopSupportTicket).where(
         ShopSupportTicket.id == ticket_id,
         ShopSupportTicket.store_id == context.store_id,
@@ -86,7 +121,7 @@ class CustomerSupportFlow:
             raise ValueError("Support bot/provider mismatch.")
 
         handled = (
-            action.startswith(("ux:support", "ux:ticket", "ux:tickets"))
+            is_support_action(action)
             or text in {"/support", "/paysupport", "🆘 پشتیبانی", "/ticket"}
         )
         state = None
@@ -158,14 +193,14 @@ class CustomerSupportFlow:
                     bot_id=self.context.bot_id,
                     platform_user_id=event.user_id,
                     store_id=self.context.store_id,
-                    expires_at=datetime.now(timezone.utc) + _TICKET_TTL,
+                    expires_at=datetime.now(UTC) + _TICKET_TTL,
                 )
                 db.add(state)
             if state.store_id != self.context.store_id:
                 raise ValueError("Invalid chat State Store ownership.")
             state.action = "ticket_input"
             state.context_ref = subject
-            state.expires_at = datetime.now(timezone.utc) + _TICKET_TTL
+            state.expires_at = datetime.now(UTC) + _TICKET_TTL
             await db.commit()
             return BotReply(
                 "توضیح درخواست خود را بنویسید (حداکثر ۴۰۰۰ کاراکتر).\n"
@@ -176,8 +211,8 @@ class CustomerSupportFlow:
         if state is not None and state.action == "ticket_input":
             expiry = state.expires_at
             if expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=timezone.utc)
-            if expiry <= datetime.now(timezone.utc):
+                expiry = expiry.replace(tzinfo=UTC)
+            if expiry <= datetime.now(UTC):
                 state.action = "idle"
                 state.context_ref = None
                 await db.commit()
@@ -262,30 +297,72 @@ class CustomerSupportFlow:
             )
 
         match = _TICKET_ID.fullmatch(action)
-        if match:
+        page_match = _TICKET_PAGE.fullmatch(action)
+        if match or page_match:
+            ticket_id = int((match or page_match).group(1))
+            if ticket_id > _MAX_DATABASE_ID:
+                return BotReply("شناسه درخواست پشتیبانی معتبر نیست.")
             ticket = await customer_ticket(
                 db, self.context, customer_id=customer.id,
-                ticket_id=int(match.group(1)),
+                ticket_id=ticket_id,
             )
             if ticket is None:
                 return BotReply("درخواست متعلق به این حساب پیدا نشد.")
-            msgs = (await db.scalars(select(ShopSupportMessage).where(
+            query = select(ShopSupportMessage).where(
                 ShopSupportMessage.ticket_id == ticket.id,
                 ShopSupportMessage.store_id == self.context.store_id,
                 ShopSupportMessage.sender_kind.in_(("customer", "staff")),
-            ).order_by(ShopSupportMessage.id.desc()).limit(12))).all()
-            displayed = [
-                f"#{ticket.id} — {ticket.topic}\nوضعیت: {ticket.status}"
-            ]
-            for item in reversed(msgs):
-                author = (
-                    "شما" if item.sender_kind == "customer"
-                    else "پشتیبانی"
+            )
+            message_id = int(page_match.group(2)) if page_match else None
+            part = int(page_match.group(3)) if page_match else 0
+            if message_id is not None and message_id > _MAX_DATABASE_ID:
+                return BotReply("شناسه پیام پشتیبانی معتبر نیست.")
+            item = await db.scalar(
+                query.where(ShopSupportMessage.id == message_id)
+                if message_id is not None else
+                query.order_by(ShopSupportMessage.id).limit(1)
+            )
+            header = f"#{ticket.id} — {ticket.topic}\nوضعیت: {ticket.status}"
+            if item is None:
+                return BotReply(
+                    header + "\nپیام قابل‌نمایش پیدا نشد.",
+                    ticket_actions(("بازگشت به درخواست", f"ux:ticket:view:{ticket.id}")),
                 )
-                displayed.append(f"{author}: {item.body[:300]}")
+            pages = _message_pages(item.body)
+            if part >= len(pages):
+                return BotReply(
+                    "این بخش از پیام پیدا نشد؛ درخواست را دوباره باز کنید.",
+                    ticket_actions(("مشاهده درخواست", f"ux:ticket:view:{ticket.id}")),
+                )
+            navigation = []
+            if part:
+                previous_id, previous_part = item.id, part - 1
+            else:
+                previous = await db.scalar(query.where(
+                    ShopSupportMessage.id < item.id,
+                ).order_by(ShopSupportMessage.id.desc()).limit(1))
+                previous_id = previous.id if previous else None
+                previous_part = len(_message_pages(previous.body)) - 1 if previous else 0
+            if previous_id is not None:
+                navigation.append(InlineAction(
+                    "قبلی", f"ux:ticket:page:{ticket.id}:{previous_id}:{previous_part}",
+                ))
+            if part + 1 < len(pages):
+                following_id, following_part = item.id, part + 1
+            else:
+                following = await db.scalar(query.where(
+                    ShopSupportMessage.id > item.id,
+                ).order_by(ShopSupportMessage.id).limit(1))
+                following_id = following.id if following else None
+                following_part = 0
+            if following_id is not None:
+                navigation.append(InlineAction(
+                    "بعدی", f"ux:ticket:page:{ticket.id}:{following_id}:{following_part}",
+                ))
+            author = "شما" if item.sender_kind == "customer" else "پشتیبانی"
             return BotReply(
-                "\n\n".join(displayed)[:4096],
-                ticket_actions(
+                f"{header}\n{author} — بخش {part + 1} از {len(pages)}\n\n{pages[part]}",
+                ((tuple(navigation),) if navigation else ()) + ticket_actions(
                     ("✉️ پاسخ جدید", f"ux:ticket:reply:{ticket.id}"),
                     ("📨 درخواست‌های من", "ux:tickets"),
                     ("🏠 منوی اصلی", "shop:home"),

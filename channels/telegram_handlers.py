@@ -26,6 +26,9 @@ from services.shop_customer_experience import (
 from services.shop_bot_context import resolve_legacy_bot_context
 from services.shop_cart import ShopCartFlow
 from services.shop_bot_profiles import get_bot_options
+from services.shop_bot_operations import legacy_state
+from services.shop_customer_notification_dispatch import deliver_order_paid_once
+from services.shop_multibot_dispatch import paused_customer_reply
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
 from services.shop_orders import ShopOrdersFlow
@@ -86,20 +89,16 @@ async def _shop_reply(
     event: InboundEvent, session: AsyncSession
 ) -> BotReply | None:
     """Select the common cart first, then catalog for non-cart actions."""
-    # Refund rights for already-paid orders survive bot pause/maintenance.
-    # The order service still validates the exact payer's platform identity.
-    if event.callback_data and event.callback_data.startswith(
-        "shop:refundorder:"
-    ):
-        return await ShopOrdersFlow(
-            config.SHOP_DISPLAY_UNIT
-        ).reply(event, session)
+    status = await legacy_state(session, event.platform.value)
+    if status.state == "disabled":
+        return None
     options = await get_bot_options(session, event.platform.value)
-    if options.maintenance_enabled:
-        return BotReply("فروشگاه موقتاً در حالت نگهداری است. لطفاً بعداً مراجعه کنید.")
     context = await resolve_legacy_bot_context(
         session, authenticated_platform=event.platform,
     )
+    if status.state in {"paused", "maintenance"} or options.maintenance_enabled:
+        reply = await paused_customer_reply(session, context=context, event=event)
+        return reply or BotReply(status.message)
     await clear_pending_on_navigation(
         session, context=context, event=event,
     )
@@ -347,18 +346,24 @@ async def shop_successful_payment(message: Message) -> None:
             # human rather than silently discarded or fulfilled twice.
             raise
     if changed:
-        note = (
-            f"✅ پرداخت سفارش #{order.id} تأیید شد."
-            if order.status == "paid"
-            else f"⚠️ پرداخت سفارش #{order.id} ثبت شد؛ پیگیری فروشنده لازم است."
-        )
-        await TelegramTransport(message.bot).send(
-            message.chat.id, BotReply(note)
-        )
+        import logging
+        try:
+            async with get_db_session() as notice_session:
+                await deliver_order_paid_once(
+                    notice_session, order_id=order.id,
+                    bot_id=LEGACY_TELEGRAM_BOT_ID,
+                    transport=TelegramTransport(
+                        message.bot, bot_id=LEGACY_TELEGRAM_BOT_ID,
+                    ),
+                )
+        except Exception:
+            logging.warning(
+                "Post-settlement notice needs review; order_id=%s bot_id=%s",
+                order.id, LEGACY_TELEGRAM_BOT_ID,
+            )
         # Paid settlement is already committed. Referral failures must not
         # roll back an external provider transaction.
         if order.status == "paid":
-            import logging
             try:
                 async with get_db_session() as reward_session:
                     await ShopReferralService.award_for_paid_order(
@@ -395,6 +400,13 @@ async def shop_catalog_button(
         callback_query_id=callback.id,
     )
     if callback.data and callback.data.startswith("shop:pay:"):
+        status = await legacy_state(session, Platform.TELEGRAM.value)
+        options = await get_bot_options(session, Platform.TELEGRAM.value)
+        if status.state != "active" or options.maintenance_enabled:
+            reply = await _shop_reply(event, session)
+            if reply is not None:
+                await TelegramTransport(callback.bot).send(event.chat_id, reply)
+            return
         try:
             order_id = int(callback.data.removeprefix("shop:pay:"))
             await send_order_invoice(
