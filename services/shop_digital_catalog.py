@@ -16,9 +16,12 @@ from starlette.datastructures import UploadFile
 
 import config
 from models.shop_content import Product
+from models.shop_checkout import ShopCartItem, ShopOrderLine
 from models.shop_digital_delivery import ShopDigitalAsset, ShopDigitalLicense
 from services.shop_digital_crypto import seal_license
-from services.shop_digital_rules import DeliveryPolicyError
+from services.shop_digital_rules import (
+    DeliveryPolicyError, validate_pinned_asset,
+)
 from services.shop_digital_storage import (
     digital_root, safe_digital_path, save_digital_file,
 )
@@ -107,9 +110,20 @@ async def add_license_batch(
     if existing is not None:
         raise DeliveryPolicyError("License was already imported.")
 
-    # Prevent overselling: license-backed stock must match unclaimed codes.
+    # Activating one-time license supply must never silently erase
+    # existing stock or re-label a Product already referenced by a Cart
+    # or an historical Order. A brand-new license SKU starts with zero.
     if product.digital_delivery_mode == "none":
-        product.stock_quantity = 0
+        has_cart = await db.scalar(select(ShopCartItem.id).where(
+            ShopCartItem.product_id == product_id,
+        ).limit(1))
+        has_order = await db.scalar(select(ShopOrderLine.id).where(
+            ShopOrderLine.product_id == product_id,
+        ).limit(1))
+        if product.stock_quantity != 0 or has_cart is not None or has_order is not None:
+            raise DeliveryPolicyError(
+                "License inventory requires a new zero-stock unused Product."
+            )
     if product.stock_quantity + len(prepared) > 100_000_000:
         raise DeliveryPolicyError("License inventory exceeds product limit.")
     for ciphertext, fingerprint in prepared:
@@ -181,6 +195,7 @@ async def set_private_product_file(
 
 async def require_digital_supply(
     db: AsyncSession, *, product: Product, quantity: int,
+    pinned_asset_id: str | None = None,
 ) -> ShopDigitalAsset | None:
     """Before invoice, ensure a paid Order can eventually be delivered.
 
@@ -192,11 +207,25 @@ async def require_digital_supply(
     if type(quantity) is not int or quantity <= 0:
         raise DeliveryPolicyError("Invalid digital quantity.")
     if product.digital_delivery_mode == "file":
-        asset = await db.scalar(select(ShopDigitalAsset).where(
-            ShopDigitalAsset.product_id == product.id,
-            ShopDigitalAsset.store_id == product.store_id,
-            ShopDigitalAsset.active.is_(True),
-        ))
+        asset = (
+            await db.get(ShopDigitalAsset, pinned_asset_id)
+            if pinned_asset_id is not None
+            else await db.scalar(select(ShopDigitalAsset).where(
+                ShopDigitalAsset.product_id == product.id,
+                ShopDigitalAsset.store_id == product.store_id,
+                ShopDigitalAsset.active.is_(True),
+            ))
+        )
+        if pinned_asset_id is not None:
+            validate_pinned_asset(
+                expected_asset_id=pinned_asset_id,
+                actual_asset_id=asset.id if asset else None,
+                expected_store_id=product.store_id,
+                actual_store_id=asset.store_id if asset else "",
+                expected_product_id=product.id,
+                actual_product_id=asset.product_id if asset else -1,
+                asset_exists=asset is not None,
+            )
         if asset is None:
             raise DeliveryPolicyError("Private digital file is not configured.")
         # File is never exposed through a static route. Validate current

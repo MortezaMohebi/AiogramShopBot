@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 class MixedCheckoutError(ValueError):
@@ -161,6 +161,7 @@ def checkout_quote_fingerprint(
     physical_discount_irr: int, policy_token: str,
     coupon_code: str | None = None, shipping_label: str | None = None,
     shipping_address: str | None = None,
+    asset_ids: Mapping[int, str] | None = None,
 ) -> str:
     """Bind a 12-hex callback proof to exact prices, cart and sales terms.
 
@@ -171,6 +172,13 @@ def checkout_quote_fingerprint(
     if not isinstance(policy_token, str) or not policy_token:
         raise MixedCheckoutError("Missing sales-policy proof.")
     items = normalize_lines(lines)
+    owned_ids = {item.product_id for item in items}
+    if asset_ids is not None and any(
+        type(product_id) is not int or product_id not in owned_ids
+        or not isinstance(asset_id, str) or len(asset_id) != 36
+        for product_id, asset_id in asset_ids.items()
+    ):
+        raise MixedCheckoutError("Invalid private product version mapping.")
     payload = {
         "terms": policy_token,
         "shipping_irr": shipping_irr,
@@ -178,6 +186,7 @@ def checkout_quote_fingerprint(
         "coupon": coupon_code,
         "shipping_label": shipping_label,
         "shipping_address": shipping_address,
+        "file_versions": sorted((asset_ids or {}).items()),
         "items": [
             (
                 line.product_id, line.product_type, line.quantity,

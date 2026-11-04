@@ -282,6 +282,11 @@ class ShopOrderLine(Base):
     )
     unit_price_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     unit_price_stars_snapshot: Mapped[int | None] = mapped_column(BigInteger)
+    # Never swap a customer's purchased file for a later Product upload.
+    # NULL for physical Products and one-time license SKUs.
+    digital_asset_id_snapshot: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("shop_digital_assets.id", ondelete="RESTRICT"),
+    )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     total_irr: Mapped[int] = mapped_column(BigInteger, nullable=False)
     order: Mapped["ShopOrder"] = relationship(

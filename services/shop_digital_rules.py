@@ -60,3 +60,28 @@ def validate_license_code(value: str) -> str:
     ):
         raise DeliveryPolicyError("Invalid digital license code.")
     return value.strip()
+
+
+def validate_pinned_asset(
+    *, expected_asset_id: str | None, actual_asset_id: str | None,
+    expected_store_id: str, actual_store_id: str,
+    expected_product_id: int, actual_product_id: int,
+    asset_exists: bool,
+) -> bool:
+    """Guarantee fulfillment uses the exact private file version purchased.
+
+    An inactive (replaced) asset remains eligible for an older paid Order,
+    but a different Store, Product, or file is never silently substituted.
+    """
+    if (
+        not expected_asset_id
+        or expected_asset_id != actual_asset_id
+        or not expected_store_id
+        or expected_store_id != actual_store_id
+        or type(expected_product_id) is not int
+        or expected_product_id <= 0
+        or expected_product_id != actual_product_id
+        or asset_exists is not True
+    ):
+        raise DeliveryPolicyError("Order's private asset snapshot is invalid.")
+    return True
