@@ -7,6 +7,8 @@ side effects. It exposes the actual signed Next.js administration router.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, HTTPException
 from redis.asyncio import Redis
 from sqlalchemy import text
@@ -29,7 +31,15 @@ app = FastAPI(
 )
 app.include_router(admin_router)
 
+if os.environ.get("SHOP_BETA_QA") == "1":
+    from dashboard.admin_control_app import create_app
 
+    # Exercise production session, StoreContext and P0-P6 routers. The empty
+    # legacy FastAPI lifespan and disabled receivers cannot contact providers.
+    app = create_app(app, live_receivers=False)
+
+
+@app.get("/healthz", include_in_schema=False)
 @app.get("/__lab/health", include_in_schema=False)
 async def health() -> dict[str, object]:
     """Check the actual test PostgreSQL and Redis without contacting bots."""

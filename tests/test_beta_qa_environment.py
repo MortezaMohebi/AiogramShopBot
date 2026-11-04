@@ -45,3 +45,30 @@ def test_beta_lab_guard_requires_exact_identity_and_inert_providers(tmp_path, mo
         monkeypatch.setenv(*override)
         with pytest.raises(RuntimeError):
             require_isolated_lab()
+
+
+def test_beta_app_includes_real_admin_authorization_and_customer_routes(tmp_path):
+    """The QA server must exercise the same signed session boundary as production."""
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    from scripts.beta_qa_environment import prepare_environment
+
+    target = prepare_environment(tmp_path / "qa.env")
+    environment = dict(line.split("=", 1) for line in target.read_text().splitlines())
+    result = subprocess.run(
+        [sys.executable, "-c", '''
+from scripts.test_lab_app import app
+paths = {getattr(route, "path", "") for route in app.routes}
+assert "/internal/admin/v1/store-context" in paths, paths
+assert "/internal/admin/v1/digital-deliveries" in paths, paths
+assert any(getattr(item.kwargs.get("dispatch"), "__name__", "") == "session_boundary" for item in app.user_middleware)
+print("QA control plane composition verified")
+'''],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, **environment}, capture_output=True, text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
