@@ -453,7 +453,23 @@ class ShopCartFlow:
             raise CartRejected("کد تخفیف به این فروشگاه تعلق ندارد.")
         discount = validate_coupon(coupon, subtotal) if coupon else 0
         total = subtotal + shipping - discount
-        if not 0 < total <= MAX_RIALS:
+        from models.shop_multibot import ShopBot
+
+        owner = await session.get(ShopBot, bot_id or cart.bot_id)
+        quote_platform_is_stars = bool(
+            owner is not None and owner.platform == "telegram"
+        )
+        if total == 0 and quote_platform_is_stars:
+            # Telegram digital goods may legitimately have a zero Rial price,
+            # because only their positive XTR amount is charged.
+            if not all(
+                line.product.product_type == "digital"
+                and type(line.product.price_stars) is int
+                and line.product.price_stars > 0
+                for line in lines
+            ) or coupon is not None or shipping:
+                raise CartRejected("مبلغ دیجیتال Telegram Stars معتبر نیست.")
+        elif not 0 < total <= MAX_RIALS:
             raise CartRejected("مبلغ سفارش معتبر نیست.")
         return CartQuote(
             tuple(lines), subtotal, discount, shipping, total,
@@ -768,6 +784,19 @@ class ShopCartFlow:
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
+        from services.shop_digital_catalog import require_digital_supply
+        from services.shop_digital_rules import DeliveryPolicyError
+
+        try:
+            for line in quote.lines:
+                if line.product.product_type == "digital":
+                    await require_digital_supply(
+                        session, product=line.product, quantity=line.quantity,
+                    )
+        except (DeliveryPolicyError, OSError):
+            raise CartRejected(
+                "فایل یا لایسنس دیجیتال هنوز آمادهٔ خرید نیست."
+            ) from None
         mixed = (
             event.platform == Platform.TELEGRAM
             and {line.product.product_type for line in quote.lines}
@@ -882,6 +911,22 @@ class ShopCartFlow:
             not cart.shipping_address or not quote.shipping_label
         ):
             raise CartRejected("نشانی و روش ارسال را تکمیل کنید.")
+
+        # Even an old valid callback may arrive after an administrator
+        # disables digital inventory; recheck before creating either Order.
+        from services.shop_digital_catalog import require_digital_supply
+        from services.shop_digital_rules import DeliveryPolicyError
+
+        try:
+            for line in quote.lines:
+                if line.product.product_type == "digital":
+                    await require_digital_supply(
+                        session, product=line.product, quantity=line.quantity,
+                    )
+        except (DeliveryPolicyError, OSError):
+            raise CartRejected(
+                "موجودی فایل یا لایسنس تغییر کرده است؛ سفارش را تازه کنید."
+            ) from None
 
         # Repeat the live quote, platform currency, Store ACL and policy
         # under the locked order-creation transaction. The callback fingerprint
