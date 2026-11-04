@@ -103,10 +103,25 @@ class TelegramTransport:
 
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send plain text with an optional inline keyboard."""
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from aiogram.types import (
+            InlineKeyboardButton, InlineKeyboardMarkup,
+            KeyboardButton, ReplyKeyboardMarkup,
+        )
 
         markup = None
-        if reply.rows:
+        if reply.request_contact:
+            markup = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(
+                        text="📱 اشتراک شمارهٔ تماس",
+                        request_contact=True,
+                    )],
+                    [KeyboardButton(text="🏠 منوی اصلی")],
+                ],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            )
+        elif reply.rows:
             markup = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [

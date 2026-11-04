@@ -49,11 +49,15 @@ class BotReply:
     text: str
     rows: tuple[tuple[InlineAction, ...], ...] = ()
     attachments: tuple[MediaAttachment, ...] = ()
+    # Official Telegram/Bale ReplyKeyboard request_contact, never an inline button.
+    request_contact: bool = False
 
     def __post_init__(self) -> None:
         """Validate common limits before handing data to an adapter."""
         if not 1 <= len(self.text) <= 4096:
             raise ValueError("Bot message must contain 1–4096 characters.")
+        if self.request_contact and self.rows:
+            raise ValueError("Contact keyboard cannot mix with inline actions.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +70,8 @@ class InboundEvent:
     text: str | None = None
     callback_data: str | None = None
     callback_query_id: str | None = None
+    contact_user_id: int | None = None
+    contact_phone: str | None = None
 
     @property
     def is_callback(self) -> bool:
@@ -130,9 +136,19 @@ def normalize_update(
     user_id = _user_id(message.get("from"))
     chat_id = _private_chat_id(message.get("chat"))
     body = message.get("text")
-    if user_id is None or chat_id is None or not isinstance(body, str):
+    if user_id is None or chat_id is None:
         return None
-    if not body or len(body) > 4096:
+    contact = message.get("contact")
+    if isinstance(contact, Mapping) and not isinstance(body, str):
+        phone, contact_id = contact.get("phone_number"), contact.get("user_id")
+        if not isinstance(phone, str) or not 5 <= len(phone) <= 24:
+            return None
+        return InboundEvent(
+            platform=platform, chat_id=chat_id, user_id=user_id,
+            contact_phone=phone,
+            contact_user_id=contact_id if type(contact_id) is int else None,
+        )
+    if not isinstance(body, str) or not body or len(body) > 4096:
         return None
     return InboundEvent(
         platform=platform, chat_id=chat_id, user_id=user_id, text=body

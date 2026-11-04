@@ -185,7 +185,16 @@ class BaleTransport:
             "chat_id": chat_id,
             "text": reply.text,
         }
-        if reply.rows:
+        if reply.request_contact:
+            payload["reply_markup"] = {
+                "keyboard": [
+                    [{"text": "📱 اشتراک شمارهٔ تماس", "request_contact": True}],
+                    [{"text": "🏠 منوی اصلی"}],
+                ],
+                "resize_keyboard": True,
+                "one_time_keyboard": True,
+            }
+        elif reply.rows:
             payload["reply_markup"] = {
                 "inline_keyboard": [
                     [
