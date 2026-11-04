@@ -1,0 +1,261 @@
+"""Bot-owned stock subscriptions and durable notification consent/outbox.
+
+Every delivery is explicitly associated with the provider-verified bot.
+Marketing must have an active per-Bot opt-in; stock availability requires a
+customer-initiated subscription. Failed/unknown send results never requeue
+automatically, avoiding accidental duplicate provider messages.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
+
+from channels.contracts import BotReply, InboundEvent, InlineAction
+from models.shop_content import Product, ShopIdentity
+from models.shop_customer_notifications import (
+    ShopCustomerNotificationOutbox, ShopStockAlert,
+)
+from models.shop_multibot import ShopBot
+from services.shop_bot_catalog_acl import allowed_for_bot
+from services.shop_bot_context import BotContext
+from services.shop_customer_account import customer_for_bot
+
+_VALID_TOPICS = frozenset({"order", "ticket", "stock", "marketing"})
+_OUTBOX_TRANSITIONS = {
+    "queued": frozenset({"processing"}),
+    "processing": frozenset({"sent", "needs_review"}),
+    "sent": frozenset(),
+    "needs_review": frozenset(),
+}
+
+
+def notification_permitted(
+    *, topic: str, advertising_consent: bool,
+    explicit_request: bool,
+) -> bool:
+    """Require the right consent type for operational, stock or marketing."""
+    if topic not in _VALID_TOPICS:
+        return False
+    if topic == "marketing":
+        return advertising_consent is True
+    if topic == "stock":
+        return explicit_request is True
+    return topic in {"order", "ticket"}
+
+
+def validate_outbox_transition(current: str, new_status: str) -> bool:
+    """Never reset an ambiguous, sent or processing provider message."""
+    if new_status not in _OUTBOX_TRANSITIONS.get(current, frozenset()):
+        raise ValueError("Unsafe notification state transition.")
+    return True
+
+
+async def toggle_stock_alert(
+    db: AsyncSession, *, context: BotContext, user_id: int,
+    product_id: int,
+) -> BotReply:
+    """Subscribe/unsubscribe by explicit customer action and current Bot ACL."""
+    _, customer = await customer_for_bot(
+        db, context, platform_user_id=user_id,
+    )
+    product = await db.get(Product, product_id)
+    if product is None or product.store_id != context.store_id:
+        return BotReply("این کالا به فروشگاه فعلی تعلق ندارد.")
+    if not await allowed_for_bot(db, context.bot_id, [product_id]):
+        return BotReply("این محصول در بات فعلی قابل‌نمایش نیست.")
+    existing = await db.scalar(select(ShopStockAlert).where(
+        ShopStockAlert.bot_id == context.bot_id,
+        ShopStockAlert.platform_user_id == user_id,
+        ShopStockAlert.product_id == product_id,
+        ShopStockAlert.store_id == context.store_id,
+    ).with_for_update())
+    if existing is not None and existing.status == "active":
+        existing.status = "cancelled"
+        response = "✅ درخواست اطلاع‌رسانی موجودی لغو شد."
+    elif product.stock_quantity > 0:
+        return BotReply(
+            "این محصول هم‌اکنون موجود است؛ از صفحهٔ محصول خرید کنید.",
+            ((InlineAction("📦 مشاهده محصول", f"shop:item:{product_id}"),),),
+        )
+    elif existing is not None:
+        existing.status = "active"
+        response = "✅ هنگام موجودشدن محصول از همین بات اطلاع‌رسانی می‌کنیم."
+    else:
+        db.add(ShopStockAlert(
+            store_id=context.store_id, customer_id=customer.id,
+            bot_id=context.bot_id, platform_user_id=user_id,
+            product_id=product_id, status="active",
+        ))
+        response = "✅ اطلاع‌رسانی موجودشدن این محصول ثبت شد."
+    await db.commit()
+    return BotReply(
+        response,
+        ((InlineAction("📦 مشاهده محصول", f"shop:item:{product_id}"),),),
+    )
+
+
+async def list_stock_alerts(
+    db: AsyncSession, *, context: BotContext, user_id: int,
+) -> BotReply:
+    """List only the authenticated Bot user's active stock alerts."""
+    _, customer = await customer_for_bot(
+        db, context, platform_user_id=user_id,
+    )
+    rows = (await db.execute(select(
+        ShopStockAlert, Product.name,
+    ).join(
+        Product, Product.id == ShopStockAlert.product_id,
+    ).where(
+        ShopStockAlert.store_id == context.store_id,
+        ShopStockAlert.customer_id == customer.id,
+        ShopStockAlert.bot_id == context.bot_id,
+        ShopStockAlert.platform_user_id == user_id,
+        ShopStockAlert.status == "active",
+    ).order_by(ShopStockAlert.id.desc()).limit(20))).all()
+    buttons = tuple((
+        InlineAction(
+            f"🔕 لغو {name[:35]}", f"ux:stock:toggle:{alert.product_id}",
+        ),
+    ) for alert, name in rows)
+    return BotReply(
+        f"🔔 اعلان موجودی — {len(rows)} محصول",
+        buttons + ((InlineAction("👤 حساب من", "ux:account"),),),
+    )
+
+
+async def enqueue_notification(
+    db: AsyncSession, *, context: BotContext, user_id: int,
+    topic: str, event_key: str, body: str, explicit_request: bool = False,
+) -> bool:
+    """Store one idempotent message only when consent/ownership are valid."""
+    identity = await db.scalar(select(ShopIdentity).where(
+        ShopIdentity.bot_id == context.bot_id,
+        ShopIdentity.platform == context.platform.value,
+        ShopIdentity.platform_user_id == user_id,
+        ShopIdentity.store_id == context.store_id,
+    ))
+    if identity is None or identity.is_blocked:
+        return False
+    if (
+        len(event_key) < 8 or len(event_key) > 120
+        or not 1 <= len(body) <= 4000
+        or not notification_permitted(
+            topic=topic,
+            advertising_consent=identity.allow_announcements,
+            explicit_request=explicit_request,
+        )
+    ):
+        return False
+    exists = await db.scalar(select(
+        ShopCustomerNotificationOutbox.id,
+    ).where(
+        ShopCustomerNotificationOutbox.event_key == event_key,
+    ))
+    if exists is not None:
+        return False
+    db.add(ShopCustomerNotificationOutbox(
+        store_id=context.store_id, bot_id=context.bot_id,
+        platform_user_id=user_id,
+        topic=topic, event_key=event_key,
+        body=body, status="queued",
+    ))
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        return False
+    return True
+
+
+async def prepare_stock_alerts(
+    db: AsyncSession, *, store_id: str, limit: int = 50,
+) -> int:
+    """Queue matching available Product alerts without sending messages."""
+    if not 1 <= limit <= 100:
+        raise ValueError("Invalid stock alert batch size.")
+    records = (await db.scalars(select(ShopStockAlert).join(
+        Product, Product.id == ShopStockAlert.product_id,
+    ).join(
+        ShopBot, ShopBot.id == ShopStockAlert.bot_id,
+    ).where(
+        ShopStockAlert.store_id == store_id,
+        ShopStockAlert.status == "active",
+        Product.store_id == store_id,
+        Product.is_published.is_(True),
+        Product.stock_quantity > 0,
+        ShopBot.store_id == store_id,
+        ShopBot.status.in_(("active", "legacy")),
+    ).order_by(ShopStockAlert.id).limit(limit).with_for_update(
+        skip_locked=True,
+    ))).all()
+    queued = 0
+    for alert in records:
+        bot = await db.get(ShopBot, alert.bot_id)
+        from channels.contracts import Platform
+        from services.shop_bot_context import BotContext
+
+        context = BotContext(
+            bot_id=bot.id, store_id=bot.store_id,
+            platform=Platform(bot.platform),
+            provider_bot_id=bot.provider_bot_id,
+            status=bot.status, runtime_owner=bot.runtime_owner,
+            credential_version=bot.credential_version,
+            registry_version=bot.version,
+        )
+        if not await allowed_for_bot(db, context.bot_id, [alert.product_id]):
+            continue
+        product = await db.get(Product, alert.product_id)
+        accepted = await enqueue_notification(
+            db, context=context,
+            user_id=alert.platform_user_id, topic="stock",
+            event_key=f"stock:{alert.id}",
+            body=f"📦 «{product.name[:180]}» دوباره موجود شده است.",
+            explicit_request=True,
+        )
+        if accepted:
+            alert.status = "queued"
+            queued += 1
+    await db.commit()
+    return queued
+
+
+async def claim_outbox_message(
+    db: AsyncSession, *, bot_id: str,
+) -> ShopCustomerNotificationOutbox | None:
+    """Claim a queued message durably *before* its provider API request."""
+    row = await db.scalar(select(ShopCustomerNotificationOutbox).where(
+        ShopCustomerNotificationOutbox.bot_id == bot_id,
+        ShopCustomerNotificationOutbox.status == "queued",
+    ).order_by(
+        ShopCustomerNotificationOutbox.id,
+    ).with_for_update(skip_locked=True).limit(1))
+    if row is None:
+        return None
+    validate_outbox_transition(row.status, "processing")
+    row.status = "processing"
+    row.claimed_at = datetime.now(timezone.utc)
+    await db.commit()
+    return row
+
+
+async def finish_outbox_message(
+    db: AsyncSession, *, outbox_id: int, succeeded: bool,
+) -> None:
+    """Mark sent/unknown; never enqueue ambiguous outbound requests again."""
+    row = await db.scalar(select(ShopCustomerNotificationOutbox).where(
+        ShopCustomerNotificationOutbox.id == outbox_id,
+    ).with_for_update())
+    if row is None:
+        raise ValueError("Outbox receipt is missing.")
+    next_status = "sent" if succeeded else "needs_review"
+    validate_outbox_transition(row.status, next_status)
+    row.status = next_status
+    if succeeded:
+        row.sent_at = datetime.now(timezone.utc)
+    else:
+        row.failure_code = "provider_outcome_unknown"
+    await db.commit()
