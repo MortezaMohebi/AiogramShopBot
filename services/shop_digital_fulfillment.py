@@ -92,12 +92,6 @@ async def _read_delivery_payload(
         ShopPaymentAttempt.status == "paid",
     ))
     product = await db.get(Product, line.product_id) if line else None
-    correct_store = bool(
-        order and line and asset and product and store
-        and store.state == "active"
-        and order.store_id == line.product.store_id
-        if False else False
-    )
     # Evaluate fields explicitly; a stale product or moved asset must never
     # cause a cross-Store attachment to be sent.
     correct_store = bool(
