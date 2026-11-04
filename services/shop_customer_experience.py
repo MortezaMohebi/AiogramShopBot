@@ -21,6 +21,31 @@ _SEARCH_PAGE = re.compile(r"ux:search:page:(0|[1-9][0-9]{0,3})\Z")
 _SEARCH_FIELD = re.compile(r"ux:search:field:(all|name|sku|description)\Z")
 _ORDER_DETAIL = re.compile(r"ux:order:detail:([1-9][0-9]{0,18})\Z")
 _ORDER_TRACK = re.compile(r"ux:order:track:([1-9][0-9]{0,18})\Z")
+_TERMS_PAGE = re.compile(
+    r"ux:terms:([a-f0-9]{12}):(0|[1-9][0-9]{0,2})(:checkout)?\Z"
+)
+_TERMS_PAGE_UNITS = 3500
+
+
+def _terms_pages(text: str) -> tuple[str, ...]:
+    """Preserve the full policy in pages bounded by UTF-16 message units.
+
+    Count astral characters twice so emoji-heavy terms also leave sufficient
+    room for the version and page header on both messaging providers.
+    """
+    pages = []
+    start = 0
+    units = 0
+    for position, character in enumerate(text):
+        character_units = 2 if ord(character) > 0xFFFF else 1
+        if units + character_units > _TERMS_PAGE_UNITS:
+            pages.append(text[start:position])
+            start = position
+            units = 0
+        units += character_units
+    pages.append(text[start:])
+    return tuple(pages)
+
 
 def should_clear_chat_state(callback: str, text: str) -> bool:
     """End stale free-text forms when a customer navigates elsewhere.
@@ -89,7 +114,8 @@ class CustomerExperienceFlow:
         await clear_pending_on_navigation(
             db, context=context, event=event,
         )
-        if action in {"ux:terms"} or text == "/terms":
+        terms_page = _TERMS_PAGE.fullmatch(action)
+        if action == "ux:terms" or text == "/terms" or terms_page:
             from services.shop_checkout_policy import checkout_rules
 
             policy = await checkout_rules(db, bot_id=context.bot_id)
@@ -99,10 +125,42 @@ class CustomerExperienceFlow:
                     "تعریف قوانین فروش غیرفعال می‌ماند.",
                     ((InlineAction("🆘 پشتیبانی", "ux:support"),),),
                 )
+            if terms_page and terms_page.group(1) != policy.policy_token:
+                return BotReply(
+                    "شرایط خرید تغییر کرده است. متن فعلی را دوباره بررسی کنید.",
+                    ((InlineAction("📜 مشاهده شرایط فعلی", "ux:terms"),),),
+                )
+            pages = _terms_pages(policy.terms_text)
+            page = int(terms_page.group(2)) if terms_page else 0
+            if page >= len(pages):
+                return BotReply(
+                    "این صفحه از شرایط خرید وجود ندارد. متن را دوباره باز کنید.",
+                    ((InlineAction("📜 شرایط خرید", "ux:terms"),),),
+                )
+            origin = ":checkout" if terms_page and terms_page.group(3) else ""
+            navigation = []
+            if page:
+                navigation.append(InlineAction(
+                    "صفحه قبل",
+                    f"ux:terms:{policy.policy_token}:{page - 1}{origin}",
+                ))
+            if page + 1 < len(pages):
+                navigation.append(InlineAction(
+                    "صفحه بعد",
+                    f"ux:terms:{policy.policy_token}:{page + 1}{origin}",
+                ))
+            rows = [tuple(navigation)] if navigation else []
+            if origin:
+                # Returning to preview recomputes the existing quote proof;
+                # reading any policy page never creates an order or consent.
+                rows.append((InlineAction(
+                    "بازگشت به بررسی سفارش", "shop:checkout",
+                ),))
+            rows.append((InlineAction("🏠 منوی اصلی", "shop:home"),))
             return BotReply(
-                f"📜 شرایط خرید — نسخه {policy.terms_version}\n\n"
-                + policy.terms_text[:3900],
-                ((InlineAction("🏠 منوی اصلی", "shop:home"),),),
+                f"📜 شرایط خرید — نسخه {policy.terms_version}"
+                f" — صفحه {page + 1} از {len(pages)}\n\n{pages[page]}",
+                tuple(rows),
             )
         if action in {"ux:home"} or text in {"/menu", "🏠 منوی اصلی"}:
             from services.shop_channel_catalog import CatalogFlow

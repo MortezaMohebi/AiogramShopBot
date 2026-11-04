@@ -851,7 +851,10 @@ class ShopCartFlow:
                     f"shop:place:{cart.id}:{cart.revision}:{approval_token}",
                 ),
                 button("انصراف", "shop:cart"),
-            ),),
+            ), (button(
+                "📜 مشاهده شرایط خرید",
+                f"ux:terms:{policy.policy_token}:0:checkout",
+            ),)),
         )
 
     async def _place_order(

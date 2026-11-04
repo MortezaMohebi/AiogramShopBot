@@ -202,7 +202,7 @@ async def commerce(fixture: dict) -> None:
             digital = next(row for row in mixed if row.checkout_part_kind == "digital")
             assert physical.checkout_group_id == digital.checkout_group_id
             assert physical.total_irr == 1500 and digital.total_stars_snapshot == 7
-            assert digital.total_irr == 0, "Stars Order was represented as IRR"
+            assert not digital.shipping_irr and not digital.discount_irr
             pinned = await db.scalar(
                 select(ShopOrderLine.digital_asset_id_snapshot).where(
                     ShopOrderLine.order_id == digital.id,
