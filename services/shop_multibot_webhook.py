@@ -43,11 +43,15 @@ def webhook_url(binding_id: str, secret: str) -> str:
     ):
         raise security.SecurityRejected("webhook_url_invalid", 422)
     try:
-        if not ip_address(host).is_global:
-            raise security.SecurityRejected("webhook_url_invalid", 422)
+        address = ip_address(host)
     except ValueError:
         # DNS resolvability is checked during provider webhook verification.
         if "." not in host or ".." in host:
+            raise security.SecurityRejected("webhook_url_invalid", 422)
+    else:
+        # SecurityRejected is a ValueError; never catch our own refusal as
+        # though a private address had merely failed DNS-name parsing.
+        if not address.is_global:
             raise security.SecurityRejected("webhook_url_invalid", 422)
     return urlunsplit((
         "https", host.lower(),

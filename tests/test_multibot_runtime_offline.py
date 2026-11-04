@@ -302,7 +302,11 @@ def test_webhook_url_rejects_private_or_insecure_origin(monkeypatch) -> None:
         f"https://hooks.example.org/webhooks/v2/{binding_id}/{secret}"
     )
 
-    for forbidden in ("http://hooks.example.org", "https://127.0.0.1"):
+    for forbidden in (
+        "http://hooks.example.org", "https://127.0.0.1",
+        "https://10.0.0.1", "https://169.254.169.254",
+        "https://[::1]", "https://[fd00::1]",
+    ):
         monkeypatch.setenv("MULTIBOT_WEBHOOK_BASE_URL", forbidden)
         with pytest.raises(security.SecurityRejected):
             webhook_url(binding_id, secret)

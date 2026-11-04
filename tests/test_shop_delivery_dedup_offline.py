@@ -6,6 +6,7 @@ These tests do not need real Telegram/Bale callbacks or bot tokens.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine
@@ -112,13 +113,13 @@ async def test_webhook_update_is_processed_once_for_same_bot(database):
 @pytest.mark.asyncio
 async def test_webhook_same_numeric_id_is_unique_to_bot_and_platform(database):
     """Bale and Telegram can have identical update IDs without collision."""
-    for platform, token in [
-        (Platform.TELEGRAM, TELEGRAM_TOKEN),
-        (Platform.BALE, BALE_TOKEN),
-        (Platform.BALE, BALE_TOKEN_2),
+    for platform, token, bot_id in [
+        (Platform.TELEGRAM, TELEGRAM_TOKEN, str(uuid4())),
+        (Platform.BALE, BALE_TOKEN, str(uuid4())),
+        (Platform.BALE, BALE_TOKEN_2, str(uuid4())),
     ]:
         fresh, _ = await claim_update(
-            platform=platform, token=token, update_id=42
+            platform=platform, token=token, update_id=42, bot_id=bot_id
         )
         assert fresh
     assert database.query(ShopInboundUpdate).count() == 3
@@ -171,3 +172,17 @@ async def test_cached_file_id_never_crosses_bot_or_platform_boundary(database):
         platform="bale", bot_key=first_bot,
         storage_key=key, kind="document",
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_token_rotation_keeps_the_original_update_receipt(database):
+    """Rotating a credential cannot replay an update or hide its final state."""
+    await claim_update(platform=Platform.BALE, token=BALE_TOKEN, update_id=909)
+    await finish_update(
+        platform=Platform.BALE, token=BALE_TOKEN_2,
+        update_id=909, success=True,
+    )
+    assert await claim_update(
+        platform=Platform.BALE, token=BALE_TOKEN_2, update_id=909,
+    ) == (False, "processed")
+    assert database.query(ShopInboundUpdate).count() == 1
