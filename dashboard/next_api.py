@@ -641,6 +641,21 @@ async def edit_product(
     if record is None:
         raise HTTPException(status_code=404, detail="Product not found")
     fields = payload.model_dump(exclude_unset=True)
+    # License inventory is derived from sealed, unclaimed license rows;
+    # directly editing Product.stock_quantity would promise nonexistent
+    # codes and could charge a customer with no deliverable.
+    if record.digital_delivery_mode == "license" and (
+        "stock_quantity" in fields or fields.get("product_type", "digital") != "digital"
+    ):
+        raise HTTPException(
+            status_code=409, detail="digital_license_stock_managed",
+        )
+    if record.digital_delivery_mode == "file" and (
+        fields.get("product_type", "digital") != "digital"
+    ):
+        raise HTTPException(
+            status_code=409, detail="digital_file_in_use",
+        )
     visibility = {
         name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS
         if name in fields
