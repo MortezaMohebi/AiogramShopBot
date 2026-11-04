@@ -10,6 +10,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from services.shop_checkout_policy import checkout_rules
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -35,7 +36,7 @@ from models.shop_scope import legacy_id
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
 _PLACE_ACTION = re.compile(
-    r"shop:place:([1-9][0-9]{0,18}):([1-9][0-9]{0,18})\Z"
+    r"shop:place:([1-9][0-9]{0,18}):([1-9][0-9]{0,18}):([a-f0-9]{12})\Z"
 )
 _MAX_LINES = 20
 _SHIPPING_PAGE_SIZE = 10
@@ -173,7 +174,8 @@ class ShopCartFlow:
             match = _PLACE_ACTION.fullmatch(action)
             if match:
                 return await self._place_order(
-                    event, session, int(match.group(1)), int(match.group(2))
+                    event, session, int(match.group(1)),
+                    int(match.group(2)), match.group(3),
                 )
             if text in ("/cart", "🛒 سبد خرید"):
                 return await self._cart_reply(event, session)
@@ -668,20 +670,46 @@ class ShopCartFlow:
             not cart.shipping_address or not quote.shipping_label
         ):
             raise CartRejected("ابتدا نشانی و روش ارسال را در سبد ثبت کنید.")
+        policy = await checkout_rules(
+            session, bot_id=self._bot_id(event.platform),
+        )
+        if len({line.product.product_type for line in quote.lines}) > 1 and (
+            event.platform == Platform.TELEGRAM
+        ):
+            raise CartRejected(
+                "کالاهای دیجیتال و فیزیکی تلگرام باید در دو سفارش جدا ثبت شوند."
+            )
+        if len(policy.terms_text) < 12:
+            return BotReply(
+                "شرایط فروش این Store هنوز توسط مدیر ثبت نشده؛ سفارش‌گیری "
+                "تا تکمیل قوانین فروش غیرفعال است.",
+                ((button("🆘 پشتیبانی", "ux:support"),),),
+            )
+        intent = (
+            "ثبت و آماده‌سازی پرداخت" if policy.mode == "instant"
+            else "ثبت درخواست بررسی فروشنده"
+        )
         return BotReply(
-            "تأیید سفارش بدون دریافت پول\n"
+            "🧾 بررسی نهایی سفارش\n"
             f"تعداد اقلام: {sum(line.quantity for line in quote.lines)}\n"
             f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}\n"
-            "ثبت نهایی فقط یک درخواست بررسی برای فروشنده ایجاد می‌کند.",
+            f"مسیر: {intent}\n"
+            f"شرایط خرید: نسخهٔ {policy.terms_version}\n"
+            "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
+            "متن کامل از /terms قابل مشاهده است؛ هنوز وجهی دریافت نشده.",
             ((
-                button("✅ ثبت درخواست سفارش", f"shop:place:{cart.id}:{cart.revision}"),
+                button(
+                    "✅ پذیرش شرایط و ثبت سفارش",
+                    f"shop:place:{cart.id}:{cart.revision}:{policy.policy_token}",
+                ),
                 button("انصراف", "shop:cart"),
             ),),
         )
 
     async def _place_order(
         self, event: InboundEvent, session: AsyncSession,
-        cart_id: int, expected_revision: int
+        cart_id: int, expected_revision: int,
+        expected_policy_token: str,
     ) -> BotReply:
         """Atomically snapshot the basket and clear it, without taking money."""
         cart = await self._get_cart(event, session, lock=True)
@@ -699,6 +727,16 @@ class ShopCartFlow:
             )
         if cart.revision != expected_revision:
             raise CartRejected("محتوای سبد تغییر کرده؛ دوباره سفارش را بررسی کنید.")
+        policy = await checkout_rules(
+            session, bot_id=self._bot_id(event.platform),
+        )
+        if (
+            policy.policy_token != expected_policy_token
+            or len(policy.terms_text) < 12
+        ):
+            raise CartRejected(
+                "شرایط خرید یا سیاست فروش تغییر کرده؛ سفارش را دوباره بررسی کنید."
+            )
         if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
         await lock_bot_catalog_policy(
@@ -712,6 +750,13 @@ class ShopCartFlow:
         ):
             raise CartRejected("نشانی و روش ارسال را تکمیل کنید.")
 
+        if (
+            event.platform == Platform.TELEGRAM
+            and len({line.product.product_type for line in quote.lines}) > 1
+        ):
+            raise CartRejected(
+                "سبد دیجیتال و فیزیکی تلگرام باید در دو سفارش جدا پرداخت شود."
+            )
         first = quote.lines[0]
         order = ShopOrder(
             store_id=cart.store_id,
@@ -726,7 +771,12 @@ class ShopCartFlow:
             unit_price_irr=to_rials(first.product.price),
             total_irr=quote.total,
             provider="manual_review",
-            status="pending_review",
+            status=(
+                "approved_unpaid" if policy.mode == "instant"
+                else "pending_review"
+            ),
+            terms_version_snapshot=policy.terms_version,
+            terms_accepted_at=datetime.now(timezone.utc),
             invoice_payload=secrets.token_urlsafe(32),
             checkout_key=checkout_key,
             subtotal_irr=quote.subtotal,
@@ -776,8 +826,14 @@ class ShopCartFlow:
             ).values(awaiting_input=None))
         cart.revision += 1
         await session.commit()
-        return BotReply(
+        message = (
+            f"✅ سفارش #{order.id} ثبت و آمادهٔ پرداخت است.\n"
+            "از «سفارش‌های من» روش پرداخت مجاز را انتخاب کنید."
+            if policy.mode == "instant" else
             f"✅ درخواست سفارش #{order.id} ثبت شد.\n"
-            "هنوز پرداختی دریافت نشده است. فروشنده سفارش را بررسی می‌کند.",
+            "هنوز پرداختی دریافت نشده است. فروشنده سفارش را بررسی می‌کند."
+        )
+        return BotReply(
+            message,
             ((button("📦 سفارش‌های من", "shop:orders"),),),
         )
