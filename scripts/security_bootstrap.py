@@ -91,7 +91,42 @@ async def main() -> None:
         await connection.run_sync(ensure_uoms)
         await verify_codespace_schema(connection)
     await create_admin()
-    print("Security schema verified; existing accounts, orders and media preserved.")
+    # A fresh Beta administrator must receive an explicit Store grant.
+    # Without it, the authenticated StoreContext is empty and the entire
+    # Next.js dashboard fails closed immediately after successful login.
+    # This is idempotent and DOES NOT widen existing staff permissions.
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from models.shop_staff import ShopStaff
+    from models.shop_staff_store import (
+        ShopStaffStoreAccess, ShopStaffStorePreference,
+    )
+    from models.shop_multibot import DEFAULT_STORE_ID
+    async with engine.begin() as connection:
+        await connection.execute(text("SELECT pg_advisory_xact_lock(90211003)"))
+        staff_rows = (await connection.execute(
+            select(ShopStaff.id, ShopStaff.role).where(
+                ShopStaff.username == "shopadmin",
+                ShopStaff.is_active.is_(True),
+                ShopStaff.role == "superadmin",
+            )
+        )).all()
+        for staff_id, role in staff_rows:
+            await connection.execute(
+                pg_insert(ShopStaffStoreAccess.__table__).values(
+                    staff_id=staff_id, store_id=DEFAULT_STORE_ID,
+                    access_level="manager", is_active=True,
+                    changed_by=staff_id,
+                ).on_conflict_do_nothing(
+                    index_elements=["staff_id", "store_id"],
+                )
+            )
+            await connection.execute(
+                pg_insert(ShopStaffStorePreference.__table__).values(
+                    staff_id=staff_id, default_store_id=DEFAULT_STORE_ID,
+                    version=1,
+                ).on_conflict_do_nothing(index_elements=["staff_id"])
+            )
+    print("Fresh Beta Store schema and administrator Store grants verified.")
 
 
 if __name__ == "__main__":
