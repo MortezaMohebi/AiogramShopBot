@@ -30,6 +30,8 @@ from services.shop_bot_context import BotContext
 from services.shop_admin_security import SecurityRejected
 from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_bot_operations import ShopBotOperations
+from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_store_commerce import ShopStoreSettings
 
 _PAGE_SIZE = 6
 _CATEGORY_PAGE_SIZE = 6
@@ -138,7 +140,15 @@ class CatalogFlow:
 
     async def _home(self, session: AsyncSession, platform: str) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
-        settings = await session.get(ShopSettings, 1)
+        store_id = (
+            self.bot_context.store_id if self.bot_context
+            else DEFAULT_STORE_ID
+        )
+        settings = (
+            await session.get(ShopSettings, 1)
+            if store_id == DEFAULT_STORE_ID
+            else await session.get(ShopStoreSettings, store_id)
+        )
         per_bot = await session.get(
             ShopBotOperations,
             self.bot_context.bot_id if self.bot_context
@@ -174,7 +184,15 @@ class CatalogFlow:
         self, session: AsyncSession, *, key: str, platform: str
     ) -> BotReply:
         """Read help and support information from editable admin settings."""
-        settings = await session.get(ShopSettings, 1)
+        store_id = (
+            self.bot_context.store_id if self.bot_context
+            else DEFAULT_STORE_ID
+        )
+        settings = (
+            await session.get(ShopSettings, 1)
+            if store_id == DEFAULT_STORE_ID
+            else await session.get(ShopStoreSettings, store_id)
+        )
         per_bot = await session.get(
             ShopBotOperations,
             self.bot_context.bot_id if self.bot_context
@@ -201,6 +219,7 @@ class CatalogFlow:
         ).correlate(ShopCategory).exists()
         condition = (
             ShopCategory.is_published.is_(True)
+            & (ShopCategory.store_id == scope.store_id)
             & category_has_permitted_product
         )
         count = await session.scalar(
@@ -255,6 +274,7 @@ class CatalogFlow:
                 select(ShopCategory.id).where(
                     ShopCategory.id == category_id,
                     ShopCategory.is_published.is_(True),
+                    ShopCategory.store_id == scope.store_id,
                 )
             )
             if selected is None:

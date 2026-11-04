@@ -62,10 +62,9 @@ async def resolve_scope(
     if bot is None:
         raise security.SecurityRejected("bot_not_found", 404)
     store = await db.get(ShopStore, bot.store_id)
-    available = bool(
-        store is not None and store.state == "active"
-        and bot.store_id == DEFAULT_STORE_ID
-    )
+    # Any active Store may serve its own catalog. Owner equality is
+    # enforced on Product rows by permitted_product_clause().
+    available = bool(store is not None and store.state == "active")
     if not preview:
         available = available and (
             (bot.status == "legacy" and bot.runtime_owner == "legacy")
@@ -125,6 +124,9 @@ def permitted_product_clause(scope: CatalogScope):
     ).correlate(Product).exists()
 
     return and_(
+        # A product ALLOW can never cross the Store boundary, even when
+        # accidentally granted by an old/malformed administrator request.
+        Product.store_id == scope.store_id,
         Product.is_published.is_(True),
         not_(product_deny),
         or_(
@@ -226,8 +228,9 @@ def _check_bot(db: Session, bot_id: str, expected_version: int | None) -> ShopBo
     ).with_for_update())
     if bot is None:
         raise security.SecurityRejected("bot_not_found", 404)
-    if bot.store_id != DEFAULT_STORE_ID:
-        raise security.SecurityRejected("catalog_store_not_ready", 409)
+    store = db.get(ShopStore, bot.store_id)
+    if store is None or store.state != "active":
+        raise security.SecurityRejected("store_not_active", 409)
     if expected_version is not None and bot.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
     return bot
@@ -241,6 +244,7 @@ def _apply_changes(
     rule_model, item_model, id_name = RULE_OBJECTS[object_type]
     available_ids = set(db.scalars(select(item_model.id).where(
         item_model.id.in_(target_ids),
+        item_model.store_id == bot.store_id,
     )).all())
     if len(available_ids) != len(target_ids):
         raise security.SecurityRejected("catalog_target_not_found", 404)
@@ -320,7 +324,8 @@ def update_product_bot_rules(
         or len(set(bot_id for bot_id, _, _ in assignments)) != len(assignments)
     ):
         raise security.SecurityRejected("invalid_catalog_rule", 422)
-    if db.get(Product, product_id) is None:
+    product = db.get(Product, product_id)
+    if product is None:
         raise security.SecurityRejected("catalog_target_not_found", 404)
     bot_ids = [bot_id for bot_id, _, _ in assignments]
     bots = {
@@ -335,8 +340,8 @@ def update_product_bot_rules(
         bot = bots[bot_id]
         if bot.version != expected_version:
             raise security.SecurityRejected("configuration_changed", 409)
-        if bot.store_id != DEFAULT_STORE_ID:
-            raise security.SecurityRejected("catalog_store_not_ready", 409)
+        if bot.store_id != product.store_id:
+            raise security.SecurityRejected("catalog_target_not_found", 404)
         total += _apply_changes(
             db, bot=bot, actor_id=actor_id,
             object_type="product", target_ids=[product_id], effect=effect,

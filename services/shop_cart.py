@@ -290,7 +290,9 @@ class ShopCartFlow:
                 ShopOrder.platform_user_id == event.user_id,
             )
         return await session.scalar(select(ShopOrder).where(
-            *condition, ShopOrder.status == "pending_payment",
+            *condition, ShopOrder.status.in_((
+                "pending_review", "approved_unpaid", "pending_payment",
+            )),
         ).order_by(ShopOrder.id.desc()).limit(1))
 
     async def _change_item(

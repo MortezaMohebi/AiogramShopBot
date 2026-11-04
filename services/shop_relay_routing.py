@@ -28,7 +28,9 @@ if TYPE_CHECKING:
     from aiogram import Bot
 
 SAFE_RELAY_FAILOVER = frozenset({
-    "getMe", "getWebhookInfo", "getUpdates", "getFile",
+    # getUpdates(offset) acknowledges earlier updates. It is NOT a
+    # read-only call and can lose messages on ambiguous network failover.
+    "getMe", "getWebhookInfo", "getFile",
 })
 
 
