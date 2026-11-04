@@ -240,6 +240,7 @@ def product_data(item: Product) -> dict:
         "description": item.description,
         "price_irr": str(item.price),
         "price_stars": item.price_stars,
+        "digital_delivery_mode": item.digital_delivery_mode,
         "stock_quantity": item.stock_quantity,
         "requires_shipping": item.requires_shipping,
         "product_type": item.product_type,

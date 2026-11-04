@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { ProductEditor } from "@/components/blocks/product-editor";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { adminFetch, currentStaff } from "@/lib/bridge";
@@ -52,6 +54,11 @@ export default async function EditProductPage({
   return (
     <div>
       <PageHeading title={`ویرایش «${product.name}»`} description="محصول در کاتالوگ مشترک است؛ مجوز نمایش آن برای هر بات جداگانه مدیریت می‌شود. مبالغ سفارش‌های گذشته تغییر نمی‌کنند." />
+      {product.product_type === "digital" ? <div className="mb-4">
+        <Button variant="outline" asChild>
+          <Link href={`/products/${product.id}/digital`}>🔐 مدیریت فایل/لایسنس خصوصی و موجودی دیجیتال</Link>
+        </Button>
+      </div> : null}
       {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ویرایش ذخیره نشد. داده‌ها یا تکراری‌بودن SKU را بررسی کنید.</p> : null}
       <ProductEditor
         product={product} categories={categories} uoms={units.items}

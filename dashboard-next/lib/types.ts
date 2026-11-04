@@ -55,6 +55,7 @@ export interface Product {
   description: string;
   price_irr: string;
   price_stars: number | null;
+  digital_delivery_mode: "none" | "file" | "license";
   show_description?: boolean;
   show_stock?: boolean;
   show_media?: boolean;
