@@ -9,6 +9,8 @@ from channels.contracts import BotReply
 if TYPE_CHECKING:
     from aiogram import Bot
 
+    from services.shop_digital_fulfillment import DigitalSend
+
 
 class TelegramTransport:
     """Deliver normalized shop replies through the existing Aiogram bot."""
@@ -100,6 +102,39 @@ class TelegramTransport:
                 # an optimization-only database write failed.
                 logging.warning("Telegram media cache write failed.")
 
+
+    async def deliver_digital(self, payload: "DigitalSend") -> str:
+        """Send a private purchase once and return the confirmed Message ID.
+
+        The caller owns the durable one-attempt receipt. No document is ever
+        copied to general ProductMedia, cached, or addressed by public URL.
+        """
+        from aiogram.types import FSInputFile
+
+        if payload.kind == "file":
+            if payload.asset_path is None or not payload.filename:
+                raise ValueError("Missing private digital file.")
+            result = await self.bot.send_document(
+                chat_id=payload.chat_id,
+                document=FSInputFile(
+                    payload.asset_path, filename=payload.filename,
+                ),
+                caption=payload.caption[:1024], parse_mode=None,
+                protect_content=True,
+            )
+        elif payload.kind == "license":
+            if not payload.license_text:
+                raise ValueError("Missing sealed license payload.")
+            result = await self.bot.send_message(
+                chat_id=payload.chat_id,
+                text=f"{payload.caption}\\n{payload.license_text}",
+                parse_mode=None, protect_content=True,
+            )
+        else:
+            raise ValueError("Unsupported private digital delivery kind.")
+        if type(result.message_id) is not int or result.message_id <= 0:
+            raise ValueError("Provider did not confirm delivery Message ID.")
+        return str(result.message_id)
 
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send plain text with an optional inline keyboard."""

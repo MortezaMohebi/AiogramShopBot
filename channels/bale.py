@@ -7,7 +7,10 @@ formatting and webhook authentication. Keep this transport independent.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from services.shop_digital_fulfillment import DigitalSend
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
@@ -176,6 +179,62 @@ class BaleTransport:
                 # Delivery succeeded: never resend a user message just because
                 # the optional file-id cache could not be updated.
                 logging.warning("Bale file-id cache write was unsuccessful.")
+
+    async def deliver_digital(self, payload: "DigitalSend") -> str:
+        """Send one private paid file or license via Bale normal Bot API.
+
+        The caller commits its single-send attempt before this method. Bale
+        failures and timeouts do not trigger an automatic duplicate send.
+        """
+        if self._business_mode:
+            raise BaleApiError("Paid goods must use the normal Bale Bot API.")
+        if payload.kind == "license":
+            if not payload.license_text:
+                raise BaleApiError("Private license was not available.")
+            answer = await self._call("sendMessage", {
+                "chat_id": payload.chat_id,
+                "text": f"{payload.caption}\\n{payload.license_text}",
+            })
+        elif payload.kind == "file":
+            if payload.asset_path is None or not payload.filename:
+                raise BaleApiError("Private digital file was not available.")
+            from aiohttp import FormData
+
+            form = FormData()
+            form.add_field("chat_id", str(payload.chat_id))
+            form.add_field("caption", payload.caption[:1024])
+            try:
+                with payload.asset_path.open("rb") as source:
+                    form.add_field(
+                        "document", source,
+                        filename=payload.filename,
+                        content_type=payload.mime_type or "application/octet-stream",
+                    )
+                    async with self._session.post(
+                        f"{self._url_prefix}/sendDocument",
+                        data=form, timeout=ClientTimeout(total=120),
+                    ) as response:
+                        data = await response.json(content_type=None)
+                        if (
+                            response.status >= 400
+                            or not isinstance(data, dict)
+                            or data.get("ok") is not True
+                        ):
+                            raise BaleApiError("Private document API rejected request.")
+                        answer = data.get("result")
+            except (OSError, ClientError, asyncio.TimeoutError, ValueError):
+                raise BaleApiError(
+                    "Private document outcome is unknown; do not retry."
+                ) from None
+        else:
+            raise BaleApiError("Unsupported private delivery kind.")
+
+        if not isinstance(answer, dict):
+            raise BaleApiError("Bale delivery Message receipt is unavailable.")
+        message_id = answer.get("message_id")
+        if type(message_id) is not int or message_id <= 0:
+            raise BaleApiError("Bale did not confirm a delivery Message ID.")
+        return str(message_id)
 
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send UTF-8 text with standard inline callback buttons."""
