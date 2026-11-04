@@ -512,6 +512,7 @@ class ShopCartFlow:
     def _quote_token(
         quote: CartQuote, policy_token: str, cart: ShopCart,
         *, split: MixedCheckoutPlan | None,
+        asset_ids: dict[int, int],
     ) -> str:
         """Fingerprint the customer-visible amounts and shipping before confirmation."""
         try:
@@ -521,7 +522,13 @@ class ShopCartFlow:
                     split.physical.discount_irr if split is not None
                     else quote.discount
                 ),
-                policy_token=policy_token,
+                policy_token=(
+                    policy_token + ":assets:"
+                    + ",".join(
+                        f"{product_id}={asset_id}"
+                        for product_id, asset_id in sorted(asset_ids.items())
+                    )
+                ),
                 coupon_code=quote.coupon_code,
                 shipping_label=quote.shipping_label,
                 shipping_address=cart.shipping_address,
@@ -830,7 +837,7 @@ class ShopCartFlow:
         ):
             raise CartRejected("ابتدا نشانی و روش ارسال را در سبد ثبت کنید.")
         try:
-            await require_digital_assets(
+            asset_ids = await require_digital_assets(
                 session, order_lines=[
                     (line, line.product) for line in quote.lines
                 ],
@@ -873,7 +880,8 @@ class ShopCartFlow:
                 else format_rials(quote.total, self.display_unit)
             )
         quote_token = self._quote_token(
-            quote, policy.policy_token, cart, split=split,
+            quote, policy.policy_token, cart,
+            split=split, asset_ids=asset_ids,
         )
         return BotReply(
             "🧾 بررسی نهایی سفارش\n"
@@ -953,22 +961,13 @@ class ShopCartFlow:
         ):
             raise CartRejected("نشانی و روش ارسال را تکمیل کنید.")
 
-        # Revalidate all prices, shipping, coupon, product permissions and
-        # sales terms under the locked Cart. The callback proof is bound to
-        # the exact price the customer saw in Checkout preview.
+        # Recheck the exact private Asset, amount and merchant terms under
+        # the locked Cart; any uploaded replacement invalidates the button.
         split = await self._telegram_split(
             event, session, cart, quote,
         )
-        current_token = self._quote_token(
-            quote, policy.policy_token, cart, split=split,
-        )
-        if current_token != expected_policy_token:
-            raise CartRejected(
-                "قیمت، تخفیف یا شرایط خرید تغییر کرده؛ "
-                "ابتدا سفارش را دوباره بررسی کنید."
-            )
         try:
-            await require_digital_assets(
+            asset_ids = await require_digital_assets(
                 session, order_lines=[
                     (line, line.product) for line in quote.lines
                 ],
@@ -977,6 +976,15 @@ class ShopCartFlow:
             raise CartRejected(
                 "فایل یا لایسنس یکی از محصولات دیجیتال آمادهٔ تحویل نیست."
             ) from None
+        current_token = self._quote_token(
+            quote, policy.policy_token, cart,
+            split=split, asset_ids=asset_ids,
+        )
+        if current_token != expected_policy_token:
+            raise CartRejected(
+                "قیمت، فایل محصول یا شرایط فروش تغییر کرده؛ "
+                "ابتدا سفارش را دوباره بررسی کنید."
+            )
         if split is not None:
             physical, digital = await create_split_orders(
                 session, cart=cart, quote=quote, split=split,
@@ -984,6 +992,7 @@ class ShopCartFlow:
                 user_id=event.user_id, chat_id=event.chat_id,
                 expected_revision=expected_revision,
                 quote_token=current_token,
+                asset_ids=asset_ids,
             )
             state_label = (
                 "هر دو آمادهٔ انتخاب روش پرداخت‌اند."
@@ -1069,6 +1078,7 @@ class ShopCartFlow:
                         line.product.price_stars
                         if stars_total is not None else None
                     ),
+                    digital_asset_id_snapshot=asset_ids.get(line.product.id),
                     quantity=line.quantity,
                     total_irr=line.line_total,
                 )
