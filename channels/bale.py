@@ -177,6 +177,52 @@ class BaleTransport:
                 # the optional file-id cache could not be updated.
                 logging.warning("Bale file-id cache write was unsuccessful.")
 
+    async def send_private_document(
+        self, chat_id: int, path, *,
+        filename: str, caption: str,
+    ) -> int:
+        """Send one private paid document via Bale multipart Bot API.
+
+        The only success condition is a provider-returned message_id.
+        There is no automatic retry on timeout, upload error or missing ID.
+        """
+        from aiohttp import FormData
+
+        if (
+            not path.is_file() or not 0 < path.stat().st_size <= 50_000_000
+            or not filename or len(filename) > 200
+        ):
+            raise BaleApiError("Paid digital document is invalid.")
+        form = FormData()
+        form.add_field("chat_id", str(chat_id))
+        if caption:
+            form.add_field("caption", caption[:1024])
+        try:
+            with path.open("rb") as source:
+                form.add_field(
+                    "document", source, filename=filename,
+                    content_type="application/octet-stream",
+                )
+                async with self._session.post(
+                    f"{self._url_prefix}/sendDocument",
+                    data=form,
+                    timeout=ClientTimeout(total=120),
+                ) as response:
+                    data = await response.json(content_type=None)
+                    if (
+                        response.status >= 400
+                        or not isinstance(data, dict)
+                        or data.get("ok") is not True
+                    ):
+                        raise BaleApiError("Bale paid document was not accepted.")
+                    message = data.get("result")
+        except (OSError, ClientError, asyncio.TimeoutError, ValueError):
+            raise BaleApiError("Bale paid document result is uncertain.") from None
+        receipt = message.get("message_id") if isinstance(message, dict) else None
+        if type(receipt) is not int or receipt <= 0:
+            raise BaleApiError("Bale paid document receipt is unavailable.")
+        return receipt
+
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send UTF-8 text with standard inline callback buttons."""
         for media in reply.attachments:
