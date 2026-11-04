@@ -44,8 +44,10 @@ async def main():
   secret=security.cipher().decrypt(profile.mfa_secret.encode()).decode()
   print(security.totp(secret,time.time()))
 asyncio.run(main())`;
+  // Cold ORM imports in the Codespace can exceed 15 seconds. This reads
+  // only the synthetic QA account; it does not relax server MFA validation.
   return execFileSync("docker", ["compose", "-f", "compose.beta-qa.yml", "exec", "-T", "api", "python", "-c", code],
-    { encoding: "utf8", timeout: 15000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+    { encoding: "utf8", timeout: 45000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 async function mcp(name) {
   const response = await fetch("http://localhost:3001/_next/mcp", {
