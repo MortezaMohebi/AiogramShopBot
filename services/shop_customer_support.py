@@ -307,6 +307,7 @@ async def list_staff_tickets(
 async def staff_reply(
     db: AsyncSession, *, ticket_id: int, store_id: str,
     actor_id: int, message: str, expected_version: int,
+    commit: bool = True,
 ) -> dict:
     """Append an audited staff response and mark the ticket awaiting customer."""
     body = validate_ticket_body(message)
@@ -324,5 +325,13 @@ async def staff_reply(
     ))
     ticket.status = "pending"
     ticket.version += 1
-    await db.commit()
-    return {"id": ticket.id, "version": ticket.version, "status": ticket.status}
+    await db.flush()
+    if commit:
+        await db.commit()
+    return {
+        "id": ticket.id, "version": ticket.version,
+        "status": ticket.status, "bot_id": ticket.bot_id,
+        "store_id": ticket.store_id,
+        "customer_id": ticket.customer_id,
+        "identity_id": ticket.origin_identity_id,
+    }
