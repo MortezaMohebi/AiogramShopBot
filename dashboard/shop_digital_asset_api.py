@@ -109,6 +109,7 @@ async def upload_digital_file(
     if not content_type.lower().startswith("multipart/form-data;"):
         raise security.SecurityRejected("invalid_digital_file", 415)
     saved = None
+    committed = False
     try:
         async with request.form(
             max_files=1, max_fields=3, max_part_size=8192,
@@ -122,6 +123,7 @@ async def upload_digital_file(
             product_id=product_id, source=saved,
         )
         await db.commit()
+        committed = True
         return response
     except (DeliveryPolicyError, OSError) as error:
         await db.rollback()
@@ -130,17 +132,10 @@ async def upload_digital_file(
         await db.rollback()
         raise
     finally:
-        if saved is not None:
-            # A transaction may fail after the encrypted file is written;
-            # never leave an unreferenced private asset in the vault.
-            from models.shop_digital_delivery import ShopDigitalAsset
-
-            stored = await db.scalar(select(ShopDigitalAsset.id).where(
-                ShopDigitalAsset.storage_key == saved.storage_key,
-                ShopDigitalAsset.store_id == context.current_store_id,
-            ))
-            if stored is None:
-                private_file_path(saved.storage_key).unlink(missing_ok=True)
+        if saved is not None and not committed:
+            # Avoid querying an already failed transaction in a cleanup path.
+            # No successful commit means this upload is unreferenced.
+            private_file_path(saved.storage_key).unlink(missing_ok=True)
 
 
 @router.post("/digital-products/{product_id}/license-mode")
