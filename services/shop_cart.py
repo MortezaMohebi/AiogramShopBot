@@ -74,6 +74,40 @@ def button(text: str, action: str) -> InlineAction:
     """Build a platform-neutral inline keyboard action."""
     return InlineAction(text[:64], action)
 
+def telegram_stars_total(
+    platform: Platform, quote: CartQuote,
+) -> int | None:
+    """Return a legal XTR total or None for native IRR payment paths.
+
+    The bot must never show a fake IRR final price for Telegram digital
+    items or silently mix physical goods into the same Stars invoice.
+    """
+    if platform != Platform.TELEGRAM:
+        return None
+    kinds = {line.product.product_type for line in quote.lines}
+    if "digital" not in kinds:
+        return None
+    if kinds != {"digital"}:
+        raise CartRejected(
+            "کالاهای دیجیتال و فیزیکی تلگرام باید در دو سفارش جدا ثبت شوند."
+        )
+    if quote.discount or quote.shipping or quote.coupon_code:
+        raise CartRejected(
+            "تخفیف ریالی یا ارسال با Telegram Stars سازگار نیست."
+        )
+    total = 0
+    for line in quote.lines:
+        amount = line.product.price_stars
+        if type(amount) is not int or amount <= 0:
+            raise CartRejected(
+                "قیمت Telegram Stars این کالا هنوز تعیین نشده است."
+            )
+        total += amount * line.quantity
+    if not 1 <= total <= 999_999_999_999:
+        raise CartRejected("مبلغ Telegram Stars نامعتبر است.")
+    return total
+
+
 
 def validate_coupon(coupon: ShopCoupon, subtotal: int) -> int:
     """Calculate a bounded product-only discount or reject an invalid coupon."""
@@ -461,13 +495,32 @@ class ShopCartFlow:
                 f"⚠️ {error}\nبرای اصلاح سبد یکی از گزینه‌ها را انتخاب کنید.",
                 tuple(rows),
             )
+        try:
+            stars_total = telegram_stars_total(event.platform, quote)
+        except CartRejected as error:
+            # Preserve deletion/edit actions rather than trapping a customer
+            # whose Star price or item mix is not yet legal to checkout.
+            return BotReply(
+                f"⚠️ {error}\n"
+                "لطفاً کالاهای ناسازگار را از سبد حذف کنید.",
+                tuple(
+                    (button(
+                        f"🗑 حذف {line.product.name[:32]}",
+                        f"shop:remove:{line.product.id}",
+                    ),) for line in quote.lines
+                ) + ((button("🏠 منوی اصلی", "shop:home"),),),
+            )
         rows = []
         details = ["🛒 سبد خرید"]
         for line in quote.lines:
             name = line.product.name[:70]
+            line_price = (
+                f"{line.product.price_stars * line.quantity} Stars (XTR)"
+                if stars_total is not None
+                else format_rials(line.line_total, self.display_unit)
+            )
             details.append(
-                f"• {name} × {line.quantity}: "
-                f"{format_rials(line.line_total, self.display_unit)}"
+                f"• {name} × {line.quantity}: {line_price}"
             )
             product_id = line.product.id
             rows.append((
@@ -475,9 +528,10 @@ class ShopCartFlow:
                 button("➕", f"shop:inc:{product_id}"),
                 button("🗑", f"shop:remove:{product_id}"),
             ))
-        details.append(
-            f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
-        )
+        if stars_total is None:
+            details.append(
+                f"جمع کالاها: {format_rials(quote.subtotal, self.display_unit)}"
+            )
         if quote.discount:
             details.append(
                 f"تخفیف: {format_rials(quote.discount, self.display_unit)}"
@@ -487,7 +541,9 @@ class ShopCartFlow:
                 f"ارسال: {format_rials(quote.shipping, self.display_unit)}"
             )
         details.append(
-            f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
+            f"مبلغ نهایی: {stars_total} Stars (XTR)"
+            if stars_total is not None
+            else f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}"
         )
         if quote.shipping_required:
             details.append(
@@ -673,12 +729,7 @@ class ShopCartFlow:
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
-        if len({line.product.product_type for line in quote.lines}) > 1 and (
-            event.platform == Platform.TELEGRAM
-        ):
-            raise CartRejected(
-                "کالاهای دیجیتال و فیزیکی تلگرام باید در دو سفارش جدا ثبت شوند."
-            )
+        stars_total = telegram_stars_total(event.platform, quote)
         if len(policy.terms_text) < 12:
             return BotReply(
                 "شرایط فروش این Store هنوز توسط مدیر ثبت نشده؛ سفارش‌گیری "
@@ -692,8 +743,12 @@ class ShopCartFlow:
         return BotReply(
             "🧾 بررسی نهایی سفارش\n"
             f"تعداد اقلام: {sum(line.quantity for line in quote.lines)}\n"
-            f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}\n"
-            f"مسیر: {intent}\n"
+            (
+                f"مبلغ نهایی: {stars_total} Stars (XTR)\n"
+                if stars_total is not None else
+                f"مبلغ نهایی: {format_rials(quote.total, self.display_unit)}\n"
+            )
+            + f"مسیر: {intent}\n"
             f"شرایط خرید: نسخهٔ {policy.terms_version}\n"
             "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
             "متن کامل از /terms قابل مشاهده است؛ هنوز وجهی دریافت نشده.",
@@ -750,13 +805,9 @@ class ShopCartFlow:
         ):
             raise CartRejected("نشانی و روش ارسال را تکمیل کنید.")
 
-        if (
-            event.platform == Platform.TELEGRAM
-            and len({line.product.product_type for line in quote.lines}) > 1
-        ):
-            raise CartRejected(
-                "سبد دیجیتال و فیزیکی تلگرام باید در دو سفارش جدا پرداخت شود."
-            )
+        # Repeat exact currency, coupon, type and Stars validation under
+        # the locked order-creation transaction; stale callbacks are denied.
+        telegram_stars_total(event.platform, quote)
         first = quote.lines[0]
         order = ShopOrder(
             store_id=cart.store_id,
