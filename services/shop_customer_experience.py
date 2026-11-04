@@ -39,6 +39,27 @@ def should_clear_chat_state(callback: str, text: str) -> bool:
 
 
 
+async def clear_pending_on_navigation(
+    db: AsyncSession, *, context: BotContext, event: InboundEvent,
+) -> None:
+    """Clear stale per-Bot free-text state before ANY commerce flow handles a click."""
+    action = event.callback_data or ""
+    text = (event.text or "").strip()
+    if not should_clear_chat_state(action, text):
+        return
+    state = await db.get(
+        ShopCustomerChatState, (context.bot_id, event.user_id),
+    )
+    if state is None or state.action == "idle":
+        return
+    if state.store_id != context.store_id:
+        raise ValueError("Customer chat Store mismatch.")
+    state.action = "idle"
+    state.context_ref = None
+    state.query_text = None
+    await db.commit()
+
+
 class CustomerExperienceFlow:
     """Apply the same semantic Home/Search/Account/Support routes to each bot."""
 
@@ -65,18 +86,9 @@ class CustomerExperienceFlow:
         action = event.callback_data or ""
         text = (event.text or "").strip()
         context = await self.context(db, event.platform)
-        if should_clear_chat_state(action, text):
-            state = await db.get(
-                ShopCustomerChatState,
-                (context.bot_id, event.user_id),
-            )
-            if state is not None and state.action != "idle":
-                if state.store_id != context.store_id:
-                    raise ValueError("Customer chat Store mismatch.")
-                state.action = "idle"
-                state.context_ref = None
-                state.query_text = None
-                await db.commit()
+        await clear_pending_on_navigation(
+            db, context=context, event=event,
+        )
         if action in {"ux:terms"} or text == "/terms":
             from services.shop_checkout_policy import checkout_rules
 
