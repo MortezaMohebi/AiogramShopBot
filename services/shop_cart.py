@@ -28,6 +28,12 @@ from services.shop_mixed_checkout import (
     MixedCheckoutError, MixedCheckoutPlan,
     build_split_plan, checkout_quote_fingerprint,
 )
+from services.shop_mixed_orders import (
+    batch_orders, checkout_key as stable_checkout_key,
+    create_split_orders,
+)
+from services.shop_digital_assets import require_digital_assets
+from services.shop_digital_rules import DeliveryPolicyError
 from models.shop_content import Product, ShopIdentity, ShopOrder
 from models.shop_uom import ShopUom
 from models.shop_multibot import DEFAULT_STORE_ID
@@ -809,6 +815,17 @@ class ShopCartFlow:
             not cart.shipping_address or not quote.shipping_label
         ):
             raise CartRejected("ابتدا نشانی و روش ارسال را در سبد ثبت کنید.")
+        try:
+            await require_digital_assets(
+                session, order_lines=[
+                    (line, line.product) for line in quote.lines
+                ],
+            )
+        except DeliveryPolicyError:
+            raise CartRejected(
+                "تحویل دیجیتال یکی از محصولات هنوز آماده نیست؛ "
+                "لطفاً از پشتیبانی کمک بگیرید."
+            ) from None
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
@@ -870,9 +887,28 @@ class ShopCartFlow:
         cart = await self._get_cart(event, session, lock=True)
         if cart is None or cart.id != cart_id:
             raise CartRejected("این سبد خرید به حساب شما تعلق ندارد.")
-        checkout_key = (
-            f"{self._bot_id(event.platform)}:{event.user_id}:{cart_id}:{expected_revision}"
+        bot_id = self._bot_id(event.platform)
+        checkout_key = stable_checkout_key(
+            bot_id=bot_id, user_id=event.user_id,
+            cart_id=cart_id, revision=expected_revision,
         )
+        previous = await batch_orders(
+            session, bot_id=bot_id, cart_id=cart_id,
+            revision=expected_revision, store_id=cart.store_id,
+            user_id=event.user_id,
+        )
+        if previous:
+            labels = " و ".join(f"#{order.id}" for order in previous)
+            return BotReply(
+                f"دو سفارش مستقل {labels} قبلاً ثبت شده‌اند؛ "
+                "پرداخت‌های هر سفارش مستقل‌اند.",
+                tuple(
+                    (button(
+                        f"📄 سفارش #{order.id}",
+                        f"ux:order:detail:{order.id}",
+                    ),) for order in previous
+                ),
+            )
         existing = await session.scalar(
             select(ShopOrder).where(ShopOrder.checkout_key == checkout_key)
         )
@@ -885,12 +921,9 @@ class ShopCartFlow:
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
-        if (
-            policy.policy_token != expected_policy_token
-            or len(policy.terms_text) < 12
-        ):
+        if len(policy.terms_text) < 12:
             raise CartRejected(
-                "شرایط خرید یا سیاست فروش تغییر کرده؛ سفارش را دوباره بررسی کنید."
+                "شرایط فروش دیگر معتبر نیست؛ سفارش را دوباره بررسی کنید."
             )
         if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
@@ -905,8 +938,64 @@ class ShopCartFlow:
         ):
             raise CartRejected("نشانی و روش ارسال را تکمیل کنید.")
 
-        # Repeat exact currency, coupon, type and Stars validation under
-        # the locked order-creation transaction; stale callbacks are denied.
+        # Revalidate all prices, shipping, coupon, product permissions and
+        # sales terms under the locked Cart. The callback proof is bound to
+        # the exact price the customer saw in Checkout preview.
+        split = await self._telegram_split(
+            event, session, cart, quote,
+        )
+        current_token = self._quote_token(
+            quote, policy.policy_token, cart, split=split,
+        )
+        if current_token != expected_policy_token:
+            raise CartRejected(
+                "قیمت، تخفیف یا شرایط خرید تغییر کرده؛ "
+                "ابتدا سفارش را دوباره بررسی کنید."
+            )
+        try:
+            await require_digital_assets(
+                session, order_lines=[
+                    (line, line.product) for line in quote.lines
+                ],
+            )
+        except DeliveryPolicyError:
+            raise CartRejected(
+                "فایل یا لایسنس یکی از محصولات دیجیتال آمادهٔ تحویل نیست."
+            ) from None
+        if split is not None:
+            physical, digital = await create_split_orders(
+                session, cart=cart, quote=quote, split=split,
+                policy=policy, bot_id=bot_id,
+                user_id=event.user_id, chat_id=event.chat_id,
+                expected_revision=expected_revision,
+                quote_token=current_token,
+            )
+            state_label = (
+                "هر دو آمادهٔ انتخاب روش پرداخت‌اند."
+                if policy.mode == "instant"
+                else "هر دو در انتظار بررسی مستقل فروشنده‌اند."
+            )
+            return BotReply(
+                f"✅ سبد به دو سفارش جدا تبدیل شد.\n"
+                f"📦 فیزیکی #{physical.id}: "
+                f"{format_rials(split.physical.total_irr, self.display_unit)}\n"
+                f"💫 دیجیتال #{digital.id}: "
+                f"{split.digital.total_stars} Stars (XTR)\n"
+                f"{state_label}\n"
+                "پرداخت هر سفارش جداگانه انجام می‌شود؛ "
+                "موفقیت یکی به معنی پرداخت دیگری نیست.",
+                (
+                    (button(
+                        "📦 سفارش فیزیکی",
+                        f"ux:order:detail:{physical.id}",
+                    ),),
+                    (button(
+                        "💫 سفارش دیجیتال",
+                        f"ux:order:detail:{digital.id}",
+                    ),),
+                    (button("📦 سفارش‌های من", "shop:orders"),),
+                ),
+            )
         stars_total = telegram_stars_total(event.platform, quote)
         first = quote.lines[0]
         order = ShopOrder(
