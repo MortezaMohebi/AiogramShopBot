@@ -416,21 +416,36 @@ async def receiver_checks(fixture: dict) -> None:
                         await asyncio.wait_for(
                             supervisor._poll(case.bot_id), timeout=15,
                         )
-                        assert not plan.errors, "; ".join(plan.errors)
-                        assert plan.offsets == expected_offsets, (
-                            "Polling restart ignored durable offset"
-                        )
-                        assert len(case.native.messages) == 1, (
-                            "Polling replayed a committed update"
-                        )
                         async with session_maker() as db:
                             row = await db.get(ShopBotReceiver, case.bot_id)
-                            assert row is not None and row.next_update_id == 302
                             receipt = await db.scalar(select(ShopInboundUpdate).where(
                                 ShopInboundUpdate.bot_id == case.bot_id,
                                 ShopInboundUpdate.update_id == 301,
                             ))
-                            assert receipt is not None and receipt.status == "processed"
+                            offset = row.next_update_id if row else None
+                            receipt_state = receipt.status if receipt else "missing"
+                        evidence = (
+                            f"platform={case.platform}, "
+                            f"phase={'initial' if expected_offsets[0] == 0 else 'resume'}, "
+                            f"sends={len(case.native.messages)}, "
+                            f"provider_offsets={plan.offsets}, "
+                            f"durable_offset={offset}, receipt={receipt_state}"
+                        )
+                        assert not plan.errors, (
+                            "; ".join(plan.errors) + "; " + evidence
+                        )
+                        assert plan.offsets == expected_offsets, (
+                            "Polling restart ignored durable offset; " + evidence
+                        )
+                        assert len(case.native.messages) == 1, (
+                            "Polling expected exactly one native send; " + evidence
+                        )
+                        assert offset == 302, (
+                            "Polling did not persist the next offset; " + evidence
+                        )
+                        assert receipt_state == "processed", (
+                            "Polling receipt is not processed; " + evidence
+                        )
                     print(
                         f"PASS  {case.platform}: actual polling persists "
                         "offset and resumes without replay"

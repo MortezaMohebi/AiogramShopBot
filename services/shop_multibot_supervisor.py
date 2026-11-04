@@ -311,7 +311,11 @@ class MultiBotSupervisor:
                     if self.stop_event.is_set():
                         return
                     payload = (
-                        update.model_dump(exclude_none=True, mode="json")
+                        # The shared dispatcher consumes provider JSON names
+                        # such as "from", rather than aiogram's "from_user".
+                        update.model_dump(
+                            exclude_none=True, mode="json", by_alias=True,
+                        )
                         if context.platform == Platform.TELEGRAM else update
                     )
                     if not isinstance(payload, Mapping):
