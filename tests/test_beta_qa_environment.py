@@ -82,6 +82,29 @@ paths = {getattr(route, "path", "") for route in app.routes}
 assert "/internal/admin/v1/store-context" in paths, paths
 assert "/internal/admin/v1/digital-deliveries" in paths, paths
 assert any(getattr(item.kwargs.get("dispatch"), "__name__", "") == "session_boundary" for item in app.user_middleware)
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from fastapi.testclient import TestClient
+import scripts.test_lab_app as lab
+@asynccontextmanager
+async def database():
+    async def scalar(query):
+        return "shop_codespace" if "current_database" in str(query) else 1
+    async def execute(query):
+        return None
+    yield SimpleNamespace(scalar=scalar, execute=execute)
+class Redis:
+    def __init__(self, **kwargs):
+        pass
+    async def ping(self):
+        return True
+    async def aclose(self):
+        pass
+lab.session_maker=database
+lab.Redis=Redis
+response=TestClient(app).get("/healthz")
+assert response.status_code == 200, response.text
+assert response.json()["provider_dispatch_enabled"] is False
 print("QA control plane composition verified")
 """,
         ],

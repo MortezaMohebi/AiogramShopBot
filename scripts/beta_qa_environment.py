@@ -67,7 +67,9 @@ def prepare_environment(target: Path = TARGET) -> Path:
             secrets.token_bytes(32)
         ).decode("ascii"),
         "SHOP_FASTAPI_INTERNAL_URL": "http://127.0.0.1:8091",
-        "NEXT_ADMIN_PUBLIC_ORIGIN": "http://localhost:3001",
+        # In next dev, an unset origin uses the same-origin localhost request.
+        # An explicitly configured public origin requires HTTPS in production.
+        "NEXT_ADMIN_PUBLIC_ORIGIN": "",
         "NEXT_ADMIN_CAPTCHA_PROVIDER": "none",
         "RUNTIME_ENVIRONMENT": "PROD",
         "WEBHOOK_HOST": "https://disabled.invalid",
