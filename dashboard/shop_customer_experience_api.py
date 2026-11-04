@@ -19,6 +19,7 @@ from channels.contracts import Platform
 from dashboard.admin_control_api import Proof, StrictPayload, fresh_proof
 from dashboard.next_api import database, signed_staff
 from models.shop_content import Product, ShopIdentity, ShopOrder
+from models.shop_checkout import ShopOrderLine
 from models.shop_customer_account_data import ShopCustomerAddress, ShopCustomerWishlist
 from models.shop_customer_notifications import (
     ShopCustomerNotificationOutbox, ShopStockAlert,
@@ -393,11 +394,32 @@ async def list_fulfillments(
         ShopOrder.store_id.in_(ctx.active_store_ids),
         ShopOrder.status == "paid",
     ).order_by(ShopOrder.id.desc()).limit(100))).all()
+    # The read-only list must infer digital/physical kinds even before
+    # creating a fulfillment row. Otherwise the UI could offer a physical
+    # shipment action for a paid digital Order with no delivery proof.
+    order_ids = [order.id for order, _ in rows]
+    products = (
+        await db.execute(select(
+            ShopOrderLine.order_id, Product.product_type,
+        ).join(
+            Product, Product.id == ShopOrderLine.product_id,
+        ).where(
+            ShopOrderLine.order_id.in_(order_ids),
+            Product.store_id.in_(ctx.active_store_ids),
+        ))
+    ).all() if order_ids else []
+    order_types: dict[int, set[str]] = {}
+    for owner_id, kind in products:
+        order_types.setdefault(owner_id, set()).add(kind)
     return {"items": [{
         "order_id": order.id, "store_id": order.store_id,
         "total_irr": str(order.total_irr),
         "status": record.status if record else "not_started",
-        "kind": record.kind if record else None,
+        "kind": (
+            record.kind if record else
+            next(iter(order_types[order.id]))
+            if len(order_types.get(order.id, set())) == 1 else None
+        ),
         "version": record.version if record else 1,
         "carrier": record.carrier if record else None,
         "tracking_code": record.tracking_code if record else None,
