@@ -6,16 +6,38 @@ import json
 import re
 from typing import Annotated, Literal, Union
 from urllib.parse import urlsplit
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    model_validator,
+)
 
 Platform = Literal["telegram", "bale"]
 Identifier = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")]
 VariableName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,47}$")]
-BotId = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")]
+BotId = Annotated[
+    str,
+    Field(
+        pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    ),
+    AfterValidator(lambda value: str(UUID(value))),
+]
 VariableType = Literal[
-    "string", "integer", "decimal", "boolean", "date", "datetime", "enum",
-    "product_ref", "order_ref", "customer_ref",
+    "string",
+    "integer",
+    "decimal",
+    "boolean",
+    "date",
+    "datetime",
+    "enum",
+    "product_ref",
+    "order_ref",
+    "customer_ref",
 ]
 
 
@@ -40,7 +62,9 @@ class ConditionRule(StrictModel):
 
     kind: Literal["rule"] = "rule"
     variable: str = Field(max_length=80)
-    operator: Literal["eq", "neq", "gt", "lt", "contains", "exists", "is_empty"]
+    operator: Literal[
+        "eq", "neq", "gt", "lt", "contains", "exists", "is_empty"
+    ]
     value: Scalar = None
 
 
@@ -66,7 +90,9 @@ class ConditionGroup(StrictModel):
         return value
 
 
-Condition = Annotated[Union[ConditionRule, ConditionGroup], Field(discriminator="kind")]
+Condition = Annotated[
+    Union[ConditionRule, ConditionGroup], Field(discriminator="kind")
+]
 ConditionGroup.model_rebuild()
 
 
@@ -97,25 +123,41 @@ class WorkflowButton(StrictModel):
 
     key: Identifier
     label: str = Field(min_length=1, max_length=80)
-    type: Literal["callback", "url", "action", "request_contact", "back", "cancel", "main_menu"] = "callback"
+    type: Literal[
+        "callback",
+        "url",
+        "action",
+        "request_contact",
+        "back",
+        "cancel",
+        "main_menu",
+    ] = "callback"
     row: int = Field(default=0, ge=0, le=15)
     target: str = Field(default="", max_length=64)
     action: str = Field(default="", max_length=64)
     url: str = Field(default="", max_length=2048)
     visible_when: Condition | None = None
-    platforms: list[Platform] = Field(default_factory=lambda: ["telegram", "bale"], max_length=2)
+    platforms: list[Platform] = Field(
+        default_factory=lambda: ["telegram", "bale"], max_length=2
+    )
 
     @model_validator(mode="after")
     def check_url(self):
         """Only an explicit HTTPS link may leave the simulated conversation."""
         if self.url:
             parsed = urlsplit(self.url)
-            if (parsed.scheme != "https" or not parsed.hostname
-                    or parsed.username or parsed.password
-                    or "/bot" in parsed.path.lower()
-                    and parsed.hostname in {"api.telegram.org", "tapi.bale.ai"}):
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or "/bot" in parsed.path.lower()
+                and parsed.hostname in {"api.telegram.org", "tapi.bale.ai"}
+            ):
                 raise ValueError("unsafe_button_url")
-        if self.target and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", self.target):
+        if self.target and not re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9_-]{0,63}", self.target
+        ):
             raise ValueError("invalid_button_target")
         return self
 
@@ -135,7 +177,9 @@ class WorkflowNode(StrictModel):
     type: str = Field(max_length=64)
     label: str = Field(default="", max_length=120)
     config: dict[str, JsonValue] = Field(default_factory=dict)
-    platform_overrides: dict[Platform, dict[str, JsonValue]] = Field(default_factory=dict)
+    platform_overrides: dict[Platform, dict[str, JsonValue]] = Field(
+        default_factory=dict
+    )
     max_visits: int | None = Field(default=None, ge=1, le=25)
 
     @model_validator(mode="after")
@@ -146,13 +190,19 @@ class WorkflowNode(StrictModel):
         spec = NODE_SPECS.get(self.type)
         if spec is None:
             raise ValueError("unknown_node_type")
-        self.config = spec.config_model.model_validate(self.config).model_dump(mode="json")
+        self.config = spec.config_model.model_validate(self.config).model_dump(
+            mode="json"
+        )
         for override in self.platform_overrides.values():
             # Validating the merged value preserves partial override intent while
             # still rejecting unknown fields and wrong primitive types.
             spec.config_model.model_validate(self.config | override)
-        encoded = canonical_json(self.model_dump(exclude={"config", "platform_overrides"}))
-        encoded += canonical_json(self.config) + canonical_json(self.platform_overrides)
+        encoded = canonical_json(
+            self.model_dump(exclude={"config", "platform_overrides"})
+        )
+        encoded += canonical_json(self.config) + canonical_json(
+            self.platform_overrides
+        )
         if re.search(r"[0-9]{5,}:[A-Za-z0-9_-]{20,}", encoded):
             raise ValueError("provider_secret_not_allowed")
         return self
@@ -197,7 +247,10 @@ class ErrorPolicy(StrictModel):
 
     max_steps: int = Field(default=200, ge=1, le=500)
     on_error: Literal["stop", "cancel"] = "stop"
-    message: str = Field(default="شبیه‌سازی متوقف شد؛ تنظیمات این گره را بررسی کنید.", max_length=1000)
+    message: str = Field(
+        default="شبیه‌سازی متوقف شد؛ تنظیمات این گره را بررسی کنید.",
+        max_length=1000,
+    )
 
 
 class TimeoutPolicy(StrictModel):
@@ -211,7 +264,11 @@ class Definition(StrictModel):
     """Canonical business graph, without workflow ownership or runtime sessions."""
 
     schema_version: Literal[1] = 1
-    target_platforms: list[Platform] = Field(default_factory=lambda: ["telegram", "bale"], min_length=1, max_length=2)
+    target_platforms: list[Platform] = Field(
+        default_factory=lambda: ["telegram", "bale"],
+        min_length=1,
+        max_length=2,
+    )
     assignment: BotAssignment = Field(default_factory=BotAssignment)
     entry_points: list[EntryPoint] = Field(default_factory=list, max_length=40)
     nodes: list[WorkflowNode] = Field(default_factory=list, max_length=200)
@@ -273,5 +330,10 @@ def canonical_json(value) -> str:
     """Encode stable UTF-8 JSON without executable objects or non-finite numbers."""
     if isinstance(value, BaseModel):
         value = value.model_dump(mode="json")
-    return json.dumps(value, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":"), allow_nan=False)
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )

@@ -70,6 +70,7 @@ from models.shop_customer_support import (
 from models.shop_customer_notifications import (
     ShopStockAlert, ShopCustomerNotificationOutbox,
 )
+from models.shop_workflow import ShopWorkflow, ShopWorkflowRevision
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
 )

@@ -9,7 +9,9 @@ from decimal import Decimal
 from services.shop_workflow_schema import Reference, Variable
 
 PUBLIC_VARIABLES = {
-    "context.platform": Variable(name="platform", type="enum", choices=["telegram", "bale"]),
+    "context.platform": Variable(
+        name="platform", type="enum", choices=["telegram", "bale"]
+    ),
     "context.customer_name": Variable(name="customer_name", type="string"),
     "context.store_name": Variable(name="store_name", type="string"),
     "context.bot_name": Variable(name="bot_name", type="string"),
@@ -23,18 +25,30 @@ def cast_value(variable: Variable, value, *, from_input: bool = False):
         return None
     kind = variable.type
     if kind.endswith("_ref"):
-        ref = value if isinstance(value, Reference) else Reference.model_validate(value)
+        ref = (
+            value
+            if isinstance(value, Reference)
+            else Reference.model_validate(value)
+        )
         if ref.kind != kind.removesuffix("_ref"):
             raise ValueError("reference_type_mismatch")
         return ref.model_dump()
     if kind == "boolean":
-        if from_input and isinstance(value, str) and value in {"true", "false"}:
+        if (
+            from_input
+            and isinstance(value, str)
+            and value in {"true", "false"}
+        ):
             value = value == "true"
         if type(value) is not bool:
             raise ValueError("boolean_required")
         return value
     if kind == "integer":
-        if from_input and isinstance(value, str) and re.fullmatch(r"-?[0-9]{1,15}", value):
+        if (
+            from_input
+            and isinstance(value, str)
+            and re.fullmatch(r"-?[0-9]{1,15}", value)
+        ):
             value = int(value)
         if type(value) is not int or abs(value) > 9_007_199_254_740_991:
             raise ValueError("integer_required")
@@ -70,20 +84,32 @@ def comparable(variable: Variable, value):
     return value
 
 
-def condition_errors(condition, declarations: dict[str, Variable]) -> list[str]:
+def condition_errors(
+    condition, declarations: dict[str, Variable]
+) -> list[str]:
     """Return stable unknown-reference/operator-type findings for a typed tree."""
     if hasattr(condition, "model_dump"):
         condition = condition.model_dump(mode="json")
     if not condition:
         return ["missing_configuration"]
     if condition["kind"] in {"all", "any"}:
-        return [code for term in condition["terms"]
-                for code in condition_errors(term, declarations)]
-    variable = declarations.get(condition["variable"]) or PUBLIC_VARIABLES.get(condition["variable"])
+        return [
+            code
+            for term in condition["terms"]
+            for code in condition_errors(term, declarations)
+        ]
+    variable = declarations.get(condition["variable"]) or PUBLIC_VARIABLES.get(
+        condition["variable"]
+    )
     if variable is None:
         return ["unknown_variable"]
     operator = condition["operator"]
-    if operator in {"gt", "lt"} and variable.type not in {"integer", "decimal", "date", "datetime"}:
+    if operator in {"gt", "lt"} and variable.type not in {
+        "integer",
+        "decimal",
+        "date",
+        "datetime",
+    }:
         return ["condition_type_mismatch"]
     if operator == "contains" and variable.type not in {"string", "enum"}:
         return ["condition_type_mismatch"]
@@ -97,14 +123,19 @@ def condition_errors(condition, declarations: dict[str, Variable]) -> list[str]:
     return []
 
 
-def evaluate_condition(condition, declarations: dict[str, Variable], values: dict) -> bool:
+def evaluate_condition(
+    condition, declarations: dict[str, Variable], values: dict
+) -> bool:
     """Evaluate only structurally validated, bounded typed comparisons."""
     if hasattr(condition, "model_dump"):
         condition = condition.model_dump(mode="json")
     if not condition or condition_errors(condition, declarations):
         return False
     if condition["kind"] in {"all", "any"}:
-        results = (evaluate_condition(term, declarations, values) for term in condition["terms"])
+        results = (
+            evaluate_condition(term, declarations, values)
+            for term in condition["terms"]
+        )
         return all(results) if condition["kind"] == "all" else any(results)
     name, operator = condition["variable"], condition["operator"]
     raw = values.get(name)

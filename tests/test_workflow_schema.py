@@ -48,30 +48,60 @@ def test_minimal_portable_graph_is_valid_but_never_live_executable():
     assert result.activation_available is False
 
 
-@pytest.mark.parametrize("changes", [
-    {"schema_version": 99}, {"session": {"customer_id": 1}},
-    {"target_platforms": ["unknown"]},
-    {"assignment": {"mode": "all_eligible", "bot_ids": ["not-a-uuid"]}},
-    {"nodes": [{"id": "s", "type": "execute_python", "config": {}}]},
-    {"nodes": [{"id": "s", "type": "send_text", "config": {"script": "import os"}}]},
-    {"nodes": [{"id": "s", "type": "delay", "config": {"seconds": True}}]},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"schema_version": 99},
+        {"session": {"customer_id": 1}},
+        {"target_platforms": ["unknown"]},
+        {"assignment": {"mode": "all_eligible", "bot_ids": ["not-a-uuid"]}},
+        {"nodes": [{"id": "s", "type": "execute_python", "config": {}}]},
+        {
+            "nodes": [
+                {
+                    "id": "s",
+                    "type": "send_text",
+                    "config": {"script": "import os"},
+                }
+            ]
+        },
+        {"nodes": [{"id": "s", "type": "delay", "config": {"seconds": True}}]},
+    ],
+)
 def test_unknown_shapes_and_executable_configuration_are_rejected(changes):
     """Strict fields prevent renderer data, code and type coercion from entering storage."""
     with pytest.raises(ValidationError):
         parsed(document() | changes)
 
 
-@pytest.mark.parametrize(("mutate", "expected"), [
-    (lambda d: d.update(nodes=d["nodes"][1:]), "missing_start"),
-    (lambda d: d["nodes"].append({"id": "s2", "type": "start", "config": {}}), "duplicate_start"),
-    (lambda d: d["nodes"].append({"id": "orphan", "type": "end", "config": {}}), "unreachable_node"),
-    (lambda d: d["edges"][0].update(target="missing"), "dangling_edge"),
-    (lambda d: d["edges"][0].update(port="invented"), "invalid_port"),
-    (lambda d: d["nodes"].append(deepcopy(d["nodes"][0])), "duplicate_node"),
-    (lambda d: d.update(edges=[]), "missing_terminal_path"),
-])
-def test_semantic_errors_are_located_without_losing_editable_drafts(mutate, expected):
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (lambda d: d.update(nodes=d["nodes"][1:]), "missing_start"),
+        (
+            lambda d: d["nodes"].append(
+                {"id": "s2", "type": "start", "config": {}}
+            ),
+            "duplicate_start",
+        ),
+        (
+            lambda d: d["nodes"].append(
+                {"id": "orphan", "type": "end", "config": {}}
+            ),
+            "unreachable_node",
+        ),
+        (lambda d: d["edges"][0].update(target="missing"), "dangling_edge"),
+        (lambda d: d["edges"][0].update(port="invented"), "invalid_port"),
+        (
+            lambda d: d["nodes"].append(deepcopy(d["nodes"][0])),
+            "duplicate_node",
+        ),
+        (lambda d: d.update(edges=[]), "missing_terminal_path"),
+    ],
+)
+def test_semantic_errors_are_located_without_losing_editable_drafts(
+    mutate, expected
+):
     """An incomplete draft remains parseable and returns meaningful graph diagnostics."""
     value = document()
     mutate(value)
@@ -83,10 +113,24 @@ def test_semantic_errors_are_located_without_losing_editable_drafts(mutate, expe
 def test_uncontrolled_cycle_and_explicit_bounded_cycle():
     """A cycle requires an exit and explicit per-node visit budgets."""
     value = document()
-    value["nodes"].insert(1, {"id": "loop", "type": "condition", "config": {
-        "condition": {"kind": "rule", "variable": "again", "operator": "eq", "value": True},
-    }})
-    value["variables"] = [{"name": "again", "type": "boolean", "default": False}]
+    value["nodes"].insert(
+        1,
+        {
+            "id": "loop",
+            "type": "condition",
+            "config": {
+                "condition": {
+                    "kind": "rule",
+                    "variable": "again",
+                    "operator": "eq",
+                    "value": True,
+                },
+            },
+        },
+    )
+    value["variables"] = [
+        {"name": "again", "type": "boolean", "default": False}
+    ]
     value["edges"] = [
         {"id": "a", "source": "s", "target": "loop", "port": "next"},
         {"id": "b", "source": "loop", "target": "loop", "port": "true"},
@@ -101,9 +145,21 @@ def test_typed_condition_operators_and_unknown_variables():
     """Greater-than cannot compare text, secrets or undeclared references."""
     value = document()
     value["nodes"][0] = {"id": "s", "type": "start", "config": {}}
-    value["nodes"].insert(1, {"id": "check", "type": "condition", "config": {
-        "condition": {"kind": "rule", "variable": "name", "operator": "gt", "value": 4},
-    }})
+    value["nodes"].insert(
+        1,
+        {
+            "id": "check",
+            "type": "condition",
+            "config": {
+                "condition": {
+                    "kind": "rule",
+                    "variable": "name",
+                    "operator": "gt",
+                    "value": 4,
+                },
+            },
+        },
+    )
     value["variables"] = [{"name": "name", "type": "string"}]
     value["edges"] = [
         {"id": "a", "source": "s", "target": "check", "port": "next"},
@@ -121,10 +177,22 @@ def test_catalog_configurations_and_platform_overrides_are_typed():
 
     catalog = node_catalog()
     names = {item["type"] for item in catalog["nodes"]}
-    assert {"send_text", "ask_photo", "start_checkout", "create_return_request"} <= names
+    assert {
+        "send_text",
+        "ask_photo",
+        "start_checkout",
+        "create_return_request",
+    } <= names
     value = document()
-    value["nodes"].insert(1, {"id": "message", "type": "send_text", "config": {"text": "hello"},
-                             "platform_overrides": {"bale": {"text": 4}}})
+    value["nodes"].insert(
+        1,
+        {
+            "id": "message",
+            "type": "send_text",
+            "config": {"text": "hello"},
+            "platform_overrides": {"bale": {"text": 4}},
+        },
+    )
     with pytest.raises(ValidationError):
         parsed(value)
 
@@ -132,15 +200,27 @@ def test_catalog_configurations_and_platform_overrides_are_typed():
 def test_platform_caption_and_missing_executor_are_distinct_findings():
     """Official Bale support must not hide the current adapter's shorter caption."""
     value = document()
-    value["nodes"].insert(1, {"id": "photo", "type": "send_photo", "config": {
-        "media_id": 1, "caption": "x" * 1100,
-    }})
+    value["nodes"].insert(
+        1,
+        {
+            "id": "photo",
+            "type": "send_photo",
+            "config": {
+                "media_id": 1,
+                "caption": "x" * 1100,
+            },
+        },
+    )
     value["edges"] = [
         {"id": "a", "source": "s", "target": "photo", "port": "next"},
         {"id": "b", "source": "photo", "target": "end", "port": "next"},
     ]
     assert {"platform_caption_limit", "adapter_caption_limit"} <= codes(value)
-    value["nodes"][1] = {"id": "photo", "type": "create_return_request", "config": {}}
+    value["nodes"][1] = {
+        "id": "photo",
+        "type": "create_return_request",
+        "config": {},
+    }
     assert "action_contract_unavailable" in codes(value)
 
 
@@ -149,15 +229,36 @@ def test_conditions_evaluate_exact_decimals_dates_and_nested_boolean_rules():
     from services.shop_workflow_conditions import evaluate_condition
     from services.shop_workflow_schema import Variable
 
-    declarations = {v.name: v for v in [
-        Variable(name="amount", type="decimal"), Variable(name="date", type="date"),
-    ]}
-    condition = {"kind": "all", "terms": [
-        {"kind": "rule", "variable": "amount", "operator": "gt", "value": "0.10"},
-        {"kind": "rule", "variable": "date", "operator": "lt", "value": "2027-01-01"},
-    ]}
-    assert evaluate_condition(condition, declarations, {"amount": "0.11", "date": "2026-11-05"})
-    assert not evaluate_condition(condition, declarations, {"amount": "0.10", "date": "2026-11-05"})
+    declarations = {
+        v.name: v
+        for v in [
+            Variable(name="amount", type="decimal"),
+            Variable(name="date", type="date"),
+        ]
+    }
+    condition = {
+        "kind": "all",
+        "terms": [
+            {
+                "kind": "rule",
+                "variable": "amount",
+                "operator": "gt",
+                "value": "0.10",
+            },
+            {
+                "kind": "rule",
+                "variable": "date",
+                "operator": "lt",
+                "value": "2027-01-01",
+            },
+        ],
+    }
+    assert evaluate_condition(
+        condition, declarations, {"amount": "0.11", "date": "2026-11-05"}
+    )
+    assert not evaluate_condition(
+        condition, declarations, {"amount": "0.10", "date": "2026-11-05"}
+    )
 
 
 def test_deterministic_canonical_serialization_never_stores_layout_or_session():
@@ -165,7 +266,9 @@ def test_deterministic_canonical_serialization_never_stores_layout_or_session():
     from services.shop_workflow_schema import canonical_json
 
     first = parsed().model_dump(mode="json")
-    assert canonical_json(first) == canonical_json(dict(reversed(list(first.items()))))
+    assert canonical_json(first) == canonical_json(
+        dict(reversed(list(first.items())))
+    )
     assert "position" not in canonical_json(first)
     with pytest.raises(ValidationError):
         parsed(document() | {"runtime_state": {"current_node": "s"}})
@@ -174,24 +277,55 @@ def test_deterministic_canonical_serialization_never_stores_layout_or_session():
 def test_buttons_resolve_targets_and_reject_ambiguous_keys_and_actions():
     """Inspector-selected targets form real graph paths and cannot alias two actions."""
     value = document()
-    value["nodes"].insert(1, {"id": "menu", "type": "show_buttons", "config": {
-        "text": "انتخاب کنید", "buttons": [{"key": "done", "label": "پایان", "target": "end"}],
-    }})
-    value["edges"] = [{"id": "a", "source": "s", "target": "menu", "port": "next"}]
+    value["nodes"].insert(
+        1,
+        {
+            "id": "menu",
+            "type": "show_buttons",
+            "config": {
+                "text": "انتخاب کنید",
+                "buttons": [
+                    {"key": "done", "label": "پایان", "target": "end"}
+                ],
+            },
+        },
+    )
+    value["edges"] = [
+        {"id": "a", "source": "s", "target": "menu", "port": "next"}
+    ]
     assert findings(value).valid
     value["nodes"][1]["config"]["buttons"] *= 2
     assert "duplicate_button_key" in codes(value)
-    value["nodes"][1]["config"]["buttons"] = [{"key": "unsafe", "label": "عملیات", "type": "action", "action": "os.system"}]
+    value["nodes"][1]["config"]["buttons"] = [
+        {
+            "key": "unsafe",
+            "label": "عملیات",
+            "type": "action",
+            "action": "os.system",
+        }
+    ]
     assert "unknown_action_contract" in codes(value)
 
 
 def test_switch_requires_a_default_and_every_named_branch():
     """One successful branch cannot conceal a dead end on another choice."""
     value = document()
-    value["variables"] = [{"name": "reason", "type": "enum", "choices": ["damage", "other"]}]
-    value["nodes"].insert(1, {"id": "pick", "type": "switch", "config": {
-        "variable": "reason", "cases": [{"key": "damage", "label": "آسیب", "value": "damage"}],
-    }})
+    value["variables"] = [
+        {"name": "reason", "type": "enum", "choices": ["damage", "other"]}
+    ]
+    value["nodes"].insert(
+        1,
+        {
+            "id": "pick",
+            "type": "switch",
+            "config": {
+                "variable": "reason",
+                "cases": [
+                    {"key": "damage", "label": "آسیب", "value": "damage"}
+                ],
+            },
+        },
+    )
     value["edges"] = [
         {"id": "a", "source": "s", "target": "pick", "port": "next"},
         {"id": "b", "source": "pick", "target": "end", "port": "damage"},
@@ -203,20 +337,42 @@ def test_references_and_condition_literals_must_have_the_declared_types():
     """An Order reference cannot populate a Product or a numeric comparison."""
     value = document()
     value["variables"] = [{"name": "item", "type": "order_ref"}]
-    value["nodes"].insert(1, {"id": "add", "type": "add_to_cart", "config": {"product_variable": "item"}})
-    value["edges"] = [{"id": "a", "source": "s", "target": "add", "port": "next"},
-                      {"id": "b", "source": "add", "target": "end", "port": "next"}]
+    value["nodes"].insert(
+        1,
+        {
+            "id": "add",
+            "type": "add_to_cart",
+            "config": {"product_variable": "item"},
+        },
+    )
+    value["edges"] = [
+        {"id": "a", "source": "s", "target": "add", "port": "next"},
+        {"id": "b", "source": "add", "target": "end", "port": "next"},
+    ]
     assert "action_variable_type_mismatch" in codes(value)
     from services.shop_workflow_conditions import condition_errors
     from services.shop_workflow_schema import Variable
 
-    assert condition_errors({"kind": "rule", "variable": "amount", "operator": "gt", "value": None},
-                            {"amount": Variable(name="amount", type="integer")})
+    assert condition_errors(
+        {
+            "kind": "rule",
+            "variable": "amount",
+            "operator": "gt",
+            "value": None,
+        },
+        {"amount": Variable(name="amount", type="integer")},
+    )
 
 
 def test_provider_secrets_cannot_hide_in_variable_defaults():
     """The complete definition is checked, not only message configuration."""
     value = document()
-    value["variables"] = [{"name": "setting", "type": "string", "default": "123456789:" + "a" * 32}]
+    value["variables"] = [
+        {
+            "name": "setting",
+            "type": "string",
+            "default": "123456789:" + "a" * 32,
+        }
+    ]
     with pytest.raises(ValidationError):
         parsed(value)
