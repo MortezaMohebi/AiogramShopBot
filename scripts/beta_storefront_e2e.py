@@ -204,7 +204,7 @@ def callbacks(message: dict) -> list[str]:
     """Read callback payloads from actual native inline keyboard serialization."""
     return [
         button["callback_data"]
-        for row in message.get("reply_markup", {}).get("inline_keyboard", [])
+        for row in (message.get("reply_markup") or {}).get("inline_keyboard", [])
         for button in row
         if "callback_data" in button
     ]

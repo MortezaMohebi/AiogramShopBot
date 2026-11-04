@@ -2,7 +2,9 @@
 name: aiogram-beta-qa
 
 x-backend: &backend
-  image: telegram-bale-codespace-backend:local
+  # Build this branch's pinned dependencies instead of reusing a live image.
+  image: aiogram-beta-qa-backend:local
+  build: .
   env_file: .codespaces/beta-qa.env
   volumes:
     - .:/bot:ro

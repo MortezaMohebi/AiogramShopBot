@@ -1,6 +1,7 @@
 .env
 .idea
 venv
+.venv/
 .env.next-admin
 
 # Keep all production, development and generated test secrets out of images.
