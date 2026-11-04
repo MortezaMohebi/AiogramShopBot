@@ -522,10 +522,16 @@ async def edit_category(
     category_id: int, payload: CategoryPatch, staff: Staff, session: Db
 ) -> dict:
     """Edit one category and preserve all product foreign keys."""
-    require_staff(staff, "content")
-    record = await session.get(ShopCategory, category_id)
+    user = require_staff(staff, "content")
+    scope = admin_store_context(user)
+    record = await session.scalar(select(ShopCategory).where(
+        ShopCategory.id == category_id,
+        ShopCategory.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if record is None:
         raise HTTPException(status_code=404, detail="Category not found")
+    # Map ownership denial before the mounted legacy app starts a response.
+    require_store_access(scope, record.store_id, write=True)
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
@@ -1416,10 +1422,15 @@ async def edit_shipping(
     method_id: int, payload: ShippingPayload, staff: Staff, session: Db
 ) -> dict:
     """Update a method without changing past order shipping snapshots."""
-    require_staff(staff, "sales")
-    item = await session.get(ShopShippingMethod, method_id)
+    user = require_staff(staff, "sales")
+    scope = admin_store_context(user)
+    item = await session.scalar(select(ShopShippingMethod).where(
+        ShopShippingMethod.id == method_id,
+        ShopShippingMethod.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if item is None:
         raise HTTPException(status_code=404, detail="Shipping method not found")
+    require_store_access(scope, item.store_id, write=True)
     for key, value in payload.model_dump().items():
         setattr(item, key, value)
     try:
@@ -1464,10 +1475,15 @@ async def edit_coupon(
     coupon_id: int, payload: CouponPayload, staff: Staff, session: Db
 ) -> dict:
     """Edit a rule; consumed-count remains immutable through this interface."""
-    require_staff(staff, "marketing")
-    item = await session.get(ShopCoupon, coupon_id)
+    user = require_staff(staff, "marketing")
+    scope = admin_store_context(user)
+    item = await session.scalar(select(ShopCoupon).where(
+        ShopCoupon.id == coupon_id,
+        ShopCoupon.store_id.in_(scope.active_store_ids),
+    ).with_for_update())
     if item is None:
         raise HTTPException(status_code=404, detail="Coupon not found")
+    require_store_access(scope, item.store_id, write=True)
     for key, value in normalize_coupon(payload).items():
         setattr(item, key, value)
     try:

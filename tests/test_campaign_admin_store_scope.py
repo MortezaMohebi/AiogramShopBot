@@ -115,7 +115,8 @@ class CampaignFixture:
         self.db.commit()
 
     async def request(self, method: str, path: str, *, payload=None,
-                      fields=None, file: bool = False, wrapped=True):
+                      fields=None, file: bool = False, wrapped=True,
+                      raise_app_exceptions: bool = True):
         """Send exact signed JSON or multipart bytes through the real app."""
         target = control.PREFIX + path
         if file:
@@ -140,7 +141,10 @@ class CampaignFixture:
                 self.token, signature, SECRET,
             ),
         }
-        transport = httpx.ASGITransport(app=self.app if wrapped else self.legacy)
+        transport = httpx.ASGITransport(
+            app=self.app if wrapped else self.legacy,
+            raise_app_exceptions=raise_app_exceptions,
+        )
         async with httpx.AsyncClient(transport=transport) as client:
             return await client.request(
                 method, "http://offline.test" + target,
