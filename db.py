@@ -87,7 +87,7 @@ For more information see https://stackoverflow.com/questions/7478403/sqlalchemy-
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopShippingMethod, ShopCoupon, ShopOrderLine,
-    ShopOrderReviewAudit,
+    ShopOrderReviewAudit, ShopCheckoutGroup,
 )
 from models.shop_content import Product, ProductMedia, ShopCategory, ShopIdentity, ShopOrder, ShopSettings, Testimonial
 from models.item import Item

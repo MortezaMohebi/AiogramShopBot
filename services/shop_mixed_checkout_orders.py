@@ -113,7 +113,10 @@ async def create_split_orders(
     Caller must commit once *after* both Orders and all Lines are inserted.
     On any failure, rollback; do not issue an invoice or mutate cart items.
     """
-    if event.platform != Platform.TELEGRAM or cart.platform != "telegram":
+    # A verified Customer-shared cart may have originated on Bale. The
+    # *requesting* provider and BotContext, not its stored origin, determine
+    # the native payment flow.
+    if event.platform != Platform.TELEGRAM:
         raise MixedCheckoutError("Split checkout is Telegram-only.")
     if (
         cart.store_id != policy.store_id or bot_id != policy.bot_id

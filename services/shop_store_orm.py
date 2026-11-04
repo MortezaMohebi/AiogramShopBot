@@ -11,7 +11,9 @@ from __future__ import annotations
 from sqlalchemy import event
 from sqlalchemy.orm import Session, with_loader_criteria
 
-from models.shop_checkout import ShopCart, ShopCoupon, ShopShippingMethod
+from models.shop_checkout import (
+    ShopCart, ShopCoupon, ShopShippingMethod, ShopCheckoutGroup,
+)
 from models.shop_content import Product, ShopCategory, ShopIdentity, ShopOrder
 from models.shop_engagement import ShopCampaign, ShopWalletAccount
 from models.shop_multibot import ShopBot
@@ -41,7 +43,8 @@ from services.shop_store_context import current_context
 # superadmin under a separate authorization path across the allowed set.
 STORE_OWNED_MODELS = (
     ShopBot, ShopCategory, Product, ShopShippingMethod, ShopCoupon,
-    ShopIdentity, ShopCart, ShopOrder, ShopWalletAccount, ShopCampaign,
+    ShopIdentity, ShopCart, ShopOrder, ShopCheckoutGroup,
+    ShopWalletAccount, ShopCampaign,
     ShopPaymentAttempt, ShopStoreCustomer, ShopPaymentAccount,
     ShopStoreSettings,
     ShopStoreMenuPolicy, ShopBotMenuPolicy, ShopCustomerChatState,
