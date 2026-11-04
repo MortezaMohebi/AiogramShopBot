@@ -12,7 +12,9 @@ def test_shared_shop_fixture_builds_the_complete_registered_schema():
     engine = create_engine("sqlite:///:memory:")
     try:
         create_shop_schema(engine)
-        expected = {name for name in Base.metadata.tables if name.startswith("shop_")}
+        expected = {
+            name for name in Base.metadata.tables if name.startswith("shop_")
+        }
         assert set(inspect(engine).get_table_names()) == expected
     finally:
         engine.dispose()

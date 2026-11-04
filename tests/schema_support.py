@@ -9,7 +9,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from models.base import Base
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore
+from models.shop_multibot import (
+    DEFAULT_STORE_ID,
+    LEGACY_BOT_IDS,
+    ShopBot,
+    ShopStore,
+)
 
 
 def create_shop_schema(engine: Engine) -> None:
@@ -17,7 +22,8 @@ def create_shop_schema(engine: Engine) -> None:
     Base.metadata.create_all(
         engine,
         tables=[
-            table for name, table in Base.metadata.tables.items()
+            table
+            for name, table in Base.metadata.tables.items()
             if name.startswith("shop_")
         ],
     )
@@ -26,18 +32,30 @@ def create_shop_schema(engine: Engine) -> None:
 def seed_legacy_registry(session: Session) -> None:
     """Provide the trusted legacy Store/Bot records required by old fixtures."""
     if session.get(ShopStore, DEFAULT_STORE_ID) is None:
-        session.add(ShopStore(
-            id=DEFAULT_STORE_ID, slug="default", name="Test Store", state="active",
-        ))
+        session.add(
+            ShopStore(
+                id=DEFAULT_STORE_ID,
+                slug="default",
+                name="Test Store",
+                state="active",
+            )
+        )
         session.flush()
     for platform, bot_id in LEGACY_BOT_IDS.items():
         if session.get(ShopBot, bot_id) is None:
-            session.add(ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID, slug=f"legacy-{platform}",
-                name=f"Test {platform}", platform=platform,
-                status="legacy", runtime_owner="legacy", version=1,
-                credential_version=1,
-            ))
+            session.add(
+                ShopBot(
+                    id=bot_id,
+                    store_id=DEFAULT_STORE_ID,
+                    slug=f"legacy-{platform}",
+                    name=f"Test {platform}",
+                    platform=platform,
+                    status="legacy",
+                    runtime_owner="legacy",
+                    version=1,
+                    credential_version=1,
+                )
+            )
     session.flush()
     seed_test_units(session)
 

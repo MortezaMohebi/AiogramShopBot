@@ -64,4 +64,3 @@ def require_isolated_lab() -> None:
 
     if len(os.environ.get("JWT_SECRET_KEY", "")) < 32:
         raise RuntimeError("The admin test secret is missing.")
-
