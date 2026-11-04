@@ -12,8 +12,8 @@
 - Home buttons: **Shop, Search, Cart, Orders, Account, Support**. Their visibility is configurable for each Store/Bot, but no preference overrides security/capability checks.
 - Search first uses existing shared Product field registry with a **customer allowlist** and a short chat FSM; no arbitrary SQL expressions from chat.
 - Account: address book, wishlist, verified channel identity linking and consent preferences; no phone/name-based identity merges.
-- Checkout mode: `manual` by default; `instant` is explicit Store opt-in. Telegram digital goods must be charged with XTR Stars; never use IRR Store Credit to bypass it. Bale Wallet uses IRR, separate from Store Credit. Mixed digital/physical carts remain fail-closed rather than generating a misleading invoice.
-- Order tracking: Store-owned shipment/fulfillment events; only provider-confirmed payments release digital assets. Refund references remain attached to originating payment account and Bot.
+- Checkout mode: `manual` by default; `instant` is explicit Store opt-in. Telegram digital goods must be charged with XTR Stars; never use IRR Store Credit to bypass it. Bale Wallet uses IRR, separate from Store Credit. The subsequent approved QA scope adds atomic Telegram mixed-cart splitting into independent physical IRR and digital XTR orders. Each part has its own payment/refund outcome. Unsupported Bale mixed carts remain rejected before checkout or debit.
+- Order tracking: Store-owned shipment/fulfillment events; only provider-confirmed payments release version-pinned private files or encrypted, single-use licenses through a durable delivery worker. Unknown send outcomes require reconciliation rather than replay. Refund references remain attached to originating payment account and Bot; refund and delivery claims serialize on the Order.
 - Tickets and customer support: Store-scoped, bot-scoped origin, customer authenticated; ticket comments append-only and auditable. No raw provider credentials in messages or exports.
 - Notification/stock alerts: separate operational and marketing consent; opt-in per bot. Never send unsolicited marketing.
 - Telegram: callback_data max 64 UTF-8 bytes; answerCallbackQuery; XTR digital sendInvoice provider token omitted; reply to pre_checkout_query in 10s; process successful_payment before fulfillment; /terms, /support, /paysupport.
@@ -35,6 +35,6 @@
 6. P5: consent scoped to Bot, stock alerts opt-in and no retry after ambiguous send.
 7. P6: executable Python unit/security tests, Next.js lint/typecheck/build, PostgreSQL fresh schema smoke, Telegram/Bale provider simulations, a complete six-menu customer E2E suite, regression tests of legacy payments.
 
-**Not covered by scope:** production activation, destructive resets, shipping carrier API contracts not provided, digital license storage without secure media pipeline, arbitrary payment gateways, bulk movement of legacy credit, fractional Checkout without rational-quantity migration.
+**Not covered by scope:** production activation, destructive resets, shipping carrier API contracts not provided, arbitrary payment gateways, bulk movement of legacy credit, fractional Checkout without rational-quantity migration. The secure private file/license pipeline is included in the subsequent approved QA scope.
 
-**Testing truth:** Current Codespace/Provider access is not available via connected tools. Each change must be committed as unverified if its tests cannot run; do not mark P0–P6 as completed until the prescribed gates pass.
+**Testing truth:** Acceptance uses an isolated Codespace PostgreSQL stack, native provider fakes and a running Next.js browser/MCP loop. Fake-provider results do not establish live provider delivery or settlement. The current results, evidence and outstanding live gates are recorded in [the acceptance report](../../qa/BETA_STOREFRONT_P0_P6_ACCEPTANCE.md).

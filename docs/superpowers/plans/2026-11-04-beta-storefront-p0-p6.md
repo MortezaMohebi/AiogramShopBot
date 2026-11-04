@@ -6,9 +6,15 @@
 
 **Architecture:** Shared SQLAlchemy Store-owned domain models, trusted BotContext, a declarative Bot-menu policy, shared Experience Router, and provider-native adapters. Admin mutations bind to signed StoreContext. Fresh Beta schema only, no new Alembic revisions.
 
-**Tech Stack:** Python 3.12+, SQLAlchemy 2, FastAPI, Aiogram 3, Next.js TypeScript/React, Postgres 16, Redis, official Telegram/Bale Bot APIs.
+**Tech Stack:** Python 3.12+, SQLAlchemy 2, FastAPI, Aiogram 3, Next.js TypeScript/React, PostgreSQL (final isolated QA: 18), Redis, official Telegram/Bale Bot APIs.
 
 **Spec:** `docs/superpowers/specs/2026-11-04-beta-storefront-design.md`
+
+**Validation record:** [Executed acceptance results](../../qa/BETA_STOREFRONT_P0_P6_ACCEPTANCE.md)
+and [machine-readable evidence](../../qa/BETA_STOREFRONT_P0_P6_RESULTS.json).
+The original task steps below preserve the implementation checklist; they
+are not a fresh assertion that each historical RED step was rerun during
+final QA. The execution ledger and acceptance report record observed results.
 
 ## Global Constraints
 
@@ -22,11 +28,11 @@
 
 ## Review Focus
 
-- [ ] Identical user IDs in two distinct bots have isolated accounts.
-- [ ] Stale button cannot access a denied or cross-Store Product.
-- [ ] Callback payload cannot exceed Telegram 64 UTF-8 bytes.
-- [ ] Payment success is independent of notification delivery/timeout.
-- [ ] New chat form does not intercept unrelated legacy Telegram text.
+- [x] Identical user IDs in two distinct bots have isolated accounts.
+- [x] Stale button cannot access a denied or cross-Store Product.
+- [x] Callback payload cannot exceed Telegram 64 UTF-8 bytes.
+- [x] Payment success is independent of notification delivery/timeout.
+- [x] New chat form does not intercept unrelated legacy Telegram text.
 
 ---
 
@@ -44,7 +50,7 @@
 
 ### Task P1: Shared customer Home, menu policy and product search
 
-**Files:** `models/shop_customer_experience.py`, `services/shop_customer_menu.py`, `services/shop_customer_search.py`, `services/shop_channel_catalog.py`, `services/shop_multibot_dispatch.py`, `dashboard/shop_customer_experience_api.py`, `dashboard-next/app/(console)/bots/[id]/page.tsx`, related tests.
+**Files:** `models/shop_customer_navigation.py`, `services/shop_customer_menu.py`, `services/shop_customer_search.py`, `services/shop_channel_catalog.py`, `services/shop_multibot_dispatch.py`, `dashboard/shop_customer_experience_api.py`, `dashboard-next/app/(console)/bots/[id]/page.tsx`, related tests.
 
 **Interfaces:** `CustomerMenuPolicy.resolve()`, `CustomerExperienceFlow.reply(event, session) -> BotReply | None`.
 
@@ -55,7 +61,7 @@
 
 ### Task P2: Account, AddressBook and Wishlist
 
-**Files:** `models/shop_customer_experience.py`, `services/shop_customer_account.py`, `dashboard/shop_customer_experience_api.py`, Next.js Customer UI and tests.
+**Files:** `models/shop_customer_account_data.py`, `services/shop_customer_account.py`, `dashboard/shop_customer_experience_api.py`, Next.js Customer UI and tests.
 
 **Interfaces:** `customer_for_bot()`, `account_actions()`, `StoreCustomerAddress`, `StoreWishlistItem`.
 
@@ -66,7 +72,7 @@
 
 ### Task P3: Store checkout policy and native-payment conditions
 
-**Files:** `models/shop_customer_experience.py`, `services/shop_checkout_policy.py`, `services/shop_cart.py`, `services/shop_orders.py`, Dashboard Store checkout policy, tests.
+**Files:** `models/shop_checkout_policy.py`, `services/shop_checkout_policy.py`, `services/shop_cart.py`, `services/shop_orders.py`, Dashboard Store checkout policy, tests.
 
 **Interfaces:** `checkout_mode(store_id)` returns `manual|instant` and prevents digital fiat/credit bypass.
 
@@ -76,7 +82,7 @@
 
 ### Task P4: Tickets and fulfillment
 
-**Files:** `models/shop_customer_experience.py`, `services/shop_customer_support.py`, `services/shop_fulfillment.py`, admin APIs, dashboard pages and tests.
+**Files:** `models/shop_customer_support.py`, `models/shop_digital_delivery.py`, `services/shop_customer_support.py`, `services/shop_fulfillment.py`, admin APIs, dashboard pages and tests.
 
 **Interfaces:** `create_ticket`, `append_message`, `record_fulfillment_event`.
 
@@ -86,14 +92,14 @@
 
 ### Task P5: Consent, notifications, stock alerts
 
-**Files:** `models/shop_customer_experience.py`, `services/shop_customer_notification.py`, `services/shop_engagement_flow.py`, Dashboard pages, tests.
+**Files:** `models/shop_customer_notifications.py`, `services/shop_customer_notifications.py`, `services/shop_customer_notification_dispatch.py`, `services/shop_engagement_flow.py`, Dashboard pages, tests.
 
 - [ ] Write RED tests for Bot-scoped marketing opt-in, alert dedup and paused delivery.
 - [ ] Implement opt-in state and safe, no-blind-retry delivery queue, commit after GREEN.
 
 ### Task P6: Unified Telegram/Bale handlers, tests and Beta bootstrap
 
-**Files:** `run.py`, `bot.py`, `services/shop_multibot_dispatch.py`, `channels/telegram_handlers.py`, `channels/bale.py`, `db.py`, `scripts/setup_codespace.sh`, `tests/test_beta_customer_e2e.py`, docs.
+**Files:** `run.py`, `bot.py`, `services/shop_multibot_dispatch.py`, `channels/telegram_handlers.py`, `channels/bale.py`, `db.py`, `scripts/setup_codespace.sh`, `scripts/beta_storefront_e2e.py`, `scripts/beta_receiver_admin_e2e.py`, `scripts/beta_commerce_e2e.py`, `scripts/beta_dashboard_browser.mjs`, docs.
 
 - [ ] Write RED end-to-end menu tests for both platforms and historical payment regression.
 - [ ] Integrate CustomerExperienceFlow, normalize legacy /start and pay support/terms actions.
@@ -103,12 +109,17 @@
 
 ## Execution ledger
 
-- [ ] P0
-- [ ] P1
-- [ ] P2
-- [ ] P3
-- [ ] P4
-- [ ] P5
-- [ ] P6
+- [x] P0 — offline security regressions and actual PostgreSQL signed HTTP/receiver fakes.
+- [x] P1 — both native six-menu journeys, search and foreign-product denial.
+- [x] P2 — account forms, verified linking, historical orders and PostgreSQL races.
+- [x] P3 — native fake payments, atomic Telegram mixed split, separate refunds and credit ledger.
+- [x] P4 — paginated support, shipment, pinned files/licenses and refund/delivery locking.
+- [x] P5 — consent, stock rearm, outbox races and Registry multi-worker broadcast.
+- [x] P6 — complete offline suites, PostgreSQL/native fakes, scoped review and final published-commit browser/MCP gate passed; live gates remain blocked.
 
-**Environment note:** GitHub connector supports source changes but not Codespaces commands. Local test execution requires a source checkout and dependencies; the code must not be declared tested unless command output is observed.
+**Environment note:** Commands ran in a separate Codespace QA checkout with
+PostgreSQL 18 and native fake providers. The original checkout, existing
+data and live service configuration were preserved. Production builds use
+a separate disposable checkout from the running Next dev server. Real
+provider credentials, external webhook routing, financial settlement and
+live worker activation remain unexecuted gates; PR #14 stays Draft.
