@@ -313,8 +313,8 @@ class CustomerAccountFlow:
             )
 
         if action == "ux:address:new":
-            from models.shop_customer_navigation import ShopCustomerChatState
-
+            # Use the module-level model: importing inside this method would
+            # make all earlier ShopCustomerChatState reads unbound locals.
             state = await db.get(
                 ShopCustomerChatState, (self.context.bot_id, event.user_id),
             )

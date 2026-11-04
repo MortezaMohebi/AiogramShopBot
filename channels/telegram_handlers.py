@@ -359,6 +359,9 @@ async def shop_successful_payment(message: Message) -> None:
                 )
 
 
+# The shared customer experience uses the ux: namespace. Route both
+# callback families through the SAME ownership-checked dispatcher.
+@shop_catalog_router.callback_query(F.data.startswith("ux:"))
 @shop_catalog_router.callback_query(F.data.startswith("shop:"))
 async def shop_catalog_button(
     callback: CallbackQuery, session: AsyncSession
