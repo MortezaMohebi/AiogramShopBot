@@ -75,6 +75,22 @@ const SAFE_CODES = new Set([
   "invalid_external_reference", "import_empty_file",
   "invalid_import_request",
   "confirmation_required",
+  "workflow_bot_not_available",
+  "workflow_id",
+  "workflow_invalid_request",
+  "workflow_key_exists",
+  "workflow_layout_invalid",
+  "workflow_media_not_available",
+  "workflow_not_draft",
+  "workflow_not_found",
+  "workflow_operation_conflict",
+  "workflow_operation_not_found",
+  "workflow_revision_conflict",
+  "workflow_revision_not_found",
+  "workflow_revision_unreadable",
+  "workflow_runtime_unavailable",
+  "workflow_too_large",
+
 ]);
 export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly requestId?: string, readonly code?: string) {

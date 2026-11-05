@@ -12,7 +12,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from starlette.responses import JSONResponse
 
 import config
@@ -39,6 +39,7 @@ from dashboard.shop_store_context_api import router as store_context_router
 from dashboard.shop_uom_api import router as shop_uom_router
 from dashboard.shop_model_data_api import router as model_data_router
 from dashboard.shop_customer_experience_api import router as customer_experience_router
+from dashboard.shop_workflow_api import router as workflow_router
 from dashboard.shop_digital_api import router as digital_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
@@ -96,6 +97,7 @@ def permission_for(path: str, method: str) -> str | None:
         "support-tickets": "customers.read",
         "fulfillments": "orders.read" if method == "GET" else "orders.manage",
         "customer-notifications": "bots.read",
+        "workflows": "workflows.read" if method == "GET" or path.endswith(("/validate", "/simulate")) else "workflows.write",
         "digital-deliveries": "orders.read",
         "payment-accounts": "bots.read" if method == "GET" else "bots.apply",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
@@ -271,6 +273,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "shipping", "coupons", "data-models",
                         "support-tickets", "fulfillments",
                         "customer-notifications", "digital-deliveries",
+                        "workflows",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -289,7 +292,10 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         or set(scope.active_store_ids) != {DEFAULT_STORE_ID}
                     ):
                         raise SecurityRejected("store_scope_not_supported", 409)
-                    if request.method not in {"GET", "HEAD"} and resource not in {
+                    workflow_read = resource == "workflows" and request.method == "POST" and bool(re.fullmatch(
+                        re.escape(PREFIX) + r"/workflows/[0-9a-fA-F-]{36}/(?:validate|simulate)", path,
+                    ))
+                    if not workflow_read and request.method not in {"GET", "HEAD"} and resource not in {
                         "store-context",
                     }:
                         scope.require(
@@ -313,6 +319,12 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
         except SecurityRejected as error:
             return JSONResponse({"detail": error.code}, status_code=error.status,
                                 headers={"Cache-Control": "no-store"})
+        except HTTPException as error:
+            # Body limits run before FastAPI's exception middleware. Preserve
+            # their safe HTTP status instead of leaking an unhandled500.
+            code = "request_too_large" if error.status_code == 413 else "invalid_request"
+            return JSONResponse({"detail": code}, status_code=error.status_code,
+                                headers={"Cache-Control": "no-store"})
 
     # Explicit top-level routes win before the legacy fallback mount.
     app.include_router(router)
@@ -330,6 +342,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(shop_uom_router)
     app.include_router(model_data_router)
     app.include_router(customer_experience_router)
+    app.include_router(workflow_router)
     app.include_router(digital_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)

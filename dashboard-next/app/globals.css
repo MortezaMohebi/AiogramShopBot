@@ -77,7 +77,8 @@
 
 @layer base {
   * { border-color: var(--border); }
-  html { scroll-behavior: smooth; }
+  /* Keep focused and scrolled controls below the fixed-height console header. */
+  html { scroll-behavior: smooth; scroll-padding-block-start: 5rem; }
   body {
     min-height: 100vh;
     background: var(--background);
@@ -100,4 +101,21 @@
     opacity: 0.38;
   }
   .scrollbar-thin { scrollbar-width: thin; }
+}
+
+/* The diagram stays LTR inside the RTL dashboard and inherits both themes. */
+.studio-canvas .react-flow {
+  --xy-background-color: var(--background);
+  --xy-controls-button-background-color-default: var(--card);
+  --xy-controls-button-color-default: var(--foreground);
+  --xy-controls-button-border-color-default: var(--border);
+  --xy-controls-button-background-color-hover-default: var(--muted);
+  --xy-minimap-background-color-default: var(--card);
+  --xy-minimap-mask-background-color-default: color-mix(in srgb, var(--muted) 65%, transparent);
+  --xy-edge-stroke-default: var(--muted-foreground);
+  --xy-handle-background-color-default: var(--primary);
+  --xy-handle-border-color-default: var(--card);
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-canvas *, .studio-canvas *::before, .studio-canvas *::after { animation: none !important; transition: none !important; }
 }

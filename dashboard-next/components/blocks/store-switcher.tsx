@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Store, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { selectStoreContext, saveDefaultStore } from "@/app/(console)/store-context/actions";
+import { confirmWorkflowNavigation } from "@/lib/workflows/navigation";
 import type { StoreContextSnapshot } from "@/lib/store-context";
 
 interface Props { context: StoreContextSnapshot }
@@ -55,7 +56,7 @@ function StoreSwitcherForm({ context }: Props) {
   }
 
   function applySelection() {
-    if (busy) return;
+    if (busy || !confirmWorkflowNavigation()) return;
     startTransition(async () => {
       const result = await selectStoreContext({
         expected_version: context.version,
@@ -73,7 +74,7 @@ function StoreSwitcherForm({ context }: Props) {
   }
 
   function setDefault() {
-    if (busy) return;
+    if (busy || !confirmWorkflowNavigation()) return;
     startTransition(async () => {
       const result = await saveDefaultStore(
         context.current_store_id, context.preference_version,

@@ -1,11 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   issueLoginChallenge,
+  issueSessionChallenge,
+  isLoginChallenge,
   loginChallengeCookieName,
   loginChallengeMaxAge,
   safeLoginFetchMetadata,
 } from "@/lib/login-challenge";
 import { publicOrigin } from "@/lib/public-origin";
+import { readSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,10 +32,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const challenge = issueLoginChallenge();
+  const session = await readSession();
+  const existing = request.cookies.get(loginChallengeCookieName())?.value;
+  // A session-specific MAC is unpredictable and identical for simultaneous
+  // first requests. Cookie expiry refreshes its lifetime without invalidating
+  // another tab's in-flight mutation. All origin/cookie checks remain intact.
+  const challenge = session
+    ? issueSessionChallenge(session)
+    : isLoginChallenge(existing)
+      ? existing
+      : issueLoginChallenge();
   const response = NextResponse.json(
     { ok: true, challenge },
-    { headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    },
   );
   response.cookies.set(loginChallengeCookieName(), challenge, {
     httpOnly: true,

@@ -1,0 +1,27 @@
+[
+  {
+    "check": "compile",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "check": "typecheck",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "check": "lint",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "check": "next-tests",
+    "status": "PASS",
+    "exit_code": 0
+  },
+  {
+    "check": "production-build",
+    "status": "PASS",
+    "exit_code": 0
+  }
+]

@@ -39,6 +39,7 @@ from models.shop_customer_notifications import (
     ShopStockAlert, ShopCustomerNotificationOutbox,
 )
 from services import shop_admin_security as security
+from models.shop_workflow import ShopWorkflow, ShopWorkflowRevision
 from services.shop_store_context import current_context
 
 # Only models with an explicitly checked, non-nullable Store ownership column.
@@ -57,6 +58,7 @@ STORE_OWNED_MODELS = (
     ShopOrderFulfillment, ShopFulfillmentEvent,
     ShopStockAlert, ShopCustomerNotificationOutbox,
     ShopDigitalAsset, ShopDigitalLicense, ShopDigitalDelivery,
+    ShopWorkflow, ShopWorkflowRevision,
 )
 
 

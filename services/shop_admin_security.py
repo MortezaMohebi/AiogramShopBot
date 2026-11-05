@@ -30,10 +30,10 @@ ABSOLUTE_LIMIT = timedelta(hours=8)
 MFA_REQUIRED_ROLES = frozenset({"superadmin", "finance"})
 REAUTH_LIMIT = timedelta(minutes=5)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
-BASE_PERMISSIONS = frozenset({"account.manage_self", "dashboard.read", "reports.read"})
+BASE_PERMISSIONS = frozenset({"account.manage_self", "dashboard.read", "reports.read", "workflows.read"})
 ROLE_PERMISSIONS = {
     "viewer": BASE_PERMISSIONS,
-    "content": BASE_PERMISSIONS | {"catalog.read", "catalog.write", "media.manage"},
+    "content": BASE_PERMISSIONS | {"catalog.read", "catalog.write", "media.manage", "workflows.write"},
     "sales": BASE_PERMISSIONS | {"customers.read", "customers.import", "orders.read", "orders.manage", "shipping.manage", "coupons.manage"},
     "finance": BASE_PERMISSIONS | {"orders.read", "finance.read", "wallet.adjust", "refund.execute", "reports.read"},
     "marketing": BASE_PERMISSIONS | {"campaigns.manage", "broadcast.approve", "coupons.manage", "reports.read"},
