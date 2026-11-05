@@ -39,6 +39,18 @@ const base = "http://localhost:3002",
   output = "/tmp/workflow-studio-browser";
 const phase = process.env.WORKFLOW_BROWSER_STAGE || "all",
   evidence = [];
+assert(
+  [
+    "all",
+    "editor",
+    "preview",
+    "versions",
+    "recovery",
+    "access",
+    "layout",
+  ].includes(phase),
+  "Unknown browser acceptance stage",
+);
 mkdirSync(output, { recursive: true, mode: 0o700 });
 const statePath = output + "/acceptance-state.json";
 let state = (() => {
@@ -523,7 +535,7 @@ try {
       .getByRole("button", { name: /^Restore/ })
       .click();
     await wait(
-      "document.querySelector('article h2')?.innerText.includes('restore')===true",
+      `(()=>{const text=document.querySelector('article h2')?.innerText??'';return text.includes('restore')&&Number(text.match(/Revision ([0-9]+)/)?.[1])===${oldRevision + 2}})()`,
     );
     assert.equal(
       Number(
