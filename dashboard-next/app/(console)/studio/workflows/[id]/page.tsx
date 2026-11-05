@@ -14,7 +14,7 @@ export default async function EditorPage({
   ]);
   return (
     <WorkflowEditor
-      key={`${record.id}-${record.revision}`}
+      key={`${record.id}-${record.revision}-${catalog.store_id}-${record.can_write}-${record.status}`}
       initial={record}
       catalog={catalog}
     />

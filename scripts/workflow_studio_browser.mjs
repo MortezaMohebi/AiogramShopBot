@@ -145,7 +145,7 @@ async function mcp(name) {
 try {
   ab("set", "viewport", "1440", "1000");
   ab("open", base + "/studio/workflows");
-  ab("wait", "--load", "networkidle");
+  ab("wait", "--fn", "document.querySelector('h1') !== null");
   let tree = snapshot();
   if (ab("get", "url").includes("/login")) {
     ab("fill", reference(tree, 'textbox "نام کاربری"'), "shopadmin");
@@ -159,14 +159,15 @@ try {
     ab("wait", "--url", "**/dashboard");
     console.log("PASS  Normal password + MFA browser login", true);
   }
-  ab(
-    "find",
-    "role",
-    "button",
-    "click",
-    "--name",
-    "انتخاب یک یا چند فروشگاه فعال",
+  const reactTree = ab("react", "tree");
+  writeFileSync(output + "/react-tree.txt", reactTree);
+  assert(
+    reactTree.includes("StoreSwitcher"),
+    "Store Switcher is not yet mounted",
   );
+  tree = snapshot();
+  ab("click", reference(tree, 'button "انتخاب یک یا چند فروشگاه فعال"'));
+  ab("wait", '[role="dialog"]');
   tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
   ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
   tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
@@ -178,7 +179,7 @@ try {
     ),
   );
   ab("open", `${base}/studio/workflows/${fixture.workflow_id}`);
-  ab("wait", "--load", "networkidle");
+  ab("wait", "--fn", "document.querySelector('h1') !== null");
   tree = snapshot();
   writeFileSync(output + "/editor-probe.txt", tree);
   ab("screenshot", output + "/editor-probe.png");

@@ -74,7 +74,7 @@ function StoreSwitcherForm({ context }: Props) {
   }
 
   function setDefault() {
-    if (busy) return;
+    if (busy || !confirmWorkflowNavigation()) return;
     startTransition(async () => {
       const result = await saveDefaultStore(
         context.current_store_id, context.preference_version,

@@ -15,7 +15,7 @@ export default async function SettingsPage({
   return (
     <div className="space-y-7">
       <WorkflowEditor
-        key={`${record.id}-${record.revision}`}
+        key={`${record.id}-${record.revision}-${catalog.store_id}-${record.can_write}-${record.status}`}
         initial={record}
         catalog={catalog}
         settings

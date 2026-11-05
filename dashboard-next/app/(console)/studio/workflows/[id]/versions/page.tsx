@@ -14,7 +14,7 @@ export default async function VersionsPage({
   ]);
   return (
     <WorkflowVersions
-      key={`${record.id}-${record.revision}`}
+      key={`${record.id}-${record.revision}-${record.can_write}-${record.status}`}
       initial={record}
       initialVersions={versions}
     />
