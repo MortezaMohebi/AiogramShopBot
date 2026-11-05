@@ -469,3 +469,67 @@ async def test_action_candidate_refresh_preserves_competing_completed_job(
     refreshed = await db.get(WorkflowActionJob, job.id)
     assert refreshed.status == "succeeded"
     assert refreshed.receipt_id == "completed-receipt"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("older_status", ["cancelled", "suspended"])
+async def test_older_ineligible_wait_does_not_starve_live_timeout(
+    buyer, monkeypatch, older_status
+):
+    """An older stopped Run cannot hide another customer's eligible due wait."""
+    from datetime import timedelta
+
+    from models.shop_workflow_runtime import WorkflowEvent, WorkflowRun, WorkflowWait
+    from services import shop_admin_security as security
+    from services.shop_runtime.workers import timeout_once
+
+    database, principal = buyer
+    await setup_runtime(database, principal, monkeypatch)
+    await handle(
+        database,
+        context=principal.bot,
+        event=inbound(1, "/wholesale", "command"),
+    )
+    older = await database.scalar(select(WorkflowRun))
+    older.status = older_status
+    older_wait = await database.scalar(select(WorkflowWait))
+    older_wait.deadline = security.clock() - timedelta(minutes=2)
+    older_wait_id = older_wait.id
+    preserved = older.node_id, dict(older.state), older_wait.epoch
+    await database.commit()
+
+    # Starting again follows the real coordinator path and pins a separate Run;
+    # the old Wait intentionally remains available if its Run is resumed.
+    await handle(
+        database,
+        context=principal.bot,
+        event=inbound(2, "/wholesale", "command"),
+    )
+    live = await database.scalar(select(WorkflowRun).where(WorkflowRun.id != older.id))
+    live_wait = await database.scalar(
+        select(WorkflowWait).where(WorkflowWait.run_id == live.id)
+    )
+    live_wait.deadline = security.clock() - timedelta(minutes=1)
+    older_id, live_id = older.id, live.id
+    await database.commit()
+
+    assert await timeout_once(factory(database)) is True
+    database.session.expire_all()
+    live = await database.get(WorkflowRun, live_id)
+    assert live.status == "expired" and live.error_code == "runtime_input_timeout"
+    older = await database.get(WorkflowRun, older_id)
+    older_wait = await database.get(WorkflowWait, older_wait_id)
+    assert older.status == older_status
+    assert older_wait is not None
+    assert (older.node_id, older.state, older_wait.epoch) == preserved
+    assert (
+        await database.scalar(
+            select(WorkflowWait).where(WorkflowWait.run_id == live_id)
+        )
+        is None
+    )
+    event = await database.scalar(
+        select(WorkflowEvent).where(WorkflowEvent.kind == "timeout")
+    )
+    assert event.run_id == live_id and event.correlation_id == live.correlation_id
+    assert await timeout_once(factory(database)) is False

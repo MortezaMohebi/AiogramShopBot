@@ -587,7 +587,13 @@ async def timeout_once(session_factory):
             select(WorkflowWait)
             .where(
                 WorkflowWait.deadline <= security.clock(),
-                WorkflowWait.run_id.in_(eligible_runs()),
+                # Retained waits on cancelled/suspended Runs must not occupy
+                # the oldest candidate forever and starve live due waits.
+                WorkflowWait.run_id.in_(
+                    eligible_runs().where(
+                        WorkflowRun.status.in_(("waiting_input", "waiting_timeout"))
+                    )
+                ),
                 ~select(WorkflowInbox.id)
                 .where(
                     WorkflowInbox.run_id == WorkflowWait.run_id,
