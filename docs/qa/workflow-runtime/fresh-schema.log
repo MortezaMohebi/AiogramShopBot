@@ -1,0 +1,1 @@
+PASS fresh PostgreSQL DDL: 135 tables, Runtime columns and immutable trigger; rolled back disposable schema

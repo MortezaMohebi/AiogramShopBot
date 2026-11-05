@@ -1,0 +1,23 @@
+PASS  isolated PostgreSQL and network boundary
+PASS  signed publication, exact retry, conflict and namespaced gates
+PASS  Telegram complete Wholesale, typed input, verified PDF and one receipt
+PASS  Bale complete Wholesale, typed input, verified PDF and one receipt
+PASS  callback ownership, forgery, expiry and stale replay
+PASS  durable Inbox commit crash and competing restart workers
+PASS  durable Inbox ordering while Action is pending
+PASS  Layer 2 commit crash reconciliation preserves one business effect
+PASS  concurrent outbox workers preserve per-Run order
+PASS  definite rejection retries are bounded
+PASS  ambiguous provider response is quarantined without resend
+PASS  process crash after send is quarantined without resend
+PASS  competing timeout workers and timeout versus input
+PASS  Back, optional document, cancellation and restart
+PASS  immutable snapshot, version pinning and rollback
+PASS  emergency gates preserve accepted ownership and legacy handoff
+PASS  receiver Runtime precedes legacy receipts and old claims stay quarantined
+PASS  legacy start, catalog, cart, checkout, orders and payment bypass
+PASS  signed Store isolation, private metadata and audited recovery
+PASS  skip locked Run and Slot before ordered worker limits
+PASS  emergency gate serialization with claim and independent Layer 2 commit
+PASS  absent entry ownership and retirement are serialized
+PASS  commerce, stock and payment state remain unchanged

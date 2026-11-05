@@ -4,7 +4,7 @@ export type Scalar =
   | string
   | number
   | boolean
-  | { kind: "product" | "order" | "customer"; id: number }
+  | { kind: "product" | "category" | "order" | "customer"; id: number }
   | null;
 export type VariableType =
   | "string"
@@ -14,6 +14,7 @@ export type VariableType =
   | "date"
   | "datetime"
   | "enum"
+  | "category_ref"
   | "product_ref"
   | "order_ref"
   | "customer_ref";

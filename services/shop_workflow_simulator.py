@@ -315,6 +315,12 @@ class PreviewInterpreter:
                 self.tick(config["seconds"])
                 if self.state.status == "running":
                     self.next()
+            elif kind == "set_variable":
+                try:
+                    self.state.values[config["variable"]] = cast_value(self.declarations[config["variable"]], config["value"])
+                    self.next()
+                except (KeyError, ValueError, TypeError):
+                    self.fail("invalid_variable_assignment")
             elif kind == "go_to_step":
                 self.next(target=config["target"])
             elif kind == "condition":

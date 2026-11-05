@@ -46,6 +46,8 @@ ALL_PERMISSIONS = frozenset().union(*ROLE_PERMISSIONS.values()) | {
     "bots.apply",
     "audit.read",
     "actions.approve",
+    "workflows.publish",
+    "workflows.runtime.manage",
 }
 ROLE_PERMISSIONS["superadmin"] = ALL_PERMISSIONS
 

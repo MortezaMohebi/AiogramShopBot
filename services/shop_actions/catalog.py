@@ -30,6 +30,7 @@ def actions() -> Registry:
         "checkout.validate": (a.checkout_prepare, a.checkout_prepare),
         "checkout.prepare": (a.checkout_prepare, a.checkout_prepare),
         "support.create_request": (a.support_create, a.support_preview),
+        "wholesale.create_application": (a.wholesale_create, a.wholesale_preview),
     }
     registry = Registry()
     for definition in definitions():

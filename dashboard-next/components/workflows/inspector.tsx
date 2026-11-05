@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { ScalarField } from "./scalar-field";
 import { ActionBindingEditor } from "@/components/actions/binding-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ import type {
   MediaChoice,
   Issue,
   Platform,
+  Scalar,
   WorkflowButton,
 } from "@/lib/workflows/types";
 /** Media choices are paged inside the owning Store; no credential URLs enter config. */
@@ -186,6 +188,8 @@ function ConfigControl({
   nodeType: string;
 }) {
   const value = config[field.key];
+  if (field.kind === "json")
+    return <ScalarField key={`${String(config.variable)}-${field.key}`} label={field.label} value={(value ?? null) as Scalar} onChange={onChange} variable={definition.variables.find(variable => variable.name === config.variable)} />;
   if (field.kind === "textarea")
     return (
       <Textarea

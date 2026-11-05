@@ -327,7 +327,6 @@ async def test_order_status_cannot_read_another_numeric_customer(buyer):
     "key,data",
     [
         ("returns.create_request", {"order_id": 1, "reason": "damaged"}),
-        ("wholesale.create_application", {"company": "QA"}),
         ("notification.notify_admin", {"message": "QA"}),
         ("order.list_return_eligible_orders", {}),
     ],

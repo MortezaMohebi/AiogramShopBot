@@ -13,7 +13,6 @@ import asyncio
 import hashlib
 import hmac
 import logging
-from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Mapping
 from uuid import UUID
@@ -31,6 +30,7 @@ from services.shop_bot_context import resolve_bot_context
 from services.shop_bot_secrets import resolve_active_token
 from services.shop_multibot_client import provider_client
 from services.shop_multibot_dispatch import dispatch
+from services.shop_runtime.ingress import try_ingress
 from services.shop_updates import claim_update, finish_update
 
 LOG = logging.getLogger(__name__)
@@ -226,8 +226,11 @@ class MultiBotSupervisor:
     async def _process(
         self, bot_id: str, *, update_id: int, payload: Mapping,
     ) -> dict:
-        """Record at-most-once receipt before processing any customer update."""
+        """Offer durable Runtime input before claiming legacy at-most-once work."""
         context, token, _, _ = await self._identity(bot_id)
+        runtime = await try_ingress(context, payload)
+        if runtime.get("handled"):
+            return runtime
         fresh, status = await claim_update(
             platform=context.platform,
             token=token, update_id=update_id,
@@ -242,7 +245,9 @@ class MultiBotSupervisor:
             async with provider_client(
                 context.platform.value, token, bot_id=bot_id,
             ) as provider:
-                result = await dispatch(context, provider, payload)
+                result = await dispatch(
+                    context, provider, payload, runtime_checked=True,
+                )
                 success = True
         finally:
             # Even if the HTTP connection disappears, retain the result in

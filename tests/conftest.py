@@ -53,6 +53,8 @@ def _build_config_module() -> ModuleType:
     config.JWT_SECRET_KEY = "secret"
     config.JWT_ALGORITHM = "HS256"
     # Match deployment defaults while keeping every provider and worker inert.
+    config.SHOP_WORKFLOW_RUNTIME_ENABLED = False
+    config.SHOP_WORKFLOW_RUNTIME_KILL_SWITCH = False
     config.MULTIBOT_V2_RUNTIME_ENABLED = False
     config.SHOP_RELAY_POOL_ENABLED = False
     config.TELEGRAM_API_MODE = "direct"

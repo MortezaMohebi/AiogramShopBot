@@ -1,0 +1,588 @@
+{
+  "origin": "http://localhost:3004",
+  "compose_project": "aiogram-workflow-runtime-qa",
+  "checks": [
+    {
+      "check": "isolated Runtime compose and matching Next checkout",
+      "status": "PASS"
+    },
+    {
+      "check": "normal password and MFA login",
+      "status": "PASS"
+    },
+    {
+      "check": "all Runtime tabs and private Run detail",
+      "status": "PASS"
+    },
+    {
+      "check": "uncertain delivery has no retry capability",
+      "status": "PASS"
+    },
+    {
+      "check": "real read-only account and absent Store gate",
+      "status": "PASS"
+    },
+    {
+      "check": "hostile closed BFF requests and Store isolation",
+      "status": "PASS"
+    },
+    {
+      "check": "exact saved publication preview and explicit approval",
+      "status": "PASS"
+    },
+    {
+      "check": "new publication and explicit rollback preserve pinned Runs",
+      "status": "PASS"
+    },
+    {
+      "check": "fresh authentication denial and normal account reauthentication",
+      "status": "PASS"
+    },
+    {
+      "check": "malformed successful gate receipt stays unknown without replay",
+      "status": "PASS"
+    },
+    {
+      "check": "mismatched successful gate receipt stays unknown without replay",
+      "status": "PASS"
+    },
+    {
+      "check": "known suspended Run requires capability and explicit recovery",
+      "status": "PASS"
+    },
+    {
+      "check": "desktop and mobile light/dark RTL without overflow",
+      "status": "PASS"
+    },
+    {
+      "check": "no browser or Next application errors",
+      "status": "PASS"
+    },
+    {
+      "check": "protected PostgreSQL fixtures remain unchanged",
+      "status": "PASS"
+    },
+    {
+      "check": "test sessions end through normal logout",
+      "status": "PASS"
+    }
+  ],
+  "screenshots": [
+    {
+      "name": "initial-overview.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "initial-publications.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "initial-bindings.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "initial-runs.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "initial-outbox.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "initial-history.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "private-run-telegram.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "private-run-bale.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "uncertain-no-retry.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "readonly-default-absent-store.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "exact-publication-preview.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "new-publication-preview.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "rollback-preview.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "fresh-auth-required.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "unknown-empty.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "unknown-mismatched.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "explicit-suspended-recovery.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-overview.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-publications.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-bindings.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-runs.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-outbox.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-history.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-light-detail.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "desktop-dark-overview.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "desktop-dark-publications.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "desktop-dark-bindings.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "desktop-dark-runs.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "desktop-dark-outbox.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "desktop-dark-history.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "desktop-dark-detail.png",
+      "viewport": 1100,
+      "document": 1100,
+      "body": 1100,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-light-overview.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-light-publications.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-light-bindings.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-light-runs.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-light-outbox.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-light-history.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-light-detail.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": false
+    },
+    {
+      "name": "mobile390-dark-overview.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-dark-publications.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-dark-bindings.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-dark-runs.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-dark-outbox.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-dark-history.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    },
+    {
+      "name": "mobile390-dark-detail.png",
+      "viewport": 390,
+      "document": 390,
+      "body": 390,
+      "rtl": "rtl",
+      "dark": true
+    }
+  ],
+  "fixtures": {
+    "store_id": "f4d8fa80-60da-43ac-babf-17f30ef2c1e4",
+    "foreign_store_id": "c912de7a-f52d-4fd8-b6e6-df09ef45f0fd",
+    "workflow_id": "edbb48ff-58d8-4859-bf17-c7e6cc789c3f",
+    "revision": 5,
+    "publication_id": "6e1cc889-cb23-431d-bf39-08cc5f0a6a4d",
+    "new_publication_id": "e3555256-cd4f-4862-b375-8460a66e3f08",
+    "bots": {
+      "telegram": "28ea4f52-278f-40fd-89c3-3b1637cd667c",
+      "bale": "a22f349c-01fc-4bb9-8d40-be005c23899c"
+    },
+    "runs": [
+      {
+        "run_id": "0fe9b371-55ae-4468-9dc3-0757ef38a4b7",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "25a1613b-9df8-45b2-8311-0518fcde56fe",
+        "platform": "bale"
+      },
+      {
+        "run_id": "f7cb4a43-2cd0-4570-8b11-4a34cb3736b9",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "01334d2e-dba5-4abc-9017-b22e8575c6c3",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "81a34783-a1ca-47b8-a02c-dbbef114ddf3",
+        "platform": "bale"
+      },
+      {
+        "run_id": "33699b74-d24e-4d11-b193-e504e518d2e5",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "43c49176-971d-48b0-90af-3b0978ac3ac8",
+        "platform": "bale"
+      },
+      {
+        "run_id": "11cd6442-406d-4212-bdc0-d8375e4d3373",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "a0a51742-930d-4bf7-93f0-916f1e7f3b9f",
+        "platform": "bale"
+      },
+      {
+        "run_id": "9f3cc02b-8210-41c1-92e0-accc16574a42",
+        "platform": "bale"
+      },
+      {
+        "run_id": "a19d64e6-72f0-4db6-a56a-5d8a0f661638",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "f9af2db3-38d2-43de-aa77-c0c2e19efabc",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "6c7a3a09-0181-49e1-a735-8db653e0bd77",
+        "platform": "bale"
+      },
+      {
+        "run_id": "3a1b0c17-fe6c-41e9-bb9b-ff914be5ecb5",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "dffce4f8-9def-4df9-90f8-33fdfb4faf5b",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "43ffe3dd-18e2-480a-89f9-ec080af43346",
+        "platform": "bale"
+      },
+      {
+        "run_id": "04794f4a-8200-45d6-b676-41495d4c65f8",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "9d49d485-c1a2-48b0-8396-01232b00c142",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "5704435c-0758-406e-84ce-0b6360f93bfe",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "16fe195c-6efc-4b24-ac29-dd56e4f828fb",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "b30383e0-b510-4276-a6bc-2f124ded07ad",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "91237394-7ca7-4b6b-bd5f-b8969f39ffb0",
+        "platform": "bale"
+      },
+      {
+        "run_id": "47f95141-1283-4fe4-a621-d2909cf0f419",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "cf413efd-9849-4c19-8c31-59adbd753c83",
+        "platform": "bale"
+      },
+      {
+        "run_id": "6652f446-bddf-4336-b734-74332c308798",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "4c878042-895a-4eea-829c-f4f25ba8e16c",
+        "platform": "bale"
+      },
+      {
+        "run_id": "e6fc3fc7-6f31-4fc6-ba82-bca0b4e6ced0",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "670666eb-c69a-4ede-9784-731e10eba158",
+        "platform": "bale"
+      },
+      {
+        "run_id": "adb1554b-3fdb-4360-b725-b3c2e4a76a92",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "cc632ef8-5681-4c50-a283-e024d83cf1ee",
+        "platform": "bale"
+      },
+      {
+        "run_id": "0373ea00-2eee-4eb8-ac8a-b5a575ebde7f",
+        "platform": "telegram"
+      },
+      {
+        "run_id": "470395e9-0ee3-41e8-b2b2-896390351c97",
+        "platform": "telegram"
+      }
+    ],
+    "browser_bot_id": "79253f74-d04d-4786-a902-b29283b078d6",
+    "viewer_store_id": "18851228-6f9b-496d-a512-dfecdc153e47",
+    "browser_workflow_id": "1959796e-3b18-47cd-a517-8d7a03444f6e",
+    "browser_first_publication_id": "10144987-50c6-42ea-80dd-f9ab3331ab0d",
+    "browser_new_publication_id": "d57a00c3-08fc-4355-81ec-747d6a45442b",
+    "browser_final_publication_id": "10144987-50c6-42ea-80dd-f9ab3331ab0d",
+    "browser_recovery_run_id": "13438082-5cd7-4b38-b48e-6792c7f10b1a"
+  },
+  "denied_browser_requests": 0,
+  "status": "PASS",
+  "browser_error_counts": {
+    "page": 0,
+    "unexpected_console": 0,
+    "private_response": 0
+  }
+}

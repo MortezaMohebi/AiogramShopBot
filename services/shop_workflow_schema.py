@@ -36,6 +36,7 @@ VariableType = Literal[
     "datetime",
     "enum",
     "product_ref",
+    "category_ref",
     "order_ref",
     "customer_ref",
 ]
@@ -50,7 +51,7 @@ class StrictModel(BaseModel):
 class Reference(StrictModel):
     """An explicit structured reference, never an unrestricted customer object."""
 
-    kind: Literal["product", "order", "customer"]
+    kind: Literal["product", "category", "order", "customer"]
     id: int = Field(ge=1, le=9_007_199_254_740_991)
 
 
@@ -62,9 +63,7 @@ class ConditionRule(StrictModel):
 
     kind: Literal["rule"] = "rule"
     variable: str = Field(max_length=80)
-    operator: Literal[
-        "eq", "neq", "gt", "lt", "contains", "exists", "is_empty"
-    ]
+    operator: Literal["eq", "neq", "gt", "lt", "contains", "exists", "is_empty"]
     value: Scalar = None
 
 
@@ -90,9 +89,7 @@ class ConditionGroup(StrictModel):
         return value
 
 
-Condition = Annotated[
-    Union[ConditionRule, ConditionGroup], Field(discriminator="kind")
-]
+Condition = Annotated[Union[ConditionRule, ConditionGroup], Field(discriminator="kind")]
 ConditionGroup.model_rebuild()
 
 
@@ -205,9 +202,7 @@ class WorkflowNode(StrictModel):
         encoded = canonical_json(
             self.model_dump(exclude={"config", "platform_overrides"})
         )
-        encoded += canonical_json(self.config) + canonical_json(
-            self.platform_overrides
-        )
+        encoded += canonical_json(self.config) + canonical_json(self.platform_overrides)
         if re.search(r"[0-9]{5,}:[A-Za-z0-9_-]{20,}", encoded):
             raise ValueError("provider_secret_not_allowed")
         return self
@@ -253,7 +248,7 @@ class ErrorPolicy(StrictModel):
     max_steps: int = Field(default=200, ge=1, le=500)
     on_error: Literal["stop", "cancel"] = "stop"
     message: str = Field(
-        default="شبیه‌سازی متوقف شد؛ تنظیمات این گره را بررسی کنید.",
+        default="اجرای فرایند متوقف شد؛ دوباره شروع کنید یا با پشتیبانی تماس بگیرید.",
         max_length=1000,
     )
 

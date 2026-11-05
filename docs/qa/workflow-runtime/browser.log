@@ -1,0 +1,17 @@
+PASS  isolated Runtime compose and matching Next checkout
+PASS  normal password and MFA login
+PASS  all Runtime tabs and private Run detail
+PASS  uncertain delivery has no retry capability
+PASS  real read-only account and absent Store gate
+PASS  hostile closed BFF requests and Store isolation
+PASS  exact saved publication preview and explicit approval
+PASS  new publication and explicit rollback preserve pinned Runs
+PASS  fresh authentication denial and normal account reauthentication
+PASS  malformed successful gate receipt stays unknown without replay
+PASS  mismatched successful gate receipt stays unknown without replay
+PASS  known suspended Run requires capability and explicit recovery
+PASS  desktop and mobile light/dark RTL without overflow
+PASS  no browser or Next application errors
+PASS  protected PostgreSQL fixtures remain unchanged
+PASS  test sessions end through normal logout
+PASS  Runtime browser evidence: /tmp/workflow-runtime-browser/evidence.json

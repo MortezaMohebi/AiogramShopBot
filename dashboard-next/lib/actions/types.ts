@@ -88,7 +88,7 @@ export interface InputSource {
     | string
     | number
     | boolean
-    | { kind: "product" | "order" | "customer"; id: number }
+    | { kind: "product" | "category" | "order" | "customer"; id: number }
     | null;
 }
 export interface ActionConfig {

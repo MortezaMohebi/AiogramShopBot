@@ -109,6 +109,8 @@ def simulate_action(
         }
     elif key == "support.create_request":
         output = {"ticket_id": 90001, "status": "simulated"}
+    elif key == "wholesale.create_application":
+        output = {"request_id": 90001, "status": "simulated"}
     else:
         output = {"request_id": None, "status": "simulated_unavailable"}
     return contract.output_model.model_validate(output).model_dump(mode="json")

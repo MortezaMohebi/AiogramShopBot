@@ -472,3 +472,35 @@ async def support_create(db, principal, data):
         db, principal.bot, ticket=ticket, identity=identity, body=data.body
     )
     return {"ticket_id": ticket.id, "status": ticket.status}
+
+
+async def wholesale_preview(db, principal, data):
+    """Check current customer/evidence ownership without creating an application."""
+    from services.shop_wholesale import WholesaleRejected, validate_application
+
+    try:
+        await validate_application(
+            db,
+            principal.bot,
+            platform_user_id=principal.platform_user_id,
+            data=data.model_dump(),
+        )
+    except WholesaleRejected as error:
+        raise ActionRejected(f"action_{error.code}") from None
+    return None
+
+
+async def wholesale_create(db, principal, data):
+    """Flush private application fields with the existing atomic confirmed receipt."""
+    from services.shop_wholesale import WholesaleRejected, create_application
+
+    try:
+        application = await create_application(
+            db,
+            principal.bot,
+            platform_user_id=principal.platform_user_id,
+            data=data.model_dump(),
+        )
+    except WholesaleRejected as error:
+        raise ActionRejected(f"action_{error.code}") from None
+    return {"request_id": application.id, "status": application.status}

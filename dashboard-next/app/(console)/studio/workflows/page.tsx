@@ -44,8 +44,9 @@ export default async function WorkflowsPage({
         }
       />
       <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4 text-sm leading-7">
-        فرایندها در این مرحله پیش‌نویس هستند. Preview با دادهٔ نمونه اجرا
-        می‌شود؛ فعال‌سازی Runtime پس از بررسی‌های مرحلهٔ بعد فراهم خواهد شد.
+        ویرایش و شبیه‌ساز روی پیش‌نویس کار می‌کنند. اجرای ربات به نسخهٔ منتشرشده،
+        انتخاب ورودی و مجوز جداگانهٔ فروشگاه و ربات نیاز دارد.{" "}
+        <Link href="/studio/runtime" className="text-primary underline">بررسی وضعیت Runtime</Link>
       </div>
       <form
         action="/studio/workflows"

@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "recorded_at": "2026-11-05T19:34:08.613550+00:00",
+  "application_source": "d7a6a0c8d1a016ad601a77623b86b7d502420d9e",
+  "backend_behavior_source": "c074fb9c543c71b6dbfefe8bd35d6953f3c8a288",
+  "python": {
+    "passed": 1154,
+    "warnings": 3,
+    "seconds": 206.99,
+    "exit": 0
+  },
+  "postgresql": {
+    "passed": 23,
+    "failed": 0,
+    "exit": 0
+  },
+  "browser": {
+    "passed": 16,
+    "failed": 0,
+    "exit": 0,
+    "layout_combinations": 28,
+    "screenshots": 45,
+    "selected_screenshots": [
+      "desktop-dark-overview",
+      "mobile390-dark-overview",
+      "mobile390-light-publications",
+      "rollback-preview",
+      "unknown-empty",
+      "uncertain-no-retry"
+    ],
+    "errors": {
+      "page": 0,
+      "unexpected_console": 0,
+      "private_response": 0
+    }
+  },
+  "fake_providers_only": true,
+  "live_provider_calls": 0,
+  "session_logout_verified": true,
+  "protected_commerce_unchanged": true,
+  "fresh_schema": {
+    "tables": 135,
+    "immutable_trigger": true,
+    "rolled_back_disposable_schema": true
+  }
+}

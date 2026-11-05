@@ -21,6 +21,10 @@ CAPABILITIES = {
         "message_editing": True,
         "media_group": True,
         "adapter_media_group": False,
+        # The receipt-bearing Workflow Runtime has its own one-call album adapter.
+        "runtime_media_group": True,
+        "runtime_keyboard_row_buttons": 8,
+        "runtime_keyboard_label_characters": 64,
         "media_group_items": 10,
         "native_payment": "telegram_stars_or_configured_fiat",
     },
@@ -39,6 +43,9 @@ CAPABILITIES = {
         "message_editing": True,
         "media_group": True,
         "adapter_media_group": False,
+        "runtime_media_group": True,
+        "runtime_keyboard_row_buttons": 8,
+        "runtime_keyboard_label_characters": 64,
         # Bale documentation does not specify an official album count ceiling.
         "media_group_items": None,
         "editor_media_group_items": 10,

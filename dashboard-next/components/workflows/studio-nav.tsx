@@ -26,6 +26,7 @@ export function StudioNav({
           {item.label}
         </Link>
       ))}
+      <Link href={`/studio/runtime?tab=publications&workflow_id=${id}`} className="rounded-md border border-border px-4 py-2 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">Runtime و انتشار</Link>
     </nav>
   );
 }

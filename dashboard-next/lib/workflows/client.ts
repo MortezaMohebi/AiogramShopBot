@@ -83,7 +83,7 @@ const messages: Record<string, string> = {
   workflow_media_not_available:
     "رسانهٔ انتخاب‌شده در این فروشگاه در دسترس نیست.",
   workflow_runtime_unavailable:
-    "فعال‌سازی پس از پیاده‌سازی و بررسی Runtime فراهم می‌شود.",
+    "فعال‌سازی از بخش Runtime و پس از بررسی نسخه و مجوز اجرا انجام می‌شود.",
   permission_denied: "مجوز این عملیات را ندارید.",
   session_expired: "نشست شما منقضی شده است؛ دوباره وارد شوید.",
   security_check_failed: "بررسی امنیت درخواست انجام نشد؛ صفحه را تازه کنید.",

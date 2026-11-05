@@ -1,5 +1,6 @@
 """Public business Action inputs/outputs; no ORM, transport SDK or credentials."""
 
+import re
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -84,9 +85,48 @@ class ReturnInput(OrderInput):
 
 
 class WholesaleInput(StrictModel):
-    """Future wholesale input; does not create a real application today."""
+    """Private wholesale form with compatible defaults for company-only v1 input."""
 
     company: str = Field(min_length=1, max_length=200)
+    name: str = Field(default="", max_length=160)
+    phone: str = Field(default="", max_length=32)
+    city: str = Field(default="", max_length=120)
+    estimated_monthly_amount: int = Field(
+        default=0,
+        ge=0,
+        le=9_007_199_254_740_991,
+        description="Estimated monthly purchase amount in integral Iranian rials.",
+    )
+    document_handle: str | None = Field(
+        default=None,
+        min_length=36,
+        max_length=36,
+        pattern=(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}$"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def private_fields_are_readable(self) -> "WholesaleInput":
+        """Reject control text and malformed phone numbers before private storage."""
+        for name in ("company", "name", "city"):
+            value = getattr(self, name)
+            if value and (
+                not value.strip()
+                or any(
+                    not char.isprintable() and char not in {"\u200c", "\u200d"}
+                    for char in value
+                )
+            ):
+                raise ValueError("invalid_wholesale_text")
+            setattr(self, name, value.strip())
+        if self.phone and (
+            re.fullmatch(r"\+?[0-9۰-۹٠-٩ ()-]{6,31}", self.phone) is None
+            or not 7 <= sum(char.isdecimal() for char in self.phone) <= 15
+        ):
+            raise ValueError("invalid_wholesale_phone")
+        return self
 
 
 class NotifyInput(StrictModel):
@@ -239,3 +279,10 @@ class RequestResult(StrictModel):
 
     request_id: int | None = None
     status: str = "unavailable"
+
+
+class WholesaleResult(StrictModel):
+    """Return only the safe application reference and an explicit execution state."""
+
+    request_id: Id
+    status: Literal["submitted", "simulated"]

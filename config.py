@@ -251,3 +251,7 @@ if NEXT_ADMIN_BRIDGE_ENABLED and len(NEXT_ADMIN_BRIDGE_SECRET) < 32:
     raise ValueError(
         "NEXT_ADMIN_BRIDGE_SECRET must be at least 32 characters when enabled."
     )
+
+# Workflow Runtime requires explicit global and per-Store/per-Bot opt-in.
+SHOP_WORKFLOW_RUNTIME_ENABLED = os.environ.get("SHOP_WORKFLOW_RUNTIME_ENABLED", "false").lower() == "true"
+SHOP_WORKFLOW_RUNTIME_KILL_SWITCH = os.environ.get("SHOP_WORKFLOW_RUNTIME_KILL_SWITCH", "false").lower() == "true"

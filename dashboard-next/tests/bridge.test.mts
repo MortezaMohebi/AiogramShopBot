@@ -128,3 +128,29 @@ test("missing browser session prevents any backend request", async () => {
     typeof error === "object" && error !== null && "destination" in error && error.destination === "/login");
   assert.equal(count, 0);
 });
+
+test("Runtime replay denial preserves its safe code and discards private upstream fields", async () => {
+  for (const [detail, expected] of [
+    ["runtime_delivery_replay_forbidden", "runtime_delivery_replay_forbidden"],
+    ["PRIVATE_PROVIDER_DETAIL", undefined],
+  ] as const) {
+    let calls = 0;
+    const bridge = load(async () => {
+      calls++;
+      return Response.json({ detail, private: "PRIVATE_PROVIDER_FIELD" }, { status: 409 });
+    });
+    await assert.rejects(
+      bridge.bridgeFetch("/workflow-runtime/outbox/fixture/retry", "POST", {}, identity),
+      (error: unknown) => {
+        assert.ok(hasStatus(409)(error));
+        assert.equal((error as { code?: string }).code, expected);
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
+    const logs = JSON.stringify(bridge.logs);
+    for (const privateValue of ["PRIVATE_PROVIDER_DETAIL", "PRIVATE_PROVIDER_FIELD", key]) {
+      assert.ok(!logs.includes(privateValue));
+    }
+  }
+});

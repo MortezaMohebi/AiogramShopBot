@@ -41,6 +41,8 @@ from dashboard.shop_model_data_api import router as model_data_router
 from dashboard.shop_customer_experience_api import router as customer_experience_router
 from dashboard.shop_workflow_api import router as workflow_router
 from dashboard.shop_action_api import router as action_router
+from dashboard.shop_runtime_api import router as runtime_router
+from services.shop_runtime.contracts import RuntimeRejected
 from dashboard.shop_digital_api import router as digital_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
@@ -104,6 +106,7 @@ def permission_for(path: str, method: str) -> str | None:
         "fulfillments": "orders.read" if method == "GET" else "orders.manage",
         "customer-notifications": "bots.read",
         "actions": "workflows.read",
+        "workflow-runtime": ("workflows.read" if method == "GET" else "workflows.publish" if "/publications/" in path else "workflows.runtime.manage"),
         "workflows": (
             "workflows.read"
             if method == "GET" or path.endswith(("/validate", "/simulate"))
@@ -305,6 +308,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "digital-deliveries",
                         "workflows",
                         "actions",
+                        "workflow-runtime",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -386,6 +390,11 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(customer_experience_router)
     app.include_router(workflow_router)
     app.include_router(action_router)
+    app.include_router(runtime_router)
+    @app.exception_handler(RuntimeRejected)
+    async def runtime_rejected(_request, error):
+        return JSONResponse({"detail": error.code}, status_code=error.status, headers={"Cache-Control": "no-store"})
+
     app.include_router(digital_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)

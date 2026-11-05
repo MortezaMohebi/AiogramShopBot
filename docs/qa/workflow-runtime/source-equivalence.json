@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "backend_behavior_source": "c074fb9c543c71b6dbfefe8bd35d6953f3c8a288",
+  "final_application_source": "d7a6a0c8d1a016ad601a77623b86b7d502420d9e",
+  "python_format_only": [
+    {
+      "path": "services/shop_actions/execution.py",
+      "ast_equal": true,
+      "ast_sha256": "7aebb699f9d8b51bca702d2e3de195b1a74187af15fbf54cb4f283e91c2e326a",
+      "tested_blob": "98698b4d3ce30d004f107cbe6b73548e7fa29b26",
+      "final_blob": "fc3d7c348b960aad57d0f004316a5f1fe8878905"
+    },
+    {
+      "path": "services/shop_workflow_schema.py",
+      "ast_equal": true,
+      "ast_sha256": "1327e9a578a38453c63d5b035ee00a5f0c0dd063c207523811f3f3a9d8872ce7",
+      "tested_blob": "3bc584a5eaece485d34841b2ca8884a044b14172",
+      "final_blob": "a143c889897f309e4987738f5639b051ab4c359e"
+    }
+  ],
+  "unchanged_components": [
+    {
+      "path": "models",
+      "verified_source": "46b87dda1be78f4bf08ec333b7b0602a7e1093c0",
+      "final_source": "d7a6a0c8d1a016ad601a77623b86b7d502420d9e",
+      "tree_sha": "c8a4ca53e92ab4105e0bf7f18489ef22c601978a",
+      "unchanged": true
+    },
+    {
+      "path": "cloudflare/telegram-relay",
+      "verified_source": "46b87dda1be78f4bf08ec333b7b0602a7e1093c0",
+      "final_source": "d7a6a0c8d1a016ad601a77623b86b7d502420d9e",
+      "tree_sha": "abf5330132168529d21c92d9403d00b1278cf88f",
+      "unchanged": true
+    }
+  ],
+  "ui_verified_source": "d7a6a0c8d1a016ad601a77623b86b7d502420d9e",
+  "ui_tree": "f8f1b81d61fe1208e6c13ea63437b8e5b3c549b3",
+  "browser_verified_source": "d7a6a0c8d1a016ad601a77623b86b7d502420d9e",
+  "closure_artifacts_only": true
+}

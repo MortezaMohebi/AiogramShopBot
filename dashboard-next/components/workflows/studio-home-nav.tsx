@@ -3,7 +3,7 @@ import Link from "next/link";
 export function StudioHomeNav({
   current,
 }: {
-  current: "workflows" | "actions";
+  current: "workflows" | "actions" | "runtime";
 }) {
   return (
     <nav
@@ -12,6 +12,7 @@ export function StudioHomeNav({
     >
       {[
         { key: "workflows", href: "/studio/workflows", label: "فرایندها" },
+        { key: "runtime", href: "/studio/runtime", label: "Runtime" },
         { key: "actions", href: "/studio/actions", label: "Action Catalog" },
       ].map((item) => (
         <Link

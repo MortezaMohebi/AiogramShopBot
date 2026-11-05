@@ -17,7 +17,7 @@ from dashboard.next_api import router as next_admin_router
 
 import config
 from aiogram import Dispatcher
-from fastapi import FastAPI, Request, status, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
@@ -37,7 +37,7 @@ from services.shop_multibot_dispatch import paused_customer_reply
 from models.shop_multibot import LEGACY_BOT_IDS
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_referrals import ShopReferralService
-from services.bale_wallet import BaleWalletService, CheckoutRejected
+from services.bale_wallet import CheckoutRejected
 from services.shop_bale_payments import (
     settle_bale_payment, validate_bale_precheckout,
 )
@@ -368,6 +368,14 @@ async def bale_webhook(webhook_secret: str, request: Request):
     update_id = payload.get("update_id")
     if type(update_id) is not int or update_id < 0:
         raise HTTPException(status_code=400, detail="Invalid update ID")
+    from services.shop_runtime.ingress import try_legacy_ingress
+
+    runtime = await try_legacy_ingress(
+        Platform.BALE, payload,
+        client=BaleTransport(config.BALE_BOT_TOKEN, request.app.state.bale_http_client),
+    )
+    if runtime.get("handled"):
+        return runtime
     fresh, state = await claim_update(
         platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
         update_id=update_id,
@@ -375,7 +383,7 @@ async def bale_webhook(webhook_secret: str, request: Request):
     if not fresh:
         return {"status": "duplicate", "receipt_state": state}
     try:
-        response = await _process_bale_update(request, payload)
+        response = await _process_bale_update(request, payload, runtime_checked=True)
     except Exception:
         await finish_update(
             platform=Platform.BALE, token=config.BALE_BOT_TOKEN,
@@ -389,12 +397,20 @@ async def bale_webhook(webhook_secret: str, request: Request):
     return response
 
 
-async def _process_bale_update(request: Request, payload: dict):
+async def _process_bale_update(
+    request: Request, payload: dict, *, runtime_checked: bool = False,
+):
     """Handle an already-claimed Bale update exactly once per bot."""
 
     transport = BaleTransport(
         config.BALE_BOT_TOKEN, request.app.state.bale_http_client
     )
+    if not runtime_checked:
+        from services.shop_runtime.ingress import try_legacy_ingress
+
+        runtime = await try_legacy_ingress(Platform.BALE, payload, client=transport)
+        if runtime.get("handled"):
+            return runtime
     # Payment events must be consumed BEFORE generic message normalization.
     # Bale's successful_payment messages do not necessarily contain text.
     precheckout = payload.get("pre_checkout_query")
@@ -624,6 +640,12 @@ async def webhook(request: Request):
     if type(update_id) is not int or update_id < 0:
         raise HTTPException(status_code=400, detail="Invalid update ID")
 
+    from services.shop_runtime.ingress import try_legacy_ingress
+
+    runtime = await try_legacy_ingress(Platform.TELEGRAM, update_data, client=bot)
+    if runtime.get("handled"):
+        return runtime
+
     fresh, receipt_state = await claim_update(
         platform=Platform.TELEGRAM, token=config.TOKEN,
         update_id=update_id,
@@ -638,7 +660,7 @@ async def webhook(request: Request):
         parsed_update = Update.model_validate(
             update_data, context={"bot": bot}
         )
-        await dp.feed_update(bot, parsed_update)
+        await dp.feed_update(bot, parsed_update, shop_runtime_checked=True)
     except Exception:
         await finish_update(
             platform=Platform.TELEGRAM, token=config.TOKEN,

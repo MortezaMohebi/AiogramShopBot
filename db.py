@@ -71,6 +71,8 @@ from models.shop_customer_notifications import (
     ShopStockAlert, ShopCustomerNotificationOutbox,
 )
 from models.shop_workflow import ShopWorkflow, ShopWorkflowRevision
+from models.shop_workflow_runtime import RUNTIME_MODELS
+from models.shop_wholesale import ShopWholesaleApplication
 from models.shop_action import ShopActionExecution, ShopActionAuthorization
 from models.shop_telegram_transport import (
     ShopTelegramTransport, ShopTelegramTransportChange,
@@ -113,7 +115,7 @@ from models.referral import ReferralBonus
 
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 # Do not log SQL parameters containing orders and private customer data.
-engine = create_async_engine(url, echo=config.DB_SQL_ECHO)
+engine = create_async_engine(url, echo=config.DB_SQL_ECHO, hide_parameters=True)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 # Register Store record rules once for every SQLAlchemy Session. The rules
