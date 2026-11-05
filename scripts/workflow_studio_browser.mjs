@@ -147,7 +147,8 @@ async function mcp(name) {
   assert(payload.result && !payload.result.isError, "MCP tool failed");
   return payload.result;
 }
-const browser = await chromium.launch({ headless: true });
+// Use regular Chromium's current headless mode, with one live page per route.
+const browser = await chromium.launch({ headless: true, channel: "chromium" });
 const context = await browser.newContext({
   viewport: { width: 1100, height: 1000 },
   reducedMotion: "reduce",
@@ -158,19 +159,22 @@ await context.route("**/*", (route) =>
     ? route.continue()
     : route.abort(),
 );
-const page = await context.newPage();
+let page = await context.newPage();
 const runtimeErrors = [];
 let secondFactor = "",
   authStage = "initial navigation";
 const authResponses = [];
-page.on("response", (response) => {
-  const path = new URL(response.url()).pathname;
-  if (path.startsWith("/api/auth/"))
-    authResponses.push({ path, status: response.status() });
-});
-page.on("pageerror", (error) => runtimeErrors.push(error.message));
-page.setDefaultTimeout(30000);
-page.setDefaultNavigationTimeout(60000);
+function observe(current) {
+  current.on("response", (response) => {
+    const path = new URL(response.url()).pathname;
+    if (path.startsWith("/api/auth/"))
+      authResponses.push({ path, status: response.status() });
+  });
+  current.on("pageerror", (error) => runtimeErrors.push(error.message));
+  current.setDefaultTimeout(30000);
+  current.setDefaultNavigationTimeout(60000);
+}
+observe(page);
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const button = (name) =>
   page.getByRole("button", { name: new RegExp("^" + escapeRegex(name)) });
@@ -208,6 +212,13 @@ async function ready() {
   });
 }
 async function open(path) {
+  // Keep authenticated cookies, but release the previous route's renderer.
+  if (await field("جستجوی گره").count()) await saved();
+  const viewport = page.viewportSize();
+  await page.close();
+  page = await context.newPage();
+  observe(page);
+  if (viewport) await page.setViewportSize(viewport);
   await page.goto(base + path);
   assert(!page.url().includes("/login"), "Session expired");
   await page.locator("main h1").waitFor();
@@ -531,10 +542,11 @@ try {
     await capture("versions-desktop");
     await editor(path);
     await saved();
-    const downloadReady = page.waitForEvent("download");
-    await click("دریافت JSON");
-    const download = await downloadReady,
-      stream = await download.createReadStream(),
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      click("دریافت JSON"),
+    ]);
+    const stream = await download.createReadStream(),
       chunks = [];
     assert(stream);
     for await (const chunk of stream) chunks.push(chunk);
@@ -635,6 +647,11 @@ try {
             `document.documentElement.classList.contains('dark')===${theme === "dark"}`,
           );
           const m = await metrics();
+          assert.equal(
+            m.width,
+            width,
+            "Viewport did not match the requested size",
+          );
           assert.equal(m.width, m.scroll, `${name}/${width}/${theme} overflow`);
           assert.equal(m.rtl, "rtl");
           if (
@@ -731,8 +748,10 @@ try {
   persist();
   // Revoke this runner's normal browser session through the existing logout UI.
   try {
-    if (!page.url().includes("/login"))
+    if (!page.url().includes("/login")) {
       await button("خروج امن").click({ timeout: 3000 });
+      await page.waitForURL("**/login", { timeout: 10000 });
+    }
   } catch {}
   await context.close();
   await browser.close();
