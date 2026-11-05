@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-05",
+  "repository": "MortezaMohebi/AiogramShopBot",
+  "surface": "https://github.com/MortezaMohebi/AiogramShopBot/settings/actions",
+  "observed_saved_setting": "Allow all actions and reusable workflows",
+  "required_setting": "Disable actions",
+  "status": "BLOCKED",
+  "save_attempt": "rejected_by_automatic_approval_review",
+  "reason": "Persistently disabling repository Actions requires more explicit user authorization; inspection was authorized but this setting change was rejected.",
+  "setting_changed": false,
+  "workaround_attempted": false,
+  "workflow_enabled_or_dispatched": false,
+  "next_step": "Obtain explicit user permission, save Disabled and verify the persisted setting before final Draft PR creation."
+}
