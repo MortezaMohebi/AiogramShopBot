@@ -605,6 +605,8 @@ try {
       "unavailable",
     ])
       await select("مقصد " + port, end);
+    // New Canvas nodes may overlap until the user lays out the graph.
+    await click("چیدمان خودکار");
     await node(1);
     await select("مقصد next", action);
     await click("چیدمان خودکار");
