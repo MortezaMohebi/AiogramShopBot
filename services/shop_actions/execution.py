@@ -41,6 +41,24 @@ def _failure(invocation, code, *, retryable=False, unavailable=False):
     )
 
 
+def unavailable_result(invocation: Invocation, code: str | None) -> ActionResult | None:
+    """Classify known dependency rejections before execution or proof issuance."""
+    if code in {
+        "action_service_unavailable",
+        "action_return_policy_unavailable",
+        "action_platform_unavailable",
+        "action_bot_unavailable",
+        "action_cart_disabled",
+        "action_catalog_unavailable",
+        "action_simulation_unavailable",
+        "action_dry_run_unavailable",
+        "action_unknown",
+        "action_version_unavailable",
+    }:
+        return _failure(invocation, code, unavailable=True)
+    return None
+
+
 async def _workflow_scope(db, principal, invocation):
     """Optional trace references never grant rights to another workflow or node."""
     if invocation.workflow_id is None:
@@ -317,22 +335,8 @@ async def invoke(
                     execution_receipt=invocation.invocation_id,
                 )
     except ActionRejected as error:
-        result = _failure(
-            invocation,
-            error.code,
-            unavailable=error.code
-            in {
-                "action_service_unavailable",
-                "action_return_policy_unavailable",
-                "action_platform_unavailable",
-                "action_bot_unavailable",
-                "action_cart_disabled",
-                "action_catalog_unavailable",
-                "action_simulation_unavailable",
-                "action_dry_run_unavailable",
-                "action_unknown",
-                "action_version_unavailable",
-            },
+        result = unavailable_result(invocation, error.code) or _failure(
+            invocation, error.code
         )
     except (ValueError, TypeError):
         result = _failure(invocation, "action_invalid_request")

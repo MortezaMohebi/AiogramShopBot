@@ -610,3 +610,116 @@ def test_declared_alternate_entry_cannot_skip_consent():
     assert {
         x["code"] for x in confirmation_findings(Definition.model_validate(raw))
     } == {"runtime_confirmation_required"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expired", [False, True])
+async def test_confirmed_cart_loses_availability_before_proof(
+    buyer, monkeypatch, expired
+):
+    """Route disabled commerce only after valid consent, preserving the real cart."""
+    from models.shop_action import ShopActionAuthorization, ShopActionExecution
+    from models.shop_checkout import ShopCartItem
+    from models.shop_store_commerce import ShopBotCommercePolicy
+    from models.shop_workflow_runtime import WorkflowActionJob
+    from services.shop_actions.execution import invoke
+    from tests.test_action_adapters import request
+    from tests.test_shared_cart import seed
+
+    database, principal = buyer
+    product, _ = seed(database)
+    added = await invoke(
+        database,
+        principal,
+        request("cart.add_item", {"product_id": product.id, "quantity": 2}),
+    )
+    assert added.status == "succeeded"
+
+    nodes = [
+        {"id": "start", "type": "start"},
+        {"id": "review", "type": "confirm", "config": {"prompt": "Clear your cart?"}},
+        {
+            "id": "clear",
+            "type": "action",
+            "config": {
+                "action_key": "cart.clear",
+                "action_version": "1.0.0",
+                "input_mapping": {
+                    "expected_cart_revision": {
+                        "kind": "constant",
+                        "value": added.output["revision"],
+                    }
+                },
+                "output_mapping": {},
+            },
+        },
+        *(
+            {"id": key, "type": "end"}
+            for key in ("done", "failure", "offline", "decline")
+        ),
+    ]
+    transitions = [
+        ("start", "next", "review"),
+        ("review", "confirm", "clear"),
+        ("review", "cancel", "decline"),
+        ("clear", "success", "done"),
+        ("clear", "error", "failure"),
+        ("clear", "unavailable", "offline"),
+        ("clear", "retry", "failure"),
+        ("clear", "pending_approval", "failure"),
+    ]
+    definition = Definition.model_validate(
+        {
+            "nodes": nodes,
+            "edges": [
+                {"id": f"e{i}", "source": source, "port": port, "target": target}
+                for i, (source, port, target) in enumerate(transitions)
+            ],
+        }
+    )
+    await setup_runtime(database, principal, monkeypatch, definition)
+    await sessions.handle(
+        database, context=principal.bot, event=inbound(1, "/wholesale", "command")
+    )
+    offered = (await database.scalar(select(WorkflowOutbox))).payload["buttons"][0][
+        "callback_data"
+    ]
+    confirmed = await sessions.handle(
+        database,
+        context=principal.bot,
+        event=inbound(2, "", "callback").model_copy(update={"callback": offered}),
+    )
+    assert confirmed["status"] == "waiting_action"
+
+    database.add(ShopBotCommercePolicy(bot_id=principal.bot_id, cart_enabled=False))
+    await database.commit()
+    if expired:
+        after_consent = security.clock() + timedelta(minutes=6)
+        monkeypatch.setattr(security, "clock", lambda: after_consent)
+    assert await workers.action_once(factory(database))
+    database.session.expire_all()
+
+    run = await database.scalar(select(WorkflowRun))
+    job = await database.scalar(select(WorkflowActionJob))
+    assert (run.status, run.node_id) == (
+        ("failed", "clear") if expired else ("completed", "offline")
+    )
+    code = "runtime_confirmation_expired" if expired else "action_cart_disabled"
+    assert job.status == "failed" and job.error_code == code and job.receipt_id is None
+    event = await database.scalar(
+        select(WorkflowEvent).where(WorkflowEvent.kind == "action")
+    )
+    assert (event.status, event.error_code) == (
+        "failed" if expired else "unavailable",
+        code,
+    )
+    assert await database.get(ShopActionExecution, job.invocation_id) is None
+    assert (
+        await database.scalar(
+            select(ShopActionAuthorization.id).where(
+                ShopActionAuthorization.invocation_id == job.invocation_id
+            )
+        )
+        is None
+    )
+    assert (await database.scalar(select(ShopCartItem))).quantity == 2

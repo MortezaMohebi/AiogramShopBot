@@ -32,12 +32,10 @@ from services.shop_actions.approvals import issue_authorization
 from services.shop_actions.catalog import actions
 from services.shop_actions.context import customer_principal
 from services.shop_actions.contracts import (
-    ActionError,
     ActionRejected,
-    ActionResult,
     Invocation,
 )
-from services.shop_actions.execution import invoke
+from services.shop_actions.execution import invoke, unavailable_result
 from services.shop_bot_context import resolve_bot_context
 from services.shop_runtime.contracts import TERMINAL, DeliveryRejected, RuntimeInput
 from services.shop_runtime.publication import digest
@@ -284,13 +282,8 @@ async def action_once(session_factory):
             await db.commit()
             return True
         try:
-            if missing_code:
-                result = ActionResult(
-                    status="unavailable",
-                    correlation_id=run.correlation_id,
-                    error=ActionError(code=missing_code),
-                )
-            else:
+            result = unavailable_result(invocation, missing_code)
+            if result is None:
                 # This session owns proof and executor commits. Never give it the Run-lock session.
                 async with session_factory() as execution_db:
                     execution_principal = await customer_principal(
@@ -314,25 +307,38 @@ async def action_once(session_factory):
                         elapsed = (security.clock() - confirmed_at).total_seconds()
                         if not 0 <= elapsed <= 300:
                             raise ActionRejected("runtime_confirmation_expired")
-                        proof = await issue_authorization(
-                            execution_db,
-                            subject=execution_principal,
-                            approver=execution_principal,
-                            invocation=invocation,
-                            purpose="customer_confirmation",
-                            registry=actions(),
+                        try:
+                            proof = await issue_authorization(
+                                execution_db,
+                                subject=execution_principal,
+                                approver=execution_principal,
+                                invocation=invocation,
+                                purpose="customer_confirmation",
+                                registry=actions(),
+                            )
+                        except ActionRejected as error:
+                            # Proof issuance independently checks live dependencies.
+                            # Only allowlisted availability errors take this port.
+                            result = unavailable_result(invocation, error.code)
+                            if result is None:
+                                raise
+                        else:
+                            invocation = invocation.model_copy(
+                                update={"confirmation_receipt": proof}
+                            )
+                    if result is None:
+                        if job.approval_id:
+                            proof = (
+                                security.cipher()
+                                .decrypt(job.approval_id.encode())
+                                .decode()
+                            )
+                            invocation = invocation.model_copy(
+                                update={"approval_receipt": proof}
+                            )
+                        result = await invoke(
+                            execution_db, execution_principal, invocation
                         )
-                        invocation = invocation.model_copy(
-                            update={"confirmation_receipt": proof}
-                        )
-                    if job.approval_id:
-                        proof = (
-                            security.cipher().decrypt(job.approval_id.encode()).decode()
-                        )
-                        invocation = invocation.model_copy(
-                            update={"approval_receipt": proof}
-                        )
-                    result = await invoke(execution_db, execution_principal, invocation)
         except ActionRejected as error:
             machine.fail(error.code)
             if error.code == "runtime_confirmation_expired":
