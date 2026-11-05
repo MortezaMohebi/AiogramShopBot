@@ -960,11 +960,15 @@ try {
   });
 
   await check(checks[3], async () => {
-    const rows = await bff(admin, "/api/admin/workflow-runtime/outbox?status=uncertain");
-    requireSafe(rows.items.length > 0, "uncertain_fixture_missing");
-    const item = rows.items[0];
+    // Unknown physical outcomes are quarantined as dead letters. Select the
+    // actual current PostgreSQL fixture rather than inventing a queue state.
+    const rows = await bff(admin, "/api/admin/workflow-runtime/outbox?status=dead_letter");
+    const fixtureRuns = new Set(fixture.fixture.runs.map((run) => run.run_id));
+    const item = rows.items.find((row) => fixtureRuns.has(row.run_id) &&
+      row.status === "dead_letter" && row.error_code === "runtime_delivery_unknown");
+    requireSafe(item, "uncertain_fixture_missing");
     requireSafe(item.can_retry === false, "uncertain_server_offers_retry");
-    const page = await open(admin, "/studio/runtime?tab=outbox&status=uncertain");
+    const page = await open(admin, "/studio/runtime?tab=outbox&status=dead_letter");
     const article = page.locator("article").filter({ has: page.getByText(item.id, { exact: true }) });
     requireSafe(await article.getByRole("button", { name: "ثبت تلاش مجدد ارسال", exact: true }).count() === 0, "uncertain_ui_offers_retry");
     await article.getByText("نتیجه هنوز قطعی نیست؛ ارسال دوباره ارائه نمی‌شود.", { exact: true }).waitFor();
@@ -1022,6 +1026,9 @@ try {
     requireSafe(created.id === id && created.revision === 1, "browser_draft_not_created");
     const definition = structuredClone(created.definition);
     definition.assignment = { mode: "selected", bot_ids: [fixture.bot_id] };
+    // This UI publication owns a Telegram-only synthetic Bot. The separate
+    // PostgreSQL flow and Run-detail checks still cover both messengers.
+    definition.target_platforms = ["telegram"];
     definition.entry_points.forEach((entry) => { entry.key = key; if (entry.kind === "command") entry.command = key; });
     browserWorkflow = await bff(admin, `/api/admin/workflows/${id}`, { method: "PATCH", body: { operation_id: randomUUID(), expected_revision: created.revision, name: created.name, description: created.description, definition, layout: created.layout } });
     evidence.fixtures.browser_workflow_id = id;

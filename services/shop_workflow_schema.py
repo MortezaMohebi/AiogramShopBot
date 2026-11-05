@@ -63,9 +63,7 @@ class ConditionRule(StrictModel):
 
     kind: Literal["rule"] = "rule"
     variable: str = Field(max_length=80)
-    operator: Literal[
-        "eq", "neq", "gt", "lt", "contains", "exists", "is_empty"
-    ]
+    operator: Literal["eq", "neq", "gt", "lt", "contains", "exists", "is_empty"]
     value: Scalar = None
 
 
@@ -91,9 +89,7 @@ class ConditionGroup(StrictModel):
         return value
 
 
-Condition = Annotated[
-    Union[ConditionRule, ConditionGroup], Field(discriminator="kind")
-]
+Condition = Annotated[Union[ConditionRule, ConditionGroup], Field(discriminator="kind")]
 ConditionGroup.model_rebuild()
 
 
@@ -206,9 +202,7 @@ class WorkflowNode(StrictModel):
         encoded = canonical_json(
             self.model_dump(exclude={"config", "platform_overrides"})
         )
-        encoded += canonical_json(self.config) + canonical_json(
-            self.platform_overrides
-        )
+        encoded += canonical_json(self.config) + canonical_json(self.platform_overrides)
         if re.search(r"[0-9]{5,}:[A-Za-z0-9_-]{20,}", encoded):
             raise ValueError("provider_secret_not_allowed")
         return self

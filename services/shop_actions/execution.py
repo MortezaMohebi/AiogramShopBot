@@ -64,38 +64,58 @@ async def _workflow_scope(db, principal, invocation):
     if invocation.workflow_id is None:
         return
     if invocation.workflow_run_id is not None:
-        from models.shop_workflow_runtime import WorkflowRun, PublishedWorkflow, WorkflowActionJob
+        from models.shop_workflow_runtime import (
+            WorkflowRun,
+            PublishedWorkflow,
+            WorkflowActionJob,
+        )
         from services.shop_workflow_schema import canonical_json
-        run = await db.scalar(select(WorkflowRun).where(
-            WorkflowRun.id == invocation.workflow_run_id,
-            WorkflowRun.store_id == principal.store_id,
-            WorkflowRun.bot_id == principal.bot_id,
-            WorkflowRun.customer_id == principal.customer_id,
-            WorkflowRun.identity_id == principal.identity_id,
-        ))
-        job = await db.scalar(select(WorkflowActionJob).where(
-            WorkflowActionJob.run_id == invocation.workflow_run_id,
-            WorkflowActionJob.invocation_id == invocation.invocation_id,
-            WorkflowActionJob.store_id == principal.store_id,
-        ))
+
+        run = await db.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.id == invocation.workflow_run_id,
+                WorkflowRun.store_id == principal.store_id,
+                WorkflowRun.bot_id == principal.bot_id,
+                WorkflowRun.customer_id == principal.customer_id,
+                WorkflowRun.identity_id == principal.identity_id,
+            )
+        )
+        job = await db.scalar(
+            select(WorkflowActionJob).where(
+                WorkflowActionJob.run_id == invocation.workflow_run_id,
+                WorkflowActionJob.invocation_id == invocation.invocation_id,
+                WorkflowActionJob.store_id == principal.store_id,
+            )
+        )
         published = await db.get(PublishedWorkflow, run.publication_id) if run else None
-        if (run is None or job is None or published is None
+        if (
+            run is None
+            or job is None
+            or published is None
             or published.workflow_id != invocation.workflow_id
             or published.revision != invocation.workflow_revision
             or job.node_id != invocation.node_id
             or job.action_key != invocation.action_key
             or job.action_version != invocation.action_version
-            or canonical_json(job.input) != canonical_json(invocation.input)):
+            or canonical_json(job.input) != canonical_json(invocation.input)
+        ):
             raise ActionRejected("action_workflow_unavailable")
         if job.status != "succeeded" and (
-            run.node_id != job.node_id or run.state.get("epoch") != job.epoch
+            run.node_id != job.node_id
+            or run.state.get("epoch") != job.epoch
             or run.status not in {"waiting_action", "waiting_approval"}
         ):
             raise ActionRejected("action_workflow_unavailable")
-        node = next((n for n in published.definition["nodes"] if n["id"] == invocation.node_id), None)
-        if (node is None or node["type"] != "action"
+        node = next(
+            (n for n in published.definition["nodes"] if n["id"] == invocation.node_id),
+            None,
+        )
+        if (
+            node is None
+            or node["type"] != "action"
             or node["config"].get("action_key") != invocation.action_key
-            or node["config"].get("action_version") != invocation.action_version):
+            or node["config"].get("action_version") != invocation.action_version
+        ):
             raise ActionRejected("action_node_binding_mismatch")
         return
     head = await db.scalar(
