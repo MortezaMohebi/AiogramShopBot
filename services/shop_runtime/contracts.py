@@ -44,6 +44,10 @@ WAITING = frozenset(
 RESERVED_COMMANDS = frozenset(
     {"cart", "checkout", "catalog", "orders", "support", "payment"}
 )
+MAX_EVENTS = 1000
+MAX_OUTBOX = 1000
+INPUTS_PER_MINUTE = 60
+MAX_PENDING_INPUTS = 20
 
 
 class RuntimeRejected(ValueError):

@@ -6,6 +6,8 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    DDL,
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -13,15 +15,14 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
-    DDL,
     event,
     func,
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column
+
 from models.base import Base
 
 
@@ -237,6 +238,9 @@ class WorkflowActionJob(Owned, Base):
     receipt_id: Mapped[str | None] = mapped_column(String(36))
     error_code: Mapped[str | None] = mapped_column(String(80))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
     __table_args__ = (UniqueConstraint("run_id", "node_id", "epoch"),)
 
 
@@ -342,8 +346,13 @@ class WorkflowInbox(Owned, Base):
     payload: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    outcome: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     error_code: Mapped[str | None] = mapped_column(String(80))
-    __table_args__ = (UniqueConstraint("bot_id", "input_id"),)
+    __table_args__ = (
+        UniqueConstraint("bot_id", "input_id"),
+        Index("ix_workflow_inbox_user_created", "bot_id", "user_id", "created_at"),
+    )
 
 
 RUNTIME_MODELS = (*RUNTIME_MODELS, WorkflowInbox)

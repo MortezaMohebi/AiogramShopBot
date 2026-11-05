@@ -107,7 +107,7 @@ async def test_gate_cannot_select_foreign_bot(runtime_manager):
     assert denied.status_code == 404, denied.text
 
 
-async def delivery_fixture(app, *, outcome):
+async def delivery_fixture(app, *, outcome, definition=None):
     """Stage a synthetic failed provider attempt in the same real scoped database."""
     from uuid import uuid4
     from models.shop_workflow import ShopWorkflow
@@ -133,7 +133,7 @@ async def delivery_fixture(app, *, outcome):
         store_id=STORE_A,
         workflow_id=workflow.id,
         revision=1,
-        definition=document(),
+        definition=definition or document(),
         digest="f" * 64,
         published_by=7,
     )
@@ -231,3 +231,95 @@ async def test_unknown_delivery_is_never_retried_and_trace_hides_private_data(
     assert metadata.status_code == 200, metadata.text
     assert "private-" not in metadata.text
     assert metadata.json()["outbox"][0]["can_retry"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("competing_run", [False, True])
+async def test_resume_serializes_the_customer_slot(runtime_manager, monkeypatch, competing_run):
+    """Recovery restores the routing pointer only if it cannot create two active Runs."""
+    from uuid import uuid4
+    from models.shop_multibot import ShopBot
+    from models.shop_workflow_runtime import RuntimeGate, RuntimeSlot, WorkflowRun
+    from tests.test_campaign_admin_store_scope import BOT_A
+    from tests.test_runtime_interpreter import form
+
+    app = runtime_manager
+    monkeypatch.setattr("config.SHOP_WORKFLOW_RUNTIME_ENABLED", True)
+    app.db.get(ShopBot, BOT_A).credential_version = 1
+    _, run = await delivery_fixture(app, outcome="rejected", definition=form().model_dump(mode="json"))
+    run.status, run.node_id, run.values = "suspended", "name", {}
+    run.state = {"epoch": 1, "outbound_sequence": 1}
+    other = None
+    if competing_run:
+        other = WorkflowRun(
+            id=str(uuid4()), store_id=run.store_id, bot_id=run.bot_id,
+            customer_id=run.customer_id, identity_id=run.identity_id,
+            user_id=run.user_id, chat_id=run.chat_id, platform=run.platform,
+            workflow_id=run.workflow_id, publication_id=run.publication_id,
+            binding_id=run.binding_id, node_id="name", status="waiting_input",
+            values={}, state={"epoch": 1}, expires_at=run.expires_at)
+        app.db.add(other)
+        app.db.flush()
+    slot = RuntimeSlot(store_id=STORE_A, bot_id=BOT_A, user_id=run.user_id,
+                       run_id=other.id if other else None)
+    app.db.add_all([
+        slot,
+        RuntimeGate(store_id=STORE_A, scope_key="store:" + STORE_A, enabled=True),
+        RuntimeGate(store_id=STORE_A, bot_id=BOT_A, scope_key="bot:" + BOT_A, enabled=True),
+    ])
+    app.db.commit()
+    result = await app.request("POST", f"/workflow-runtime/runs/{run.id}/recover", payload={
+        "operation": "resume", "expected_version": run.lock_version,
+        "operation_id": str(uuid4()),
+    })
+    if competing_run:
+        assert result.status_code == 409, result.text
+        assert result.json()["detail"] == "runtime_session_conflict"
+        app.db.refresh(run)
+        assert run.status == "suspended" and slot.run_id == other.id
+    else:
+        assert result.status_code == 200, result.text
+        app.db.refresh(slot)
+        assert slot.run_id == run.id
+        assert result.json()["status"] == "waiting_input"
+
+
+@pytest.mark.asyncio
+async def test_overview_has_bounded_private_free_store_metrics(runtime_manager):
+    """Operational SQL groups contain no identities, private values or payloads."""
+    from models.shop_workflow_runtime import WorkflowInbox, WorkflowOutbox
+
+    app = runtime_manager
+    output, run = await delivery_fixture(app, outcome="rejected")
+    run.status = "waiting_input"
+    run.state = {"node_transitions": 7, "validation_errors": 2}
+    run.values = {"secret": "must-never-appear"}
+    output.status, output.attempts = "dead_letter", 3
+    app.db.add(WorkflowOutbox(
+        store_id=run.store_id, bot_id=run.bot_id, run_id=run.id,
+        node_id=run.node_id, epoch=1, sequence=2, payload={},
+        status="cancelled", attempts=0, error_code="runtime_prompt_obsolete",
+    ))
+    app.db.add(WorkflowInbox(
+        store_id=run.store_id, bot_id=run.bot_id, user_id=run.user_id,
+        input_id="metrics", sequence=1, payload={}, status="processed", duplicate_count=4,
+    ))
+    app.db.commit()
+    response = await app.request("GET", "/workflow-runtime")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["metrics"]["runs_started"] == 1
+    assert body["metrics"]["node_transitions"] == 7
+    assert body["metrics"]["input_validation_errors"] == 2
+    assert body["metrics"]["duplicate_events"] == 4
+    assert body["metrics"]["outbox_retries"] == 2
+    assert body["metrics"]["outbox_deadletters"] == 1
+    assert body["metrics"]["delivery_failures_by_platform"] == {"telegram": 1}
+    assert body["active_groups"] == [{
+        "workflow_id": run.workflow_id, "publication_id": run.publication_id,
+        "revision": 1, "active_runs": 1,
+    }]
+    assert body["active_groups_has_more"] is False
+    assert body["metrics_scope"]["window"] == "all_retained_history"
+    assert "must-never-appear" not in response.text
+    assert "user_id" not in response.text and "chat_id" not in response.text

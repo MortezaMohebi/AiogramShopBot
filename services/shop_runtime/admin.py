@@ -2,24 +2,32 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select, func
+from sqlalchemy import case, extract, func, select
 
 import config
 from models.shop_multibot import ShopBot
 from models.shop_workflow_runtime import (
     PublishedWorkflow,
+    RuntimeAudit,
     RuntimeBinding,
     RuntimeGate,
-    RuntimeAudit,
-    WorkflowRun,
-    WorkflowEvent,
     WorkflowActionJob,
+    WorkflowDeliveryAttempt,
+    WorkflowEvent,
+    WorkflowInbox,
     WorkflowOutbox,
+    WorkflowRun,
 )
 from services import shop_admin_security as security
-from services.shop_runtime.contracts import RuntimeRejected, SUPPORTED_NODES, TERMINAL
+from services.shop_runtime.contracts import SUPPORTED_NODES, TERMINAL, RuntimeRejected
 from services.shop_runtime.publication import digest, require_manager
-from services.shop_runtime.sessions import machine_for, persist, enabled, gate_key
+from services.shop_runtime.sessions import (
+    _slot,
+    enabled,
+    gate_key,
+    machine_for,
+    persist,
+)
 from services.shop_runtime.workers import context_for
 
 
@@ -88,11 +96,147 @@ async def overview(db, scope, actor):
     gates = (
         await db.scalars(select(RuntimeGate).where(RuntimeGate.store_id == store))
     ).all()
+    duration = extract("epoch", WorkflowRun.updated_at) - extract(
+        "epoch", WorkflowRun.created_at
+    )
+    run_metrics = (
+        (
+            await db.execute(
+                select(
+                    func.count().label("runs_started"),
+                    func.avg(case((WorkflowRun.status == "completed", duration))).label(
+                        "completed_duration_seconds_avg"
+                    ),
+                    func.coalesce(
+                        func.sum(WorkflowRun.state["node_transitions"].as_integer()), 0
+                    ).label("node_transitions"),
+                    func.coalesce(
+                        func.sum(WorkflowRun.state["validation_errors"].as_integer()), 0
+                    ).label("input_validation_errors"),
+                ).where(WorkflowRun.store_id == store)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    metrics = dict(run_metrics)
+    for status in ("completed", "cancelled", "failed"):
+        metrics["runs_" + status] = dict(counts).get(status, 0)
+    metrics["duplicate_events"] = await db.scalar(
+        select(func.coalesce(func.sum(WorkflowInbox.duplicate_count), 0)).where(
+            WorkflowInbox.store_id == store
+        )
+    )
+    event_metrics = (
+        (
+            await db.execute(
+                select(
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    (WorkflowEvent.kind == "action")
+                                    & WorkflowEvent.status.in_(
+                                        ("failed", "retryable", "unavailable")
+                                    ),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("action_failures"),
+                    func.coalesce(
+                        func.sum(case((WorkflowEvent.kind == "timeout", 1), else_=0)), 0
+                    ).label("timeouts"),
+                ).where(WorkflowEvent.store_id == store)
+            )
+        )
+        .mappings()
+        .one()
+    )
+    metrics.update(dict(event_metrics))
+    metrics["outbox_retries"] = await db.scalar(
+        select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (WorkflowOutbox.attempts > 1, WorkflowOutbox.attempts - 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            )
+        ).where(WorkflowOutbox.store_id == store)
+    )
+    metrics["outbox_deadletters"] = dict(deliveries).get("dead_letter", 0)
+    metrics["delivery_failures_by_platform"] = dict(
+        (
+            await db.execute(
+                select(WorkflowRun.platform, func.count())
+                .join(WorkflowOutbox, WorkflowOutbox.run_id == WorkflowRun.id)
+                .where(
+                    WorkflowRun.store_id == store,
+                    WorkflowOutbox.store_id == store,
+                    WorkflowOutbox.id.in_(
+                        select(WorkflowDeliveryAttempt.outbox_id).where(
+                            WorkflowDeliveryAttempt.store_id == store,
+                            WorkflowDeliveryAttempt.outcome.in_(
+                                ("rejected", "uncertain")
+                            ),
+                        )
+                    ),
+                )
+                .group_by(WorkflowRun.platform)
+            )
+        ).all()
+    )
+    groups = (
+        (
+            await db.execute(
+                select(
+                    WorkflowRun.workflow_id,
+                    WorkflowRun.publication_id,
+                    PublishedWorkflow.revision,
+                    func.count().label("active_runs"),
+                )
+                .join(
+                    PublishedWorkflow,
+                    PublishedWorkflow.id == WorkflowRun.publication_id,
+                )
+                .where(
+                    WorkflowRun.store_id == store,
+                    PublishedWorkflow.store_id == store,
+                    WorkflowRun.status.not_in(tuple(TERMINAL | {"suspended"})),
+                    WorkflowRun.expires_at > security.clock(),
+                )
+                .group_by(
+                    WorkflowRun.workflow_id,
+                    WorkflowRun.publication_id,
+                    PublishedWorkflow.revision,
+                )
+                .order_by(WorkflowRun.workflow_id, WorkflowRun.publication_id)
+                .limit(101)
+            )
+        )
+        .mappings()
+        .all()
+    )
     return {
         "global_enabled": config.SHOP_WORKFLOW_RUNTIME_ENABLED,
         "global_killed": config.SHOP_WORKFLOW_RUNTIME_KILL_SWITCH,
         "runs": dict(counts),
         "deliveries": dict(deliveries),
+        "metrics": metrics,
+        "active_groups": [dict(group) for group in groups[:100]],
+        "active_groups_has_more": len(groups) > 100,
+        "metrics_scope": {
+            "store_id": store,
+            "window": "all_retained_history",
+            "duration": "SQL average updated_at minus created_at for completed Runs, in seconds",
+            "delivery_failures": "distinct outbox intents with a rejected or uncertain physical delivery attempt, grouped by platform",
+            "active": "unexpired nonterminal, nonsuspended Runs; at most 100 workflow/publication/revision groups",
+        },
         "supported_nodes": sorted(SUPPORTED_NODES),
         "can_publish": security.has_permission(actor.role, "workflows.publish")
         and scope.current_store.access_level == "manager",
@@ -286,10 +430,28 @@ async def recover(
     request = {"expected_version": expected_version, "operation": operation}
     if await _replay(db, scope, actor, operation_id, "recover", run_id, request):
         return {"replayed": True, "operation_id": operation_id, "id": run_id}
+    # Resolve routing metadata without taking the Run lock. Customer handlers
+    # always acquire Slot before Run, including when recovery must create it.
+    routing = await db.execute(
+        select(WorkflowRun.bot_id, WorkflowRun.user_id).where(
+            WorkflowRun.id == run_id, WorkflowRun.store_id == scope.current_store_id
+        )
+    )
+    routing = routing.first()
+    if routing is None:
+        raise RuntimeRejected("runtime_run_unavailable", 404)
+    from types import SimpleNamespace
+
+    slot = await _slot(
+        db,
+        SimpleNamespace(store_id=scope.current_store_id, bot_id=routing.bot_id),
+        routing.user_id,
+    )
     row = await db.scalar(
         select(WorkflowRun)
         .where(WorkflowRun.id == run_id, WorkflowRun.store_id == scope.current_store_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if row is None:
         raise RuntimeRejected("runtime_run_unavailable", 404)
@@ -303,6 +465,22 @@ async def recover(
         row.lock_version += 1
         row.updated_at = security.clock()
     elif operation in {"resume", "retry_failed"}:
+        if slot.run_id and slot.run_id != row.id:
+            competing = await db.scalar(
+                select(WorkflowRun)
+                .where(
+                    WorkflowRun.id == slot.run_id,
+                    WorkflowRun.store_id == row.store_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if (
+                competing is not None
+                and competing.status not in TERMINAL | {"suspended"}
+                and security.utc(competing.expires_at) > security.clock()
+            ):
+                raise RuntimeRejected("runtime_session_conflict")
         context = await context_for(db, row)
         if not await enabled(db, context):
             raise RuntimeRejected("runtime_disabled")
@@ -341,6 +519,7 @@ async def recover(
             await persist(db, row, machine)
         else:
             raise RuntimeRejected("runtime_effect_replay_forbidden")
+        slot.run_id = row.id
     else:
         raise RuntimeRejected("runtime_recovery_invalid", 422)
     _audit(db, scope, actor, operation_id, "recover", row.id, request)
@@ -394,10 +573,10 @@ async def approve_action(
     db, *, scope, actor, job_id, expected_version, operation_id, execution_factory=None
 ):
     """Issue a short-lived operator proof only for the exact waiting Action request."""
+    from services.shop_actions.approvals import issue_authorization
     from services.shop_actions.catalog import actions
     from services.shop_actions.context import customer_principal, staff_principal
     from services.shop_actions.contracts import Invocation
-    from services.shop_actions.approvals import issue_authorization
 
     require_manage(actor, scope)
     security.require_permission(actor.role, "actions.approve")

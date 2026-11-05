@@ -349,3 +349,52 @@ async def test_two_queued_texts_cannot_answer_two_different_wait_generations(
         select(WorkflowInbox).where(WorkflowInbox.input_id == "3")
     )
     assert rejected.status == "rejected" and rejected.payload == {}
+
+
+@pytest.mark.asyncio
+async def test_locked_slot_refresh_prevents_two_active_runs_after_overlapping_starts(
+    buyer, monkeypatch
+):
+    """Refresh preloaded slots before advancing their Run and input sequence."""
+    import asyncio
+
+    from models.shop_workflow_runtime import RuntimeSlot
+    from tests.test_runtime_workers import factory
+
+    db, p = buyer
+    await setup_runtime(db, p, monkeypatch)
+    await handle(db, context=p.bot, event=inbound(1, "/wholesale", "command"))
+    selected, released = asyncio.Event(), asyncio.Event()
+    base = factory(db)
+
+    async def delayed_start():
+        async with base() as session:
+            original = session.scalar
+
+            async def scalar(statement):
+                row = await original(statement)
+                if isinstance(row, RuntimeSlot) and not selected.is_set():
+                    selected.set()
+                    await released.wait()
+                return row
+
+            session.scalar = scalar
+            return await handle(
+                session, context=p.bot, event=inbound(3, "/wholesale", "command")
+            )
+
+    waiting = asyncio.create_task(delayed_start())
+    await asyncio.wait_for(selected.wait(), 3)
+    async with base() as session:
+        await handle(session, context=p.bot, event=inbound(2, "/wholesale", "command"))
+    released.set()
+    await asyncio.wait_for(waiting, 3)
+    db.session.expire_all()
+    active = (
+        await db.scalars(
+            select(WorkflowRun).where(WorkflowRun.status == "waiting_input")
+        )
+    ).all()
+    assert len(active) == 1
+    slot = await db.scalar(select(RuntimeSlot))
+    assert slot.run_id == active[0].id and slot.next_sequence == 3

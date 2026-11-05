@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from datetime import timedelta
 from uuid import uuid4
 
@@ -141,6 +142,83 @@ def confirmation_findings(definition):
     return found
 
 
+def presentation_findings(definition, *, media_kinds=None):
+    """Reject editable presentation that the live Runtime renderer cannot send.
+
+    Visibility conditions can hide buttons at runtime, so publication checks the
+    largest possible keyboard for each platform. Media ownership is independently
+    enforced before this compatibility check.
+    """
+    from services.shop_platform_capabilities import CAPABILITIES
+    from services.shop_runtime.adapters import _markup
+
+    findings = []
+    for node in definition.nodes:
+        for platform in definition.target_platforms:
+            config = node.config | node.platform_overrides.get(platform, {})
+            buttons = []
+            if node.type == "show_buttons":
+                buttons = [b for b in config["buttons"] if platform in b["platforms"]]
+            elif node.type == "ask_choice":
+                buttons = config["choices"]
+            elif node.type == "confirm":
+                buttons = [
+                    {"label": config[key]} for key in ("confirm_label", "cancel_label")
+                ]
+            code = None
+            capabilities = CAPABILITIES[platform]
+            if any(
+                len(b["label"]) > capabilities["runtime_keyboard_label_characters"]
+                for b in buttons
+            ):
+                code = "runtime_keyboard_label_limit"
+            if any(
+                count > capabilities["runtime_keyboard_row_buttons"]
+                for count in Counter(b.get("row", 0) for b in buttons).values()
+            ):
+                code = "runtime_keyboard_row_limit"
+            if code is None and node.type in {"show_buttons", "ask_choice", "confirm"}:
+                # Reuse the adapter's pure preparation check. These inert placeholders
+                # are never persisted as callback capabilities or sent to a provider.
+                rendered = [
+                    {
+                        "label": b["label"],
+                        "row": b.get("row", 0),
+                        **(
+                            {"url": b["url"]}
+                            if b.get("type") == "url"
+                            else {"callback_data": "wf:publication-validation"}
+                        ),
+                    }
+                    for b in buttons
+                ]
+                try:
+                    _markup(
+                        {
+                            "keyboard": config.get("keyboard", "inline"),
+                            "buttons": rendered,
+                        }
+                    )
+                except RuntimeRejected as error:
+                    code = error.code
+            if node.type == "send_media_group" and media_kinds is not None:
+                kinds = {media_kinds.get(key) for key in config["media_ids"]}
+                if not kinds.issubset({"photo", "video", "document"}):
+                    code = "runtime_media_kind_invalid"
+                elif "document" in kinds and kinds != {"document"}:
+                    code = "runtime_album_media_incompatible"
+            if code:
+                findings.append(
+                    {
+                        "code": code,
+                        "node_id": node.id,
+                        "platform": platform,
+                        "severity": "error",
+                    }
+                )
+    return findings
+
+
 async def readiness(db, *, actor, scope, workflow_id, revision, bindings):
     """Revalidate graph, exact Actions, Store/Bot/media and entry conflicts live."""
     head, definition = await _source(db, scope.current_store_id, workflow_id, revision)
@@ -161,6 +239,32 @@ async def readiness(db, *, actor, scope, workflow_id, revision, bindings):
         )
     ]
     findings += publication_findings(definition) + confirmation_findings(definition)
+    album_ids = {
+        key
+        for node in definition.nodes
+        if node.type == "send_media_group"
+        for platform in definition.target_platforms
+        for key in (node.config | node.platform_overrides.get(platform, {}))[
+            "media_ids"
+        ]
+    }
+    media_kinds = {}
+    if album_ids:
+        from models.shop_content import Product, ProductMedia
+
+        media_kinds = dict(
+            (
+                await db.execute(
+                    select(ProductMedia.id, ProductMedia.kind)
+                    .join(Product, Product.id == ProductMedia.product_id)
+                    .where(
+                        Product.store_id == head.store_id,
+                        ProductMedia.id.in_(album_ids),
+                    )
+                )
+            ).all()
+        )
+    findings += presentation_findings(definition, media_kinds=media_kinds)
     nodes = {x.id: x for x in definition.nodes}
     if not bindings:
         findings.append({"code": "runtime_entry_required", "severity": "error"})

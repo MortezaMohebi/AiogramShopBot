@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from decimal import Decimal
-import re
 
+from services.shop_runtime.contracts import SUPPORTED_NODES
 from services.shop_workflow_conditions import cast_value, evaluate_condition
 from services.shop_workflow_schema import canonical_json
-from services.shop_runtime.contracts import SUPPORTED_NODES
 
 DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
@@ -17,7 +17,15 @@ class Machine:
     """Advance a pinned definition only until the next persistent boundary."""
 
     def __init__(
-        self, definition, *, platform, node_id, values=None, state=None, context=None
+        self,
+        definition,
+        *,
+        platform,
+        node_id,
+        values=None,
+        state=None,
+        context=None,
+        now=None,
     ):
         """Copy portable state; no provider SDK or mutable global reaches execution."""
         self.definition, self.platform, self.node_id = definition, platform, node_id
@@ -34,6 +42,7 @@ class Machine:
         )
         self.context = dict(context or {}) | {"context.platform": platform}
         self.state = deepcopy(state or {})
+        self.now = now
         self.status, self.error = "active", None
         self.outbound, self.action, self.wait = [], None, None
 
@@ -81,6 +90,7 @@ class Machine:
         if target is None or target not in self.nodes:
             raise ValueError("runtime_transition_missing")
         self.node_id = target
+        self.state["node_transitions"] = self.state.get("node_transitions", 0) + 1
 
     def fail(self, code):
         """Expose stable diagnostics, keeping raw input and private values out of errors."""
@@ -326,6 +336,7 @@ class Machine:
             self.status = "active"
             self.advance()
         except (ValueError, KeyError, TypeError):
+            self.state["validation_errors"] = self.state.get("validation_errors", 0) + 1
             self.state["attempts"] = self.state.get("attempts", 0) + 1
             if self.state["attempts"] >= config.get("max_attempts", 3):
                 self.fail("runtime_input_attempts_exhausted")
@@ -384,6 +395,9 @@ class Machine:
             from services.shop_runtime.publication import digest
 
             self.state["confirmed_values"] = digest(self.values)
+            # Only the coordinator supplies this server timestamp. A pure
+            # interpreter used without a trusted clock cannot mint authority.
+            self.state["confirmed_at"] = self.now.isoformat() if self.now else None
             self.move("confirm")
             self.advance()
             return

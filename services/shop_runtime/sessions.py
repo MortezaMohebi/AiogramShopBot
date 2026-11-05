@@ -2,42 +2,46 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import hashlib
 import secrets
+from datetime import timedelta
 from uuid import uuid4
 
-from channels.contracts import Platform
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 import config
-from models.shop_multibot import ShopBot, ShopStore
+from channels.contracts import Platform
 from models.shop_bot_operations import ShopBotOperations
+from models.shop_multibot import ShopBot, ShopStore
 from models.shop_workflow_runtime import (
     PublishedWorkflow,
+    RuntimeAudit,
     RuntimeBinding,
     RuntimeGate,
     RuntimeSlot,
-    WorkflowRun,
-    WorkflowEvent,
-    WorkflowWait,
-    WorkflowCallback,
     WorkflowActionJob,
-    WorkflowOutbox,
+    WorkflowCallback,
+    WorkflowEvent,
     WorkflowInbox,
-    RuntimeAudit,
+    WorkflowOutbox,
+    WorkflowRun,
+    WorkflowWait,
 )
 from services import shop_admin_security as security
-from services.shop_bot_context import resolve_bot_context
+from services.shop_action_bindings import resolve_inputs
 from services.shop_actions.context import customer_principal
 from services.shop_actions.contracts import ActionRejected
-from services.shop_action_bindings import resolve_inputs
+from services.shop_bot_context import resolve_bot_context
 from services.shop_runtime.contracts import (
-    RuntimeRejected,
+    INPUTS_PER_MINUTE,
+    MAX_EVENTS,
+    MAX_OUTBOX,
+    MAX_PENDING_INPUTS,
+    RESERVED_COMMANDS,
     TERMINAL,
     RuntimeInput,
-    RESERVED_COMMANDS,
+    RuntimeRejected,
 )
 from services.shop_runtime.interpreter import Machine
 from services.shop_workflow_schema import Definition
@@ -89,6 +93,8 @@ async def _slot(db, context, user_id):
     query = select(RuntimeSlot).where(
         RuntimeSlot.bot_id == context.bot_id, RuntimeSlot.user_id == user_id
     )
+    # Acquiring the lock must also replace any preloaded identity-map state.
+    query = query.execution_options(populate_existing=True)
     row = await db.scalar(query.with_for_update())
     if row is None:
         try:
@@ -104,9 +110,7 @@ async def _slot(db, context, user_id):
                 await db.flush()
         except IntegrityError:
             pass
-        row = await db.scalar(
-            query.with_for_update().execution_options(populate_existing=True)
-        )
+        row = await db.scalar(query.with_for_update())
     return row
 
 
@@ -166,6 +170,7 @@ async def machine_for(db, run):
         node_id=run.node_id,
         values=run.values,
         state=run.state,
+        now=security.clock(),
         context={
             "context.store_name": store.name,
             "context.bot_name": bot.name,
@@ -179,6 +184,18 @@ async def machine_for(db, run):
 async def persist(db, run, machine):
     """Atomically stage state, wait, action and outbound; caller owns the commit."""
     now = security.clock()
+    output_count = await db.scalar(
+        select(func.count())
+        .select_from(WorkflowOutbox)
+        .where(WorkflowOutbox.run_id == run.id)
+    )
+    if output_count + len(machine.outbound) > MAX_OUTBOX or (
+        machine.action and output_count >= MAX_OUTBOX
+    ):
+        if machine.status != "cancelled":
+            machine.status = "failed"
+        machine.error = "runtime_outbound_budget"
+        machine.outbound, machine.action, machine.wait = [], None, None
     run.node_id, run.status = machine.node_id, machine.status
     run.values, run.state = machine.values, machine.state
     run.error_code = machine.error
@@ -196,7 +213,9 @@ async def persist(db, run, machine):
                 run_id=run.id,
                 node_id=run.node_id,
                 kind=(machine.wait or {}).get("kind", machine.nodes[run.node_id].type),
-                deadline=min(run.expires_at, now + timedelta(seconds=seconds)),
+                deadline=min(
+                    security.utc(run.expires_at), now + timedelta(seconds=seconds)
+                ),
                 epoch=machine.state.get("epoch", 0),
             )
             db.add(wait)
@@ -253,7 +272,7 @@ async def persist(db, run, machine):
             db.add(job)
         except ActionRejected as error:
             run.status, run.error_code = "failed", error.code
-    sequence = run.state.get("outbound_sequence", 0)
+    sequence = max(run.state.get("outbound_sequence", 0), output_count)
     for intent in machine.outbound:
         payload = dict(intent)
         buttons = []
@@ -329,6 +348,84 @@ async def persist(db, run, machine):
     await db.flush()
 
 
+async def event_capacity(db, run):
+    """Check the durable event ceiling while the caller holds the Run lock."""
+    return (
+        await db.scalar(
+            select(func.count())
+            .select_from(WorkflowEvent)
+            .where(WorkflowEvent.run_id == run.id)
+        )
+        < MAX_EVENTS
+    )
+
+
+async def action_budget(db, run):
+    """Block new physical effects after either durable Run budget is exhausted."""
+    if not await event_capacity(db, run):
+        return "runtime_event_budget"
+    count = await db.scalar(
+        select(func.count())
+        .select_from(WorkflowOutbox)
+        .where(WorkflowOutbox.run_id == run.id)
+    )
+    return "runtime_outbound_budget" if count >= MAX_OUTBOX else None
+
+
+async def control_input(db, context, event, *, run=None):
+    """Keep authenticated cancellation/menu choices usable under input pressure."""
+    if event.kind == "command":
+        return event.text in {"/cancel", "/menu", "/restart"}
+    if event.kind != "callback" or not event.callback.startswith("wf:"):
+        return False
+    query = select(WorkflowCallback.id).where(
+        WorkflowCallback.token_hash == token_hash(event.callback),
+        WorkflowCallback.store_id == context.store_id,
+        WorkflowCallback.bot_id == context.bot_id,
+        WorkflowCallback.user_id == event.user_id,
+        WorkflowCallback.value.in_(("cancel", "main_menu")),
+        WorkflowCallback.consumed_at.is_(None),
+        WorkflowCallback.expires_at > security.clock(),
+    )
+    if run is not None:
+        query = query.where(
+            WorkflowCallback.run_id == run.id,
+            WorkflowCallback.node_id == run.node_id,
+            WorkflowCallback.epoch == run.state.get("epoch", 0),
+        )
+    return await db.scalar(query) is not None
+
+
+async def finish_input(db, inbox, result):
+    """Commit the redacted exact input outcome with its durable processing state."""
+    inbox.outcome = result
+    await db.commit()
+    return result
+
+
+async def system_event(db, run, *, kind, status, error_code=None, summary=None):
+    """Append safe correlated system metadata without exceeding stored history."""
+    if not await event_capacity(db, run):
+        run.status, run.error_code = "failed", "runtime_event_budget"
+        return False
+    db.add(
+        WorkflowEvent(
+            store_id=run.store_id,
+            run_id=run.id,
+            bot_id=run.bot_id,
+            input_id="system:" + str(uuid4()),
+            kind=kind,
+            node_id=run.node_id,
+            status=status,
+            error_code=error_code,
+            summary=summary or {},
+            correlation_id=run.correlation_id,
+        )
+    )
+    await db.flush()
+    return True
+
+
 async def reject_wait_input(db, run, inbox, event, machine, *, code, expired=False):
     """Record a stale answer explicitly and keep it out of another question's values."""
     if expired:
@@ -358,12 +455,15 @@ async def reject_wait_input(db, run, inbox, event, machine, *, code, expired=Fal
     )
     await persist(db, run, machine)
     inbox.status, inbox.payload, inbox.error_code = "rejected", {}, code
-    await db.commit()
-    return {
-        "handled": True,
-        "status": "expired" if expired else "input_stale",
-        "run_id": run.id,
-    }
+    return await finish_input(
+        db,
+        inbox,
+        {
+            "handled": True,
+            "status": "expired" if expired else "input_stale",
+            "run_id": run.id,
+        },
+    )
 
 
 async def _consume(
@@ -392,8 +492,7 @@ async def _consume(
         inbox.status = "rejected"
         inbox.payload = {}
         inbox.error_code = "runtime_input_stale"
-        await db.commit()
-        return {"handled": True, "status": "input_stale"}
+        return await finish_input(db, inbox, {"handled": True, "status": "input_stale"})
     if run is not None and event.kind == "command" and event.text == "/restart":
         candidate = await db.get(RuntimeBinding, run.binding_id)
         if (
@@ -407,8 +506,22 @@ async def _consume(
     if run and security.utc(run.expires_at) <= security.clock():
         run.status = "expired"
         run.error_code = "runtime_run_expired"
+        await system_event(
+            db, run, kind="timeout", status="expired", error_code="runtime_run_expired"
+        )
         run = None
-    control = event.kind == "command" and event.text in {"/cancel", "/menu", "/restart"}
+    control = await control_input(db, context, event, run=run)
+    if run is not None and not await event_capacity(db, run):
+        # Stop before interpreting another input, verifying a file, or creating
+        # an Action. Controls retain their ability to terminate the session.
+        run.status = "cancelled" if control else "failed"
+        run.error_code = "runtime_event_budget"
+        run.lock_version += 1
+        run.updated_at = security.clock()
+        inbox.status, inbox.payload, inbox.error_code = "rejected", {}, run.error_code
+        return await finish_input(
+            db, inbox, {"handled": True, "status": run.status, "run_id": run.id}
+        )
     if run is not None and binding is None and not control:
         machine = await machine_for(db, run)
         if inbox.epoch is not None and (
@@ -450,8 +563,9 @@ async def _consume(
         ):
             inbox.status = "rejected"
             inbox.payload = {}
-            await db.commit()
-            return {"handled": True, "status": "publication_retired"}
+            return await finish_input(
+                db, inbox, {"handled": True, "status": "publication_retired"}
+            )
         publication = await db.get(PublishedWorkflow, binding.publication_id)
         run = WorkflowRun(
             id=str(uuid4()),
@@ -486,16 +600,18 @@ async def _consume(
     elif run is None:
         inbox.status = "rejected"
         inbox.payload = {}
-        await db.commit()
-        return {"handled": True, "status": "no_active_run"}
+        return await finish_input(
+            db, inbox, {"handled": True, "status": "no_active_run"}
+        )
     else:
         machine = await machine_for(db, run)
         if run.status in {"waiting_action", "waiting_approval"} and not (
             event.kind == "command" and event.text in {"/cancel", "/menu"}
         ):
             # Retain valid input durably; the worker will consume it after the Action boundary.
-            await db.commit()
-            return {"handled": True, "status": "queued", "run_id": run.id}
+            return await finish_input(
+                db, inbox, {"handled": True, "status": "queued", "run_id": run.id}
+            )
         if event.kind == "callback":
             callback = await db.scalar(
                 select(WorkflowCallback)
@@ -517,8 +633,16 @@ async def _consume(
             ):
                 inbox.status = "rejected"
                 inbox.payload = {}
-                await db.commit()
-                return {"handled": True, "status": "callback_expired"}
+                await system_event(
+                    db,
+                    run,
+                    kind="callback",
+                    status="rejected",
+                    error_code="runtime_callback_expired",
+                )
+                return await finish_input(
+                    db, inbox, {"handled": True, "status": "callback_expired"}
+                )
             callback.consumed_at = security.clock()
             machine.choose(callback.value)
         elif event.kind == "command" and event.text in {
@@ -560,8 +684,9 @@ async def _consume(
             )
         else:
             # A non-input boundary remains queued until its timeout/action completes.
-            await db.commit()
-            return {"handled": True, "status": "queued", "run_id": run.id}
+            return await finish_input(
+                db, inbox, {"handled": True, "status": "queued", "run_id": run.id}
+            )
     run.last_input_id = event.update_id
     db.add(
         WorkflowEvent(
@@ -584,8 +709,9 @@ async def _consume(
     await persist(db, run, machine)
     inbox.status = "processed"
     inbox.payload = {}
-    await db.commit()
-    return {"handled": True, "status": run.status, "run_id": run.id}
+    return await finish_input(
+        db, inbox, {"handled": True, "status": run.status, "run_id": run.id}
+    )
 
 
 async def handle(
@@ -596,6 +722,7 @@ async def handle(
     origin="customer",
     file_verifier=None,
     was_existing=True,
+    resume_pending=False,
 ):
     """Accept Runtime-owned input before legacy receipt claims; return False for fallback."""
     if context.platform.value != event.platform:
@@ -606,8 +733,17 @@ async def handle(
             WorkflowInbox.input_id == event.update_id,
         )
     )
-    if duplicate and duplicate.status != "pending":
-        return {"handled": True, "duplicate": True, "status": duplicate.status}
+    if duplicate is not None and not resume_pending:
+        await db.execute(
+            update(WorkflowInbox)
+            .where(WorkflowInbox.id == duplicate.id)
+            .values(duplicate_count=WorkflowInbox.duplicate_count + 1)
+        )
+        await db.commit()
+        if duplicate.status != "pending":
+            return (
+                duplicate.outcome or {"handled": True, "status": duplicate.status}
+            ) | {"duplicate": True}
     if not await enabled(db, context):
         return {"handled": False}
     principal = await customer_principal(
@@ -645,8 +781,9 @@ async def handle(
             duplicate.status = "rejected"
             duplicate.payload = {}
             duplicate.error_code = "runtime_run_not_waiting"
-            await db.commit()
-            return {"handled": True, "status": "input_stale"}
+            return await finish_input(
+                db, duplicate, {"handled": True, "status": "input_stale"}
+            )
         return {"handled": False}
     slot = await _slot(db, context, event.user_id)
     # Preserve legacy navigation/payment callbacks and commands even during an active Run.
@@ -684,6 +821,31 @@ async def handle(
         .with_for_update()
     )
     if inbox is None:
+        control = await control_input(
+            db, context, event, run=active if has_active else None
+        )
+        if not control:
+            recent = await db.scalar(
+                select(func.count())
+                .select_from(WorkflowInbox)
+                .where(
+                    WorkflowInbox.bot_id == context.bot_id,
+                    WorkflowInbox.user_id == event.user_id,
+                    WorkflowInbox.created_at > security.clock() - timedelta(seconds=60),
+                )
+            )
+            pending = await db.scalar(
+                select(func.count())
+                .select_from(WorkflowInbox)
+                .where(
+                    WorkflowInbox.bot_id == context.bot_id,
+                    WorkflowInbox.user_id == event.user_id,
+                    WorkflowInbox.status == "pending",
+                )
+            )
+            if recent >= INPUTS_PER_MINUTE or pending >= MAX_PENDING_INPUTS:
+                await db.commit()
+                return {"handled": True, "status": "rate_limited"}
         inbox = WorkflowInbox(
             id=str(uuid4()),
             store_id=context.store_id,
@@ -708,7 +870,9 @@ async def handle(
         slot = await _slot(db, context, event.user_id)
     elif inbox.status != "pending":
         await db.commit()
-        return {"handled": True, "duplicate": True, "status": inbox.status}
+        return (inbox.outcome or {"handled": True, "status": inbox.status}) | {
+            "duplicate": True
+        }
     if await db.scalar(
         select(WorkflowEvent.id).where(
             WorkflowEvent.bot_id == context.bot_id,
@@ -717,8 +881,9 @@ async def handle(
     ):
         inbox.status = "processed"
         inbox.payload = {}
-        await db.commit()
-        return {"handled": True, "duplicate": True}
+        return await finish_input(
+            db, inbox, inbox.outcome or {"handled": True, "duplicate": True}
+        )
     earlier = await db.scalar(
         select(WorkflowInbox.id).where(
             WorkflowInbox.bot_id == context.bot_id,
@@ -734,8 +899,7 @@ async def handle(
             event.kind == "command" and event.text in {"/cancel", "/menu", "/restart"}
         )
     ):
-        await db.commit()
-        return {"handled": True, "status": "queued"}
+        return await finish_input(db, inbox, {"handled": True, "status": "queued"})
     return await _consume(
         db,
         context,

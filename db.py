@@ -115,7 +115,7 @@ from models.referral import ReferralBonus
 
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 # Do not log SQL parameters containing orders and private customer data.
-engine = create_async_engine(url, echo=config.DB_SQL_ECHO)
+engine = create_async_engine(url, echo=config.DB_SQL_ECHO, hide_parameters=True)
 session_maker = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 # Register Store record rules once for every SQLAlchemy Session. The rules
