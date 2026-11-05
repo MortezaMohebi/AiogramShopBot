@@ -321,7 +321,8 @@ export function WorkflowEditor({
           </Link>
           <h1 className="mt-2 break-words text-2xl font-bold">{doc.name}</h1>
           <p className="mt-2 text-xs text-muted-foreground">
-            <bdi>{initial.key}</bdi> · Revision {saving.record.revision} ·{" "}
+            <bdi className="break-all">{initial.key}</bdi> · Revision{" "}
+            {saving.record.revision} ·{" "}
             {saving.record.status === "draft"
               ? "پیش‌نویس"
               : saving.record.status === "archived"

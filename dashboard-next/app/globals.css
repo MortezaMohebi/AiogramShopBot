@@ -77,7 +77,8 @@
 
 @layer base {
   * { border-color: var(--border); }
-  html { scroll-behavior: smooth; }
+  /* Keep focused and scrolled controls below the fixed-height console header. */
+  html { scroll-behavior: smooth; scroll-padding-block-start: 5rem; }
   body {
     min-height: 100vh;
     background: var(--background);
