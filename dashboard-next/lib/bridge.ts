@@ -92,6 +92,7 @@ const SAFE_CODES = new Set([
   "runtime_approval_required",
   "runtime_bot_unavailable",
   "runtime_disabled",
+  "runtime_delivery_replay_forbidden",
   "runtime_effect_replay_forbidden",
   "runtime_entry_conflict",
   "runtime_entry_node_missing",

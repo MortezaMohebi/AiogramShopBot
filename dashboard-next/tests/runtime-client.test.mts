@@ -128,3 +128,21 @@ test("publication preview binds saved revision, selected edits and retained poin
 test("approved and retry receipts cannot claim an unexpected execution or delivery state",async()=>{
  for(const spec of [mutationCases[3],mutationCases[4]])await assert.rejects(client(async()=>Response.json({...spec.receipt,status:"succeeded"})).runtimeRequest(spec.path,"POST",spec.payload),(error:unknown)=>(error as {status:number}).status===0);
 });
+
+test("unknown-delivery replay denial explains the refusal and never repeats the mutation", async () => {
+  let calls = 0;
+  const c = client(async () => {
+    calls++;
+    return Response.json({ code: "runtime_delivery_replay_forbidden" }, { status: 409 });
+  });
+  let captured: unknown;
+  try {
+    await c.runtimeRequest(`/outbox/${targetId}/retry`, "POST", {
+      expected_attempts: 1, operation_id: operationId,
+    });
+  } catch (error) { captured = error; }
+  assert.equal((captured as { status: number }).status, 409);
+  assert.equal((captured as { code: string }).code, "runtime_delivery_replay_forbidden");
+  assert.match(c.runtimeErrorText(captured), /ارسال دوباره.*مجاز نیست/);
+  assert.equal(calls, 1);
+});

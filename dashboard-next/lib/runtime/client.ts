@@ -68,6 +68,7 @@ export function runtimeErrorText(error: unknown): string {
     runtime_publication_not_ready: "این نسخه برای انتشار آماده نیست؛ موارد پیش‌نمایش را بررسی کنید.",
     runtime_gate_conflict: "تنظیم اجرا تغییر کرده است؛ وضعیت تازه را دریافت کنید.",
     runtime_run_conflict: "نسخهٔ اجرا تغییر کرده است؛ وضعیت تازه را دریافت کنید.",
+    runtime_delivery_replay_forbidden: "ارسال دوباره برای این نتیجه مجاز نیست؛ وضعیت ارسال و رسید پیام‌رسان را بررسی کنید.",
     runtime_effect_replay_forbidden: "بازیابی این مرحله مجاز نیست؛ نتیجهٔ Action و ارسال را بررسی کنید.",
     runtime_recovery_not_applicable: "این عملیات در وضعیت فعلی اجرا قابل انجام نیست.",
     runtime_disabled: "مجوز اجرای فروشگاه یا ربات برقرار نیست.",
