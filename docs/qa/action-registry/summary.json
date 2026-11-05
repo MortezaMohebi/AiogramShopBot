@@ -1,8 +1,8 @@
 {
   "source_commit": "e17aac89e2628bbd4c779b708b381938914c7677",
   "verification_status": "PASS",
-  "final_acceptance_status": "BLOCKED",
-  "blocker": "Repository GitHub Actions Disabled save requires explicit permission after automatic approval rejection. Draft PR creation pending.",
+  "final_acceptance_status": "PASS",
+  "blocker": null,
   "python": {
     "passed": 968,
     "warnings": 3
@@ -19,5 +19,15 @@
     "bale"
   ],
   "runtime_enabled": false,
-  "live_provider_calls": 0
+  "live_provider_calls": 0,
+  "layer2_progress": 100,
+  "github_actions_disabled": true,
+  "pull_request": {
+    "number": 16,
+    "url": "https://github.com/MortezaMohebi/AiogramShopBot/pull/16",
+    "draft": true,
+    "base": "feat/bot-experience-workflow-builder",
+    "head": "feat/bot-experience-layer2-action-registry"
+  },
+  "closure_executable_source_unchanged": true
 }

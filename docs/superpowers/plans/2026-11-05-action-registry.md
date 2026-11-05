@@ -63,14 +63,14 @@ docs/ACTION_REGISTRY_LAYER2.md, docs/qa/ACTION_REGISTRY_LAYER2_ACCEPTANCE.md.
 - [x] Existing Bot journeys and Layer 1 safe Simulator remain operational with fakes.
 - [x] Full Python, Relay, Next tests; format/typecheck/lint/build in Codespace.
 - [x] Final independent code/security review and fixes/retest.
-- [ ] Verify GitHub Actions disabled, publish evidence/docs, clean tracked tree and Draft PR.
+- [x] Verify GitHub Actions disabled, publish evidence/docs, clean tracked tree and Draft PR.
 
 Verification: 968 Python, 99 Next, 14 Relay, 11 Action PostgreSQL, 4 Workflow
 PostgreSQL, 35 browser checks/64 layout combinations; build PASS. Evidence/docs
-are published with the branch. Progress remains 85% under the blocker rule:
-the saved repository Actions setting is enabled, and automatic approval review
-rejected saving Disabled without more explicit user permission. No workaround or
-PR-triggered workflow is attempted. Prepared Draft PR base is the Layer 1 branch.
+are published with the branch. The user explicitly authorized disabling GitHub
+Actions; Save succeeded and Disabled persisted after reload. Draft PR #16 targets
+the Layer 1 branch. Documentation/evidence closure leaves executable source equal
+to the verified tree. Layer 2 progress is 100%; Layer 3 is not started.
 
 ## Review focus
 

@@ -1,14 +1,17 @@
 # Layer 2 acceptance — 2026-11-05
 
-**Status: all implementation verification gates PASS; final acceptance BLOCKED
-on the repository Actions setting.**
-Reported progress is held at **85%** under the brief's blocker rule. No Layer 3
-or Layer 4 implementation, live provider call, merge or deployment is included.
+**LAYER 2 PROGRESS: 100%**
+**STATUS: COMPLETE — READY FOR LAYER 3.**
+All implementation and finalization gates passed. GitHub Actions is disabled,
+and [Draft PR #16](https://github.com/MortezaMohebi/AiogramShopBot/pull/16) targets
+the completed Layer 1 branch. No Layer 3 or Layer 4 implementation, live provider
+call, merge or deployment is included.
 
 ## Branch, scope and evidence
 
 - Base: `feat/bot-experience-workflow-builder`, `c3c6e79796f864f09df4deb0462cd36f221dbf9e`.
 - Feature: `feat/bot-experience-layer2-action-registry`.
+- Draft PR: `https://github.com/MortezaMohebi/AiogramShopBot/pull/16`.
 - Reviewed application source: `037ab2c5a26a969bb435dcac890cf215fc05cfb0`.
 - Current acceptance runner: `e17aac89e2628bbd4c779b708b381938914c7677`.
 - Final documentation/evidence commit is the feature branch HEAD.
@@ -38,8 +41,8 @@ limits, future Layer 3 contracts and architectural boundaries.
 | Full final Codespace offline suite and build | PASS — Python 968 (122.86 s), Relay 14, Next 99, compile/typecheck/lint/build | `action-registry/codespace-final-gate.log`; `summary.json` |
 | Full final browser suite | PASS — 35; 64 viewport/theme route combinations | `browser-all.json`; source `e17aac89`; no uncaught or Next MCP errors |
 | Final independent implementation review | PASS; no remaining Critical/Important/Minor findings | Scope and verification below |
-| GitHub Actions disabled | **BLOCKED** | Current saved repository setting allows all Actions; save of Disabled rejected by automatic approval review |
-| Draft PR finalization | **BLOCKED by Actions prerequisite** | Avoid creating a PR that could trigger the currently enabled workflow |
+| GitHub Actions disabled | PASS | Explicitly authorized Save succeeded; Disabled persisted after reload; `github-actions-status.json` and screenshot |
+| Draft PR finalization | PASS — Draft PR #16 | Correct Layer 1 base, Layer 2 head; no merge or deployment |
 
 ## Defects reproduced and corrected
 
@@ -130,20 +133,26 @@ using its exact diagnostic label in this isolated database. The owned Codespace
 checkout was clean after the evidence commit. All five original main-stack
 containers were checked and remained healthy.
 
-## GitHub Actions blocker
+## GitHub Actions and finalization
 
-The saved repository setting was inspected directly at
-`https://github.com/MortezaMohebi/AiogramShopBot/settings/actions`.
-**Allow all actions and reusable workflows** was selected. An API workflow list
-of zero was not treated as proof that Actions were disabled.
+The repository setting at
+`https://github.com/MortezaMohebi/AiogramShopBot/settings/actions` was saved as
+**Disable actions** after the user explicitly requested this exact change.
+The page confirmed **Actions policy updated**; a subsequent reload still showed
+Disabled selected and Allow all unselected. The repository Actions tab was hidden.
+`github-actions-status.json` records the result and the successful saved-state
+screenshot. Draft PR #16 was created only after this persisted-state verification.
 
-Selecting Disabled and attempting Save was rejected by automatic approval
-review: persisting this repository availability/access setting required more
-explicit user authorization. The page was reloaded; no setting change was
-saved, no alternative API/workaround attempted, and no workflow enabled or
-dispatched. The remaining final step requires explicit permission to disable
-Actions, re-read the saved state, then open the prepared Draft PR against the
-Layer 1 branch. Do not report 100% or start Layer 3 before this is resolved.
+Earlier attempts were blocked by automatic approval review until the user gave
+explicit authorization. Their unsaved screenshots are retained as historical
+evidence; they do not describe the final setting. No alternative API/workaround
+was used and no workflow was enabled or dispatched.
+
+Closure changes after the verified `e17aac89` application/runner tree contain
+documentation and QA evidence only. Executable source equality, committed result
+counts, clean diff/tree, Draft PR metadata and the saved Actions policy were
+checked again. These finalization changes did not require repeating the unchanged
+application test/build suites. Layer 3 remains a separate future phase.
 
 ## Limits and risks
 
