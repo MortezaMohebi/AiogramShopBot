@@ -57,6 +57,8 @@ function scrollTo(selector) {
 /** Physical clicks require the target in view; never bypass hit testing. */
 function targetClick(selector) {
   scrollTo(selector);
+  // Refresh the driver's screen map for CSS targets as well as AX references.
+  snapshot();
   ab("click", selector);
 }
 function reference(snapshot, description) {
@@ -256,10 +258,10 @@ function add(description, label, type) {
   const previous = counts().nodes;
   click(description);
   wait(
-    `document.querySelectorAll('.react-flow__node').length===${previous + 1}`,
+    `document.querySelectorAll('[aria-label=\"فهرست مراحل\"] > button').length===${previous + 1}`,
   );
   const id = read(
-    "[...document.querySelectorAll('.react-flow__node')].at(-1).getAttribute('data-id')",
+    "document.querySelector('fieldset code').textContent.split(' · ')[0]",
   );
   wait(
     `document.querySelector('fieldset code')?.textContent.startsWith(${JSON.stringify(id + " ·")})===true`,
@@ -273,11 +275,14 @@ function add(description, label, type) {
   fill("عنوان گره", label);
   return id;
 }
+/** The narrow Editor shows a step list; its hidden Canvas has no measured edges. */
 function counts() {
-  return read(
-    "({nodes:document.querySelectorAll('.react-flow__node').length,edges:document.querySelectorAll('.react-flow__edge').length})",
-  );
+  return read(`(()=>{
+    const steps=[...document.querySelectorAll('[aria-label="فهرست مراحل"] > button')];
+    return {nodes:steps.length,edges:steps.reduce((n,step)=>n+Number.parseInt(step.lastElementChild.innerText,10),0)};
+  })()`);
 }
+
 function businessCounts() {
   return JSON.parse(
     docker(`import asyncio,json
@@ -405,8 +410,10 @@ try {
     pass("Modify message and save a fresh revision");
     ab("set", "viewport", "1440", "1000");
     wait(
-      "document.querySelectorAll('.react-flow__node').length===5&&[...document.querySelectorAll('.react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible')",
+      "document.querySelectorAll('.react-flow__node').length===5&&document.querySelectorAll('.react-flow__edge').length===5&&[...document.querySelectorAll('.react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible'&&n.getBoundingClientRect().width>0)",
     );
+    click("نمایش همهٔ گره‌ها");
+    saved();
     const m = capture("editor-desktop");
     assert(m.nodes.length === 5 && m.edges === 5, "Visible Canvas mismatch");
     saved();
