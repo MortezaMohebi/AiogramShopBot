@@ -93,12 +93,17 @@ def _snapshot(record) -> dict:
     return json.loads(record.snapshot_json)
 
 
-def _view(snapshot, row, scope, actor) -> dict:
+async def _view(db, snapshot, row, scope, actor) -> dict:
     """Keep live validation/readiness separate from immutable saved evidence."""
     definition = Definition.model_validate(snapshot["definition"])
+    from services.shop_action_catalog import workflow_report
+
+    validation = await workflow_report(
+        db, scope=scope, actor=actor, store_id=row.store_id, definition=definition
+    )
     return snapshot | {
         "head_revision": row.revision,
-        "validation": validate_definition(definition).model_dump(mode="json"),
+        "validation": validation,
         "runtime_available": False,
         "can_write": security.has_permission(actor.role, "workflows.write")
         and scope.current_store_id == row.store_id
@@ -114,7 +119,7 @@ async def read_workflow(db, *, scope, actor, workflow_id: str, revision=None):
     record = await _revision(
         db, row, revision if revision is not None else row.revision
     )
-    return _view(_snapshot(record), row, scope, actor)
+    return await _view(db, _snapshot(record), row, scope, actor)
 
 
 async def list_workflows(
@@ -267,7 +272,7 @@ async def _create_draft(
     )
     if replay:
         row = await _head(db, scope, actor, replay.workflow_id)
-        return _view(_snapshot(replay), row, scope, actor)
+        return await _view(db, _snapshot(replay), row, scope, actor)
     if definition is None:
         if payload.get("template") == "return_request":
             from services.shop_workflow_templates import (
@@ -317,9 +322,9 @@ async def _create_draft(
         if replay:
             await db.refresh(actor)
             row = await _head(db, scope, actor, replay.workflow_id)
-            return _view(_snapshot(replay), row, scope, actor)
+            return await _view(db, _snapshot(replay), row, scope, actor)
         raise security.SecurityRejected("workflow_key_exists", 409) from None
-    return _view(snapshot, row, scope, actor)
+    return await _view(db, snapshot, row, scope, actor)
 
 
 async def create_draft(db, *, scope, actor, payload: dict):
@@ -354,7 +359,7 @@ async def _mutate(
         digest=digest,
     )
     if replay:
-        return _view(_snapshot(replay), row, scope, actor)
+        return await _view(db, _snapshot(replay), row, scope, actor)
     if payload["expected_revision"] != row.revision:
         raise security.SecurityRejected("workflow_revision_conflict", 409)
     if action in {"save", "archive"} and row.status != "draft":
@@ -403,7 +408,7 @@ async def _mutate(
             await db.refresh(actor)
             authorize(actor, scope)
             await db.refresh(row)
-            return _view(_snapshot(replay), row, scope, actor)
+            return await _view(db, _snapshot(replay), row, scope, actor)
         raise security.SecurityRejected("workflow_revision_conflict", 409)
     await db.refresh(row)
     try:
@@ -430,11 +435,11 @@ async def _mutate(
             await db.refresh(actor)
             authorize(actor, scope)
             await db.refresh(row)
-            return _view(_snapshot(replay), row, scope, actor)
+            return await _view(db, _snapshot(replay), row, scope, actor)
         raise security.SecurityRejected(
             "workflow_operation_conflict", 409
         ) from None
-    return _view(snapshot, row, scope, actor)
+    return await _view(db, snapshot, row, scope, actor)
 
 
 async def save_draft(db, *, scope, actor, workflow_id, payload):
@@ -548,7 +553,7 @@ async def operation_result(db, *, scope, actor, workflow_id, operation_id):
     )
     if record is None:
         raise security.SecurityRejected("workflow_operation_not_found", 404)
-    return _view(_snapshot(record), row, scope, actor)
+    return await _view(db, _snapshot(record), row, scope, actor)
 
 
 async def compare_revisions(db, *, scope, actor, workflow_id, left, right):
@@ -594,7 +599,11 @@ async def validate_workflow(db, *, scope, actor, workflow_id, definition=None):
         ]
     )
     await validate_bindings(db, store_id=row.store_id, definition=definition)
-    return validate_definition(definition).model_dump(mode="json")
+    from services.shop_action_catalog import workflow_report
+
+    return await workflow_report(
+        db, scope=scope, actor=actor, store_id=row.store_id, definition=definition
+    )
 
 
 async def simulate_workflow(db, *, scope, actor, workflow_id, payload):

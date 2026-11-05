@@ -1,0 +1,52 @@
+{
+  "environment": "isolated Layer 2 Codespace PostgreSQL",
+  "checks": [
+    {
+      "check": "telegram real catalog/UoM/cart/checkout and no-effect dry-run/simulation",
+      "status": "PASS"
+    },
+    {
+      "check": "bale real catalog/UoM/cart/checkout and no-effect dry-run/simulation",
+      "status": "PASS"
+    },
+    {
+      "check": "PostgreSQL concurrent identical insert claims produce one cart effect and receipt",
+      "status": "PASS"
+    },
+    {
+      "check": "PostgreSQL same idempotency key with different normalized input conflicts",
+      "status": "PASS"
+    },
+    {
+      "check": "PostgreSQL competing absolute cart writes reject a stale cart revision",
+      "status": "PASS"
+    },
+    {
+      "check": "Pending approval resumes the same operation once under concurrent confirmation replay",
+      "status": "PASS"
+    },
+    {
+      "check": "Invalid adapter output rolls back actual cart creation while persisting a safe failed receipt",
+      "status": "PASS"
+    },
+    {
+      "check": "Lost commit acknowledgment reconciles through the same receipt without duplicate effects",
+      "status": "PASS"
+    },
+    {
+      "check": "Supported support Action reuses real ticket service with exact retry and private-body redaction",
+      "status": "PASS"
+    },
+    {
+      "check": "Unavailable services, missing scopes and Cross-Store product access fail closed",
+      "status": "PASS"
+    },
+    {
+      "check": "Real signed HTTP Catalog/dry-run preserves rows, rejects tenant/authority spoofing and exposes no live execute",
+      "status": "PASS"
+    }
+  ],
+  "live_provider_calls": 0,
+  "runtime_enabled": false,
+  "status": "PASS"
+}

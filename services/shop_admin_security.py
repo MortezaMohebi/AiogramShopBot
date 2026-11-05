@@ -39,7 +39,13 @@ ROLE_PERMISSIONS = {
     "marketing": BASE_PERMISSIONS | {"campaigns.manage", "broadcast.approve", "coupons.manage", "reports.read"},
 }
 ALL_PERMISSIONS = frozenset().union(*ROLE_PERMISSIONS.values()) | {
-    "staff.manage", "settings.manage", "bots.read", "bots.configure", "bots.apply", "audit.read",
+    "staff.manage",
+    "settings.manage",
+    "bots.read",
+    "bots.configure",
+    "bots.apply",
+    "audit.read",
+    "actions.approve",
 }
 ROLE_PERMISSIONS["superadmin"] = ALL_PERMISSIONS
 

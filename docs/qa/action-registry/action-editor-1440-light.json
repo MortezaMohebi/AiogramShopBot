@@ -1,0 +1,23 @@
+{
+  "width": 1440,
+  "scroll": 1440,
+  "rtl": "rtl",
+  "nodes": [
+    {
+      "id": "node_b0557d355e77",
+      "visibility": "visible",
+      "width": 416
+    },
+    {
+      "id": "node_738e076a6122",
+      "visibility": "visible",
+      "width": 416
+    },
+    {
+      "id": "node_4635370edded",
+      "visibility": "visible",
+      "width": 416
+    }
+  ],
+  "edges": 6
+}

@@ -226,15 +226,13 @@ class CustomerSupportFlow:
                 topic = reference.removeprefix("topic:")
                 if topic not in {"general", "order", "payment", "delivery", "refund"}:
                     return BotReply("نوع درخواست نامعتبر است.")
-                ticket = ShopSupportTicket(
-                    store_id=self.context.store_id,
+                ticket = await create_ticket_record(
+                    db,
+                    self.context,
+                    identity=identity,
                     customer_id=customer.id,
-                    bot_id=self.context.bot_id,
-                    origin_identity_id=identity.id,
                     topic=topic,
                 )
-                db.add(ticket)
-                await db.flush()
             elif reference.startswith("reply:"):
                 try:
                     ticket_id = int(reference.removeprefix("reply:"))
@@ -250,11 +248,13 @@ class CustomerSupportFlow:
                 ticket.version += 1
             else:
                 return BotReply("فرم درخواست پیدا نشد؛ دوباره شروع کنید.")
-            db.add(ShopSupportMessage(
-                store_id=self.context.store_id, ticket_id=ticket.id,
-                sender_kind="customer", identity_id=identity.id,
+            await append_customer_message(
+                db,
+                self.context,
+                ticket=ticket,
+                identity=identity,
                 body=message,
-            ))
+            )
             state.action = "idle"
             state.context_ref = None
             await db.commit()
@@ -426,3 +426,69 @@ async def staff_reply(
         "customer_id": ticket.customer_id,
         "identity_id": ticket.origin_identity_id,
     }
+
+
+async def create_ticket_record(
+    db: AsyncSession,
+    context: BotContext,
+    *,
+    identity: ShopIdentity,
+    customer_id: int,
+    topic: str,
+    order_id: int | None = None,
+) -> ShopSupportTicket:
+    """Create a scoped support record without committing or sending notifications."""
+    if (
+        identity.store_id != context.store_id
+        or identity.bot_id != context.bot_id
+        or identity.customer_id != customer_id
+        or topic not in {"general", "order", "payment", "delivery", "refund"}
+    ):
+        raise ValueError("Invalid customer support owner or topic.")
+    if order_id is not None:
+        from services.shop_customer_orders import order_visible_to_customer
+
+        if (
+            await order_visible_to_customer(
+                db,
+                store_id=context.store_id,
+                customer_id=customer_id,
+                order_id=order_id,
+            )
+            is None
+        ):
+            raise ValueError("Support order is not owned by this customer.")
+    ticket = ShopSupportTicket(
+        store_id=context.store_id,
+        customer_id=customer_id,
+        bot_id=context.bot_id,
+        origin_identity_id=identity.id,
+        topic=topic,
+        order_id=order_id,
+    )
+    db.add(ticket)
+    await db.flush()
+    return ticket
+
+
+async def append_customer_message(
+    db: AsyncSession,
+    context: BotContext,
+    *,
+    ticket: ShopSupportTicket,
+    identity: ShopIdentity,
+    body: str,
+) -> None:
+    """Append validated private content within the existing support transaction."""
+    if ticket.store_id != context.store_id or identity.store_id != context.store_id:
+        raise ValueError("Support Store mismatch.")
+    db.add(
+        ShopSupportMessage(
+            store_id=context.store_id,
+            ticket_id=ticket.id,
+            sender_kind="customer",
+            identity_id=identity.id,
+            body=validate_ticket_body(body),
+        )
+    )
+    await db.flush()

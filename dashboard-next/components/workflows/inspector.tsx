@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { ActionBindingEditor } from "@/components/actions/binding-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -341,13 +342,15 @@ export function Inspector({
       ? node.config
       : { ...node.config, ...node.platform_overrides[platform] };
   const fields =
-    platform === "base"
-      ? spec.fields
-      : spec.fields.filter(
-          (f) =>
-            f.overridable ??
-            ["text", "textarea", "media", "media_list"].includes(f.kind),
-        );
+    node.type === "action"
+      ? []
+      : platform === "base"
+        ? spec.fields
+        : spec.fields.filter(
+            (f) =>
+              f.overridable ??
+              ["text", "textarea", "media", "media_list"].includes(f.kind),
+          );
   const set = (key: string, value: unknown) =>
     onNode(
       platform === "base"
@@ -366,6 +369,14 @@ export function Inspector({
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-5">
       <legend className="mb-3 font-semibold">{spec.label}</legend>
+      {node.type === "action" && (
+        <ActionBindingEditor
+          config={node.config}
+          definition={definition}
+          actions={catalog.actions ?? []}
+          onChange={(config) => onNode({ ...node, config })}
+        />
+      )}
       <Field label="عنوان گره">
         <Input
           aria-label="عنوان گره"

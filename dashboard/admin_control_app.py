@@ -40,6 +40,7 @@ from dashboard.shop_uom_api import router as shop_uom_router
 from dashboard.shop_model_data_api import router as model_data_router
 from dashboard.shop_customer_experience_api import router as customer_experience_router
 from dashboard.shop_workflow_api import router as workflow_router
+from dashboard.shop_action_api import router as action_router
 from dashboard.shop_digital_api import router as digital_router
 from dashboard.multibot_webhook import router as multi_webhook_router
 from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
@@ -75,20 +76,25 @@ def permission_for(path: str, method: str) -> str | None:
     ):
         return "campaigns.manage"
     return {
-        "media": "media.manage", "testimonials": "media.manage",
+        "media": "media.manage",
+        "testimonials": "media.manage",
         "upload": "campaigns.manage" if path.endswith("/campaign") else "media.manage",
         "orders": "orders.read" if method == "GET" else "orders.manage",
-        "customers": "customers.read", "shipping": "shipping.manage",
-        "coupons": "coupons.manage", "reports": "reports.read",
+        "customers": "customers.read",
+        "shipping": "shipping.manage",
+        "coupons": "coupons.manage",
+        "reports": "reports.read",
         "wallets": "finance.read" if method == "GET" else "wallet.adjust",
         "refunds": "finance.read" if method == "GET" else "refund.execute",
-        "settings": "settings.manage", "referral-policy": "settings.manage",
+        "settings": "settings.manage",
+        "referral-policy": "settings.manage",
         "channel-features": "settings.manage",
         "bot-profiles": "bots.read" if method == "GET" else "bots.configure",
         "payment-rails": "settings.manage",
         "stores": "bots.read" if method == "GET" else "bots.configure",
         "bot-registry": (
-            "bots.apply" if path.endswith("/receiver/activate")
+            "bots.apply"
+            if path.endswith("/receiver/activate")
             else "bots.read" if method == "GET" else "bots.configure"
         ),
         "bot-catalog": "bots.read" if method == "GET" else "bots.configure",
@@ -97,13 +103,23 @@ def permission_for(path: str, method: str) -> str | None:
         "support-tickets": "customers.read",
         "fulfillments": "orders.read" if method == "GET" else "orders.manage",
         "customer-notifications": "bots.read",
-        "workflows": "workflows.read" if method == "GET" or path.endswith(("/validate", "/simulate")) else "workflows.write",
+        "actions": "workflows.read",
+        "workflows": (
+            "workflows.read"
+            if method == "GET" or path.endswith(("/validate", "/simulate"))
+            else "workflows.write"
+        ),
         "digital-deliveries": "orders.read",
         "payment-accounts": "bots.read" if method == "GET" else "bots.apply",
         "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
-        "staff": "staff.manage", "broadcast": "broadcast.approve",
-        "campaigns": "broadcast.approve" if path.endswith(("/start", "/approve")) else "campaigns.manage",
+        "staff": "staff.manage",
+        "broadcast": "broadcast.approve",
+        "campaigns": (
+            "broadcast.approve"
+            if path.endswith(("/start", "/approve"))
+            else "campaigns.manage"
+        ),
         "bot-connections": "bots.read" if method == "GET" else "bots.configure",
         "connection-changes": "bots.read" if method == "GET" else "bots.configure",
     }.get(resource)
@@ -266,14 +282,29 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                     )
                     request.state.store_context = scope
                     multi_safe = {
-                        "store-context", "staff", "stores", "store-customers",
-                        "payment-accounts", "bot-registry", "bot-catalog",
-                        "products", "categories", "orders", "customers",
-                        "overview", "reports", "settings",
-                        "shipping", "coupons", "data-models",
-                        "support-tickets", "fulfillments",
-                        "customer-notifications", "digital-deliveries",
+                        "store-context",
+                        "staff",
+                        "stores",
+                        "store-customers",
+                        "payment-accounts",
+                        "bot-registry",
+                        "bot-catalog",
+                        "products",
+                        "categories",
+                        "orders",
+                        "customers",
+                        "overview",
+                        "reports",
+                        "settings",
+                        "shipping",
+                        "coupons",
+                        "data-models",
+                        "support-tickets",
+                        "fulfillments",
+                        "customer-notifications",
+                        "digital-deliveries",
                         "workflows",
+                        "actions",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -295,9 +326,20 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                     workflow_read = resource == "workflows" and request.method == "POST" and bool(re.fullmatch(
                         re.escape(PREFIX) + r"/workflows/[0-9a-fA-F-]{36}/(?:validate|simulate)", path,
                     ))
-                    if not workflow_read and request.method not in {"GET", "HEAD"} and resource not in {
-                        "store-context",
-                    }:
+                    action_read = (
+                        resource == "actions"
+                        and path == PREFIX + "/actions/dry-run"
+                        and request.method == "POST"
+                    )
+                    if (
+                        not workflow_read
+                        and not action_read
+                        and request.method not in {"GET", "HEAD"}
+                        and resource
+                        not in {
+                            "store-context",
+                        }
+                    ):
                         scope.require(
                             scope.current_store_id,
                             write=True,
@@ -343,6 +385,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(model_data_router)
     app.include_router(customer_experience_router)
     app.include_router(workflow_router)
+    app.include_router(action_router)
     app.include_router(digital_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)

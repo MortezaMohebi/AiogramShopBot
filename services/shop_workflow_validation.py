@@ -591,5 +591,16 @@ def validate_definition(
                     node.id,
                     platform=platform,
                 )
+    from services.shop_action_bindings import binding_findings
+
+    for node in definition.nodes:
+        if node.type == "action":
+            for code, message, severity in binding_findings(
+                node,
+                declarations,
+                platforms or definition.target_platforms,
+                definition.edges,
+            ):
+                add(code, message, node.id, severity=severity)
     valid = not any(issue.severity == "error" for issue in issues)
     return ValidationReport(valid=valid, can_simulate=valid, issues=issues)

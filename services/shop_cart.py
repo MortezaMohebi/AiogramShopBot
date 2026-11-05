@@ -53,6 +53,10 @@ class CartRejected(ValueError):
     """Human-readable cart or checkout validation failure."""
 
 
+class CartRevisionConflict(CartRejected):
+    """The customer reviewed a different cart state; require a fresh operation."""
+
+
 @dataclass(frozen=True, slots=True)
 class QuoteLine:
     """A validated live product row used in a cart quotation."""
@@ -351,67 +355,149 @@ class ShopCartFlow:
         ).order_by(ShopOrder.id.desc()).limit(1))
 
     async def _change_item(
-        self, event: InboundEvent, session: AsyncSession,
-        action: str, product_id: int
+        self,
+        event: InboundEvent,
+        session: AsyncSession,
+        action: str,
+        product_id: int,
     ) -> BotReply:
-        """Modify a cart line with quantity and stock limits."""
-        cart = await self._get_cart(event, session, create=True, lock=True)
-        if await self._existing_pending(session, cart, event) is not None:
-            raise CartRejected("یک سفارش در انتظار بررسی دارید؛ ابتدا وضعیت آن مشخص شود.")
-        result = await session.execute(
-            select(ShopCartItem).where(
-                ShopCartItem.cart_id == cart.id,
-                ShopCartItem.product_id == product_id,
-            ).with_for_update()
-        )
-        line = result.scalar_one_or_none()
-        if action in ("remove", "dec") and line is None:
-            raise CartRejected("این محصول در سبد خرید شما وجود ندارد.")
-        if action == "remove" and line is not None:
-            await session.delete(line)
-        elif action == "dec" and line is not None:
-            if line.quantity == 1:
-                await session.delete(line)
-            else:
-                line.quantity -= 1
-        elif action in ("add", "inc"):
-            # Stale add/inc callbacks cannot bypass a newly denied product.
-            if not await allowed_for_bot(
-                session, self._bot_id(event.platform), [product_id],
-            ):
-                raise CartRejected("این کالا در این بات قابل خرید نیست.")
-            product = await session.get(Product, product_id)
-            if (
-                product is None or not product.is_published
-                or product.store_id != cart.store_id
-            ):
-                raise CartRejected("این کالا برای خرید موجود نیست.")
-            current = line.quantity if line is not None else 0
-            new_quantity = current + 1
-            if new_quantity > 99 or product.stock_quantity < new_quantity:
-                raise CartRejected("تعداد درخواستی از موجودی کالا بیشتر است.")
-            if line is not None:
-                line.quantity = new_quantity
-            else:
-                count = await session.scalar(
-                    select(func.count()).select_from(ShopCartItem).where(
-                        ShopCartItem.cart_id == cart.id
-                    )
-                )
-                if count >= _MAX_LINES:
-                    raise CartRejected("حداکثر تعداد محصولات متفاوت در سبد تکمیل است.")
-                session.add(
-                    ShopCartItem(
-                        cart_id=cart.id,
-                        product_id=product_id,
-                        quantity=1,
-                    )
-                )
-        elif action not in ("remove", "dec"):
-            raise CartRejected("عملیات سبد خرید شناخته‌شده نیست.")
-        cart.revision += 1
+        """Preserve legacy UI commit/reply while sharing the business primitive."""
+        await self.mutate_item(event, session, action, product_id)
         await session.commit()
         return await self._cart_reply(event, session)
+
+    async def plan_item_change(
+        self,
+        event: InboundEvent,
+        session: AsyncSession,
+        action: str,
+        product_id: int,
+        *,
+        quantity: int = 1,
+        expected_revision: int | None = None,
+        lock: bool = False,
+        create: bool = False,
+    ) -> tuple[ShopCart | None, ShopCartItem | None, int]:
+        """Check the same stock/ACL/cart rules without writing in preview mode."""
+        if type(quantity) is not int or not 1 <= quantity <= 99:
+            raise CartRejected("تعداد کالا معتبر نیست.")
+        cart = await self._get_cart(event, session, create=create, lock=lock)
+        if expected_revision is not None and (
+            cart is None or cart.revision != expected_revision
+        ):
+            raise CartRevisionConflict("سبد تغییر کرده است؛ دوباره آن را بررسی کنید.")
+        if (
+            cart is not None
+            and await self._existing_pending(session, cart, event) is not None
+        ):
+            raise CartRejected("یک سفارش در انتظار بررسی دارید؛ ابتدا وضعیت آن مشخص شود.")
+        statement = select(ShopCartItem).where(
+            ShopCartItem.cart_id == cart.id if cart else False,
+            ShopCartItem.product_id == product_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        line = await session.scalar(statement)
+        if action in {"remove", "dec", "set"} and line is None:
+            raise CartRejected("این محصول در سبد خرید شما وجود ندارد.")
+        current = line.quantity if line is not None else 0
+        if action == "remove":
+            return cart, line, 0
+        if action == "dec":
+            return cart, line, current - 1
+        if action not in {"add", "inc", "set"}:
+            raise CartRejected("عملیات سبد خرید شناخته‌شده نیست.")
+        if lock:
+            await lock_bot_catalog_policy(session, self._bot_id(event.platform))
+        if not await allowed_for_bot(
+            session, self._bot_id(event.platform), [product_id]
+        ):
+            raise CartRejected("این کالا در این بات قابل خرید نیست.")
+        product = await session.get(Product, product_id)
+        owner = (
+            self.bot_context.store_id
+            if self.bot_context
+            else (cart.store_id if cart else DEFAULT_STORE_ID)
+        )
+        if product is None or not product.is_published or product.store_id != owner:
+            raise CartRejected("این کالا برای خرید موجود نیست.")
+        new_quantity = quantity if action == "set" else current + quantity
+        if new_quantity > 99 or product.stock_quantity < new_quantity:
+            raise CartRejected("تعداد درخواستی از موجودی کالا بیشتر است.")
+        count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ShopCartItem)
+                .where(
+                    ShopCartItem.cart_id == cart.id if cart else False,
+                )
+            )
+            or 0
+        )
+        if line is None and count >= _MAX_LINES:
+            raise CartRejected("حداکثر تعداد محصولات متفاوت در سبد تکمیل است.")
+        return cart, line, new_quantity
+
+    async def mutate_item(
+        self,
+        event: InboundEvent,
+        session: AsyncSession,
+        action: str,
+        product_id: int,
+        *,
+        quantity: int = 1,
+        expected_revision: int | None = None,
+    ) -> ShopCart:
+        """Flush one whole-unit cart change; caller owns commit and receipt atomicity."""
+        cart, line, new_quantity = await self.plan_item_change(
+            event,
+            session,
+            action,
+            product_id,
+            quantity=quantity,
+            expected_revision=expected_revision,
+            lock=True,
+            create=True,
+        )
+        if new_quantity == 0:
+            await session.delete(line)
+        elif line is not None:
+            line.quantity = new_quantity
+        else:
+            session.add(
+                ShopCartItem(
+                    cart_id=cart.id, product_id=product_id, quantity=new_quantity
+                )
+            )
+        cart.revision += 1
+        await session.flush()
+        return cart
+
+    async def clear_cart(
+        self,
+        event: InboundEvent,
+        session: AsyncSession,
+        *,
+        expected_revision: int,
+    ) -> ShopCart:
+        """Clear the confirmed current revision without changing stock or committing."""
+        cart = await self._get_cart(event, session, lock=True)
+        if cart is None or cart.revision != expected_revision:
+            raise CartRevisionConflict("سبد تغییر کرده است؛ دوباره آن را بررسی کنید.")
+        if await self._existing_pending(session, cart, event) is not None:
+            raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
+        await session.execute(
+            delete(ShopCartItem).where(ShopCartItem.cart_id == cart.id)
+        )
+        await session.execute(
+            delete(ShopCartInputSession).where(ShopCartInputSession.cart_id == cart.id)
+        )
+        cart.coupon_id = None
+        cart.shipping_method_id = None
+        cart.awaiting_input = None
+        cart.revision += 1
+        await session.flush()
+        return cart
 
     async def _quote(
         self, cart: ShopCart, session: AsyncSession, *, bot_id: str | None = None,

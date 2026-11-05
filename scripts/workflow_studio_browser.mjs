@@ -35,8 +35,13 @@ assert(
   "Set WORKFLOW_PLAYWRIGHT_MODULE to the installed playwright-core/index.mjs",
 );
 const { chromium } = await import(pathToFileURL(modulePath).href);
-const base = "http://localhost:3002",
-  output = "/tmp/workflow-studio-browser";
+const compose = process.env.WORKFLOW_QA_COMPOSE || "compose.workflow-qa.yml";
+assert(["compose.workflow-qa.yml", "compose.action-qa.yml"].includes(compose));
+const actionLab = compose === "compose.action-qa.yml";
+const base = actionLab ? "http://localhost:3003" : "http://localhost:3002",
+  output = actionLab
+    ? "/tmp/action-studio-browser"
+    : "/tmp/workflow-studio-browser";
 const phase = process.env.WORKFLOW_BROWSER_STAGE || "all",
   evidence = [];
 assert(
@@ -48,6 +53,7 @@ assert(
     "recovery",
     "access",
     "layout",
+    "actions",
   ].includes(phase),
   "Unknown browser acceptance stage",
 );
@@ -69,17 +75,7 @@ function pass(check) {
 function docker(code) {
   return execFileSync(
     "docker",
-    [
-      "compose",
-      "-f",
-      "compose.workflow-qa.yml",
-      "exec",
-      "-T",
-      "api",
-      "python",
-      "-c",
-      code,
-    ],
+    ["compose", "-f", compose, "exec", "-T", "api", "python", "-c", code],
     { encoding: "utf8", timeout: 45000, stdio: ["ignore", "pipe", "pipe"] },
   ).trim();
 }
@@ -295,7 +291,14 @@ async function node(index) {
     /^\d+\.\s*/,
     "",
   );
-  await row.click();
+  if (await row.isVisible()) await row.click();
+  else {
+    // Desktop uses the real Canvas; its equivalent mobile list is hidden.
+    await page
+      .locator(".react-flow__node")
+      .getByText(label, { exact: true })
+      .click();
+  }
   await wait(
     `document.querySelector('[aria-label="عنوان گره"]')?.value===${JSON.stringify(label)}`,
   );
@@ -358,6 +361,10 @@ try {
     ),
   );
   state.sampleId = fixture.workflow_id;
+  if (phase === "actions") {
+    assert(actionLab, "Action browser acceptance requires the Action QA stack");
+    state.id ||= fixture.workflow_id;
+  }
   const before = businessCounts();
   if (phase === "all" || phase === "editor") {
     await open("/studio/workflows/new");
@@ -462,6 +469,238 @@ try {
   }
   assert(state.id, "Run editor stage first");
   const path = `/studio/workflows/${state.id}`;
+  if ((phase === "all" && actionLab) || phase === "actions") {
+    const actionFixture = JSON.parse(
+      docker(
+        "from pathlib import Path; print(Path('/qa/action-registry-fixture.json').read_text())",
+      ),
+    );
+    const betaFixture = JSON.parse(
+      docker(
+        "from pathlib import Path; print(Path('/qa/beta-fixture.json').read_text())",
+      ),
+    );
+    const rows = () =>
+      page.locator('[aria-label="فهرست Actionها"] button[aria-pressed]');
+    const settled = () =>
+      page.waitForFunction(
+        () =>
+          document
+            .querySelector('[aria-label="فهرست Actionها"]')
+            ?.getAttribute("aria-busy") === "false",
+      );
+    await open("/studio/actions");
+    assert.equal(await rows().count(), 19);
+    assert.equal(await button("اجرای Dry-run").count(), 0);
+    await select("گروه Action", "cart");
+    await settled();
+    assert.equal(await rows().count(), 5);
+    await select("اثر جانبی", "business_mutation");
+    await settled();
+    assert.equal(await rows().count(), 4);
+    await fill("جستجوی Action", "cart.clear");
+    await settled();
+    assert.equal(await rows().count(), 1);
+    await waitText("تأیید مشتری لازم است");
+    await select("وضعیت نسخه", "true");
+    await settled();
+    assert.equal(await rows().count(), 0);
+    await select("وضعیت نسخه", "all");
+    await select("گروه Action", "");
+    await select("اثر جانبی", "");
+    await fill("جستجوی Action", "catalog.get_product");
+    await settled();
+    assert.equal(await rows().count(), 1);
+    pass(
+      "Action Catalog lists19 real contracts and filters group/effect/deprecation/search",
+    );
+    for (const [platform, botId] of [
+      ["telegram", actionFixture.bot_id],
+      ["bale", actionFixture.bale_bot_id],
+    ]) {
+      await select("Context ربات", botId);
+      await settled();
+      await field("product_id").waitFor();
+      await fill("product_id", actionFixture.product_id);
+      const received = page.waitForResponse(
+        (r) =>
+          r.url().includes("/api/admin/actions/dry-run") &&
+          r.request().method() === "POST",
+      );
+      await click("اجرای Dry-run");
+      const result = await (await received).json();
+      assert.equal(result.status, "succeeded");
+      assert.equal(result.dry_run, true);
+      assert.equal(result.output.id, actionFixture.product_id);
+      assert.equal(result.execution_receipt, null);
+      await waitText("بررسی بدون تغییر انجام شد.");
+      pass("Actual scoped Catalog Dry-run through signed Backend: " + platform);
+    }
+    await page.getByText("قرارداد ورودی و خروجی", { exact: true }).click();
+    await waitText('"product_id"');
+    pass(
+      "Input/output/error schemas and side-effect/confirmation/idempotency policies visible",
+    );
+    await click("انتخاب یک یا چند فروشگاه فعال");
+    await page.getByRole("dialog").waitFor();
+    await page
+      .getByRole("radio", { name: /^انتخاب فروشگاه آزمایشی 2 / })
+      .check();
+    await click("اعمال انتخاب");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await field("Context ربات").waitFor();
+    // The dialog closes before router.refresh applies its new server props.
+    // Observe the remounted Store context before inspecting its reset state.
+    await page.waitForFunction(
+      () => document.querySelector('[aria-label="Context ربات"]')?.value === "",
+    );
+    assert.equal(await field("Context ربات").inputValue(), "");
+    assert.equal(await button("اجرای Dry-run").count(), 0);
+    await fill("جستجوی Action", "catalog.get_product");
+    await select("Context ربات", betaFixture.bots.foreign);
+    await settled();
+    await fill("product_id", actionFixture.product_id);
+    const deniedResponse = page.waitForResponse(
+      (r) =>
+        r.url().includes("/api/admin/actions/dry-run") &&
+        r.request().method() === "POST",
+    );
+    await click("اجرای Dry-run");
+    const denied = await (await deniedResponse).json();
+    assert.equal(denied.status, "failed");
+    assert(!denied.output);
+    await click("انتخاب یک یا چند فروشگاه فعال");
+    await page.getByRole("dialog").waitFor();
+    await page
+      .getByRole("radio", { name: /^انتخاب فروشگاه آزمایشی 1 / })
+      .check();
+    await click("اعمال انتخاب");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    pass(
+      "Store switch remounts Catalog, drops previous Bot and denies foreign product Dry-run",
+    );
+    await open("/studio/workflows/new");
+    await fill("نام فرایند جدید", "آزمون اتصال Action");
+    await fill("کلید فرایند", "qa_action_browser_" + Date.now());
+    await click("ساخت پیش‌نویس");
+    await field("جستجوی گره").waitFor();
+    state.actionId = page.url().split("/").at(-1);
+    const start = await add("شروع و کنترل شروع", "ACTION_START", "start");
+    const end = await add("شروع و کنترل پایان", "ACTION_END", "end");
+    const action = await add(
+      "عملیات Backend Action تایپ‌شده",
+      "QA_ACTION",
+      "action",
+    );
+    await select("Action", "cart.add_item");
+    await select("منبع product_id", "constant");
+    await fill("مقدار ثابت product_id", actionFixture.product_id);
+    await select("منبع quantity", "constant");
+    await fill("مقدار ثابت quantity", 2);
+    for (const port of [
+      "success",
+      "error",
+      "retry",
+      "pending_approval",
+      "unavailable",
+    ])
+      await select("مقصد " + port, end);
+    // New Canvas nodes may overlap until the user lays out the graph.
+    await click("چیدمان خودکار");
+    await node(1);
+    await select("مقصد next", action);
+    await click("چیدمان خودکار");
+    await saved();
+    const actionPath = `/studio/workflows/${state.actionId}`;
+    await open(actionPath + "/settings");
+    await page.getByRole("button", { name: "متغیر", exact: true }).click();
+    await fill("نام متغیر 1", "result_revision");
+    await select("نوع متغیر 1", "integer");
+    await saved();
+    await editor(actionPath);
+    await node(3);
+    await select("خروجی revision", "result_revision");
+    await saved();
+    await click("بررسی تعریف فعلی");
+    await waitText("تعریف در آخرین بررسی معتبر بود");
+    await expectCounts(3, 6);
+    await page.reload();
+    await field("جستجوی گره").waitFor();
+    await node(3);
+    assert.equal(await field("Action").inputValue(), "cart.add_item");
+    assert.equal(await field("نسخهٔ Action").inputValue(), "1.0.0");
+    assert.equal(await field("مقدار ثابت quantity").inputValue(), "2");
+    assert.equal(await field("خروجی revision").inputValue(), "result_revision");
+    pass(
+      "Actual UI creates typed Action with five outcomes, exact version, constant inputs and declared output variable; save/reload",
+    );
+    for (const platform of ["telegram", "bale"]) {
+      await open(actionPath + "/preview");
+      await select("پلتفرم شبیه‌سازی", platform);
+      const response = page.waitForResponse(
+        (r) => r.url().includes("/simulate") && r.request().method() === "POST",
+      );
+      await click("شروع شبیه‌سازی");
+      const simulated = await (await response).json();
+      assert.equal(simulated.status, "completed");
+      assert.equal(simulated.values.result_revision, 2);
+      assert(simulated.stub_actions.includes("cart.add_item@1.0.0"));
+      assert(simulated.messages.every((m) => m.simulation_only));
+      await waitText("completed");
+      pass(
+        "Typed Action preview with synthetic output and variable mapping: " +
+          platform,
+      );
+    }
+    for (const width of [320, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const [name, route] of [
+        ["actions", "/studio/actions"],
+        ["action-editor", actionPath],
+      ]) {
+        await open(route);
+        if (name === "actions") {
+          await fill("جستجوی Action", "catalog.get_product");
+          await select("Context ربات", actionFixture.bot_id);
+          await settled();
+          await page
+            .getByText("قرارداد ورودی و خروجی", { exact: true })
+            .click();
+        } else await node(3);
+        for (const theme of ["light", "dark"]) {
+          if (
+            (await read(
+              "document.documentElement.classList.contains('dark')",
+            )) !==
+            (theme === "dark")
+          )
+            await click("تغییر حالت روشن و تاریک");
+          await wait(
+            `document.documentElement.classList.contains('dark')===${theme === "dark"}`,
+          );
+          const m = await metrics();
+          assert.equal(m.width, width);
+          assert.equal(m.scroll, width, `${name}/${width}/${theme} overflow`);
+          assert.equal(m.rtl, "rtl");
+          if (
+            (width === 390 && theme === "dark") ||
+            (width === 1440 && theme === "light")
+          )
+            await capture(`${name}-${width}-${theme}`);
+        }
+      }
+      pass(`Action Catalog and typed inspector RTL/light/dark at ${width}px`);
+    }
+    await open("/studio/actions");
+    await field("جستجوی Action").focus();
+    await page.keyboard.press("Tab");
+    assert.equal(
+      await page.locator(":focus").getAttribute("aria-label"),
+      "گروه Action",
+    );
+    pass("Catalog keyboard tab order reaches labelled native controls");
+    persist();
+  }
   if (phase === "all" || phase === "preview") {
     for (const platform of ["telegram", "bale"]) {
       await begin(platform, path + "/preview");

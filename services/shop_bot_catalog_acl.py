@@ -156,10 +156,16 @@ async def visible_product_ids(
 async def lock_bot_catalog_policy(
     db: AsyncSession, bot_id: str,
 ) -> None:
-    """Serialize payment/order creation with any per-bot ACL edit."""
+    """Serialize policy edits without upgrading unrelated foreign-key locks.
+
+    PostgreSQL's NO KEY UPDATE conflicts with rule writers' UPDATE locks but
+    remains compatible with the KEY SHARE locks held by receipt/cart foreign
+    keys. An UPDATE lock here can deadlock two valid cart mutations after both
+    have inserted their independent execution receipts.
+    """
     owned = await db.scalar(select(ShopBot.id).where(
         ShopBot.id == bot_id,
-    ).with_for_update())
+    ).with_for_update(key_share=True))
     if owned is None:
         raise security.SecurityRejected("bot_not_found", 404)
 
