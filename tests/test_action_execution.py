@@ -72,7 +72,7 @@ def registry(*, confirmation="none", adapter=change, available=True):
             Change,
             Changed,
             adapter if available else None,
-            simulate=lambda data: {"stock": data["amount"]},
+            simulate=lambda data, platform: {"stock": data["amount"]},
         )
     )
     return result
@@ -291,3 +291,39 @@ async def test_missing_adapter_is_unavailable_without_production_success(buyer):
     )
     assert result.status == "unavailable" and result.output is None
     assert (await db.get(Product, product.id)).stock_quantity == 5
+
+
+@pytest.mark.asyncio
+async def test_confirmation_is_not_issued_for_an_action_without_that_policy(buyer):
+    """Proof issuance cannot be used as a generic capability minting endpoint."""
+    from services.shop_actions.contracts import ActionRejected
+
+    db, principal = buyer
+    product, _ = seed(db)
+    with pytest.raises(ActionRejected, match="action_approval_forbidden"):
+        await issue_authorization(
+            db,
+            subject=principal,
+            approver=principal,
+            invocation=invocation(product.id),
+            purpose="customer_confirmation",
+            registry=registry(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_unavailable_action_cannot_receive_a_confirmation(buyer):
+    """A nonexistent executor cannot be approved speculatively for later activation."""
+    from services.shop_actions.contracts import ActionRejected
+
+    db, principal = buyer
+    product, _ = seed(db)
+    with pytest.raises(ActionRejected, match="action_service_unavailable"):
+        await issue_authorization(
+            db,
+            subject=principal,
+            approver=principal,
+            invocation=invocation(product.id),
+            purpose="customer_confirmation",
+            registry=registry(confirmation="customer_confirmation", available=False),
+        )

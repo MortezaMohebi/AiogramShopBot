@@ -133,6 +133,14 @@ sys.modules.setdefault("pyngrok", pyngrok_module)
 
 redis_module = ModuleType("redis")
 redis_asyncio_module = ModuleType("redis.asyncio")
+redis_exceptions_module = ModuleType("redis.exceptions")
+
+
+class RedisError(Exception):
+    """Mirror the real Redis infrastructure exception in offline tests."""
+
+
+redis_exceptions_module.RedisError = RedisError
 
 
 class _Redis:
@@ -147,6 +155,7 @@ redis_asyncio_module.Redis = _Redis
 redis_module.asyncio = redis_asyncio_module
 sys.modules.setdefault("redis", redis_module)
 sys.modules.setdefault("redis.asyncio", redis_asyncio_module)
+sys.modules.setdefault("redis.exceptions", redis_exceptions_module)
 
 db_module = ModuleType("db")
 

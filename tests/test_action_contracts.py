@@ -95,6 +95,9 @@ def test_registry_keeps_versions_explicit():
         "__import__.module",
         "catalog..read",
         "catalog/read",
+        "backend.execute_python",
+        "backend.call_url",
+        "backend.invoke_service",
     ],
 )
 def test_unsafe_keys_are_never_registered(key):

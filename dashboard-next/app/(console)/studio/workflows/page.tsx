@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StudioHomeNav } from "@/components/workflows/studio-home-nav";
 import { adminFetch } from "@/lib/bridge";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ export default async function WorkflowsPage({
     `/studio/workflows?q=${encodeURIComponent(q)}&status=${status}&page=${p}`;
   return (
     <div className="min-w-0">
+      <StudioHomeNav current="workflows" />
       <PageHeading
         title="Bot Experience Studio"
         description="طراحی فرایندهای مکالمه برای Telegram و Bale؛ تعریف قابل‌حمل، تاریخچهٔ نسخه و شبیه‌سازی در فروشگاه شما."

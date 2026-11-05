@@ -26,7 +26,7 @@ class ActionSpec:
     output_model: type[BaseModel]
     adapter: Adapter | None
     preflight: Adapter | None = None
-    simulate: Callable[[dict], dict] | None = None
+    simulate: Callable[[dict, str], dict] | None = None
 
     def input(self, value: dict) -> BaseModel:
         """Validate bounded input without echoing private values in errors."""

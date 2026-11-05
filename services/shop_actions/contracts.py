@@ -143,7 +143,9 @@ class ActionDescriptor(StrictModel):
             "additionalProperties": False,
         }
     )
-    required_context: list[str] = Field(default_factory=lambda: ["store", "bot"])
+    required_context: list[
+        Literal["store", "bot", "customer", "administrator", "workflow", "node"]
+    ] = Field(default_factory=lambda: ["store", "bot"])
     allowed_actors: list[Literal["customer", "staff"]] = Field(
         default_factory=lambda: ["customer", "staff"], min_length=1, max_length=2
     )
@@ -185,6 +187,18 @@ class ActionDescriptor(StrictModel):
             "subprocess",
             "builtins",
             "importlib",
+        }:
+            raise ValueError("action_unsafe_key")
+        if self.key.split(".")[1] in {
+            "execute_python",
+            "execute_javascript",
+            "execute_js",
+            "execute_command",
+            "run_sql",
+            "call_url",
+            "invoke_service",
+            "call_method",
+            "call_backend_method",
         }:
             raise ValueError("action_unsafe_key")
         mutation = self.side_effect not in {"none", "read_only"}

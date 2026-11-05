@@ -93,6 +93,18 @@ async def staff_principal(db, *, scope, actor, bot_id: str) -> ActionPrincipal:
         fresh_actor = await db.get(ShopStaff, actor.id)
         if fresh_actor is None or not fresh_actor.is_active:
             raise ActionRejected("action_actor_unavailable")
+        from models.shop_admin_control import AdminSession
+
+        session = await db.get(AdminSession, fresh_scope.session_id)
+        instant = security.clock()
+        if (
+            session is None
+            or session.version != fresh_actor.session_version
+            or session.revoked_at is not None
+            or security.utc(session.expires_at) <= instant
+            or security.utc(session.last_seen_at) + security.IDLE_LIMIT <= instant
+        ):
+            raise ActionRejected("action_actor_unavailable")
         security.require_permission(fresh_actor.role, "workflows.read")
         from models.shop_multibot import ShopBot
 
@@ -108,11 +120,7 @@ async def staff_principal(db, *, scope, actor, bot_id: str) -> ActionPrincipal:
         grants = frozenset(
             key
             for key in STAFF_SCOPES
-            if (
-                fresh_actor.role == "superadmin"
-                if key == "actions.approve"
-                else security.has_permission(fresh_actor.role, key)
-            )
+            if security.has_permission(fresh_actor.role, key)
         )
     except (security.SecurityRejected, ValueError):
         raise ActionRejected("action_actor_unavailable") from None

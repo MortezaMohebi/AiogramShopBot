@@ -151,7 +151,7 @@ async def invoke(
         spec = registry.resolve(invocation.action_key, invocation.action_version)
         typed_input = spec.input(invocation.input)
         descriptor = spec.descriptor
-        await require_available(db, principal, spec)
+        await require_available(db, principal, spec, invocation)
         await _workflow_scope(db, principal, invocation)
         if invocation.attempt > descriptor.max_retries:
             raise ActionRejected("action_retry_exhausted")
@@ -161,7 +161,9 @@ async def invoke(
             result = ActionResult(
                 status="succeeded",
                 output=spec.safe_output(
-                    spec.simulate(typed_input.model_dump(mode="json"))
+                    spec.simulate(
+                        typed_input.model_dump(mode="json"), principal.platform
+                    )
                 ),
                 correlation_id=invocation.correlation_id,
                 simulated=True,
@@ -284,6 +286,7 @@ async def invoke(
             unavailable=error.code
             in {
                 "action_service_unavailable",
+                "action_return_policy_unavailable",
                 "action_platform_unavailable",
                 "action_bot_unavailable",
                 "action_cart_disabled",

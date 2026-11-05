@@ -37,6 +37,16 @@ async def issue_authorization(
     approver = await refresh_principal(db, approver)
     spec = registry.resolve(invocation.action_key, invocation.action_version)
     typed_input = spec.input(invocation.input)
+    from services.shop_actions.policies import require_available
+
+    await require_available(db, subject, spec, invocation)
+    required = (
+        {"customer_confirmation", "operator_approval"}
+        if spec.descriptor.confirmation == "both"
+        else {spec.descriptor.confirmation}
+    )
+    if purpose not in required:
+        raise ActionRejected("action_approval_forbidden")
     if invocation.mode != "live" or not 1 <= lifetime_seconds <= 900:
         raise ActionRejected("action_approval_invalid")
     if purpose == "customer_confirmation":

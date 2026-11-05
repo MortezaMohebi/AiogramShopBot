@@ -146,22 +146,15 @@ async def results(
     scope = await resolve_scope(db, bot_id=context.bot_id)
     if not scope.available:
         return BotReply("کاتالوگ این بات در حال حاضر فعال نیست.")
-
-    term = "%" + escape_like(state.query_text.strip()) + "%"
-    keys = (
-        _SEARCH_FIELDS.values()
-        if state.query_field == "all"
-        else (_SEARCH_FIELDS[state.query_field],)
+    items, total, page = await query_products(
+        db,
+        context,
+        query=state.query_text,
+        field_name=state.query_field,
+        page=requested_page + 1,
+        page_size=_SEARCH_PAGE_SIZE,
     )
-    predicate = or_(*(column.ilike(term, escape="\\") for column in keys))
-    constraints = (
-        permitted_product_clause(scope),
-        Product.store_id == context.store_id,
-        predicate,
-    )
-    total = int(await db.scalar(
-        select(func.count()).select_from(Product).where(*constraints)
-    ) or 0)
+    page -= 1
     if total == 0:
         return BotReply(
             f"برای «{state.query_text[:70]}» نتیجه‌ای پیدا نشد.\n"
@@ -173,12 +166,6 @@ async def results(
             ),
         )
     last_page = (total - 1) // _SEARCH_PAGE_SIZE
-    page = min(requested_page, last_page)
-    items = (await db.scalars(select(Product).where(
-        *constraints,
-    ).order_by(
-        Product.position, Product.id,
-    ).offset(page * _SEARCH_PAGE_SIZE).limit(_SEARCH_PAGE_SIZE))).all()
     rows = [
         (InlineAction(
             item.name[:59] + "…" if len(item.name) > 60 else item.name,
@@ -262,3 +249,56 @@ async def stop(
         "جستجو متوقف شد.",
         _rows(InlineAction("🏠 منوی اصلی", "shop:home")),
     )
+
+
+async def query_products(
+    db: AsyncSession,
+    context: BotContext,
+    *,
+    query: str = "",
+    field_name: str = "all",
+    page: int = 1,
+    page_size: int = 20,
+    category_id: int | None = None,
+) -> tuple[list[Product], int, int]:
+    """Read typed paginated products using the same customer search and ACL rules."""
+    if (
+        field_name not in permitted_search_fields()
+        or not 1 <= page <= 10001
+        or not 1 <= page_size <= 50
+        or (query and not search_text_valid(query))
+    ):
+        raise ValueError("Invalid bounded catalog search.")
+    scope = await resolve_scope(db, bot_id=context.bot_id)
+    constraints = [
+        permitted_product_clause(scope),
+        Product.store_id == context.store_id,
+    ]
+    if query:
+        term = "%" + escape_like(query.strip()) + "%"
+        fields = (
+            _SEARCH_FIELDS.values()
+            if field_name == "all"
+            else (_SEARCH_FIELDS[field_name],)
+        )
+        constraints.append(or_(*(column.ilike(term, escape="\\") for column in fields)))
+    if category_id is not None:
+        constraints.append(Product.category_id == category_id)
+    total = int(
+        await db.scalar(select(func.count()).select_from(Product).where(*constraints))
+        or 0
+    )
+    actual_page = min(page, max(1, (total + page_size - 1) // page_size))
+    items = (
+        await db.scalars(
+            select(Product)
+            .where(*constraints)
+            .order_by(
+                Product.position,
+                Product.id,
+            )
+            .offset((actual_page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    return list(items), total, actual_page

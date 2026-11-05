@@ -8,6 +8,8 @@ from typing import Annotated, Literal
 from pydantic import Field, create_model
 
 from services.shop_platform_capabilities import platform_capabilities
+from services.shop_action_binding_schema import ActionInputSource
+from services.shop_actions.definitions import definitions as action_definitions
 from services.shop_workflow_schema import (
     Condition,
     StrictModel,
@@ -410,6 +412,45 @@ def _specs() -> list[NodeSpec]:
                 contract_available=kind not in UNAVAILABLE_ACTIONS,
             )
         )
+    result.append(
+        NodeSpec(
+            "action",
+            "Action تایپ‌شده",
+            "عملیات Backend",
+            (
+                f(
+                    "action_key",
+                    "Action",
+                    "action_key",
+                    Annotated[str, Field(max_length=81)],
+                    required=True,
+                ),
+                f(
+                    "action_version",
+                    "نسخهٔ Action",
+                    "action_version",
+                    ShortName,
+                    "1.0.0",
+                    required=True,
+                ),
+                f(
+                    "input_mapping",
+                    "ورودی‌های Action",
+                    "action_inputs",
+                    Annotated[dict[str, ActionInputSource], Field(max_length=40)],
+                    {},
+                ),
+                f(
+                    "output_mapping",
+                    "خروجی‌های Action",
+                    "action_outputs",
+                    Annotated[dict[str, str], Field(max_length=40)],
+                    {},
+                ),
+            ),
+            ("success", "error", "retry", "pending_approval", "unavailable"),
+        )
+    )
     return result
 
 
@@ -457,7 +498,7 @@ def node_catalog() -> dict:
                     "available": spec.contract_available,
                     "execution_available": False,
                     "simulation_only": bool(
-                        spec.service or key in UNAVAILABLE_ACTIONS
+                        spec.service or key in UNAVAILABLE_ACTIONS or key == "action"
                     ),
                 },
             }
@@ -465,6 +506,9 @@ def node_catalog() -> dict:
     return {
         "schema_version": 1,
         "nodes": nodes,
+        "actions": [
+            item.descriptor.model_dump(mode="json") for item in action_definitions()
+        ],
         "platforms": platform_capabilities(),
         "runtime_available": False,
         "callback_contract": {

@@ -338,6 +338,36 @@ class PreviewInterpreter:
                         port = case["key"]
                         break
                 self.next(port)
+            elif kind == "action":
+                from services.shop_action_bindings import resolve_inputs, write_outputs
+                from services.shop_actions.simulation import simulate_action
+                from services.shop_actions.contracts import ActionRejected
+
+                try:
+                    output = simulate_action(
+                        config["action_key"],
+                        config["action_version"],
+                        resolve_inputs(config, self.state.values),
+                        platform=self.platform,
+                    )
+                    write_outputs(config, output, self.state.values, self.declarations)
+                    key = config["action_key"] + "@" + config["action_version"]
+                    self.state.stub_actions.append(key)
+                    self.emit(
+                        "stub",
+                        "Action فقط با دادهٔ آزمایشی شبیه‌سازی شد: " + key,
+                        action_key=config["action_key"],
+                        action_version=config["action_version"],
+                        output=output,
+                    )
+                    self.next("success")
+                except ActionRejected as error:
+                    self.emit(
+                        "stub",
+                        "ورودی Action آزمایشی قابل پردازش نیست.",
+                        error_code=error.code,
+                    )
+                    self.next("error")
             elif kind in ACTION_SERVICES or kind in UNAVAILABLE_ACTIONS:
                 self.stub(kind, config)
                 self.next()

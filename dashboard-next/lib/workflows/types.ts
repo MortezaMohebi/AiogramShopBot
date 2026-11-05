@@ -157,6 +157,7 @@ export interface NodeSpec {
   };
 }
 export interface Catalog {
+  actions?: import("../actions/types").ActionDescriptor[];
   nodes: NodeSpec[];
   platforms: Record<Platform, Record<string, unknown>>;
   can_write: boolean;

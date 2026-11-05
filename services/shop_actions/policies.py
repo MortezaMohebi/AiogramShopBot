@@ -5,10 +5,20 @@ from services.shop_bot_catalog_acl import resolve_scope
 from services.shop_channel_features import get_features
 
 
-async def availability(db, principal, spec) -> dict:
+async def availability(db, principal, spec, invocation=None) -> dict:
     """Report structured reasons without granting access through metadata."""
     descriptor = spec.descriptor
     reasons = []
+    context = {
+        "store": principal.store_id,
+        "bot": principal.bot_id,
+        "customer": principal.customer_id,
+        "administrator": principal.staff_id,
+        "workflow": invocation.workflow_id if invocation else None,
+        "node": invocation.node_id if invocation and invocation.workflow_id else None,
+    }
+    if any(not context[key] for key in descriptor.required_context):
+        reasons.append("action_context_required")
     if principal.actor_kind not in descriptor.allowed_actors:
         reasons.append("action_actor_not_allowed")
     if not set(descriptor.required_scopes) <= principal.scopes:
@@ -28,8 +38,8 @@ async def availability(db, principal, spec) -> dict:
     return {"available": not reasons, "reasons": reasons}
 
 
-async def require_available(db, principal, spec) -> None:
+async def require_available(db, principal, spec, invocation=None) -> None:
     """Deny an Action before reading business data or attempting a mutation."""
-    result = await availability(db, principal, spec)
+    result = await availability(db, principal, spec, invocation)
     if result["reasons"]:
         raise ActionRejected(result["reasons"][0])
