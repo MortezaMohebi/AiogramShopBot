@@ -142,10 +142,104 @@ async function mcp(name) {
   assert(payload.result && !payload.result.isError, "MCP tool failed");
   return payload.result;
 }
+/** DOM-only observations and user-visible controls; no React state injection. */
+const evidence = [],
+  statePath = output + "/acceptance-state.json";
+const phase = process.env.WORKFLOW_BROWSER_STAGE || "all";
+let state = (() => {
+  try {
+    return JSON.parse(readFileSync(statePath, "utf8"));
+  } catch {
+    return {};
+  }
+})();
+const saveState = () =>
+  writeFileSync(statePath, JSON.stringify(state, null, 2));
+function pass(check) {
+  evidence.push({ check, status: "PASS" });
+  console.log("PASS  " + check);
+}
+function wait(expression) {
+  ab("wait", "--fn", expression);
+}
+function text() {
+  return read("document.body.innerText");
+}
+function waitText(value) {
+  wait(`document.body.innerText.includes(${JSON.stringify(value)})`);
+}
+function click(name) {
+  ab("click", reference(snapshot(), `button "${name}"`));
+}
+function fill(label, value) {
+  ab("fill", `[aria-label=${JSON.stringify(label)}]`, String(value));
+}
+function select(label, value) {
+  ab("select", `select[aria-label=${JSON.stringify(label)}]`, String(value));
+}
+function open(path) {
+  ab("open", base + path);
+  wait("document.querySelector('main h1')!==null");
+  assert(!ab("get", "url").includes("/login"), "Session expired");
+  ab("react", "tree");
+}
+function saved() {
+  waitText("همهٔ تغییرات تأیید شده‌اند");
+}
+function editor(path) {
+  open(path);
+  wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
+}
+function capture(name) {
+  assert(
+    !ab("get", "url").includes("/login"),
+    "Never capture credential forms",
+  );
+  writeFileSync(output + "/" + name + ".txt", snapshot());
+  ab("screenshot", output + "/" + name + ".png");
+  const m = metrics();
+  writeFileSync(output + "/" + name + ".json", JSON.stringify(m, null, 2));
+  assert(
+    m.width === m.scroll,
+    `Horizontal overflow on ${name}: ${m.width}/${m.scroll}`,
+  );
+  assert(m.rtl === "rtl", `RTL missing on ${name}`);
+  return m;
+}
+function node(index) {
+  ab("click", `[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`);
+}
+function add(description, label) {
+  ab("click", reference(snapshot(), `button "${description}"`));
+  fill("عنوان گره", label);
+  return read(
+    "[...document.querySelectorAll('.react-flow__node')].at(-1).getAttribute('data-id')",
+  );
+}
+function counts() {
+  return read(
+    "({nodes:document.querySelectorAll('.react-flow__node').length,edges:document.querySelectorAll('.react-flow__edge').length})",
+  );
+}
+function businessCounts() {
+  return JSON.parse(
+    docker(`import asyncio,json
+from scripts.workflow_studio_e2e import business_counts,engine
+async def main():
+ print(json.dumps(await business_counts()))
+ await engine.dispose()
+asyncio.run(main())`),
+  );
+}
+function begin(platform, path) {
+  open(path);
+  select("پلتفرم شبیه‌سازی", platform);
+  click("شروع شبیه‌سازی");
+}
 try {
-  ab("set", "viewport", "1440", "1000");
+  ab("set", "viewport", "1100", "1000");
   ab("open", base + "/studio/workflows");
-  ab("wait", "--fn", "document.querySelector('h1') !== null");
+  wait("document.querySelector('h1')!==null");
   let tree = snapshot();
   if (ab("get", "url").includes("/login")) {
     ab("fill", reference(tree, 'textbox "نام کاربری"'), "shopadmin");
@@ -157,45 +251,266 @@ try {
     ab("fill", reference(tree, 'textbox "کد احراز هویت'), otp());
     ab("click", reference(tree, 'button "ورود امن"'));
     ab("wait", "--url", "**/dashboard");
-    console.log("PASS  Normal password + MFA browser login", true);
+    pass("Normal password and MFA login");
   }
-  const reactTree = ab("react", "tree");
-  writeFileSync(output + "/react-tree.txt", reactTree);
   assert(
-    reactTree.includes("StoreSwitcher"),
-    "Store Switcher is not yet mounted",
+    ab("react", "tree").includes("StoreSwitcher"),
+    "Store switcher not hydrated",
   );
-  tree = snapshot();
-  ab("click", reference(tree, 'button "انتخاب یک یا چند فروشگاه فعال"'));
+  click("انتخاب یک یا چند فروشگاه فعال");
   ab("wait", '[role="dialog"]');
   tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
   ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
-  tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-  ab("click", reference(tree, 'button "اعمال انتخاب"'));
-  ab("wait", "--fn", "document.querySelector('[role=dialog]')===null");
+  click("اعمال انتخاب");
+  wait("document.querySelector('[role=dialog]')===null");
   const fixture = JSON.parse(
     docker(
       "from pathlib import Path; print(Path('/qa/workflow-studio-fixture.json').read_text())",
     ),
   );
-  ab("open", `${base}/studio/workflows/${fixture.workflow_id}`);
-  ab("wait", "--fn", "document.querySelector('h1') !== null");
-  tree = snapshot();
-  writeFileSync(output + "/editor-probe.txt", tree);
-  ab("screenshot", output + "/editor-probe.png");
-  writeFileSync(
-    output + "/editor-metrics.json",
-    JSON.stringify(metrics(), null, 2),
+  state.sampleId = fixture.workflow_id;
+  const before = businessCounts();
+
+  if (phase === "all" || phase === "editor") {
+    open("/studio/workflows/new");
+    fill("نام فرایند جدید", "آزمون مرورگر Studio");
+    fill("کلید فرایند", "qa_browser_" + Date.now());
+    click("ساخت پیش‌نویس");
+    wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
+    state.id = ab("get", "url").split("/").at(-1);
+    saveState();
+    const start = add("شروع و کنترل شروع", "QA_START");
+    const end = add("شروع و کنترل پایان", "QA_END");
+    const message = add("پیام پیام متنی", "QA_MESSAGE");
+    fill("متن پیام", "پیام آزمایشی نسخهٔ اول");
+    const buttons = add("تعامل پیام و دکمه", "QA_BUTTONS");
+    fill("متن پیام", "یک مسیر آزمایشی انتخاب کنید.");
+    click("افزودن دکمه");
+    fill("متن دکمه 1", "ادامهٔ آزمایشی");
+    const branch = add("شروع و کنترل شرط", "QA_BRANCH");
+    click("افزودن شرط");
+    select("متغیر شرط", "context.platform");
+    fill("مقدار مقایسه", "telegram");
+    select("مقصد true", end);
+    select("مقصد false", end);
+    node(1);
+    select("مقصد next", message);
+    node(3);
+    select("مقصد next", buttons);
+    node(4);
+    select("مقصد دکمه 1", branch);
+    click("چیدمان خودکار");
+    saved();
+    click("بررسی تعریف فعلی");
+    waitText("تعریف در آخرین بررسی معتبر بود");
+    assert(
+      counts().nodes === 5 && counts().edges === 5,
+      "Graph topology mismatch",
+    );
+    ab("reload");
+    wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
+    saved();
+    assert(
+      counts().nodes === 5 && counts().edges === 5,
+      "Saved graph did not survive reload",
+    );
+    node(3);
+    assert(
+      read("document.querySelector('[aria-label=\"متن پیام\"]').value") ===
+        "پیام آزمایشی نسخهٔ اول",
+      "Edited text not persisted",
+    );
+    pass(
+      "Create Start, End, message, buttons and condition; connect, validate, autosave and reload",
+    );
+    state.nodes = { start, end, message, buttons, branch };
+    saveState();
+    // A copied snapshot survives deletion of the selected source.
+    click("کپی گره‌های انتخاب‌شده");
+    click("حذف گره‌های انتخاب‌شده");
+    assert(counts().nodes === 4, "Node delete failed");
+    click("Paste");
+    assert(counts().nodes === 5, "Clipboard lost its deleted source");
+    click("Undo");
+    assert(counts().nodes === 4, "Paste undo failed");
+    click("Undo");
+    assert(counts().nodes === 5, "Delete undo failed");
+    click("Redo");
+    assert(counts().nodes === 4, "Delete redo failed");
+    click("Undo");
+    saved();
+    pass("Copy snapshot, delete, paste, Undo and Redo preserve graph");
+    node(3);
+    fill("متن پیام", "پیام آزمایشی نسخهٔ دوم");
+    saved();
+    pass("Modify message and save a fresh revision");
+    ab("set", "viewport", "1440", "1000");
+    wait(
+      "[...document.querySelectorAll('.react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible')",
+    );
+    const m = capture("editor-desktop");
+    assert(m.nodes.length === 5 && m.edges === 5, "Visible Canvas mismatch");
+    pass("Desktop Canvas renders every node and connection without overflow");
+  }
+  assert(state.id, "Run editor stage first");
+  const path = `/studio/workflows/${state.id}`;
+  if (phase === "all" || phase === "preview") {
+    for (const platform of ["telegram", "bale"]) {
+      begin(platform, path + "/preview");
+      waitText("ادامهٔ آزمایشی");
+      click("ادامهٔ آزمایشی");
+      waitText("completed");
+      assert(
+        !text().includes("invalid_definition"),
+        "Created graph cannot simulate",
+      );
+      pass(
+        `Created workflow preview traverses platform condition: ${platform}`,
+      );
+    }
+    for (const platform of ["telegram", "bale"]) {
+      begin(platform, `/studio/workflows/${state.sampleId}/preview`);
+      waitText("سفارش آزمایشی 90001");
+      click("سفارش آزمایشی 90001");
+      waitText("محصول آزمایشی 90011");
+      click("محصول آزمایشی 90011");
+      waitText("کالا آسیب دیده");
+      click("کالا آسیب دیده");
+      waitText("توضیح کوتاهی اضافه کنید");
+      fill("پاسخ مشتری نمونه", "بسته‌بندی آزمایشی آسیب دیده");
+      click("ارسال نمونه");
+      waitText("ارسال تصویر آزمایشی");
+      click("ارسال تصویر آزمایشی");
+      waitText("این درخواست آزمایشی تأیید می‌شود");
+      click("تأیید");
+      waitText("completed");
+      waitText("create_return_request");
+      assert(
+        text().includes("درخواست مرجوعی واقعی ایجاد نشد"),
+        "Simulation did not finish safely",
+      );
+      capture("return-preview-" + platform);
+      pass(
+        `Full synthetic Return Request with typed input, photo metadata and explicit stub: ${platform}`,
+      );
+    }
+    begin("telegram", `/studio/workflows/${state.sampleId}/preview`);
+    waitText("سفارش آزمایشی 90001");
+    click("سفارش آزمایشی 90001");
+    waitText("محصول آزمایشی 90011");
+    click("بازگشت");
+    wait(
+      "[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='سفارش آزمایشی 90001'&&!b.disabled)",
+    );
+    click("لغو");
+    waitText("cancelled");
+    pass("Preview Back and Cancel");
+    open(`/studio/workflows/${state.sampleId}/preview`);
+    select("سناریوی داده", "no_orders");
+    click("شروع شبیه‌سازی");
+    waitText("گزینهٔ آزمایشی واجد شرایطی وجود ندارد");
+    click("لغو");
+    waitText("cancelled");
+    pass("Empty-order scenario remains cancellable");
+  }
+  if (phase === "all" || phase === "versions") {
+    open(path + "/versions");
+    click("مقایسه");
+    waitText("Metadata:");
+    const oldRevision = read(
+      "Number(document.querySelectorAll('article h2')[1].innerText.match(/Revision (\\d+)/)[1])",
+    );
+    ab("click", "article:nth-of-type(2) button:last-child");
+    wait(
+      "document.querySelector('article h2')?.innerText.includes('restore')===true",
+    );
+    ab("click", "article:first-of-type button:first-child");
+    waitText("Snapshot r");
+    capture("versions-desktop");
+    editor(path);
+    saved();
+    assert(
+      read("document.querySelector('main').innerText").includes(
+        "Revision " + (oldRevision + 2),
+      ),
+      "Restore did not append a revision",
+    );
+    pass(
+      "Compare immutable versions, inspect Snapshot and restore as a new revision",
+    );
+  }
+  if (phase === "all" || phase === "layout") {
+    const routes = [
+      ["list", "/studio/workflows"],
+      ["create", "/studio/workflows/new"],
+      ["editor", path],
+      ["settings", path + "/settings"],
+      ["preview", path + "/preview"],
+      ["versions", path + "/versions"],
+    ];
+    for (const width of [320, 390, 768, 1440]) {
+      ab("set", "viewport", String(width), "1000");
+      for (const [name, route] of routes) {
+        open(route);
+        for (const theme of ["light", "dark"]) {
+          if (
+            read("document.documentElement.classList.contains('dark')") !==
+            (theme === "dark")
+          )
+            click("تغییر حالت روشن و تاریک");
+          wait(
+            `document.documentElement.classList.contains('dark')===${theme === "dark"}`,
+          );
+          const m = metrics();
+          assert(
+            m.width === m.scroll,
+            `${name}/${width}/${theme} overflow ${m.scroll}`,
+          );
+          assert(m.rtl === "rtl", "RTL missing");
+          if (
+            (width === 390 && theme === "dark") ||
+            (width === 1440 && theme === "light")
+          )
+            capture(`${name}-${width}-${theme}`);
+        }
+      }
+      pass(`Six Studio routes, RTL, light and dark themes at ${width}px`);
+    }
+  }
+  assert(
+    JSON.stringify(businessCounts()) === JSON.stringify(before),
+    "Browser simulation changed business rows",
   );
-  console.log("PASS  Editor loaded; probe artifacts recorded");
+  pass("Customer, cart, order, payment and support table counts unchanged");
   const errors = await mcp("get_errors");
   writeFileSync(output + "/next-errors.json", JSON.stringify(errors, null, 2));
-  console.log("NEXT_MCP", JSON.stringify(errors));
+  const serialized = JSON.stringify(errors);
+  assert(
+    serialized.includes('\\"configErrors\\":[]') &&
+      serialized.includes('\\"sessionErrors\\":[]'),
+    "Next MCP reported errors",
+  );
+  pass("Next MCP reports no configuration or browser session errors");
+  writeFileSync(
+    output + "/acceptance-" + phase + ".json",
+    JSON.stringify(
+      {
+        phase,
+        checks: evidence,
+        live_provider_calls: 0,
+        runtime_enabled: false,
+      },
+      null,
+      2,
+    ),
+  );
 } catch (error) {
   try {
     writeFileSync(output + "/failure.txt", snapshot());
     ab("screenshot", output + "/failure.png");
   } catch {}
-  console.error(error.message);
+  console.error("FAIL  " + error.message);
   process.exitCode = 1;
+} finally {
+  saveState();
 }
