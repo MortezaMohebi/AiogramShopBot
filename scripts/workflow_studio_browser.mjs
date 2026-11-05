@@ -37,7 +37,10 @@ function assert(value, message) {
   if (!value) throw Error(message);
 }
 function reference(snapshot, description) {
-  const line = snapshot.split("\n").find((line) => line.includes(description));
+  const normalize = (value) => value.replace(/[\u200b\u200c\u200d]/g, "");
+  const line = snapshot
+    .split("\n")
+    .find((line) => normalize(line).includes(normalize(description)));
   const ref = line?.match(/ref=(e\d+)/)?.[1];
   assert(ref, `Visible control missing: ${description}`);
   return "@" + ref;
@@ -484,10 +487,13 @@ try {
   pass("Customer, cart, order, payment and support table counts unchanged");
   const errors = await mcp("get_errors");
   writeFileSync(output + "/next-errors.json", JSON.stringify(errors, null, 2));
-  const serialized = JSON.stringify(errors);
+  const reports = errors.content
+    .filter((item) => item.type === "text")
+    .map((item) => JSON.parse(item.text));
   assert(
-    serialized.includes('\\"configErrors\\":[]') &&
-      serialized.includes('\\"sessionErrors\\":[]'),
+    reports.every(
+      (item) => !item.configErrors?.length && !item.sessionErrors?.length,
+    ),
     "Next MCP reported errors",
   );
   pass("Next MCP reports no configuration or browser session errors");
