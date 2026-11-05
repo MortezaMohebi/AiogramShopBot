@@ -419,6 +419,12 @@ try {
       await button("کپی گره‌های انتخاب‌شده").isDisabled(),
       "Undo left a removed node selected in the toolbar",
     );
+    // Copy with no selection must preserve the previous captured clipboard.
+    await page.keyboard.press("Control+c");
+    await page.keyboard.press("Control+v");
+    await expectCounts(6);
+    await page.keyboard.press("Control+z");
+    await expectCounts(5);
     await saved();
     pass("Keyboard Undo/Redo and removal of stale selection");
     await page.setViewportSize({ width: 1440, height: 1000 });

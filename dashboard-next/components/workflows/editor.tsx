@@ -1,5 +1,12 @@
 "use client";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -62,7 +69,7 @@ export function WorkflowEditor({
   settings?: boolean;
 }) {
   const [state, dispatch] = useReducer(editorReducer, initial, initialEditor),
-    [selected, setSelected] = useState<string[]>([]),
+    [selection, setSelected] = useState<string[]>([]),
     [query, setQuery] = useState(""),
     [showCanvas, setShowCanvas] = useState(false),
     [panel, setPanel] = useState<"nodes" | "variables">("nodes"),
@@ -74,6 +81,11 @@ export function WorkflowEditor({
     ),
     lastEdit = useRef({ key: "", at: 0 });
   const doc = state.document;
+  // History can remove a selected node; transient controls only reference live IDs.
+  const selected = useMemo(() => {
+    const ids = new Set(doc.definition.nodes.map((node) => node.id));
+    return selection.filter((id) => ids.has(id));
+  }, [selection, doc.definition.nodes]);
   const replace = useCallback(
     (document: DraftDocument) => dispatch({ type: "replace", document }),
     [],
@@ -249,7 +261,7 @@ export function WorkflowEditor({
         e.preventDefault();
         dispatch({ type: "redo" });
       }
-      if (k === "c") {
+      if (k === "c" && selected.length) {
         e.preventDefault();
         clipboard.current = {
           document: structuredClone(doc),
