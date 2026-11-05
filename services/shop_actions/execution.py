@@ -153,8 +153,6 @@ async def invoke(
         descriptor = spec.descriptor
         await require_available(db, principal, spec, invocation)
         await _workflow_scope(db, principal, invocation)
-        if invocation.attempt > descriptor.max_retries:
-            raise ActionRejected("action_retry_exhausted")
         if invocation.mode == "simulation":
             if descriptor.simulator != "deterministic" or spec.simulate is None:
                 raise ActionRejected("action_simulation_unavailable")
@@ -208,6 +206,10 @@ async def invoke(
                 result = ActionResult.model_validate(json.loads(row.result_json))
                 deduplicated = True
             else:
+                # A completed receipt remains recoverable after delivery retries;
+                # the budget restricts adapter execution, never exact replay.
+                if invocation.attempt > descriptor.max_retries:
+                    raise ActionRejected("action_retry_exhausted")
                 try:
                     async with db.begin_nested():
                         if await consume_authorizations(

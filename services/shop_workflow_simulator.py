@@ -342,6 +342,7 @@ class PreviewInterpreter:
                 from services.shop_action_bindings import resolve_inputs, write_outputs
                 from services.shop_actions.simulation import simulate_action
                 from services.shop_actions.contracts import ActionRejected
+                from services.shop_actions.definitions import definition
 
                 try:
                     output = simulate_action(
@@ -350,17 +351,30 @@ class PreviewInterpreter:
                         resolve_inputs(config, self.state.values),
                         platform=self.platform,
                     )
-                    write_outputs(config, output, self.state.values, self.declarations)
+                    contract = definition(
+                        config["action_key"], config["action_version"]
+                    )
+                    available = contract.descriptor.service_available
+                    if available:
+                        write_outputs(
+                            config, output, self.state.values, self.declarations
+                        )
                     key = config["action_key"] + "@" + config["action_version"]
                     self.state.stub_actions.append(key)
                     self.emit(
                         "stub",
-                        "Action فقط با دادهٔ آزمایشی شبیه‌سازی شد: " + key,
+                        (
+                            "Action فقط با دادهٔ آزمایشی شبیه‌سازی شد: "
+                            if available
+                            else "سرویس Action آماده نیست؛ مسیر unavailable شبیه‌سازی شد: "
+                        )
+                        + key,
                         action_key=config["action_key"],
                         action_version=config["action_version"],
-                        output=output,
+                        status="succeeded" if available else "unavailable",
+                        output=output if available else None,
                     )
-                    self.next("success")
+                    self.next("success" if available else "unavailable")
                 except ActionRejected as error:
                     self.emit(
                         "stub",

@@ -179,3 +179,34 @@ def test_synthetic_order_uses_selected_platform():
         "order.get_status", "1.0.0", {"order_id": 12}, platform="bale"
     )
     assert result["platform"] == "bale" and result["order_id"] == 12
+
+
+def test_unavailable_action_follows_its_unavailable_branch_in_preview():
+    """A placeholder service must not preview the success path or assign outputs."""
+    value = graph(
+        action_key="returns.create_request",
+        input_mapping={
+            "order_id": {"kind": "constant", "value": 90001},
+            "reason": {"kind": "constant", "value": "sample"},
+        },
+        output_mapping={},
+    )
+    value["nodes"] += [
+        {"id": "success", "type": "send_text", "config": {"text": "WRONG_SUCCESS"}},
+        {
+            "id": "unavailable",
+            "type": "send_text",
+            "config": {"text": "SAFE_UNAVAILABLE"},
+        },
+    ]
+    for edge in value["edges"]:
+        if edge.get("port") in {"success", "unavailable"}:
+            edge["target"] = edge["port"]
+    value["edges"] += [
+        {"id": "done_" + port, "source": port, "target": "end"}
+        for port in ("success", "unavailable")
+    ]
+    result = simulate(value, platform="telegram")
+    assert result["status"] == "completed", result
+    text = str(result["messages"])
+    assert "SAFE_UNAVAILABLE" in text and "WRONG_SUCCESS" not in text

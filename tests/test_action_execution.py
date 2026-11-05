@@ -113,6 +113,22 @@ async def test_duplicate_live_call_replays_one_effect_and_one_receipt(buyer):
 
 
 @pytest.mark.asyncio
+async def test_completed_operation_replays_even_after_retry_budget_is_exhausted(buyer):
+    """A delivery retry must recover its committed receipt without another effect."""
+    db, principal = buyer
+    product, _ = seed(db)
+    request = invocation(product.id)
+    first = await invoke(db, principal, request, registry=registry())
+    replay = await invoke(
+        db, principal, request.model_copy(update={"attempt": 1}), registry=registry()
+    )
+    assert replay.status == first.status == "succeeded"
+    assert replay.execution_receipt == first.execution_receipt
+    assert replay.output == first.output == {"stock": 7}
+    assert (await db.get(Product, product.id)).stock_quantity == 7
+
+
+@pytest.mark.asyncio
 async def test_changed_input_same_key_is_conflict_without_a_second_write(buyer):
     db, principal = buyer
     product, _ = seed(db)
