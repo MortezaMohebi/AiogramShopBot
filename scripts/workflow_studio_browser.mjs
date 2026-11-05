@@ -195,6 +195,7 @@ async function wait(expression) {
 async function waitText(text) {
   await page
     .getByText(text, { exact: false })
+    .filter({ visible: true })
     .first()
     .waitFor({ state: "visible" });
 }
@@ -413,8 +414,13 @@ try {
     await page.keyboard.press("Control+Shift+z");
     await expectCounts(6);
     await page.keyboard.press("Control+z");
+    await expectCounts(5);
+    assert(
+      await button("کپی گره‌های انتخاب‌شده").isDisabled(),
+      "Undo left a removed node selected in the toolbar",
+    );
     await saved();
-    pass("Keyboard Undo and Redo shortcuts");
+    pass("Keyboard Undo/Redo and removal of stale selection");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await wait("document.querySelectorAll('.react-flow__edge').length===5");
     await click("نمایش همهٔ گره‌ها");
@@ -453,6 +459,13 @@ try {
       await waitText("این درخواست آزمایشی تأیید می‌شود");
       await click("تأیید");
       await waitText("completed");
+      await page.getByText("متغیرها و مراحل", { exact: true }).click();
+      const detail = JSON.parse(
+        await page.locator("details[open] pre").innerText(),
+      );
+      assert.equal(detail.values.reason, "damaged");
+      assert.deepEqual(detail.values.order, { kind: "order", id: 90001 });
+      assert(detail.stub_actions.includes("create_return_request"));
       await waitText("create_return_request");
       await waitText("درخواست مرجوعی واقعی ایجاد نشد");
       await capture("return-preview-" + platform);
@@ -495,19 +508,34 @@ try {
     await wait(
       "document.querySelector('article h2')?.innerText.includes('restore')===true",
     );
+    assert.equal(
+      Number(
+        (await articles.first().locator("h2").innerText()).match(
+          /Revision (\d+)/,
+        )[1],
+      ),
+      oldRevision + 2,
+    );
     await articles
       .first()
       .getByRole("button", { name: /^مشاهدهٔ Snapshot/ })
       .click();
     await waitText("Snapshot r");
+    const snapshot = JSON.parse(await page.locator("section pre").innerText());
     await capture("versions-desktop");
     await editor(path);
     await saved();
-    assert(
-      (await page.locator("main").innerText()).includes(
-        "Revision " + (oldRevision + 2),
-      ),
-    );
+    const downloadReady = page.waitForEvent("download");
+    await click("دریافت JSON");
+    const download = await downloadReady,
+      stream = await download.createReadStream(),
+      chunks = [];
+    assert(stream);
+    for await (const chunk of stream) chunks.push(chunk);
+    const exported = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    assert.deepEqual(exported.definition, snapshot.definition);
+    assert.deepEqual(exported.layout.positions, snapshot.layout.positions);
+    assert.equal(exported.name, snapshot.name);
     pass(
       "Compare immutable versions, inspect Snapshot and restore as a new revision",
     );
