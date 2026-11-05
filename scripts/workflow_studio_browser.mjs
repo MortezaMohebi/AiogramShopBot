@@ -542,6 +542,11 @@ try {
     await click("اعمال انتخاب");
     await page.getByRole("dialog").waitFor({ state: "hidden" });
     await field("Context ربات").waitFor();
+    // The dialog closes before router.refresh applies its new server props.
+    // Observe the remounted Store context before inspecting its reset state.
+    await page.waitForFunction(
+      () => document.querySelector('[aria-label="Context ربات"]')?.value === "",
+    );
     assert.equal(await field("Context ربات").inputValue(), "");
     assert.equal(await button("اجرای Dry-run").count(), 0);
     await fill("جستجوی Action", "catalog.get_product");
