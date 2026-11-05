@@ -206,6 +206,11 @@ function fill(label, value) {
 function select(label, value) {
   scrollTo(`select[aria-label=${JSON.stringify(label)}]`);
   ab("select", `select[aria-label=${JSON.stringify(label)}]`, String(value));
+  // Close the browser's native picker before the next pointer activation.
+  ab("press", "Escape");
+  wait(
+    `document.querySelector('select[aria-label=${JSON.stringify(label)}]').value===${JSON.stringify(String(value))}`,
+  );
 }
 function open(path) {
   ab("open", base + path);
@@ -237,11 +242,16 @@ function capture(name) {
   return m;
 }
 function node(index) {
-  targetClick(`[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`);
+  const selector = `[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`;
+  const label = read(
+    `document.querySelector(${JSON.stringify(selector)}).querySelector('span').innerText`,
+  ).replace(/^\d+\.\s*/, "");
+  targetClick(selector);
   wait(
-    `document.querySelector('fieldset code')?.textContent.startsWith([...document.querySelectorAll('.react-flow__node')][${index - 1}].getAttribute('data-id')+' ·')===true`,
+    `document.querySelector('[aria-label="عنوان گره"]')?.value===${JSON.stringify(label)}`,
   );
 }
+
 function add(description, label, type) {
   const previous = counts().nodes;
   click(description);
