@@ -291,7 +291,14 @@ async function node(index) {
     /^\d+\.\s*/,
     "",
   );
-  await row.click();
+  if (await row.isVisible()) await row.click();
+  else {
+    // Desktop uses the real Canvas; its equivalent mobile list is hidden.
+    await page
+      .locator(".react-flow__node")
+      .getByText(label, { exact: true })
+      .click();
+  }
   await wait(
     `document.querySelector('[aria-label="عنوان گره"]')?.value===${JSON.stringify(label)}`,
   );
