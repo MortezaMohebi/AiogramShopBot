@@ -63,7 +63,7 @@ class BaleTransport:
                         f"code {code})."
                     )
                 return data.get("result")
-        except (ClientError, asyncio.TimeoutError, ValueError) as exc:
+        except (ClientError, asyncio.TimeoutError, ValueError):
             # Avoid exceptions from aiohttp that contain a token-bearing URL.
             raise BaleApiError(f"Bale API {method} request failed.") from None
 
@@ -267,6 +267,117 @@ class BaleTransport:
                 ]
             }
         await self._call("sendMessage", payload)
+
+    async def send_runtime(self, chat_id: int, payload) -> list[str]:
+        """Send one prepared Runtime message/album with explicit message receipts.
+
+        Keep this one-attempt API separate from legacy send(), which may send
+        several attachments and a final text message without receipt IDs.
+        """
+        from contextlib import ExitStack
+        import json
+
+        from aiohttp import FormData
+
+        from services.shop_runtime.contracts import DeliveryRejected
+
+        if self._business_mode:
+            raise DeliveryRejected("runtime_business_api_unsupported", retryable=False)
+        body = {"chat_id": chat_id, "parse_mode": None}
+        if payload.reply_markup:
+            body["reply_markup"] = payload.reply_markup
+        expected = len(payload.media) if payload.kind == "media_group" else 1
+        try:
+            with ExitStack() as sources:
+                if payload.kind == "text":
+                    method = "sendMessage"
+                    body["text"] = payload.text
+                    request = {"json": body}
+                else:
+                    methods = {
+                        "photo": "sendPhoto", "video": "sendVideo",
+                        "document": "sendDocument", "media_group": "sendMediaGroup",
+                    }
+                    method = methods[payload.kind]
+                    form = FormData()
+                    form.add_field("chat_id", str(chat_id))
+                    if payload.reply_markup:
+                        form.add_field("reply_markup", json.dumps(payload.reply_markup, ensure_ascii=False))
+                    if payload.kind != "media_group" and payload.text:
+                        form.add_field("caption", payload.text)
+                    group = []
+                    for index, item in enumerate(payload.media):
+                        field = f"runtime_{index}" if payload.kind == "media_group" else payload.kind
+                        source = sources.enter_context(item.path.open("rb"))
+                        form.add_field(field, source, filename=item.path.name, content_type=item.mime_type)
+                        if payload.kind == "media_group":
+                            entry = {"type": item.kind, "media": f"attach://{field}"}
+                            if index == 0 and payload.text:
+                                entry["caption"] = payload.text
+                            group.append(entry)
+                    if payload.kind == "media_group":
+                        form.add_field("media", json.dumps(group, ensure_ascii=False))
+                    request = {"data": form}
+                async with self._session.post(
+                    f"{self._url_prefix}/{method}", **request,
+                    timeout=ClientTimeout(total=120), allow_redirects=False,
+                ) as response:
+                    data = await response.json(content_type=None)
+                    if not isinstance(data, dict) or data.get("ok") is not True:
+                        code = data.get("error_code") if isinstance(data, dict) else None
+                        # Only explicit, definite Bot API rejections are safe
+                        # to classify; malformed/5xx responses stay uncertain.
+                        if isinstance(data, dict) and data.get("ok") is False and type(code) is int and code in {400, 401, 403, 404, 409, 413, 422, 429}:
+                            raise DeliveryRejected(
+                                "runtime_provider_rate_limited" if code == 429 else "runtime_provider_rejected",
+                                retryable=code == 429,
+                            )
+                        raise RuntimeError("runtime_delivery_uncertain")
+                    if response.status >= 300:
+                        raise RuntimeError("runtime_delivery_uncertain")
+                    result = data.get("result")
+        except DeliveryRejected:
+            raise
+        except Exception:
+            raise RuntimeError("runtime_delivery_uncertain") from None
+        messages = result if payload.kind == "media_group" else [result]
+        if not isinstance(messages, list) or len(messages) != expected:
+            raise RuntimeError("runtime_delivery_receipt_invalid")
+        ids = [message.get("message_id") if isinstance(message, dict) else None for message in messages]
+        if any(type(value) is not int or value <= 0 for value in ids):
+            raise RuntimeError("runtime_delivery_receipt_invalid")
+        return [str(value) for value in ids]
+
+    async def download_runtime(self, file_id: str, *, max_bytes: int) -> bytes:
+        """Download bounded evidence through this Bot's regular API credential."""
+        from services.shop_runtime.adapters import safe_download_path
+
+        if self._business_mode or type(max_bytes) is not int or not 1 <= max_bytes <= 20_000_000:
+            raise BaleApiError("Runtime download is unavailable.")
+        try:
+            remote = await self._call("getFile", {"file_id": file_id})
+            if not isinstance(remote, dict) or remote.get("file_id", file_id) != file_id:
+                raise BaleApiError("Runtime download metadata is invalid.")
+            size = remote.get("file_size")
+            if size is not None and (type(size) is not int or size != max_bytes):
+                raise BaleApiError("Runtime download size is invalid.")
+            path = safe_download_path(remote.get("file_path"))
+            # Download routes are fixed by the provider. Neither redirects
+            # nor an incoming URL can move the request to another origin.
+            async with self._session.get(
+                f"{self.BASE_URL}/file/bot{self._bot_token}/{path}",
+                timeout=ClientTimeout(total=30), allow_redirects=False,
+            ) as response:
+                if response.status != 200 or (response.content_length is not None and response.content_length > max_bytes):
+                    raise BaleApiError("Runtime download was rejected.")
+                result = bytearray()
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    if len(result) + len(chunk) > max_bytes:
+                        raise BaleApiError("Runtime download size is invalid.")
+                    result.extend(chunk)
+            return bytes(result)
+        except Exception:
+            raise BaleApiError("Runtime download failed.") from None
 
     async def send_invoice(
         self,

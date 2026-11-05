@@ -254,6 +254,7 @@ class ConnectionSupervisor:
         """Persist offsets only after an update receipt is durably finalized."""
         from channels.contracts import Platform
         from services.shop_updates import claim_update, finish_update
+        from services.shop_runtime.ingress import try_legacy_ingress
         from bot import dp, _process_bale_update
         provider = self.provider(platform)
         token = config.TOKEN if platform == "telegram" else config.BALE_BOT_TOKEN
@@ -298,14 +299,21 @@ class ConnectionSupervisor:
                     identifier = update.update_id if platform == "telegram" else update.get("update_id")
                     if type(identifier) is not int or identifier < offset:
                         continue
-                    fresh, _ = await claim_update(platform=Platform(platform), token=token, update_id=identifier)
+                    payload = (
+                        update.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        if platform == "telegram" else update
+                    )
+                    runtime = await try_legacy_ingress(Platform(platform), payload, client=provider)
+                    fresh = False
+                    if not runtime.get("handled"):
+                        fresh, _ = await claim_update(platform=Platform(platform), token=token, update_id=identifier)
                     if fresh:
                         success = False
                         try:
                             if platform == "telegram":
-                                await dp.feed_update(provider, update)
+                                await dp.feed_update(provider, update, shop_runtime_checked=True)
                             else:
-                                await _process_bale_update(Request({"type": "http", "app": self.app}), update)
+                                await _process_bale_update(Request({"type": "http", "app": self.app}), update, runtime_checked=True)
                             success = True
                         finally:
                             await finish_update(platform=Platform(platform), token=token,

@@ -85,6 +85,7 @@ export function CreateWorkflowForm({
               onChange={setTemplate}
               options={[
                 { value: "blank", label: "فرایند خالی" },
+                { value: "wholesale_application", label: "درخواست همکاری عمده" },
                 {
                   value: "return_request",
                   label: "نمونهٔ Request Return · فقط پیش‌نویس و شبیه‌سازی",

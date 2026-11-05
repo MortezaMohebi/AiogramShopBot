@@ -15,6 +15,7 @@ from services.shop_workflow_schema import (
     StrictModel,
     WorkflowButton,
     WorkflowChoice,
+    Scalar,
 )
 
 PositiveId = Annotated[int, Field(ge=1, le=9_007_199_254_740_991)]
@@ -132,6 +133,9 @@ def _specs() -> list[NodeSpec]:
     """Build all initial node families; business logic stays outside this catalog."""
     control = "شروع و کنترل"
     result = [
+        NodeSpec("set_variable", "تنظیم متغیر", "منطق", (
+            VARIABLE, f("value", "مقدار", "json", Scalar, None),
+        )),
         NodeSpec("start", "شروع", control, ()),
         NodeSpec("end", "پایان", control, (f("message", "پیام پایان"),), ()),
         NodeSpec("cancel", "لغو", control, (f("message", "پیام لغو"),), ()),
@@ -510,9 +514,12 @@ def node_catalog() -> dict:
             item.descriptor.model_dump(mode="json") for item in action_definitions()
         ],
         "platforms": platform_capabilities(),
-        "runtime_available": False,
+        "runtime_available": True,
+        "runtime_publication_path": "/studio/runtime",
+        "runtime_activation_default": False,
         "callback_contract": {
-            "live_generation_available": False,
+            "live_generation_available": True,
+            "requires_publication": True,
             "max_bytes": 64,
             "strategy": "opaque_server_resolved_scoped_capability",
             "contains_business_state": False,

@@ -33,7 +33,7 @@ class DuplicateDraft(StrictModel):
 class CreateDraft(DuplicateDraft):
     """A current-Store creation; client-selected ownership is never accepted."""
 
-    template: Literal["blank", "return_request"] = "blank"
+    template: Literal["blank", "return_request", "wholesale_application"] = "blank"
 
 
 class SaveDraft(Operation):

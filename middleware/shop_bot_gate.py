@@ -19,6 +19,7 @@ from db import session_maker
 from services.shop_bot_context import resolve_legacy_bot_context
 from services.shop_bot_operations import legacy_state
 from services.shop_multibot_dispatch import paused_customer_reply
+from services.shop_runtime.ingress import try_legacy_ingress
 
 
 class ShopBotOperationMiddleware(BaseMiddleware):
@@ -68,6 +69,14 @@ class ShopBotOperationMiddleware(BaseMiddleware):
                         ).send(normalized.chat_id, reply)
                         return None
         if status.state == "active":
+            if not data.get("shop_runtime_checked"):
+                runtime = await try_legacy_ingress(
+                    Platform.TELEGRAM,
+                    event.model_dump(mode="json", by_alias=True, exclude_none=True),
+                    client=data.get("bot"),
+                )
+                if runtime.get("handled"):
+                    return None
             return await handler(event, data)
 
         if callback is not None:

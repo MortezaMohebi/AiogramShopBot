@@ -135,6 +135,9 @@ async def test_native_polling_preserves_sender_for_actual_dispatch(
     monkeypatch.setattr(database, "session_maker", sessions)
     monkeypatch.setattr(runtime, "session_maker", sessions)
     monkeypatch.setattr("services.shop_multibot_dispatch.session_maker", sessions)
+    # Runtime owns duplicate Inbox IDs even while disabled. Its new read-only
+    # boundary must use this same actual SQLite database as the receiver.
+    monkeypatch.setattr("services.shop_runtime.ingress.session_maker", sessions)
     monkeypatch.setattr(runtime, "provider_client", provider)
     monkeypatch.setattr(supervisor, "check_lease", owned_lease)
     await asyncio.wait_for(supervisor._poll(bot_id), timeout=3)

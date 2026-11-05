@@ -306,7 +306,7 @@ async def test_reader_can_inspect_but_not_mutate_or_publish(studio):
     )
     assert (
         denied.status_code == 409
-        and denied.json()["detail"] == "workflow_runtime_unavailable"
+        and denied.json()["detail"] == "workflow_publish_preview_required"
     )
 
 

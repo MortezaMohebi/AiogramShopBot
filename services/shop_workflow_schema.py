@@ -36,6 +36,7 @@ VariableType = Literal[
     "datetime",
     "enum",
     "product_ref",
+    "category_ref",
     "order_ref",
     "customer_ref",
 ]
@@ -50,7 +51,7 @@ class StrictModel(BaseModel):
 class Reference(StrictModel):
     """An explicit structured reference, never an unrestricted customer object."""
 
-    kind: Literal["product", "order", "customer"]
+    kind: Literal["product", "category", "order", "customer"]
     id: int = Field(ge=1, le=9_007_199_254_740_991)
 
 

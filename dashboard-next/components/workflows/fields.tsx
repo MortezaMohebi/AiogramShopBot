@@ -76,6 +76,7 @@ const variableTypes: VariableType[] = [
   "datetime",
   "enum",
   "product_ref",
+  "category_ref",
   "order_ref",
   "customer_ref",
 ];
@@ -133,7 +134,7 @@ export function ValueField({
           onChange(
             e.target.value
               ? {
-                  kind: type.slice(0, -4) as "product" | "order" | "customer",
+                  kind: type.slice(0, -4) as "product" | "category" | "order" | "customer",
                   id: Number(e.target.value),
                 }
               : null,
@@ -576,7 +577,7 @@ export function ButtonsEditor({
         افزودن دکمه
       </Button>
       <p className="text-xs leading-6 text-muted-foreground">
-        مقصد به شناسهٔ گره متصل است. تولید Callback واقعی پس از Runtime انجام
+        مقصد به شناسهٔ گره متصل است. Callback واقعی هنگام اجرای نسخهٔ منتشرشده، با وضعیت سرور اعتبارسنجی
         می‌شود.
       </p>
     </div>

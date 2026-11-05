@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -381,7 +382,7 @@ export function ActionCatalog({
       </div>
       <p className="text-xs leading-6 text-muted-foreground">
         فروشگاه و دسترسی از نشست شما مشخص می‌شوند. انتخاب ربات فقط دسترسی Action
-        را بررسی می‌کند؛ Runtime در این مرحله فعال نیست.
+        را بررسی می‌کند. مجوز اجرای فرایند در <Link className="text-primary underline" href="/studio/runtime">Runtime</Link> جداگانه مدیریت می‌شود.
       </p>
       {observed.error && (
         <p
@@ -519,7 +520,7 @@ export function ActionCatalog({
                     {loading
                       ? "در حال بررسی Context…"
                       : selected.availability?.available
-                        ? "سرویس برای این ربات آماده است؛ اجرای Workflow هنوز فعال نیست."
+                        ? "سرویس برای این ربات آماده است؛ اجرای فرایند به انتشار و مجوز Runtime نیاز دارد."
                         : "Action برای این Context آماده نیست."}
                   </p>
                   {!loading &&

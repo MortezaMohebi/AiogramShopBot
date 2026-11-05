@@ -280,6 +280,9 @@ async def _create_draft(
             )
 
             definition, layout = return_request_template()
+        elif payload.get("template")=="wholesale_application":
+            from services.shop_workflow_templates import wholesale_application_template
+            definition,layout=wholesale_application_template()
         else:
             definition, layout = Definition(), EditorLayout()
     await _check_document(db, owner, definition, layout)

@@ -136,6 +136,80 @@ class TelegramTransport:
             raise ValueError("Provider did not confirm delivery Message ID.")
         return str(result.message_id)
 
+    async def send_runtime(self, chat_id: int, payload) -> list[str]:
+        """Send one prepared Runtime intent and return its exact provider receipts.
+
+        An album is one physical API call. Its caption belongs to the first
+        item; no untracked follow-up text or keyboard message is emitted.
+        """
+        from aiogram.exceptions import (
+            TelegramBadRequest, TelegramForbiddenError,
+            TelegramRetryAfter, TelegramUnauthorizedError,
+        )
+        from aiogram.types import (
+            FSInputFile, InlineKeyboardMarkup, InputMediaDocument,
+            InputMediaPhoto, InputMediaVideo, ReplyKeyboardMarkup,
+        )
+
+        from services.shop_runtime.contracts import DeliveryRejected
+
+        markup = None
+        if payload.reply_markup:
+            markup_type = (
+                ReplyKeyboardMarkup if "keyboard" in payload.reply_markup
+                else InlineKeyboardMarkup
+            )
+            markup = markup_type.model_validate(payload.reply_markup)
+        try:
+            if payload.kind == "text":
+                result = await self.bot.send_message(
+                    chat_id=chat_id, text=payload.text,
+                    reply_markup=markup, parse_mode=None,
+                    disable_web_page_preview=True,
+                )
+            elif payload.kind == "media_group":
+                constructors = {
+                    "photo": InputMediaPhoto, "video": InputMediaVideo,
+                    "document": InputMediaDocument,
+                }
+                media = [
+                    constructors[item.kind](
+                        media=FSInputFile(item.path),
+                        caption=payload.text if index == 0 else None,
+                        parse_mode=None,
+                    )
+                    for index, item in enumerate(payload.media)
+                ]
+                result = await self.bot.send_media_group(
+                    chat_id=chat_id, media=media,
+                )
+            else:
+                method = {
+                    "photo": self.bot.send_photo,
+                    "video": self.bot.send_video,
+                    "document": self.bot.send_document,
+                }[payload.kind]
+                result = await method(
+                    chat_id=chat_id,
+                    **{payload.kind: FSInputFile(payload.media[0].path)},
+                    caption=payload.text or None,
+                    reply_markup=markup, parse_mode=None,
+                )
+        except TelegramRetryAfter:
+            raise DeliveryRejected("runtime_provider_rate_limited", retryable=True) from None
+        except (TelegramBadRequest, TelegramForbiddenError, TelegramUnauthorizedError):
+            raise DeliveryRejected("runtime_provider_rejected", retryable=False) from None
+        except Exception:
+            raise RuntimeError("runtime_delivery_uncertain") from None
+        messages = result if payload.kind == "media_group" else [result]
+        expected = len(payload.media) if payload.kind == "media_group" else 1
+        if not isinstance(messages, list) or len(messages) != expected:
+            raise RuntimeError("runtime_delivery_receipt_invalid")
+        ids = [getattr(message, "message_id", None) for message in messages]
+        if any(type(value) is not int or value <= 0 for value in ids):
+            raise RuntimeError("runtime_delivery_receipt_invalid")
+        return [str(value) for value in ids]
+
     async def send(self, chat_id: int, reply: BotReply) -> None:
         """Send plain text with an optional inline keyboard."""
         from aiogram.types import (

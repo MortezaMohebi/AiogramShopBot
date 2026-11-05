@@ -190,13 +190,14 @@ def definitions() -> tuple[ActionDefinition, ...]:
             "wholesale.create_application",
             "ثبت درخواست همکاری عمده",
             s.WholesaleInput,
-            s.RequestResult,
+            s.WholesaleResult,
             scope="support.write",
             mutation=True,
             confirmation="customer_confirmation",
-            available=False,
-            reason="action_service_unavailable",
-            sensitive=("company",),
+            sensitive=(
+                "name", "phone", "company", "city", "estimated_monthly_amount",
+                "document_handle",
+            ),
         ),
         _definition(
             "notification.notify_admin",

@@ -35,6 +35,7 @@ from services.shop_identity import is_blocked, register_customer
 from services.shop_orders import ShopOrdersFlow
 from services.shop_payments import PaymentRejected, ShopPaymentService
 from services.shop_referrals import ShopReferralService
+from services.shop_runtime.ingress import try_ingress
 
 LOG = logging.getLogger(__name__)
 _REFUND_ACTION = re.compile(r"shop:refundorder:([1-9][0-9]{0,18})\Z")
@@ -243,7 +244,7 @@ async def _settle(context: BotContext, client, payload: Mapping) -> dict:
 
 
 async def dispatch(
-    context: BotContext, client, payload: Mapping,
+    context: BotContext, client, payload: Mapping, *, runtime_checked: bool = False,
 ) -> dict:
     """Process one uniquely claimed provider update and return a safe status."""
     if not isinstance(payload, Mapping):
@@ -255,6 +256,11 @@ async def dispatch(
         message.get("successful_payment"), dict,
     ):
         return await _settle(context, client, payload)
+
+    if not runtime_checked:
+        runtime = await try_ingress(context, payload, client=client)
+        if runtime.get("handled"):
+            return runtime
 
     event = normalize_update(context.platform, payload)
     if event is None:

@@ -364,10 +364,9 @@ export function WorkflowEditor({
           <Button
             size="sm"
             variant="outline"
-            disabled
-            title="Runtime اجرای فرایند هنوز آماده نیست"
+            asChild
           >
-            انتشار · در دسترس نیست
+            <Link href={`/studio/runtime?tab=publications&workflow_id=${initial.id}`}>بررسی انتشار در Runtime</Link>
           </Button>
         </div>
       </div>
@@ -796,7 +795,7 @@ export function WorkflowEditor({
           ))}
           {!validation.issues.length && (
             <p className="text-sm text-emerald-600 dark:text-emerald-400">
-              تعریف در آخرین بررسی معتبر بود. انتشار به Runtime نیاز دارد.
+              تعریف در آخرین بررسی معتبر بود. آمادگی انتشار در Runtime جداگانه بررسی می‌شود.
             </p>
           )}
         </div>

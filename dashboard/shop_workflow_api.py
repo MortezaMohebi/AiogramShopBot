@@ -350,12 +350,12 @@ async def delete(workflow_id: UUID, request: Request, actor: Actor, db: Db):
 
 @router.post("/{workflow_id}/publish")
 async def publish(workflow_id: UUID, request: Request, actor: Actor, db: Db):
-    """Deny activation truthfully until a reviewed production Runtime exists."""
+    """Require the separate publication preview and explicit Runtime approval flow."""
     staff, scope = require(actor, request, "workflows.write", write=True)
     await workflows.read_workflow(
         db, scope=scope, actor=staff, workflow_id=str(workflow_id)
     )
-    raise security.SecurityRejected("workflow_runtime_unavailable", 409)
+    raise security.SecurityRejected("workflow_publish_preview_required", 409)
 
 
 @router.post("/{workflow_id}/simulate")
