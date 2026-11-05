@@ -60,6 +60,9 @@ from models.shop_wholesale import ShopWholesaleApplication
 from models.shop_workflow_runtime import (
     PublishedWorkflow,
     RuntimeSlot,
+    RuntimeBinding,
+    RuntimeGate,
+    RuntimeAudit,
     WorkflowActionJob,
     WorkflowCallback,
     WorkflowDeliveryAttempt,
@@ -107,6 +110,9 @@ CHECK_NAMES = (
     "receiver Runtime precedes legacy receipts and old claims stay quarantined",
     "legacy start, catalog, cart, checkout, orders and payment bypass",
     "signed Store isolation, private metadata and audited recovery",
+    "skip locked Run and Slot before ordered worker limits",
+    "emergency gate serialization with claim and independent Layer 2 commit",
+    "absent entry ownership and retirement are serialized",
     "commerce, stock and payment state remain unchanged",
 )
 
@@ -1393,7 +1399,8 @@ class Harness:
         row = await self.run(first)
         require(
             sum(bool(x) for x in results) == 1
-            and row.status == "expired"
+            and row.status == "cancelled"
+            and row.error_code == "runtime_input_timeout"
             and row.lock_version == before + 1,
             "competing_timeout_advanced_twice",
         )
@@ -1410,7 +1417,11 @@ class Harness:
         )
         row = await self.run(second)
         require(
-            (row.status == "expired" and row.node_id == "name")
+            (
+                row.status == "cancelled"
+                and row.error_code == "runtime_input_timeout"
+                and row.node_id == "name"
+            )
             or (row.status == "waiting_input" and row.node_id == "phone"),
             "timeout_input_race_corrupted_state",
         )
@@ -1815,6 +1826,358 @@ class Harness:
         )
         await self.input(case, "cancelled", text_value="/cancel")
 
+    async def locked_owners(self):
+        """Require a second customer to progress while the oldest owner is locked."""
+        for kind in ("outbox", "timeout", "action", "inbox_run", "inbox_slot"):
+            older, other = await self.new_case(), await self.new_case("bale")
+            cases = (older, other)
+            if kind == "action":
+                for case in cases:
+                    await self.prepare_form(case, document=False)
+                    await self.confirm(case)
+                model, worker = WorkflowActionJob, workers.action_once
+            elif kind == "timeout":
+                model, worker = WorkflowWait, workers.timeout_once
+            elif kind == "outbox":
+                for case in cases:
+                    await self.offer(
+                        case, self.raw(case, text_value="QA_PRIVATE_LOCK_NAME")
+                    )
+                model, worker = WorkflowOutbox, workers.deliver_once
+            else:
+
+                async def crash(*_args, **_kwargs):
+                    """Leave both inboxes committed for an independent worker."""
+                    raise SimulatedCrash()
+
+                with patch.object(sessions, "_consume", crash):
+                    for case in cases:
+                        try:
+                            await self.offer(
+                                case, self.raw(case, text_value="QA_PRIVATE_LOCK_NAME")
+                            )
+                        except SimulatedCrash:
+                            pass
+                        else:
+                            raise AssertionError("qa_lock_inbox_checkpoint_missing")
+                model, worker = WorkflowInbox, workers.inbox_once
+            async with session_maker() as prep:
+                ids = []
+                for index, case in enumerate(cases):
+                    query = select(model).where(model.run_id == case.run_id)
+                    if kind != "timeout":
+                        query = query.where(model.status == "pending")
+                    row = (await prep.scalars(query)).one()
+                    ids.append(row.id)
+                    timestamp = security.clock() - timedelta(minutes=10 - index)
+                    if kind == "timeout":
+                        row.deadline = timestamp
+                    else:
+                        row.created_at = timestamp
+                await prep.commit()
+            async with session_maker() as holder:
+                lock = (
+                    select(RuntimeSlot).where(RuntimeSlot.run_id == older.run_id)
+                    if kind == "inbox_slot"
+                    else select(WorkflowRun).where(WorkflowRun.id == older.run_id)
+                )
+                require(
+                    await holder.scalar(lock.with_for_update()) is not None,
+                    "oldest_owner_missing",
+                )
+                require(
+                    await asyncio.wait_for(worker(session_maker), 8),
+                    "locked_owner_starved_" + kind,
+                )
+                async with session_maker() as inspect:
+                    a, b = (
+                        await inspect.get(model, ids[0]),
+                        await inspect.get(model, ids[1]),
+                    )
+                    if kind == "timeout":
+                        require(
+                            a is not None and b is None, "locked_timeout_wrong_owner"
+                        )
+                        require(
+                            (await self.run(other)).error_code
+                            == "runtime_input_timeout",
+                            "other_timeout_missing",
+                        )
+                    else:
+                        require(
+                            a.status == "pending"
+                            and b.status
+                            == {
+                                "outbox": "sent",
+                                "action": "succeeded",
+                                "inbox_run": "processed",
+                                "inbox_slot": "processed",
+                            }[kind],
+                            "locked_worker_wrong_owner_" + kind,
+                        )
+            await self.drain(worker)
+            for case in cases:
+                if (await self.run(case)).status == "waiting_input":
+                    await self.offer(case, self.raw(case, text_value="/cancel"))
+            await self.drain()
+
+    async def admin_contender(self, operation, pid_future):
+        """Run the actual management service in a separate diagnostic transaction."""
+        from models.shop_staff import ShopStaff
+        from services.shop_store_context import resolve_context
+
+        async with session_maker() as db:
+            actor = await db.get(ShopStaff, self.api.staff_id)
+            scope = await resolve_context(
+                db, staff_id=actor.id, session_id=self.api.session_id
+            )
+            require(scope.current_store_id == self.store_id, "race_store_mismatch")
+            pid_future.set_result(await db.scalar(text("SELECT pg_backend_pid()")))
+            return await operation(db, actor, scope)
+
+    async def await_blocker(self, pid, owners):
+        """Observe the actual PostgreSQL wait graph before allowing work to finish."""
+        async with asyncio.timeout(8), session_maker() as monitor:
+            while True:
+                blockers = await monitor.scalar(
+                    text("SELECT pg_blocking_pids(:pid)"), {"pid": pid}
+                )
+                if set(blockers) & owners:
+                    return
+                await asyncio.sleep(0.025)
+
+    async def emergency_race(self):
+        """A waiting kill cannot deadlock a physical claim or Layer 2's separate FK writes."""
+        from services.shop_runtime import admin
+
+        for kind in ("claim", "action"):
+            case = await self.new_case()
+            if kind == "action":
+                await self.prepare_form(case, document=False)
+                await self.confirm(case)
+            else:
+                await self.offer(
+                    case, self.raw(case, text_value="QA_PRIVATE_GATE_RACE")
+                )
+            gate_pid = asyncio.get_running_loop().create_future()
+            worker_pid = asyncio.get_running_loop().create_future()
+            released = asyncio.Event()
+            real_lock = workers._lock_gates
+
+            async def after_gate(db, context):
+                """Pause once after real shared gate acquisition, before effect writes."""
+                result = await real_lock(db, context)
+                if result and not worker_pid.done():
+                    worker_pid.set_result(
+                        await db.scalar(text("SELECT pg_backend_pid()"))
+                    )
+                    await released.wait()
+                return result
+
+            async def kill(db, actor, scope):
+                row = await db.scalar(
+                    select(RuntimeGate).where(
+                        RuntimeGate.scope_key
+                        == sessions.gate_key(self.store_id, case.bot_id)
+                    )
+                )
+                return await admin.set_gate(
+                    db,
+                    actor=actor,
+                    scope=scope,
+                    bot_id=case.bot_id,
+                    expected_version=row.version,
+                    enabled_value=True,
+                    killed=True,
+                    operation_id=str(uuid4()),
+                )
+
+            try:
+                with patch.object(workers, "_lock_gates", after_gate):
+                    async with asyncio.timeout(20), asyncio.TaskGroup() as group:
+                        work = group.create_task(
+                            (
+                                workers.action_once
+                                if kind == "action"
+                                else workers.deliver_once
+                            )(session_maker)
+                        )
+                        owner = await worker_pid
+                        writer = group.create_task(self.admin_contender(kill, gate_pid))
+                        await self.await_blocker(await gate_pid, {owner})
+                        released.set()
+                    require(
+                        work.result() and writer.result()["killed"],
+                        "emergency_race_not_committed",
+                    )
+                if kind == "claim":
+                    row = (await self.outboxes(case))[-1]
+                    async with session_maker() as db:
+                        attempt = await db.scalar(
+                            select(WorkflowDeliveryAttempt).where(
+                                WorkflowDeliveryAttempt.outbox_id == row.id
+                            )
+                        )
+                        require(
+                            attempt is not None
+                            and attempt.outcome == "cancelled"
+                            and row.status == "cancelled",
+                            "post_kill_physical_send_not_suppressed",
+                        )
+            finally:
+                released.set()
+                await self.set_gate(bot_id=case.bot_id)
+            if kind == "action":
+                await self.completed(case)
+            else:
+                await self.input(case, "cancelled", text_value="/cancel")
+
+    async def publication_races(self):
+        """Two heads racing an absent key and activation racing retirement have coherent receipts."""
+        from services.shop_runtime import admin, publication
+        from services.shop_runtime.contracts import RuntimeRejected
+
+        key = "race_" + uuid4().hex[:12]
+        specs = [self.bindings()[0] | {"kind": "admin_test", "key": key}]
+
+        async def preview(head, bindings):
+            return await self.api.call(
+                "POST",
+                RUNTIME + "/publications/preview",
+                payload={
+                    "workflow_id": head["id"],
+                    "revision": head["revision"],
+                    "bindings": bindings,
+                },
+            )
+
+        async def race(operations):
+            """Hold only the test Store's routing fence until both contenders queue."""
+
+            async def guarded(operation, pid):
+                try:
+                    return await self.admin_contender(operation, pid)
+                except RuntimeRejected as conflict:
+                    return {"conflict": conflict.code}
+
+            async with asyncio.timeout(20), asyncio.TaskGroup() as group:
+                async with session_maker() as holder:
+                    await publication.lock_routes(holder, self.store_id)
+                    owner = await holder.scalar(text("SELECT pg_backend_pid()"))
+                    pids = [
+                        asyncio.get_running_loop().create_future() for _ in operations
+                    ]
+                    tasks = [
+                        group.create_task(guarded(op, pid))
+                        for op, pid in zip(operations, pids, strict=True)
+                    ]
+                    peers = set(await asyncio.gather(*pids))
+                    for pid in peers:
+                        await self.await_blocker(pid, (peers | {owner}) - {pid})
+                    await holder.commit()
+            return [task.result() for task in tasks]
+
+        def activation(review):
+            async def operation(db, actor, scope):
+                return await publication.activate(
+                    db,
+                    actor=actor,
+                    scope=scope,
+                    preview_id=review["preview_id"],
+                    approved=True,
+                )
+
+            return operation
+
+        heads, reviews = [], []
+        for _ in range(2):
+            head = await self.api.call(
+                "POST",
+                "/workflows",
+                expected=201,
+                payload={
+                    "id": str(uuid4()),
+                    "operation_id": str(uuid4()),
+                    "name": "آزمون همزمانی انتشار",
+                    "key": "qa_" + uuid4().hex[:16],
+                    "template": "wholesale_application",
+                },
+            )
+            heads.append(head)
+            reviews.append(await preview(head, specs))
+        outcomes = await race([activation(review) for review in reviews])
+        winners = [
+            i for i, result in enumerate(outcomes) if result.get("publication_id")
+        ]
+        require(len(winners) == 1, "concurrent_publication_wrong_winner_count")
+        winner = winners[0]
+        require(
+            outcomes[1 - winner].get("conflict") == "runtime_entry_conflict",
+            "concurrent_publication_unstructured_conflict",
+        )
+        published_id = outcomes[winner]["publication_id"]
+        extra = specs[0] | {"key": key + "_extra"}
+        next_review = await preview(heads[winner], [extra])
+
+        async def retire(db, actor, scope):
+            return await admin.retire(
+                db,
+                actor=actor,
+                scope=scope,
+                publication_id=published_id,
+                operation_id=str(uuid4()),
+            )
+
+        activated, retired = await race([activation(next_review), retire])
+        require(
+            retired.get("retired") is True
+            and (
+                activated.get("publication_id") == published_id
+                or activated.get("conflict")
+                in {"runtime_preview_conflict", "runtime_publication_retired"}
+            ),
+            "retire_activation_outcome_invalid",
+        )
+        async with session_maker() as db:
+            bindings = (
+                await db.scalars(
+                    select(RuntimeBinding).where(
+                        RuntimeBinding.bot_id == specs[0]["bot_id"],
+                        RuntimeBinding.kind == "admin_test",
+                        RuntimeBinding.key.in_((key, extra["key"])),
+                    )
+                )
+            ).all()
+            require(
+                len(bindings) == (2 if activated.get("publication_id") else 1)
+                and all(
+                    not row.enabled
+                    and row.workflow_id == heads[winner]["id"]
+                    and row.publication_id == published_id
+                    for row in bindings
+                ),
+                "retired_binding_owner_or_status_invalid",
+            )
+            require(
+                await db.scalar(
+                    select(RuntimeAudit.id).where(
+                        RuntimeAudit.action == "retire",
+                        RuntimeAudit.target_id == published_id,
+                    )
+                )
+                is not None,
+                "retirement_race_audit_missing",
+            )
+        replay = await self.api.call(
+            "POST",
+            RUNTIME + "/publications/activate",
+            payload={"preview_id": reviews[winner]["preview_id"], "approved": True},
+        )
+        require(
+            replay.get("replayed") and replay.get("publication_id") == published_id,
+            "publication_race_replay_changed",
+        )
+
     async def commerce_fingerprint(self):
         """Count every financial/order/delivery table and fingerprint inventory state."""
         async with session_maker() as db:
@@ -1901,6 +2264,9 @@ async def main():
                         harness.receiver_receipts,
                         harness.legacy,
                         harness.security_http,
+                        harness.locked_owners,
+                        harness.emergency_race,
+                        harness.publication_races,
                         harness.unchanged_commerce,
                     ]
                     for name, scenario in zip(CHECK_NAMES[2:], scenarios, strict=True):

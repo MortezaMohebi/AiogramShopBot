@@ -254,7 +254,7 @@ class ErrorPolicy(StrictModel):
     max_steps: int = Field(default=200, ge=1, le=500)
     on_error: Literal["stop", "cancel"] = "stop"
     message: str = Field(
-        default="شبیه‌سازی متوقف شد؛ تنظیمات این گره را بررسی کنید.",
+        default="اجرای فرایند متوقف شد؛ دوباره شروع کنید یا با پشتیبانی تماس بگیرید.",
         max_length=1000,
     )
 

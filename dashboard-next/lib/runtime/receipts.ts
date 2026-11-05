@@ -91,6 +91,25 @@ function validPreview(value: Record<string, unknown>, payload: Record<string, un
   const selected = payload.bindings.map(item => binding(item)!);
   if (!sameItems(selected, diff.next_bindings.map(item => binding(item)!))) return false;
   const selectedKeys = new Set(selected.map(bindingIdentity));
+  // Older receipts have no comparisons. When supplied, bind every baseline to
+  // precisely one selected entry and the pointer already attributed to that key.
+  if (diff.binding_comparisons !== undefined) {
+    if (!Array.isArray(diff.binding_comparisons) || diff.binding_comparisons.length !== selected.length) return false;
+    const remaining = new Set(selectedKeys);
+    const pointers = new Map(diff.previous_bindings.map(item => [bindingIdentity(item as Record<string, unknown>), item as Record<string, unknown>]));
+    const revisions = new Set<number | null>();
+    let changed = false;
+    for (const item of diff.binding_comparisons) {
+      if (!object(item) || typeof item.definition_changed !== "boolean" || !remaining.delete(bindingIdentity(item))) return false;
+      const active = pointers.get(bindingIdentity(item));
+      if (active ? !sameId(item.previous_publication_id, active.publication_id) || !integer(item.previous_revision, 1)
+        : item.previous_publication_id !== null || item.previous_revision !== null || !item.definition_changed) return false;
+      if (item.previous_revision === diff.next_revision && item.definition_changed) return false;
+      revisions.add(item.previous_revision as number | null);
+      changed ||= item.definition_changed;
+    }
+    if (remaining.size || changed !== diff.definition_changed || (revisions.size === 1 ? [...revisions][0] : null) !== diff.previous_revision) return false;
+  }
   const retained = diff.previous_bindings.filter(item => !selectedKeys.has(bindingIdentity(item as Record<string, unknown>)));
   return sameItems(retained.map(item => pointerIdentity(item as Record<string, unknown>)), diff.unchanged_bindings.map(item => pointerIdentity(item as Record<string, unknown>)));
 }

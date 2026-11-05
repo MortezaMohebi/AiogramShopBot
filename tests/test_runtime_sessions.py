@@ -304,7 +304,11 @@ async def test_answer_after_wait_deadline_expires_without_advancing(buyer, monke
     await db.commit()
     result = await handle(db, context=p.bot, event=inbound(2, "Late Name"))
     run = await db.scalar(select(WorkflowRun))
-    assert run.status == "expired" and run.node_id == "name"
+    assert (
+        run.status == "cancelled"
+        and run.error_code == "runtime_input_timeout"
+        and run.node_id == "name"
+    )
     assert "name" not in run.values
 
 

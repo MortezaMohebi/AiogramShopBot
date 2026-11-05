@@ -42,6 +42,48 @@ function BindingPointerSummary({ items }: { items: PublicationBindingPointer[] }
     <p>نسخهٔ اتصال {binding.version} · {binding.enabled ? "فعال" : "غیرفعال"}</p>
   </div>)}</div>;
 }
+type Comparison = NonNullable<PublicationPreview["diff"]["binding_comparisons"]>[number];
+
+/** Load detail only when requested, once per distinct selected before/after pair. */
+function ComparisonGroup({ items, workflowId, next }: { items: Comparison[]; workflowId: string; next: number }) {
+  const [detail, setDetail] = useState<Diff | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const baseline = items[0];
+  async function load() {
+    if (busy || !baseline.previous_revision) return;
+    setBusy(true);
+    setError("");
+    try {
+      setDetail(await workflowRequest<Diff>(`/${workflowId}/compare?left=${baseline.previous_revision}&right=${next}`));
+    } catch (cause) {
+      setError(runtimeErrorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <div className="space-y-2 rounded border p-3 text-xs leading-6">
+    <h4 className="font-semibold">{baseline.previous_revision === null ? `اتصال تازه به نسخهٔ ${next}` : `مقایسهٔ نسخهٔ ${baseline.previous_revision} با ${next}`}</h4>
+    <p>{baseline.previous_revision === null ? "این ورودی‌ها اتصال قبلی ندارند." : baseline.definition_changed ? "تعریف تغییر کرده است." : "تعریف تغییری ندارد."}</p>
+    <ul>{items.map(item => <li key={bindingKey(item.bot_id,item.kind,item.key)}><RuntimeId>{`${item.bot_id} · ${item.kind}:${item.key}`}</RuntimeId></li>)}</ul>
+    {baseline.previous_revision !== null && baseline.definition_changed && !detail && <Button type="button" disabled={busy} onClick={() => void load()}>مشاهدهٔ تغییرهای تعریف</Button>}
+    {error && <p role="alert">{error}</p>}
+    {detail && (["nodes", "edges", "variables"] as const).map(key => <p key={key}><bdi>{key}</bdi>: {detail[key].added.length} افزوده · {detail[key].removed.length} حذف · {detail[key].changed.length} تغییر</p>)}
+  </div>;
+}
+
+function DefinitionComparisons({ preview, workflowId }: { preview: PublicationPreview; workflowId: string }) {
+  const groups = new Map<number | null, Comparison[]>();
+  for (const item of preview.diff.binding_comparisons ?? []) {
+    const group = groups.get(item.previous_revision) ?? [];
+    group.push(item);
+    groups.set(item.previous_revision, group);
+  }
+  return <div className="space-y-2">
+    {[...groups].map(([revision, items]) => <ComparisonGroup key={revision ?? "unbound"} items={items} workflowId={workflowId} next={preview.diff.next_revision} />)}
+    {!groups.size && <p className="text-xs">این پیش‌نمایش مقایسهٔ نسخه برای هر ورودی ندارد.</p>}
+  </div>;
+}
 /** Only exact declared entries and explicit Bot choices can enter a publication request. */
 function ReviewForm({
   source,
@@ -69,7 +111,6 @@ function ReviewForm({
     version_policy: "active_publication"
   }])) : {});
   const [preview, setPreview] = useState<PublicationPreview | null>(null),
-    [diff, setDiff] = useState<Diff | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [approved, setApproved] = useState(false),
@@ -100,7 +141,6 @@ function ReviewForm({
     }));
     setPreview(null);
     setApproved(false);
-    setDiff(null);
     generation.current++;
   }
   async function createPreview() {
@@ -109,7 +149,6 @@ function ReviewForm({
     setError("");
     setPreview(null);
     setApproved(false);
-    setDiff(null);
     const token = ++generation.current;
     try {
       const result = await runtimeRequest<PublicationPreview>("/publications/preview", "POST", {
@@ -120,12 +159,6 @@ function ReviewForm({
       if (alive.current && token === generation.current) {
         setPreview(result);
         setNow(Date.now());
-      }
-      if (result.diff.previous_revision && result.diff.previous_revision !== source.revision) {
-        try {
-          const comparison = await workflowRequest<Diff>(`/${source.id}/compare?left=${result.diff.previous_revision}&right=${source.revision}`);
-          if (alive.current && token === generation.current) setDiff(comparison);
-        } catch {/* The authoritative server diff remains visible if detailed comparison is unavailable. */}
       }
     } catch (error) {
       if (alive.current && token === generation.current) setError(runtimeErrorText(error));
@@ -170,8 +203,7 @@ function ReviewForm({
               });
               setPreview(null);
               setApproved(false);
-              setDiff(null);
-              generation.current++;
+                        generation.current++;
             }} />
         <span className="min-w-0">
           <span>{bot.name} · <bdi>
@@ -232,7 +264,6 @@ function ReviewForm({
         {preview.ready ? "نسخه آمادهٔ بررسی و تأیید است" : "این نسخه آمادهٔ انتشار نیست"}
       </h3>
       <p className="text-xs leading-6">مهلت پیش‌نمایش: <RuntimeDate value={preview.expires_at} /></p>
-      <p className="text-xs">نسخهٔ قبلی: {preview.diff.previous_revision ?? "ندارد"} · نسخهٔ انتخابی: {preview.diff.next_revision} · تعریف {preview.diff.definition_changed ? "تغییر کرده است" : "تغییر نکرده است"}</p>
     </div>
     {preview.issues.length > 0 && <ul className="list-inside list-disc space-y-2 text-sm">
       {preview.issues.map((issue, index) => <li key={index}>{issue.message ?? "مانع انتشار ثبت شده است"} · <RuntimeId>
@@ -241,13 +272,7 @@ function ReviewForm({
             {issue.node_id}
           </RuntimeId></>}</li>)}
     </ul>}
-    {diff && <div className="space-y-2 text-xs">
-      <h4 className="font-semibold">تغییرهای تعریف</h4>
-      {(["nodes", "edges", "variables"] as const).map(key => <p key={key}><bdi>
-          {key}
-        </bdi>: {diff[key].added.length} افزوده · {diff[key].removed.length} حذف · {diff[key].changed.length} تغییر</p>)}
-      <Link className="text-primary underline" href={`/studio/workflows/${source.id}/versions`}>مقایسهٔ کامل نسخه‌ها</Link>
-    </div>}
+    <DefinitionComparisons key={preview.preview_id} preview={preview} workflowId={source.id} />
     <div className="grid min-w-0 gap-4 md:grid-cols-2">
       <div className="space-y-2">
         <h4 className="text-sm font-semibold">ورودی‌های فعلی ربات‌های انتخابی</h4>
@@ -281,6 +306,7 @@ function ReviewForm({
             {dep.confirmation}
           </RuntimeId></p>
       </div>)}
+      {!!preview.dependencies.length && <p className="text-xs leading-6">در اجرای واقعی، تلاش مجدد و انتظار برای تأیید روی همان عملیات می‌مانند. این دو خروجی در شبیه‌ساز نمایش داده می‌شوند؛ برای انتشار، مقصدشان باید با مسیر خطا یکی باشد.</p>}
       {!preview.dependencies.length && <p className="text-xs text-muted-foreground">این نسخه Action ندارد.</p>}
       <p className="text-xs leading-6">گره دارای اثر تغییر داده: {preview.mutating_nodes.length.toLocaleString("fa-IR")} · پلتفرم‌ها: <bdi>
           {preview.platforms.join(" / ")}

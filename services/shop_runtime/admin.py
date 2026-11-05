@@ -409,7 +409,7 @@ async def set_gate(
     await db.scalar(
         select(ShopStore)
         .where(ShopStore.id == scope.current_store_id)
-        .with_for_update()
+        .with_for_update(key_share=True)  # NO KEY UPDATE permits concurrent FK checks.
     )
     row = await db.scalar(
         select(RuntimeGate)
@@ -417,6 +417,7 @@ async def set_gate(
             RuntimeGate.scope_key == key, RuntimeGate.store_id == scope.current_store_id
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if (row.version if row else 0) != expected_version:
         raise RuntimeRejected("runtime_gate_conflict")
@@ -549,6 +550,9 @@ async def recover(
 async def retire(db, *, scope, actor, publication_id, operation_id):
     """Retire entry activation while retaining immutable snapshots and pinned Runs."""
     require_manager(actor, scope)
+    from services.shop_runtime.publication import lock_routes
+
+    await lock_routes(db, scope.current_store_id)
     if await _replay(db, scope, actor, operation_id, "retire", publication_id, {}):
         return {
             "replayed": True,

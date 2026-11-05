@@ -117,6 +117,12 @@ test("publication preview binds saved revision, selected edits and retained poin
  const payload={workflow_id:targetId,revision:4,bindings:[entry]};
  const body={preview_id:previewId,expires_at:"2099-01-01T00:00:00Z",ready:true,issues:[],dependencies:[],mutating_nodes:[],platforms:["telegram"],diff:{previous_revision:1,next_revision:4,definition_changed:true,previous_bindings:[retained],next_bindings:[entry],unchanged_bindings:[retained],retains_unselected_bindings:true}};
  assert.deepEqual(await client(async()=>Response.json(body)).runtimeRequest("/publications/preview","POST",payload),body);
+ const comparison={bot_id:targetId,kind:"command",key:"apply",previous_revision:null,previous_publication_id:null,definition_changed:true};
+ const grouped={...body,diff:{...body.diff,previous_revision:null,binding_comparisons:[comparison]}};
+ assert.deepEqual(await client(async()=>Response.json(grouped)).runtimeRequest("/publications/preview","POST",payload),grouped);
+ for(const comparisons of [[],[comparison,comparison],[{...comparison,key:"old"}],[{...comparison,previous_publication_id:otherId,previous_revision:1}],[{...comparison,definition_changed:false}]]) {
+   await assert.rejects(client(async()=>Response.json({...grouped,diff:{...grouped.diff,binding_comparisons:comparisons}})).runtimeRequest("/publications/preview","POST",payload));
+ }
  for(const patch of [{next_revision:5},{next_bindings:[{...entry,bot_id:otherId}]},{unchanged_bindings:[]},{retains_unselected_bindings:false},...(["priority","enabled","eligibility","fallback","version_policy"] as const).map(key=>({next_bindings:[{...entry,[key]:null}]}))])await assert.rejects(client(async()=>Response.json({...body,diff:{...body.diff,...patch}})).runtimeRequest("/publications/preview","POST",payload),(error:unknown)=>(error as {status:number}).status===0);
 });
 test("approved and retry receipts cannot claim an unexpected execution or delivery state",async()=>{

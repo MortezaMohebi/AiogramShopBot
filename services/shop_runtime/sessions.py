@@ -7,11 +7,14 @@ import secrets
 from datetime import timedelta
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 import config
 from channels.contracts import Platform
+from models.shop_content import ShopIdentity
+from models.shop_store_commerce import ShopStoreCustomer
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import ShopBot, ShopStore
 from models.shop_workflow_runtime import (
@@ -152,7 +155,24 @@ async def entry(db, context, event, *, origin="customer"):
     )
 
 
-async def machine_for(db, run):
+class InvalidStoredRun(RuntimeRejected):
+    """Identify only deterministic decoding errors for a known, locked Run."""
+
+    def __init__(self, run, code):
+        """Keep the ORM record for quarantine; never include its contents in logs."""
+        super().__init__(code)
+        self.run = run
+
+
+async def quarantine_run(db, run, code):
+    """Stop one invalid record, with bounded redacted evidence, in its own transaction."""
+    run.status, run.error_code = "failed", code
+    run.lock_version += 1
+    run.updated_at = security.clock()
+    await system_event(db, run, kind="runtime", status="failed", error_code=code)
+
+
+async def machine_for(db, run, *, initialize=False):
     """Load only the Run's pinned snapshot; no active binding or draft is consulted."""
     published = await db.scalar(
         select(PublishedWorkflow).where(
@@ -161,22 +181,51 @@ async def machine_for(db, run):
         )
     )
     if published is None:
-        raise RuntimeRejected("runtime_publication_missing")
+        raise InvalidStoredRun(run, "runtime_publication_missing")
+    try:
+        definition = Definition.model_validate(published.definition)
+    except ValidationError:
+        raise InvalidStoredRun(run, "runtime_stored_definition_invalid") from None
+    if run.node_id not in {n.id for n in definition.nodes}:
+        raise InvalidStoredRun(run, "runtime_stored_definition_invalid")
+    if not isinstance(run.state, dict) or not isinstance(run.values, dict):
+        raise InvalidStoredRun(run, "runtime_stored_state_invalid")
     store = await db.get(ShopStore, run.store_id)
     bot = await db.get(ShopBot, run.bot_id)
+    # Personalization is private and optional; do not borrow another Bot's
+    # identity or a name from the incoming message. Missing names render empty.
+    if "customer_name" in run.state:
+        customer_name = run.state["customer_name"]
+    else:
+        customer_name = await db.scalar(
+            select(ShopStoreCustomer.display_name)
+            .join(ShopIdentity, ShopIdentity.customer_id == ShopStoreCustomer.id)
+            .where(
+                ShopStoreCustomer.store_id == run.store_id,
+                ShopStoreCustomer.id == run.customer_id,
+                ShopIdentity.id == run.identity_id,
+                ShopIdentity.store_id == run.store_id,
+                ShopIdentity.bot_id == run.bot_id,
+                ShopIdentity.platform == run.platform,
+                ShopIdentity.platform_user_id == run.user_id,
+            )
+        )
     machine = Machine(
-        Definition.model_validate(published.definition),
+        definition,
         platform=run.platform,
         node_id=run.node_id,
-        values=run.values,
+        values=None if initialize else run.values,
         state=run.state,
         now=security.clock(),
         context={
             "context.store_name": store.name,
             "context.bot_name": bot.name,
-            "context.customer_name": "",
+            "context.customer_name": customer_name or "",
         },
     )
+    # Pin the trusted name with the session, so later profile edits cannot
+    # change the input shown at confirmation before the same Action runs.
+    machine.state["customer_name"] = customer_name or ""
     machine.status = run.status
     return machine
 
@@ -378,7 +427,9 @@ async def control_input(db, context, event, *, run=None):
         return event.text in {"/cancel", "/menu", "/restart"}
     if event.kind != "callback" or not event.callback.startswith("wf:"):
         return False
-    query = select(WorkflowCallback.id).where(
+    if run is None:
+        return False
+    query = select(WorkflowCallback.value).where(
         WorkflowCallback.token_hash == token_hash(event.callback),
         WorkflowCallback.store_id == context.store_id,
         WorkflowCallback.bot_id == context.bot_id,
@@ -387,13 +438,28 @@ async def control_input(db, context, event, *, run=None):
         WorkflowCallback.consumed_at.is_(None),
         WorkflowCallback.expires_at > security.clock(),
     )
-    if run is not None:
-        query = query.where(
-            WorkflowCallback.run_id == run.id,
-            WorkflowCallback.node_id == run.node_id,
-            WorkflowCallback.epoch == run.state.get("epoch", 0),
+    if not isinstance(run.state, dict):
+        return False
+    query = query.where(
+        WorkflowCallback.run_id == run.id,
+        WorkflowCallback.node_id == run.node_id,
+        WorkflowCallback.epoch == run.state.get("epoch", 0),
+    )
+    choice = await db.scalar(query)
+    if choice == "cancel":
+        # Confirm's authored decline may loop or take another transition. It
+        # is a normal answer and cannot bypass the wait deadline or input caps.
+        publication = await db.get(PublishedWorkflow, run.publication_id)
+        return bool(
+            publication
+            and isinstance(publication.definition, dict)
+            and not any(
+                n.get("id") == run.node_id and n.get("type") == "confirm"
+                for n in publication.definition.get("nodes", [])
+                if isinstance(n, dict)
+            )
         )
-    return await db.scalar(query) is not None
+    return choice == "main_menu"
 
 
 async def finish_input(db, inbox, result):
@@ -448,18 +514,19 @@ async def system_event(db, run, *, kind, status, error_code=None, summary=None):
     return True
 
 
-async def reject_wait_input(db, run, inbox, event, machine, *, code, expired=False):
+async def reject_wait_input(
+    db, run, inbox, event, machine, *, code, expired=False, target=None
+):
     """Record a stale answer explicitly and keep it out of another question's values."""
     if expired:
-        machine.status, machine.error = "expired", code
-    machine.emit(
-        "مهلت پاسخ تمام شده است؛ دوباره شروع کنید."
-        if expired
-        else "این پاسخ مربوط به مرحلهٔ قبلی بود؛ لطفاً به پرسش فعلی پاسخ دهید.",
-        kind="text",
-        buttons=[],
-        notice=True,
-    )
+        machine.timeout(target)
+    else:
+        machine.emit(
+            "این پاسخ مربوط به مرحلهٔ قبلی بود؛ لطفاً به پرسش فعلی پاسخ دهید.",
+            kind="text",
+            buttons=[],
+            notice=True,
+        )
     db.add(
         WorkflowEvent(
             id=str(uuid4()),
@@ -482,7 +549,7 @@ async def reject_wait_input(db, run, inbox, event, machine, *, code, expired=Fal
         inbox,
         {
             "handled": True,
-            "status": "expired" if expired else "input_stale",
+            "status": machine.status if expired else "input_stale",
             "run_id": run.id,
         },
     )
@@ -544,6 +611,7 @@ async def _consume(
         return await finish_input(
             db, inbox, {"handled": True, "status": run.status, "run_id": run.id}
         )
+    machine = None
     if run is not None and binding is None and not control:
         machine = await machine_for(db, run)
         if inbox.epoch is not None and (
@@ -557,6 +625,7 @@ async def _consume(
         )
         if (
             wait is not None
+            and wait.kind != "delay"
             and wait.epoch == run.state.get("epoch")
             and security.utc(inbox.created_at) >= security.utc(wait.deadline)
         ):
@@ -568,6 +637,7 @@ async def _consume(
                 machine,
                 code="runtime_input_timeout",
                 expired=True,
+                target=wait.timeout_node,
             )
     if binding:
         if run:
@@ -612,12 +682,7 @@ async def _consume(
         await db.flush()
         slot.run_id = run.id
         inbox.run_id = run.id
-        machine = await machine_for(db, run)
-        machine.values = {
-            v.name: v.default
-            for v in machine.definition.variables
-            if v.default is not None
-        }
+        machine = await machine_for(db, run, initialize=True)
         machine.advance()
     elif run is None:
         inbox.status = "rejected"
@@ -626,7 +691,7 @@ async def _consume(
             db, inbox, {"handled": True, "status": "no_active_run"}
         )
     else:
-        machine = await machine_for(db, run)
+        machine = machine or await machine_for(db, run)
         if run.status in {"waiting_action", "waiting_approval"} and not (
             event.kind == "command" and event.text in {"/cancel", "/menu"}
         ):
@@ -679,7 +744,7 @@ async def _consume(
             elif event.text == "/restart":
                 machine.status = "cancelled"
             else:
-                machine.choose("main_menu" if event.text == "/menu" else "cancel")
+                machine.cancel(menu=event.text == "/menu")
         elif machine.status == "waiting_input":
             if event.file is not None:
                 expected = machine.nodes[run.node_id]
@@ -703,6 +768,11 @@ async def _consume(
                 kind=event.kind,
                 contact_owner=event.contact_owner,
                 user_id=event.user_id,
+            )
+        elif machine.status == "waiting_timeout":
+            # Text received during a timer is never an answer to a future question.
+            return await reject_wait_input(
+                db, run, inbox, event, machine, code="runtime_input_stale"
             )
         else:
             # A non-input boundary remains queued until its timeout/action completes.
@@ -912,13 +982,20 @@ async def handle(
         )
     ):
         return await finish_input(db, inbox, {"handled": True, "status": "queued"})
-    return await _consume(
-        db,
-        context,
-        event,
-        slot=slot,
-        inbox=inbox,
-        binding=binding,
-        principal=principal,
-        file_verifier=file_verifier,
-    )
+    try:
+        return await _consume(
+            db,
+            context,
+            event,
+            slot=slot,
+            inbox=inbox,
+            binding=binding,
+            principal=principal,
+            file_verifier=file_verifier,
+        )
+    except InvalidStoredRun as invalid:
+        await quarantine_run(db, invalid.run, invalid.code)
+        inbox.status, inbox.payload, inbox.error_code = "rejected", {}, invalid.code
+        return await finish_input(
+            db, inbox, {"handled": True, "status": "failed", "run_id": invalid.run.id}
+        )

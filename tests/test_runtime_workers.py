@@ -516,7 +516,7 @@ async def test_older_ineligible_wait_does_not_starve_live_timeout(
     assert await timeout_once(factory(database)) is True
     database.session.expire_all()
     live = await database.get(WorkflowRun, live_id)
-    assert live.status == "expired" and live.error_code == "runtime_input_timeout"
+    assert live.status == "cancelled" and live.error_code == "runtime_input_timeout"
     older = await database.get(WorkflowRun, older_id)
     older_wait = await database.get(WorkflowWait, older_wait_id)
     assert older.status == older_status

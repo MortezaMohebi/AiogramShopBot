@@ -151,6 +151,51 @@ async def test_publish_exact_preview_replay_and_binding_cas(studio):
     assert selected["diff"]["unchanged_bindings"][0]["bot_id"] == BOT_A
     assert selected["diff"]["unchanged_bindings"][0]["key"] == "old"
     assert selected["diff"]["retains_unselected_bindings"] is True
+    # Roll one of two live r3 pointers back to r2; a third key is new.
+    actor.role = "content"
+    app.db.commit()
+    changed = saved.json()["definition"]
+    next(n for n in changed["nodes"] if n["id"] == "end")["config"]["message"] = (
+        "Revised"
+    )
+    revision3 = await app.request(
+        "PATCH",
+        "/workflows/" + made["id"],
+        payload=update(saved.json(), definition=changed),
+    )
+    assert revision3.status_code == 200, revision3.text
+    actor.role = "superadmin"
+    app.db.commit()
+    second = {"bot_id": BOT_A, "kind": "admin_test", "key": "second", "node_id": "s"}
+    forward = request | {"revision": 3, "bindings": request["bindings"] + [second]}
+    to_three = await preview(db, **forward)
+    await activate(
+        db, actor=actor, scope=scope, preview_id=to_three["preview_id"], approved=True
+    )
+    back = await preview(db, **request)
+    await activate(
+        db, actor=actor, scope=scope, preview_id=back["preview_id"], approved=True
+    )
+    mixed = (
+        await preview(
+            db,
+            **(
+                forward
+                | {"bindings": forward["bindings"] + [second | {"key": "fresh"}]}
+            ),
+        )
+    )["diff"]
+    by_key = {item["key"]: item for item in mixed["binding_comparisons"]}
+    assert (
+        by_key["default"]["previous_revision"] == 2
+        and by_key["default"]["definition_changed"]
+    )
+    assert (
+        by_key["second"]["previous_revision"] == 3
+        and not by_key["second"]["definition_changed"]
+    )
+    assert by_key["fresh"]["previous_publication_id"] is None
+    assert [x["key"] for x in mixed["unchanged_bindings"]] == ["old"]
     next_preview = await preview(db, **request)
     binding = app.db.scalar(select(RuntimeBinding))
     binding.version += 1

@@ -108,6 +108,11 @@ export interface PublicationPreview {
   mutating_nodes: string[];
   platforms: Platform[];
   diff: {
+    binding_comparisons?: {
+      bot_id: string; kind: string; key: string;
+      previous_publication_id: string | null; previous_revision: number | null;
+      definition_changed: boolean;
+    }[];
     previous_revision: number | null;
     next_revision: number;
     definition_changed: boolean;

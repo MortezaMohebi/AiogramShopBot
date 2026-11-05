@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from models.shop_multibot import ShopBot
+from models.shop_multibot import ShopBot, ShopStore
 from models.shop_workflow import ShopWorkflow, ShopWorkflowRevision
 from models.shop_workflow_runtime import (
     PublishedWorkflow,
@@ -43,6 +43,19 @@ def require_manager(actor, scope):
     scope.require(scope.current_store_id, manage=True)
 
 
+async def lock_routes(db, store_id):
+    """Fence publication/retirement, including missing keys, without blocking FKs.
+
+    Administration is infrequent. One Store mutex avoids locking an unbounded
+    routing key set in different orders; workers only need parent KEY SHARE.
+    """
+    await db.scalar(
+        select(ShopStore.id)
+        .where(ShopStore.id == store_id)
+        .with_for_update(key_share=True)
+    )
+
+
 async def _source(db, store_id, workflow_id, revision):
     """Load an owned immutable revision; archive/deletion prevents new activation."""
     head = await db.scalar(
@@ -51,7 +64,8 @@ async def _source(db, store_id, workflow_id, revision):
             ShopWorkflow.id == workflow_id,
             ShopWorkflow.store_id == store_id,
         )
-        .with_for_update()
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
     )
     if head is None or head.status != "draft":
         raise RuntimeRejected("runtime_workflow_unavailable", 404)
@@ -76,6 +90,7 @@ async def binding_state(db, bot_ids):
                 RuntimeBinding.bot_id.in_(bot_ids),
             )
             .order_by(RuntimeBinding.id)
+            .execution_options(populate_existing=True)
         )
     ).all()
     return [
@@ -100,44 +115,57 @@ def confirmation_findings(definition):
         n.id for n in nodes.values() if n.type == "start"
     ]
     found = []
-    # Track whether an unchanged set of user variables has passed confirmation.
-    pending = [(start, False) for start in starts]
-    seen = set()
-    while pending:
-        node_id, confirmed = pending.pop()
-        if (node_id, confirmed) in seen or node_id not in nodes:
-            continue
-        seen.add((node_id, confirmed))
-        node = nodes[node_id]
-        if node.type.startswith("ask_") or node.type in {
-            "wait_for_input",
-            "set_variable",
-        }:
-            confirmed = False
-        if node.type == "action":
-            spec = action_definition(
-                node.config["action_key"], node.config["action_version"]
-            )
-            if (
-                spec
-                and spec.descriptor.confirmation in {"customer_confirmation", "both"}
-                and not confirmed
-            ):
-                found.append(
-                    {
-                        "code": "runtime_confirmation_required",
-                        "node_id": node.id,
-                        "severity": "error",
-                    }
-                )
-            confirmed = False
-        for edge in definition.edges:
-            if edge.source == node_id:
-                pending.append(
-                    (
-                        edge.target,
-                        edge.port == "confirm" if node.type == "confirm" else confirmed,
+    for platform in definition.target_platforms:
+        pending = [(start, False) for start in starts]
+        seen = set()
+        while pending:
+            node_id, confirmed = pending.pop()
+            if (node_id, confirmed) in seen or node_id not in nodes:
+                continue
+            seen.add((node_id, confirmed))
+            node = nodes[node_id]
+            config = node.config | node.platform_overrides.get(platform, {})
+            if node.type.startswith("ask_") or node.type in {
+                "wait_for_input",
+                "set_variable",
+            }:
+                confirmed = False
+            if node.type == "action":
+                spec = action_definition(config["action_key"], config["action_version"])
+                if (
+                    spec
+                    and spec.descriptor.confirmation
+                    in {"customer_confirmation", "both"}
+                    and not confirmed
+                ):
+                    found.append(
+                        {
+                            "code": "runtime_confirmation_required",
+                            "node_id": node.id,
+                            "platform": platform,
+                            "severity": "error",
+                        }
                     )
+                confirmed = False
+            targets = {
+                e.port: e.target for e in definition.edges if e.source == node.id
+            }
+            if node.type == "go_to_step":
+                targets = {"next": config["target"]}
+            elif node.type == "show_buttons":
+                # Hidden conditions may change at runtime; consider every offerable
+                # callback for this platform and the independent timeout transition.
+                targets = {
+                    **({"timeout": targets["timeout"]} if "timeout" in targets else {}),
+                    **{
+                        b["key"]: b.get("target") or targets.get(b["key"])
+                        for b in config["buttons"]
+                        if b["type"] == "callback" and platform in b["platforms"]
+                    },
+                }
+            for port, target in targets.items():
+                pending.append(
+                    (target, port == "confirm" if node.type == "confirm" else confirmed)
                 )
     return found
 
@@ -167,6 +195,32 @@ def presentation_findings(definition, *, media_kinds=None):
                 ]
             code = None
             capabilities = CAPABILITIES[platform]
+            reserved = {"back", "cancel", "skip", "main_menu", "confirm"}
+            if node.type == "show_buttons" and any(
+                b["type"] in {"action", "request_contact"}
+                or (b["type"] == "callback" and b["key"] in reserved)
+                or (
+                    b["type"] in {"back", "cancel", "main_menu"}
+                    and any(b.get(key) for key in ("target", "action", "url"))
+                )
+                or (
+                    config["keyboard"] == "reply"
+                    and (b["type"] != "callback" or b["label"].startswith("/"))
+                )
+                for b in buttons
+            ):
+                code = "runtime_button_semantics_unsupported"
+            if node.type == "ask_choice" and any(b["key"] in reserved for b in buttons):
+                code = "runtime_button_semantics_unsupported"
+            if node.type == "action":
+                ports = {
+                    e.port: e.target for e in definition.edges if e.source == node.id
+                }
+                if any(
+                    ports.get(key) != ports.get("error")
+                    for key in ("retry", "pending_approval")
+                ):
+                    code = "runtime_action_wait_port_unsupported"
             if any(
                 len(b["label"]) > capabilities["runtime_keyboard_label_characters"]
                 for b in buttons
@@ -207,6 +261,11 @@ def presentation_findings(definition, *, media_kinds=None):
                     code = "runtime_media_kind_invalid"
                 elif "document" in kinds and kinds != {"document"}:
                     code = "runtime_album_media_incompatible"
+            if (
+                node.type == "send_media_group"
+                and not capabilities["runtime_media_group"]
+            ):
+                code = "runtime_media_group_unavailable"
             if code:
                 findings.append(
                     {
@@ -270,8 +329,25 @@ async def readiness(db, *, actor, scope, workflow_id, revision, bindings):
         findings.append({"code": "runtime_entry_required", "severity": "error"})
     seen = set()
     declared = {(e.kind, e.key, e.node_id) for e in definition.entry_points}
+    # Lock the reviewed Bot metadata in stable order; concurrent child FK
+    # inserts (inbox, identities, receipts) only need compatible KEY SHARE.
+    bots = {
+        bot.id: bot
+        for bot in (
+            await db.scalars(
+                select(ShopBot)
+                .where(
+                    ShopBot.id.in_({b.bot_id for b in bindings}),
+                    ShopBot.store_id == head.store_id,
+                )
+                .order_by(ShopBot.id)
+                .with_for_update(key_share=True)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    }
     for item in bindings:
-        bot = await db.get(ShopBot, item.bot_id)
+        bot = bots.get(item.bot_id)
         if (
             bot is None
             or bot.store_id != head.store_id
@@ -338,6 +414,7 @@ async def readiness(db, *, actor, scope, workflow_id, revision, bindings):
 async def preview(db, *, actor, scope, workflow_id, revision, bindings):
     """Create a reviewable, session-bound preview without activating any Bot."""
     require_manager(actor, scope)
+    await lock_routes(db, scope.current_store_id)
     specs = [BindingSpec.model_validate(x) for x in bindings]
     definition, report = await readiness(
         db,
@@ -348,27 +425,57 @@ async def preview(db, *, actor, scope, workflow_id, revision, bindings):
         bindings=specs,
     )
     pointers = await binding_state(db, [x.bot_id for x in specs])
-    previous = (
-        await db.scalars(
-            select(PublishedWorkflow)
-            .where(
-                PublishedWorkflow.store_id == scope.current_store_id,
-                PublishedWorkflow.workflow_id == workflow_id,
+    selected = {(s.bot_id, s.kind, s.key) for s in specs}
+    active = {
+        (x["bot_id"], x["kind"], x["key"]): x["publication_id"]
+        for x in pointers
+        if (x["bot_id"], x["kind"], x["key"]) in selected
+    }
+    # Immutable metadata suffices: never put whole definitions into preview receipts.
+    versions = {
+        row.id: row
+        for row in (
+            await db.execute(
+                select(
+                    PublishedWorkflow.id,
+                    PublishedWorkflow.revision,
+                    PublishedWorkflow.digest,
+                ).where(
+                    PublishedWorkflow.store_id == scope.current_store_id,
+                    PublishedWorkflow.workflow_id == workflow_id,
+                    PublishedWorkflow.id.in_(set(active.values())),
+                )
             )
-            .order_by(PublishedWorkflow.revision.desc())
+        ).all()
+    }
+    next_digest = digest(definition)
+    comparisons = []
+    for spec in specs:
+        previous_id = active.get((spec.bot_id, spec.kind, spec.key))
+        previous = versions.get(previous_id)
+        if previous_id and previous is None:
+            raise RuntimeRejected("runtime_entry_conflict")
+        comparisons.append(
+            {
+                "bot_id": spec.bot_id,
+                "kind": spec.kind,
+                "key": spec.key,
+                "previous_publication_id": previous_id,
+                "previous_revision": previous.revision if previous else None,
+                "definition_changed": previous is None
+                or previous.digest != next_digest,
+            }
         )
-    ).first()
+    baselines = {item["previous_revision"] for item in comparisons}
     report["diff"] = {
-        "previous_revision": previous.revision if previous else None,
+        "binding_comparisons": comparisons,
+        "previous_revision": next(iter(baselines)) if len(baselines) == 1 else None,
         "next_revision": revision,
-        "definition_changed": previous is None or previous.digest != digest(definition),
+        "definition_changed": any(item["definition_changed"] for item in comparisons),
         "previous_bindings": pointers,
         "next_bindings": [x.model_dump() for x in specs],
         "unchanged_bindings": [
-            x
-            for x in pointers
-            if (x["bot_id"], x["kind"], x["key"])
-            not in {(s.bot_id, s.kind, s.key) for s in specs}
+            x for x in pointers if (x["bot_id"], x["kind"], x["key"]) not in selected
         ],
         "retains_unselected_bindings": True,
     }
@@ -412,6 +519,7 @@ async def activate(db, *, actor, scope, preview_id, approved):
             PublicationPreview.session_id == scope.session_id,
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if row is None:
         raise RuntimeRejected("runtime_preview_unavailable", 404)
@@ -423,6 +531,7 @@ async def activate(db, *, actor, scope, preview_id, approved):
         }
     if security.utc(row.expires_at) <= security.clock():
         raise RuntimeRejected("runtime_preview_expired")
+    await lock_routes(db, row.store_id)
     specs = [BindingSpec.model_validate(x) for x in row.request["bindings"]]
     definition, report = await readiness(
         db,
@@ -473,7 +582,8 @@ async def activate(db, *, actor, scope, preview_id, approved):
                 RuntimeBinding.kind == spec.kind,
                 RuntimeBinding.key == spec.key,
             )
-            .with_for_update()
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
         )
         if binding is None:
             binding = RuntimeBinding(
@@ -485,6 +595,11 @@ async def activate(db, *, actor, scope, preview_id, approved):
             )
             db.add(binding)
         else:
+            if (
+                binding.workflow_id != row.workflow_id
+                or binding.store_id != row.store_id
+            ):
+                raise RuntimeRejected("runtime_entry_conflict")
             binding.publication_id = published.id
             binding.version += 1
             for key, value in spec.model_dump(

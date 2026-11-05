@@ -43,13 +43,14 @@ test("publication preview attributes selected and retained entries to each Bot w
  const pointer=(id:string,bot_id:string,key:string)=>({id,bot_id,kind:"command",key,node_id:"start",version:1,publication_id:oldPublication,enabled:true});
  const previous=[pointer("p1",botA,"apply"),pointer("p2",botA,"old"),pointer("p3",botB,"apply")];
  const next=[botA,botB].map(bot_id=>({bot_id,kind:"command",key:"apply",node_id:"start",priority:0,enabled:true,eligibility:"all",fallback:"legacy",version_policy:"active_publication"}));
- const preview={preview_id:"e1d67cfa-4fd2-45a2-b72a-78aaec98258d",expires_at:"2099-01-01T00:00:00Z",ready:true,issues:[],dependencies:[],mutating_nodes:[],platforms:["telegram"],diff:{previous_revision:1,next_revision:2,definition_changed:true,previous_bindings:previous,next_bindings:next,unchanged_bindings:[previous[1]],retains_unselected_bindings:true}};
+ const preview={preview_id:"e1d67cfa-4fd2-45a2-b72a-78aaec98258d",expires_at:"2099-01-01T00:00:00Z",ready:true,issues:[],dependencies:[],mutating_nodes:[],platforms:["telegram"],diff:{binding_comparisons:next.map(entry=>({...entry,previous_revision:1,previous_publication_id:oldPublication,definition_changed:true})),previous_revision:1,next_revision:2,definition_changed:true,previous_bindings:previous,next_bindings:next,unchanged_bindings:[previous[1]],retains_unselected_bindings:true}};
  let hookIndex=0;
  const previewReact={...React,useState:(value:unknown)=>{const index=hookIndex++;return React.useState(index===1?preview:value);}};
  const evaluatedModule=evaluate("../components/runtime/publication.tsx",{"react/jsx-runtime":jsx,react:previewReact,"next/link":{default:Link},"@/components/ui/button":{Button},"@/components/ui/input":{Input:(props:unknown)=>createElement("input",props as never)},"@/components/workflows/fields":{Field:({children}:Record<string,unknown>)=>createElement("div",null,children as never),Select:()=>null},"@/lib/workflows/client":{workflowRequest:async()=>({})},"@/lib/runtime/client":{runtimeRequest:async()=>({}),runtimeErrorText:()=>"error"},"@/lib/runtime/state":state,"./shared":shared,"./use-mutation":{useRuntimeMutation:()=>({disabled:false,state:{status:"idle"}}),RuntimeMutationNotice:()=>null},"./operations":{RetirePublication:()=>null}},"\nmodule.exports.reviewForm = ReviewForm;");
  const source={id:"workflow",name:"test",revision:2,definition:{target_platforms:["telegram"],assignment:{mode:"all_eligible",bot_ids:[]},entry_points:[{kind:"command",key:"apply",node_id:"start"}]}};
  const bots=[{id:botA,name:"Bot A",platform:"telegram",status:"active"},{id:botB,name:"Bot B",platform:"telegram",status:"active"}];
  const html=renderToStaticMarkup(createElement(evaluatedModule.reviewForm as never,{source,bots,bindings:[],canPublish:true,rollback:false}));
+ assert.equal(html.split("مقایسهٔ نسخهٔ 1 با 2").length-1,1);
  assert.match(html,/ورودی‌های انتخاب‌شده برای تغییر/);
  assert.match(html,/ورودی‌های انتخاب‌نشده که حفظ می‌شوند/);
  assert.match(html,/ورودی‌های انتخاب‌نشده حذف یا غیرفعال نمی‌شوند/);

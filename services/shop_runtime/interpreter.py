@@ -92,15 +92,31 @@ class Machine:
         self.node_id = target
         self.state["node_transitions"] = self.state.get("node_transitions", 0) + 1
 
+    def resume_at(self, port="next", *, direct=None):
+        """Resume a durable boundary, failing closed on a missing pinned transition."""
+        try:
+            self.move(port, direct=direct)
+        except ValueError:
+            self.fail("runtime_transition_missing")
+            return
+        self.status = "active"
+        self.advance()
+
     def fail(self, code):
         """Expose stable diagnostics, keeping raw input and private values out of errors."""
-        self.status, self.error = "failed", code
+        self.status = (
+            "cancelled"
+            if self.definition.error_policy.on_error == "cancel"
+            else "failed"
+        )
+        self.error = code
+        self.action, self.wait = None, None
         self.outbound.append(
             {
                 "node_id": self.node_id,
                 "epoch": self.state.get("epoch", 0),
                 "kind": "text",
-                "text": "اجرای فرایند متوقف شد؛ دوباره شروع کنید یا با پشتیبانی تماس بگیرید.",
+                "text": self.definition.error_policy.message,
                 "buttons": [],
                 "notice": True,
             }
@@ -154,6 +170,13 @@ class Machine:
                     {"label": "رد کردن این مرحله", "value": "skip", "command": "/skip"}
                 )
             buttons.append({"label": "لغو", "value": "cancel", "command": "/cancel"})
+        # Reply keyboards return plain text without a callback token. Pin the
+        # exact offered labels to this generation, including visibility filters.
+        self.state.pop("reply_choices", None)
+        if node.type == "show_buttons" and config.get("keyboard") == "reply":
+            self.state["reply_choices"] = {
+                b["label"]: b["value"] for b in buttons if not b.get("url")
+            }
         self.emit(
             config.get("prompt", config.get("text", "پاسخ خود را وارد کنید.")),
             kind="text",
@@ -182,7 +205,12 @@ class Machine:
                 if kind in {"end", "cancel"}:
                     self.status = "completed" if kind == "end" else "cancelled"
                     if config.get("message"):
-                        self.emit(config["message"], kind="text", buttons=[])
+                        self.emit(
+                            config["message"],
+                            kind="text",
+                            buttons=[],
+                            notice=kind == "cancel",
+                        )
                     self.wait = None
                     return
                 if kind in {
@@ -277,6 +305,15 @@ class Machine:
         config = self.config(node)
         try:
             if (
+                node.type == "show_buttons"
+                and config.get("keyboard") == "reply"
+                and kind == "text"
+            ):
+                offered = self.state.get("reply_choices", {})
+                if value in offered:
+                    self.choose(offered[value])
+                    return
+            if (
                 node.type in {"ask_text", "ask_number", "ask_email", "wait_for_input"}
                 and kind != "text"
             ):
@@ -332,9 +369,7 @@ class Machine:
                     raise ValueError("runtime_number_range")
             self.values[variable.name] = converted
             self.state.pop("confirmed_values", None)
-            self.move()
-            self.status = "active"
-            self.advance()
+            self.resume_at()
         except (ValueError, KeyError, TypeError):
             self.state["validation_errors"] = self.state.get("validation_errors", 0) + 1
             self.state["attempts"] = self.state.get("attempts", 0) + 1
@@ -348,24 +383,43 @@ class Machine:
                     buttons=[],
                 )
 
+    def cancel(self, *, menu=False):
+        """Terminate globally without traversing a confirmation's decline edge."""
+        self.status, self.wait, self.action = "cancelled", None, None
+        self.emit(
+            "منوی فروشگاه" if menu else "فرایند لغو شد.",
+            kind="legacy_menu" if menu else "text",
+            buttons=[],
+            notice=True,
+        )
+
+    def timeout(self, target=None):
+        """Resolve an unanswered input wait; the hard Run TTL is independent."""
+        if target:
+            self.resume_at(direct=target)
+            return
+        self.status = (
+            "cancelled"
+            if self.definition.timeout_policy.outcome == "cancel"
+            else "completed"
+        )
+        self.error, self.wait = "runtime_input_timeout", None
+        self.emit(
+            "مهلت پاسخ تمام شده است؛ می‌توانید دوباره شروع کنید.",
+            kind="text",
+            buttons=[],
+            notice=True,
+        )
+
     def choose(self, value):
         """Consume a server-resolved choice; arbitrary transition IDs are never accepted."""
         node = self.nodes[self.node_id]
         config = self.config(node)
         if node.type == "confirm" and value == "cancel":
-            self.move("cancel")
-            self.status = "active"
-            self.advance()
+            self.resume_at("cancel")
             return
         if value in {"cancel", "main_menu"}:
-            self.status = "cancelled"
-            self.wait = None
-            self.emit(
-                "منوی فروشگاه" if value == "main_menu" else "فرایند لغو شد.",
-                kind="legacy_menu" if value == "main_menu" else "text",
-                buttons=[],
-                notice=True,
-            )
+            self.cancel(menu=value == "main_menu")
             return
         if value == "back":
             past = self.state.get("past", [])
@@ -385,8 +439,7 @@ class Machine:
             return
         if value == "skip" and not config.get("required", True):
             self.values[config["variable"]] = None
-            self.move()
-            self.advance()
+            self.resume_at()
             return
         if node.type == "ask_choice":
             self.accept(value)
@@ -398,8 +451,7 @@ class Machine:
             # Only the coordinator supplies this server timestamp. A pure
             # interpreter used without a trusted clock cannot mint authority.
             self.state["confirmed_at"] = self.now.isoformat() if self.now else None
-            self.move("confirm")
-            self.advance()
+            self.resume_at("confirm")
             return
         if node.type == "show_buttons":
             button = next(
@@ -411,7 +463,6 @@ class Machine:
                 None,
             )
             if button:
-                self.move(value, direct=button.get("target") or None)
-                self.advance()
+                self.resume_at(value, direct=button.get("target") or None)
                 return
         self.emit("این انتخاب دیگر معتبر نیست.", kind="text", buttons=[])

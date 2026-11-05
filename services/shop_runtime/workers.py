@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import and_, literal, or_, select
 from sqlalchemy.orm import aliased
 
@@ -17,6 +18,7 @@ from models.shop_multibot import ShopBot, ShopStore
 from models.shop_workflow_runtime import (
     PublishedWorkflow,
     RuntimeGate,
+    RuntimeSlot,
     WorkflowActionJob,
     WorkflowDeliveryAttempt,
     WorkflowInbox,
@@ -29,12 +31,19 @@ from services.shop_action_bindings import write_outputs
 from services.shop_actions.approvals import issue_authorization
 from services.shop_actions.catalog import actions
 from services.shop_actions.context import customer_principal
-from services.shop_actions.contracts import ActionRejected, Invocation
+from services.shop_actions.contracts import (
+    ActionError,
+    ActionRejected,
+    ActionResult,
+    Invocation,
+)
 from services.shop_actions.execution import invoke
 from services.shop_bot_context import resolve_bot_context
 from services.shop_runtime.contracts import TERMINAL, DeliveryRejected, RuntimeInput
 from services.shop_runtime.publication import digest
 from services.shop_runtime.sessions import (
+    InvalidStoredRun,
+    quarantine_run,
     action_budget,
     enabled,
     event_capacity,
@@ -118,11 +127,24 @@ async def _lock_gates(db, context):
     return await enabled(db, context)
 
 
+async def _worker_machine(db, run, *, job=None):
+    """Quarantine an invalid pinned snapshot before scheduling physical work."""
+    try:
+        return await machine_for(db, run)
+    except InvalidStoredRun as invalid:
+        await quarantine_run(db, run, invalid.code)
+        if job is not None:
+            job.status, job.error_code = "failed", invalid.code
+        await db.commit()
+        return None
+
+
 async def action_once(session_factory):
     """Invoke one stable Action and reconcile its separate receipt while holding Run lock."""
     async with session_factory() as db:
         candidate = await db.scalar(
             select(WorkflowActionJob)
+            .join(WorkflowRun, WorkflowRun.id == WorkflowActionJob.run_id)
             .where(
                 WorkflowActionJob.run_id.in_(
                     eligible_runs().where(
@@ -139,6 +161,7 @@ async def action_once(session_factory):
                 WorkflowActionJob.available_at <= security.clock(),
             )
             .order_by(WorkflowActionJob.created_at, WorkflowActionJob.id)
+            .with_for_update(of=WorkflowRun, skip_locked=True)
             .limit(1)
         )
         if candidate is None:
@@ -163,7 +186,7 @@ async def action_once(session_factory):
         if security.utc(job.available_at) > security.clock():
             return False
         if security.utc(run.expires_at) <= security.clock():
-            run.status = "expired"
+            run.status, run.error_code = "expired", "runtime_run_expired"
             job.status = "cancelled"
             await system_event(
                 db,
@@ -177,7 +200,7 @@ async def action_once(session_factory):
         if (
             run.status not in {"waiting_action", "waiting_approval"}
             or run.node_id != job.node_id
-            or run.state.get("epoch") != job.epoch
+            or (isinstance(run.state, dict) and run.state.get("epoch") != job.epoch)
         ):
             job.status = "cancelled"
             await db.commit()
@@ -195,9 +218,19 @@ async def action_once(session_factory):
             await db.commit()
             return True
         published = await db.get(PublishedWorkflow, run.publication_id)
-        machine = await machine_for(db, run)
-        spec = actions().resolve(job.action_key, job.action_version)
-        policy = spec.descriptor.confirmation
+        machine = await _worker_machine(db, run, job=job)
+        if machine is None:
+            return True
+        missing_code = None
+        try:
+            spec = actions().resolve(job.action_key, job.action_version)
+        except ActionRejected as error:
+            if error.code not in {"action_unknown", "action_version_unavailable"}:
+                raise
+            # A registry miss is a no-effect outcome, never a Layer 2 receipt.
+            missing_code = error.code
+            spec = None
+        policy = spec.descriptor.confirmation if spec is not None else None
         committed = await db.get(ShopActionExecution, job.invocation_id)
         succeeded = committed is not None and committed.status == "succeeded"
         budget_error = await action_budget(db, run) if not succeeded else None
@@ -230,57 +263,76 @@ async def action_once(session_factory):
                 job.available_at = retry_at
                 await db.commit()
                 return True
-        invocation = Invocation(
-            invocation_id=job.invocation_id,
-            action_key=job.action_key,
-            action_version=job.action_version,
-            input=job.input,
-            idempotency_key="runtime-" + job.id,
-            workflow_id=run.workflow_id,
-            workflow_revision=published.revision,
-            workflow_run_id=run.id,
-            node_id=job.node_id,
-            correlation_id=run.correlation_id,
-            request_id=job.id,
-            attempt=attempt,
-        )
         try:
-            # This session owns proof and executor commits. Never give it the Run-lock session.
-            async with session_factory() as execution_db:
-                execution_principal = await customer_principal(
-                    execution_db, verified_bot=context, platform_user_id=run.user_id
+            invocation = Invocation(
+                invocation_id=job.invocation_id,
+                action_key=job.action_key,
+                action_version=job.action_version,
+                input=job.input,
+                idempotency_key="runtime-" + job.id,
+                workflow_id=run.workflow_id,
+                workflow_revision=published.revision,
+                workflow_run_id=run.id,
+                node_id=job.node_id,
+                correlation_id=run.correlation_id,
+                request_id=job.id,
+                attempt=attempt,
+            )
+        except ValidationError:
+            job.status, job.error_code = "failed", "runtime_stored_job_invalid"
+            await quarantine_run(db, run, job.error_code)
+            await db.commit()
+            return True
+        try:
+            if missing_code:
+                result = ActionResult(
+                    status="unavailable",
+                    correlation_id=run.correlation_id,
+                    error=ActionError(code=missing_code),
                 )
-                if not succeeded and policy in {"customer_confirmation", "both"}:
-                    if machine.state.get("confirmed_values") != digest(machine.values):
-                        raise ActionRejected("runtime_confirmation_missing")
-                    try:
-                        confirmed_at = security.utc(
-                            datetime.fromisoformat(
-                                machine.state.get("confirmed_at") or ""
+            else:
+                # This session owns proof and executor commits. Never give it the Run-lock session.
+                async with session_factory() as execution_db:
+                    execution_principal = await customer_principal(
+                        execution_db, verified_bot=context, platform_user_id=run.user_id
+                    )
+                    if not succeeded and policy in {"customer_confirmation", "both"}:
+                        if machine.state.get("confirmed_values") != digest(
+                            machine.values
+                        ):
+                            raise ActionRejected("runtime_confirmation_missing")
+                        try:
+                            confirmed_at = security.utc(
+                                datetime.fromisoformat(
+                                    machine.state.get("confirmed_at") or ""
+                                )
                             )
+                        except (ValueError, TypeError):
+                            raise ActionRejected(
+                                "runtime_confirmation_missing"
+                            ) from None
+                        elapsed = (security.clock() - confirmed_at).total_seconds()
+                        if not 0 <= elapsed <= 300:
+                            raise ActionRejected("runtime_confirmation_expired")
+                        proof = await issue_authorization(
+                            execution_db,
+                            subject=execution_principal,
+                            approver=execution_principal,
+                            invocation=invocation,
+                            purpose="customer_confirmation",
+                            registry=actions(),
                         )
-                    except (ValueError, TypeError):
-                        raise ActionRejected("runtime_confirmation_missing") from None
-                    elapsed = (security.clock() - confirmed_at).total_seconds()
-                    if not 0 <= elapsed <= 300:
-                        raise ActionRejected("runtime_confirmation_expired")
-                    proof = await issue_authorization(
-                        execution_db,
-                        subject=execution_principal,
-                        approver=execution_principal,
-                        invocation=invocation,
-                        purpose="customer_confirmation",
-                        registry=actions(),
-                    )
-                    invocation = invocation.model_copy(
-                        update={"confirmation_receipt": proof}
-                    )
-                if job.approval_id:
-                    proof = security.cipher().decrypt(job.approval_id.encode()).decode()
-                    invocation = invocation.model_copy(
-                        update={"approval_receipt": proof}
-                    )
-                result = await invoke(execution_db, execution_principal, invocation)
+                        invocation = invocation.model_copy(
+                            update={"confirmation_receipt": proof}
+                        )
+                    if job.approval_id:
+                        proof = (
+                            security.cipher().decrypt(job.approval_id.encode()).decode()
+                        )
+                        invocation = invocation.model_copy(
+                            update={"approval_receipt": proof}
+                        )
+                    result = await invoke(execution_db, execution_principal, invocation)
         except ActionRejected as error:
             machine.fail(error.code)
             if error.code == "runtime_confirmation_expired":
@@ -298,6 +350,25 @@ async def action_once(session_factory):
                 summary={"job_id": job.id, "attempt": attempt},
             )
             await persist(db, run, machine)
+            await db.commit()
+            return True
+        if succeeded and result.status != "succeeded":
+            # A removed version or newly disabled dependency cannot undo an
+            # already committed effect. Retain Layer 2 evidence but do not
+            # adopt any receipt until its request binding can be verified.
+            run.status, run.error_code = (
+                "suspended",
+                "runtime_action_reconciliation_required",
+            )
+            job.status, job.error_code = "uncertain", run.error_code
+            await system_event(
+                db,
+                run,
+                kind="action",
+                status="suspended",
+                error_code=run.error_code,
+                summary={"job_id": job.id},
+            )
             await db.commit()
             return True
         if result.status != "pending_approval":
@@ -325,9 +396,7 @@ async def action_once(session_factory):
                     machine.state["past"] = []
                 machine.state.pop("confirmed_values", None)
                 machine.state.pop("confirmed_at", None)
-                machine.move("success")
-                machine.status = "active"
-                machine.advance()
+                machine.resume_at("success")
                 job.status = "succeeded"
                 job.error_code = None
                 job.approval_id = None
@@ -353,6 +422,7 @@ async def action_once(session_factory):
             )
             if (
                 result.status == "retryable"
+                and spec is not None
                 and invocation.attempt < spec.descriptor.max_retries
                 and spec.descriptor.side_effect != "irreversible"
             ):
@@ -367,7 +437,9 @@ async def action_once(session_factory):
                 return True
             job.status = "failed"
             try:
-                machine.move("error")
+                machine.move(
+                    "unavailable" if result.status == "unavailable" else "error"
+                )
                 machine.status = "active"
                 machine.advance()
             except ValueError:
@@ -401,6 +473,7 @@ async def deliver_once(session_factory, *, send=None):
         preceding = aliased(WorkflowOutbox)
         candidate = await db.scalar(
             select(WorkflowOutbox)
+            .join(WorkflowRun, WorkflowRun.id == WorkflowOutbox.run_id)
             .where(
                 WorkflowOutbox.status.in_(("pending", "retryable")),
                 WorkflowOutbox.run_id.in_(eligible_runs()),
@@ -413,7 +486,10 @@ async def deliver_once(session_factory, *, send=None):
                 )
                 .exists(),
             )
-            .order_by(WorkflowOutbox.created_at, WorkflowOutbox.sequence)
+            .order_by(
+                WorkflowOutbox.created_at, WorkflowOutbox.sequence, WorkflowOutbox.id
+            )
+            .with_for_update(of=WorkflowRun, skip_locked=True)
             .limit(1)
         )
         if candidate is None:
@@ -446,6 +522,11 @@ async def deliver_once(session_factory, *, send=None):
         )
         if earlier:
             return False
+        if not isinstance(run.state, dict) or not isinstance(row.payload, dict):
+            row.status, row.error_code = "cancelled", "runtime_stored_delivery_invalid"
+            await quarantine_run(db, run, row.error_code)
+            await db.commit()
+            return True
         if stale(run, row):
             row.status = "cancelled"
             row.error_code = "runtime_prompt_obsolete"
@@ -580,11 +661,27 @@ async def recover_sending(session_factory):
         return len(rows)
 
 
+def _pending_answer():
+    """Prioritize an already accepted answer for its exact input-wait epoch."""
+    return (
+        select(WorkflowInbox.id)
+        .where(
+            WorkflowInbox.run_id == WorkflowWait.run_id,
+            WorkflowInbox.epoch == WorkflowWait.epoch,
+            WorkflowInbox.status == "pending",
+            WorkflowInbox.created_at < WorkflowWait.deadline,
+        )
+        .correlate(WorkflowWait)
+        .exists()
+    )
+
+
 async def timeout_once(session_factory):
     """Serialize elapsed waits against customer input, worker actions and cancellation."""
     async with session_factory() as db:
         wait = await db.scalar(
             select(WorkflowWait)
+            .join(WorkflowRun, WorkflowRun.id == WorkflowWait.run_id)
             .where(
                 WorkflowWait.deadline <= security.clock(),
                 # Retained waits on cancelled/suspended Runs must not occupy
@@ -594,16 +691,10 @@ async def timeout_once(session_factory):
                         WorkflowRun.status.in_(("waiting_input", "waiting_timeout"))
                     )
                 ),
-                ~select(WorkflowInbox.id)
-                .where(
-                    WorkflowInbox.run_id == WorkflowWait.run_id,
-                    WorkflowInbox.epoch == WorkflowWait.epoch,
-                    WorkflowInbox.status == "pending",
-                    WorkflowInbox.created_at < WorkflowWait.deadline,
-                )
-                .exists(),
+                or_(WorkflowWait.kind == "delay", ~_pending_answer()),
             )
             .order_by(WorkflowWait.deadline)
+            .with_for_update(of=WorkflowRun, skip_locked=True)
             .limit(1)
         )
         if wait is None:
@@ -623,7 +714,7 @@ async def timeout_once(session_factory):
         )
         if (
             wait is None
-            or wait.epoch != run.state.get("epoch")
+            or (isinstance(run.state, dict) and wait.epoch != run.state.get("epoch"))
             or security.utc(wait.deadline) > security.clock()
         ):
             return False
@@ -633,25 +724,34 @@ async def timeout_once(session_factory):
                 return False
         except security.SecurityRejected:
             return False
-        machine = await machine_for(db, run)
+        machine = await _worker_machine(db, run)
+        if machine is None:
+            return True
         if not await event_capacity(db, run):
             machine.status, machine.error = "failed", "runtime_event_budget"
             await persist(db, run, machine)
             await db.commit()
             return True
-        if machine.status == "waiting_timeout":
-            machine.move()
-            machine.status = "active"
-            machine.advance()
-        elif wait.timeout_node:
-            machine.move(direct=wait.timeout_node)
-            machine.status = "active"
-            machine.advance()
+        if security.utc(run.expires_at) <= security.clock():
+            machine.status, machine.error = "expired", "runtime_run_expired"
+        elif machine.status == "waiting_timeout":
+            machine.resume_at()
         else:
-            machine.status = "expired"
-            machine.error = "runtime_input_timeout"
+            # A new inbox may have committed after the scheduler's first read.
+            if await db.scalar(
+                select(WorkflowWait.id).where(
+                    WorkflowWait.id == wait.id, _pending_answer()
+                )
+            ):
+                return False
+            machine.timeout(wait.timeout_node)
         await system_event(
-            db, run, kind="timeout", status=machine.status, error_code=machine.error
+            db,
+            run,
+            kind="timeout",
+            status=machine.status,
+            error_code=machine.error
+            or ("runtime_input_timeout" if wait.kind != "delay" else None),
         )
         await persist(db, run, machine)
         await db.commit()
@@ -661,31 +761,92 @@ async def timeout_once(session_factory):
 async def inbox_once(session_factory):
     """Resume one accepted input after process restart; keep private payload only while pending."""
     async with session_factory() as db:
-        inbox = await db.scalar(
+        preceding = aliased(WorkflowInbox)
+        control = and_(
+            WorkflowInbox.payload["kind"].as_string() == "command",
+            WorkflowInbox.payload["text"]
+            .as_string()
+            .in_(("/cancel", "/menu", "/restart")),
+        )
+        query = (
             select(WorkflowInbox)
+            .join(
+                RuntimeSlot,
+                and_(
+                    RuntimeSlot.bot_id == WorkflowInbox.bot_id,
+                    RuntimeSlot.user_id == WorkflowInbox.user_id,
+                ),
+            )
             .outerjoin(WorkflowRun, WorkflowRun.id == WorkflowInbox.run_id)
             .where(
                 WorkflowInbox.status == "pending",
                 WorkflowInbox.bot_id.in_(eligible_bots()),
                 or_(
                     WorkflowInbox.run_id.is_(None),
-                    WorkflowRun.status.not_in(
-                        ("waiting_action", "waiting_approval", "waiting_timeout")
-                    ),
-                    and_(
-                        WorkflowInbox.payload["kind"].as_string() == "command",
-                        WorkflowInbox.payload["text"]
-                        .as_string()
-                        .in_(("/cancel", "/menu", "/restart")),
-                    ),
+                    WorkflowRun.status.not_in(("waiting_action", "waiting_approval")),
+                    control,
+                ),
+                or_(
+                    control,
+                    WorkflowInbox.run_id.is_(None),
+                    ~select(preceding.id)
+                    .where(
+                        preceding.bot_id == WorkflowInbox.bot_id,
+                        preceding.user_id == WorkflowInbox.user_id,
+                        preceding.status == "pending",
+                        preceding.sequence < WorkflowInbox.sequence,
+                    )
+                    .exists(),
                 ),
             )
-            .order_by(WorkflowInbox.created_at, WorkflowInbox.sequence)
+            .order_by(
+                WorkflowInbox.created_at, WorkflowInbox.sequence, WorkflowInbox.id
+            )
+        )
+        # PostgreSQL cannot lock the nullable side of an outer join. Claim each
+        # class separately and pick the oldest: starts without a current Run
+        # need the Slot; all other inputs also need its current Run to be free.
+        owner = aliased(WorkflowRun)
+        bound = await db.scalar(
+            query.join(owner, owner.id == RuntimeSlot.run_id)
+            .with_for_update(of=(RuntimeSlot, owner), skip_locked=True)
             .limit(1)
+        )
+        fresh = await db.scalar(
+            query.where(RuntimeSlot.run_id.is_(None))
+            .with_for_update(of=RuntimeSlot, skip_locked=True)
+            .limit(1)
+        )
+        inbox = min(
+            (row for row in (bound, fresh) if row is not None),
+            key=lambda row: (row.created_at, row.sequence, row.id),
+            default=None,
         )
         if inbox is None:
             return False
-        event = RuntimeInput.model_validate(inbox.payload)
+        try:
+            event = RuntimeInput.model_validate(inbox.payload)
+            if (
+                event.update_id != inbox.input_id
+                or event.user_id != inbox.user_id
+                or (event.kind == "command" and not event.text.split())
+            ):
+                raise ValueError("runtime_stored_input_invalid")
+        except ValueError:
+            # Only parse/identity errors at the persisted input boundary are
+            # quarantined. Database, programming and provider failures propagate.
+            inbox.status, inbox.payload, inbox.error_code = (
+                "rejected",
+                {},
+                "runtime_stored_input_invalid",
+            )
+            inbox.outcome = {
+                "handled": True,
+                "status": "rejected",
+                "error_code": inbox.error_code,
+            }
+            await db.commit()
+            return True
         try:
             context = await resolve_bot_context(
                 db,
@@ -724,7 +885,9 @@ async def expire_once(session_factory):
         context = await context_for(db, run)
         if not await _lock_gates(db, context):
             return False
-        machine = await machine_for(db, run)
+        machine = await _worker_machine(db, run)
+        if machine is None:
+            return True
         machine.status, machine.error = "expired", "runtime_run_expired"
         machine.emit(
             "مهلت اجرای فرایند تمام شده است؛ می‌توانید دوباره شروع کنید.",
