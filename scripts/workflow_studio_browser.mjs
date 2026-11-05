@@ -40,6 +40,11 @@ function ab(...args) {
 function assert(value, message) {
   if (!value) throw Error(message);
 }
+/** Physical clicks require the target in view; never bypass hit testing. */
+function targetClick(selector) {
+  ab("scrollintoview", selector);
+  ab("click", selector);
+}
 function reference(snapshot, description) {
   const normalize = (value) => value.replace(/[\u200b\u200c\u200d]/g, "");
   const line = snapshot
@@ -176,7 +181,7 @@ function waitText(value) {
   wait(`document.body.innerText.includes(${JSON.stringify(value)})`);
 }
 function click(name) {
-  ab("click", reference(snapshot(), `button "${name}`));
+  targetClick(reference(snapshot(), `button "${name}`));
 }
 function fill(label, value) {
   ab("fill", `[aria-label=${JSON.stringify(label)}]`, String(value));
@@ -214,10 +219,10 @@ function capture(name) {
   return m;
 }
 function node(index) {
-  ab("click", `[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`);
+  targetClick(`[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`);
 }
 function add(description, label) {
-  ab("click", reference(snapshot(), `button "${description}`));
+  targetClick(reference(snapshot(), `button "${description}`));
   fill("عنوان گره", label);
   return read(
     "[...document.querySelectorAll('.react-flow__node')].at(-1).getAttribute('data-id')",
@@ -256,7 +261,7 @@ try {
       values.LIVE_ADMIN_PASSWORD,
     );
     ab("fill", reference(tree, 'textbox "کد احراز هویت'), otp());
-    ab("click", reference(tree, 'button "ورود امن"'));
+    targetClick(reference(tree, 'button "ورود امن"'));
     ab("wait", "--url", "**/dashboard");
     pass("Normal password and MFA login");
   }
@@ -267,7 +272,7 @@ try {
   click("انتخاب یک یا چند فروشگاه فعال");
   ab("wait", '[role="dialog"]');
   tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-  ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
+  targetClick(reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
   click("اعمال انتخاب");
   wait("document.querySelector('[role=dialog]')===null");
   const fixture = JSON.parse(
@@ -353,10 +358,11 @@ try {
     pass("Modify message and save a fresh revision");
     ab("set", "viewport", "1440", "1000");
     wait(
-      "[...document.querySelectorAll('.react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible')",
+      "document.querySelectorAll('.react-flow__node').length===5&&[...document.querySelectorAll('.react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible')",
     );
     const m = capture("editor-desktop");
     assert(m.nodes.length === 5 && m.edges === 5, "Visible Canvas mismatch");
+    saved();
     pass("Desktop Canvas renders every node and connection without overflow");
   }
   assert(state.id, "Run editor stage first");
@@ -427,11 +433,11 @@ try {
     const oldRevision = read(
       "Number(document.querySelectorAll('article h2')[1].innerText.match(/Revision (\\d+)/)[1])",
     );
-    ab("click", "article:nth-of-type(2) button:last-child");
+    targetClick("article:nth-of-type(2) button:last-child");
     wait(
       "document.querySelector('article h2')?.innerText.includes('restore')===true",
     );
-    ab("click", "article:first-of-type button:first-child");
+    targetClick("article:first-of-type button:first-child");
     waitText("Snapshot r");
     capture("versions-desktop");
     editor(path);
@@ -486,7 +492,7 @@ try {
     click("انتخاب یک یا چند فروشگاه فعال");
     ab("wait", '[role="dialog"]');
     tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-    ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 2 '));
+    targetClick(reference(tree, 'radio "انتخاب فروشگاه آزمایشی 2 '));
     click("اعمال انتخاب");
     wait("document.querySelector('[role=dialog]')===null");
     waitText("این نسخه فقط خواندنی است");
@@ -499,7 +505,7 @@ try {
     click("انتخاب یک یا چند فروشگاه فعال");
     ab("wait", '[role="dialog"]');
     tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-    ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
+    targetClick(reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
     click("اعمال انتخاب");
     wait("document.querySelector('[role=dialog]')===null");
     wait(
