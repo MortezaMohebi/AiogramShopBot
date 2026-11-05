@@ -1,103 +1,75 @@
-/** Real, provider-free Studio QA. Run against own Next dev:3002 / API:8092. */
+/** Run real Studio UI acceptance only against its isolated, provider-free QA lab. */
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
-const values = Object.fromEntries(
+import { mkdirSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const env = Object.fromEntries(
   readFileSync(".codespaces/beta-qa.env", "utf8")
-    .trim()
     .split("\n")
-    .map((line) => [
-      line.slice(0, line.indexOf("=")),
-      line.slice(line.indexOf("=") + 1),
-    ]),
+    .filter((line) => line && !line.startsWith("#") && line.includes("="))
+    .map((line) => {
+      const i = line.indexOf("=");
+      return [line.slice(0, i), line.slice(i + 1)];
+    }),
 );
-if (
-  values.SHOP_BETA_QA !== "1" ||
-  values.POSTGRES_DB !== "shop_codespace" ||
-  values.TOKEN ||
-  values.BALE_BOT_TOKEN
-)
-  throw Error("Use only isolated provider-free Workflow QA");
-const session = process.env.AGENT_BROWSER_SESSION;
-if (!session) throw Error("Use the worktree-scoped browser session");
+const forbidden = [
+  "TOKEN",
+  "BALE_BOT_TOKEN",
+  "BALE_WALLET_PROVIDER_TOKEN",
+  "TELEGRAM_FIAT_PROVIDER_TOKEN",
+  "TELEGRAM_WORKER_SECRET",
+  "BALE_WEBHOOK_SECRET",
+  "KRYPTO_EXPRESS_API_KEY",
+];
+assert(
+  env.SHOP_BETA_QA === "1" &&
+    env.POSTGRES_DB === "shop_codespace" &&
+    env.SHOP_TEST_LAB === "1" &&
+    forbidden.every((key) => !env[key]?.trim()),
+  "Use only isolated provider-free Workflow QA",
+);
+const modulePath = process.env.WORKFLOW_PLAYWRIGHT_MODULE;
+assert(
+  modulePath,
+  "Set WORKFLOW_PLAYWRIGHT_MODULE to the installed playwright-core/index.mjs",
+);
+const { chromium } = await import(pathToFileURL(modulePath).href);
 const base = "http://localhost:3002",
   output = "/tmp/workflow-studio-browser";
+const phase = process.env.WORKFLOW_BROWSER_STAGE || "all",
+  evidence = [];
 mkdirSync(output, { recursive: true, mode: 0o700 });
-function ab(...args) {
-  // Control names aid QA diagnosis; filled values (including MFA) stay private.
-  console.log("STEP", args[0], String(args[1] ?? "").slice(0, 100));
+const statePath = output + "/acceptance-state.json";
+let state = (() => {
   try {
-    return execFileSync(
-      "agent-browser",
-      ["--session", session, "--restore", session, ...args],
-      { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-  } catch (error) {
-    if (args[0] !== "fill" || String(args[1]).startsWith("[aria-label"))
-      console.log(String(error.stderr ?? error.code ?? "").slice(0, 500));
-    throw Error(`Browser action failed: ${args[0]}`);
-  }
-}
-function assert(value, message) {
-  if (!value) throw Error(message);
-}
-/** Observe two rendered frames; smooth scrolling must settle before hit testing. */
-function scrollTo(selector) {
-  ab("scrollintoview", selector);
-  ab(
-    "wait",
-    "--fn",
-    `(async()=>{
-    const positions=()=>JSON.stringify([...document.querySelectorAll('button,input,select,textarea')].map(n=>{const r=n.getBoundingClientRect();return [r.x,r.y,r.width,r.height]}));
-    const before=positions();
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    return before===positions();
-  })()`,
-  );
-}
-/** Physical clicks require the target in view; never bypass hit testing. */
-function targetClick(selector) {
-  scrollTo(selector);
-  // Refresh the driver's screen map for CSS targets as well as AX references.
-  snapshot();
-  ab("click", selector);
-}
-function reference(snapshot, description) {
-  const normalize = (value) => value.replace(/[\u200b\u200c\u200d]/g, "");
-  const line = snapshot
-    .split("\n")
-    .find((line) => normalize(line).includes(normalize(description)));
-  const ref = line?.match(/ref=(e\d+)/)?.[1];
-  assert(ref, `Visible control missing: ${description}`);
-  return "@" + ref;
-}
-function snapshot() {
-  return ab("snapshot", "-i");
-}
-function read(expression) {
-  let value = JSON.parse(ab("eval", `JSON.stringify(${expression})`));
-  if (typeof value === "string") value = JSON.parse(value);
-  return value;
-}
-function docker(code) {
-  try {
-    return execFileSync(
-      "docker",
-      [
-        "compose",
-        "-f",
-        "compose.workflow-qa.yml",
-        "exec",
-        "-T",
-        "api",
-        "python",
-        "-c",
-        code,
-      ],
-      { encoding: "utf8", timeout: 45000, stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
+    return JSON.parse(readFileSync(statePath, "utf8"));
   } catch {
-    throw Error("Guarded QA database read failed");
+    return {};
   }
+})();
+const persist = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
+function pass(check) {
+  evidence.push({ check, status: "PASS" });
+  console.log("PASS  " + check);
+}
+/** Credentials/OTP never leave this child-process result or appear in diagnostics. */
+function docker(code) {
+  return execFileSync(
+    "docker",
+    [
+      "compose",
+      "-f",
+      "compose.workflow-qa.yml",
+      "exec",
+      "-T",
+      "api",
+      "python",
+      "-c",
+      code,
+    ],
+    { encoding: "utf8", timeout: 45000, stdio: ["ignore", "pipe", "pipe"] },
+  ).trim();
 }
 function otp() {
   return docker(`import asyncio,time,json
@@ -110,9 +82,14 @@ async def main():
   print(security.totp(secret,time.time()))
 asyncio.run(main())`);
 }
-function metrics() {
-  return read(
-    "({width:innerWidth,scroll:document.documentElement.scrollWidth,rtl:document.documentElement.dir,headings:document.querySelectorAll('h1').length,nodes:[...document.querySelectorAll('.react-flow__node')].map(n=>({id:n.getAttribute('data-id'),visibility:getComputedStyle(n).visibility,width:n.getBoundingClientRect().width})),edges:document.querySelectorAll('.react-flow__edge').length})",
+function businessCounts() {
+  return JSON.parse(
+    docker(`import asyncio,json
+from scripts.workflow_studio_e2e import business_counts,engine
+async def main():
+ print(json.dumps(await business_counts()))
+ await engine.dispose()
+asyncio.run(main())`),
   );
 }
 async function mcp(name) {
@@ -170,163 +147,174 @@ async function mcp(name) {
   assert(payload.result && !payload.result.isError, "MCP tool failed");
   return payload.result;
 }
-/** DOM-only observations and user-visible controls; no React state injection. */
-const evidence = [],
-  statePath = output + "/acceptance-state.json";
-const phase = process.env.WORKFLOW_BROWSER_STAGE || "all";
-let state = (() => {
-  try {
-    return JSON.parse(readFileSync(statePath, "utf8"));
-  } catch {
-    return {};
-  }
-})();
-const saveState = () =>
-  writeFileSync(statePath, JSON.stringify(state, null, 2));
-function pass(check) {
-  evidence.push({ check, status: "PASS" });
-  console.log("PASS  " + check);
+const browser = await chromium.launch({ headless: true });
+const context = await browser.newContext({
+  viewport: { width: 1100, height: 1000 },
+  reducedMotion: "reduce",
+});
+// The browser may reach only its own Next server; successful responses remain real.
+await context.route("**/*", (route) =>
+  new URL(route.request().url()).origin === base
+    ? route.continue()
+    : route.abort(),
+);
+const page = await context.newPage();
+const runtimeErrors = [];
+page.on("pageerror", (error) => runtimeErrors.push(error.message));
+page.setDefaultTimeout(30000);
+page.setDefaultNavigationTimeout(60000);
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const button = (name) =>
+  page.getByRole("button", { name: new RegExp("^" + escapeRegex(name)) });
+const field = (label) => page.locator(`[aria-label=${JSON.stringify(label)}]`);
+async function click(name) {
+  await button(name).click();
 }
-function wait(expression) {
-  ab("wait", "--fn", expression);
+async function fill(label, value) {
+  await field(label).fill(String(value));
 }
-function text() {
-  return read("document.body.innerText");
+async function select(label, value) {
+  await page
+    .locator(`select[aria-label=${JSON.stringify(label)}]`)
+    .selectOption(String(value));
 }
-function waitText(value) {
-  wait(`document.body.innerText.includes(${JSON.stringify(value)})`);
+async function read(expression) {
+  return page.evaluate(expression);
 }
-function click(name) {
-  scrollTo(reference(snapshot(), `button "${name}`));
-  // Scrolling invalidates the physical coordinates cached with an AX reference.
-  ab("click", reference(snapshot(), `button "${name}`));
+async function wait(expression) {
+  await page.waitForFunction(expression);
 }
-function fill(label, value) {
-  scrollTo(`[aria-label=${JSON.stringify(label)}]`);
-  ab("fill", `[aria-label=${JSON.stringify(label)}]`, String(value));
+async function waitText(text) {
+  await page
+    .getByText(text, { exact: false })
+    .first()
+    .waitFor({ state: "visible" });
 }
-function select(label, value) {
-  scrollTo(`select[aria-label=${JSON.stringify(label)}]`);
-  ab("select", `select[aria-label=${JSON.stringify(label)}]`, String(value));
-  // Close the browser's native picker before the next pointer activation.
-  ab("press", "Escape");
-  wait(
-    `document.querySelector('select[aria-label=${JSON.stringify(label)}]').value===${JSON.stringify(String(value))}`,
+async function ready() {
+  await page.waitForFunction(() => {
+    const toggle = document.querySelector(
+      '[aria-label="تغییر حالت روشن و تاریک"]',
+    );
+    return toggle && !toggle.disabled;
+  });
+}
+async function open(path) {
+  await page.goto(base + path);
+  assert(!page.url().includes("/login"), "Session expired");
+  await page.locator("main h1").waitFor();
+  await ready();
+}
+async function editor(path) {
+  await open(path);
+  await field("جستجوی گره").waitFor();
+}
+async function saved() {
+  await waitText("همهٔ تغییرات تأیید شده‌اند");
+}
+async function counts() {
+  return read(
+    `(()=>{const steps=[...document.querySelectorAll('[aria-label="فهرست مراحل"] > button')];return {nodes:steps.length,edges:steps.reduce((n,s)=>n+Number.parseInt(s.lastElementChild.innerText,10),0)}})()`,
   );
 }
-function open(path) {
-  ab("open", base + path);
-  wait("document.querySelector('main h1')!==null");
-  assert(!ab("get", "url").includes("/login"), "Session expired");
-  ab("react", "tree");
-}
-function saved() {
-  waitText("همهٔ تغییرات تأیید شده‌اند");
-}
-function editor(path) {
-  open(path);
-  wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
-}
-function capture(name) {
-  assert(
-    !ab("get", "url").includes("/login"),
-    "Never capture credential forms",
+async function expectCounts(nodes, edges) {
+  await page.waitForFunction(
+    ({ nodes, edges }) => {
+      const steps = [
+        ...document.querySelectorAll('[aria-label="فهرست مراحل"] > button'),
+      ];
+      return (
+        steps.length === nodes &&
+        (edges === undefined ||
+          steps.reduce(
+            (n, s) => n + Number.parseInt(s.lastElementChild.innerText, 10),
+            0,
+          ) === edges)
+      );
+    },
+    { nodes, edges },
   );
-  writeFileSync(output + "/" + name + ".txt", snapshot());
-  ab("screenshot", output + "/" + name + ".png");
-  const m = metrics();
+  const actual = await counts();
+  assert.equal(actual.nodes, nodes);
+  if (edges !== undefined) assert.equal(actual.edges, edges);
+}
+async function metrics() {
+  return read(
+    `({width:innerWidth,scroll:document.documentElement.scrollWidth,rtl:document.documentElement.dir,nodes:[...document.querySelectorAll('.react-flow__node')].map(n=>({id:n.dataset.id,visibility:getComputedStyle(n).visibility,width:n.getBoundingClientRect().width})),edges:document.querySelectorAll('.react-flow__edge').length})`,
+  );
+}
+async function capture(name) {
+  assert(!page.url().includes("/login"), "Never capture credential forms");
+  const m = await metrics();
+  assert.equal(m.width, m.scroll, "Horizontal overflow: " + name);
+  assert.equal(m.rtl, "rtl");
+  await page.screenshot({ path: output + "/" + name + ".png" });
   writeFileSync(output + "/" + name + ".json", JSON.stringify(m, null, 2));
-  assert(
-    m.width === m.scroll,
-    `Horizontal overflow on ${name}: ${m.width}/${m.scroll}`,
+  writeFileSync(
+    output + "/" + name + ".txt",
+    await page.locator("body").innerText(),
   );
-  assert(m.rtl === "rtl", `RTL missing on ${name}`);
   return m;
 }
-function node(index) {
-  const selector = `[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`;
-  const label = read(
-    `document.querySelector(${JSON.stringify(selector)}).querySelector('span').innerText`,
-  ).replace(/^\d+\.\s*/, "");
-  targetClick(selector);
-  wait(
+async function node(index) {
+  const row = page
+    .locator('[aria-label="فهرست مراحل"] > button')
+    .nth(index - 1);
+  const label = (await row.locator("span").first().innerText()).replace(
+    /^\d+\.\s*/,
+    "",
+  );
+  await row.click();
+  await wait(
     `document.querySelector('[aria-label="عنوان گره"]')?.value===${JSON.stringify(label)}`,
   );
 }
-
-function add(description, label, type) {
-  const previous = counts().nodes;
-  click(description);
-  wait(
-    `document.querySelectorAll('[aria-label=\"فهرست مراحل\"] > button').length===${previous + 1}`,
+async function add(description, label, type) {
+  const before = await counts();
+  await click(description);
+  await wait(
+    `document.querySelectorAll('[aria-label="فهرست مراحل"] > button').length===${before.nodes + 1}`,
   );
-  const id = read(
-    "document.querySelector('fieldset code').textContent.split(' · ')[0]",
-  );
-  wait(
-    `document.querySelector('fieldset code')?.textContent.startsWith(${JSON.stringify(id + " ·")})===true`,
-  );
-  assert(
-    read("document.querySelector('fieldset code').textContent").endsWith(
-      " · " + type,
-    ),
-    "Palette added the wrong node type: " + type,
-  );
-  fill("عنوان گره", label);
-  return id;
+  const code = await page.locator("fieldset code").innerText();
+  assert(code.endsWith(" · " + type), "Wrong node type: " + type);
+  await fill("عنوان گره", label);
+  return code.split(" · ")[0];
 }
-/** The narrow Editor shows a step list; its hidden Canvas has no measured edges. */
-function counts() {
-  return read(`(()=>{
-    const steps=[...document.querySelectorAll('[aria-label="فهرست مراحل"] > button')];
-    return {nodes:steps.length,edges:steps.reduce((n,step)=>n+Number.parseInt(step.lastElementChild.innerText,10),0)};
-  })()`);
-}
-
-function businessCounts() {
-  return JSON.parse(
-    docker(`import asyncio,json
-from scripts.workflow_studio_e2e import business_counts,engine
-async def main():
- print(json.dumps(await business_counts()))
- await engine.dispose()
-asyncio.run(main())`),
-  );
-}
-function begin(platform, path) {
-  open(path);
-  select("پلتفرم شبیه‌سازی", platform);
-  click("شروع شبیه‌سازی");
+async function begin(platform, path) {
+  await open(path);
+  await select("پلتفرم شبیه‌سازی", platform);
+  await click("شروع شبیه‌سازی");
 }
 try {
-  ab("set", "viewport", "1100", "1000");
-  ab("open", base + "/studio/workflows");
-  wait("document.querySelector('h1')!==null");
-  let tree = snapshot();
-  if (ab("get", "url").includes("/login")) {
-    ab("fill", reference(tree, 'textbox "نام کاربری"'), "shopadmin");
-    ab(
-      "fill",
-      reference(tree, 'textbox "رمز عبور"'),
-      values.LIVE_ADMIN_PASSWORD,
-    );
-    ab("fill", reference(tree, 'textbox "کد احراز هویت'), otp());
-    click("ورود امن");
-    ab("wait", "--url", "**/dashboard");
-    pass("Normal password and MFA login");
-  }
+  const metadata = await mcp("get_project_metadata");
   assert(
-    ab("react", "tree").includes("StoreSwitcher"),
-    "Store switcher not hydrated",
+    JSON.stringify(metadata).includes(realpathSync("dashboard-next")),
+    "Next dev is serving another checkout",
   );
-  click("انتخاب یک یا چند فروشگاه فعال");
-  ab("wait", '[role="dialog"]');
-  tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-  targetClick(
-    '[role="dialog"] input[type="radio"][aria-label^="انتخاب فروشگاه آزمایشی 1 "]',
+  writeFileSync(
+    output + "/next-project.json",
+    JSON.stringify(metadata, null, 2),
   );
-  click("اعمال انتخاب");
-  wait("document.querySelector('[role=dialog]')===null");
+  pass("Next MCP confirms this checkout and running dev server");
+  await page.goto(base + "/studio/workflows");
+  await page.locator("h1").waitFor();
+  if (page.url().includes("/login")) {
+    await page.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
+    await page
+      .getByLabel("رمز عبور", { exact: true })
+      .fill(env.LIVE_ADMIN_PASSWORD);
+    await page
+      .getByLabel("کد احراز هویت یا بازیابی (اگر فعال است)", { exact: true })
+      .fill(otp());
+    await click("ورود امن");
+    await page.waitForURL("**/dashboard");
+    pass("Normal password and MFA browser login");
+  }
+  await ready();
+  await click("انتخاب یک یا چند فروشگاه فعال");
+  await page.getByRole("dialog").waitFor();
+  await page.getByRole("radio", { name: /^انتخاب فروشگاه آزمایشی 1 / }).check();
+  await click("اعمال انتخاب");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
   const fixture = JSON.parse(
     docker(
       "from pathlib import Path; print(Path('/qa/workflow-studio-fixture.json').read_text())",
@@ -334,243 +322,244 @@ try {
   );
   state.sampleId = fixture.workflow_id;
   const before = businessCounts();
-
   if (phase === "all" || phase === "editor") {
-    open("/studio/workflows/new");
-    fill("نام فرایند جدید", "آزمون مرورگر Studio");
-    fill("کلید فرایند", "qa_browser_" + Date.now());
-    click("ساخت پیش‌نویس");
-    wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
-    state.id = ab("get", "url").split("/").at(-1);
-    saveState();
-    const start = add("شروع و کنترل شروع", "QA_START", "start");
-    const end = add("شروع و کنترل پایان", "QA_END", "end");
-    const message = add("پیام پیام متنی", "QA_MESSAGE", "send_text");
-    fill("متن پیام", "پیام آزمایشی نسخهٔ اول");
-    const buttons = add("تعامل پیام و دکمه", "QA_BUTTONS", "show_buttons");
-    fill("متن پیام", "یک مسیر آزمایشی انتخاب کنید.");
-    click("افزودن دکمه");
-    fill("متن دکمه 1", "ادامهٔ آزمایشی");
-    const branch = add("شروع و کنترل شرط", "QA_BRANCH", "condition");
-    click("افزودن شرط");
-    select("متغیر شرط", "context.platform");
-    fill("مقدار مقایسه", "telegram");
-    select("مقصد true", end);
-    select("مقصد false", end);
-    node(1);
-    select("مقصد next", message);
-    node(3);
-    select("مقصد next", buttons);
-    node(4);
-    select("مقصد دکمه 1", branch);
-    click("چیدمان خودکار");
-    saved();
-    click("بررسی تعریف فعلی");
-    waitText("تعریف در آخرین بررسی معتبر بود");
-    assert(
-      counts().nodes === 5 && counts().edges === 5,
-      "Graph topology mismatch",
+    await open("/studio/workflows/new");
+    await fill("نام فرایند جدید", "آزمون مرورگر Studio");
+    await fill("کلید فرایند", "qa_browser_" + Date.now());
+    await click("ساخت پیش‌نویس");
+    await field("جستجوی گره").waitFor();
+    state.id = page.url().split("/").at(-1);
+    persist();
+    const start = await add("شروع و کنترل شروع", "QA_START", "start");
+    const end = await add("شروع و کنترل پایان", "QA_END", "end");
+    const message = await add("پیام پیام متنی", "QA_MESSAGE", "send_text");
+    await fill("متن پیام", "پیام آزمایشی نسخهٔ اول");
+    const buttons = await add(
+      "تعامل پیام و دکمه",
+      "QA_BUTTONS",
+      "show_buttons",
     );
-    ab("reload");
-    wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
-    saved();
-    assert(
-      counts().nodes === 5 && counts().edges === 5,
-      "Saved graph did not survive reload",
+    await fill("متن پیام", "یک مسیر آزمایشی انتخاب کنید.");
+    await click("افزودن دکمه");
+    await fill("متن دکمه 1", "ادامهٔ آزمایشی");
+    const branch = await add("شروع و کنترل شرط", "QA_BRANCH", "condition");
+    await click("افزودن شرط");
+    await select("متغیر شرط", "context.platform");
+    await fill("مقدار مقایسه", "telegram");
+    await select("مقصد true", end);
+    await select("مقصد false", end);
+    await node(1);
+    await select("مقصد next", message);
+    await node(3);
+    await select("مقصد next", buttons);
+    await node(4);
+    await select("مقصد دکمه 1", branch);
+    await click("چیدمان خودکار");
+    await saved();
+    await click("بررسی تعریف فعلی");
+    await waitText("تعریف در آخرین بررسی معتبر بود");
+    await expectCounts(5, 5);
+    await page.reload();
+    await field("جستجوی گره").waitFor();
+    await saved();
+    await expectCounts(5, 5);
+    await node(3);
+    assert.equal(
+      await field("متن پیام").inputValue(),
+      "پیام آزمایشی نسخهٔ اول",
     );
-    node(3);
-    assert(
-      read("document.querySelector('[aria-label=\"متن پیام\"]').value") ===
-        "پیام آزمایشی نسخهٔ اول",
-      "Edited text not persisted",
-    );
+    state.nodes = { start, end, message, buttons, branch };
+    persist();
     pass(
       "Create Start, End, message, buttons and condition; connect, validate, autosave and reload",
     );
-    state.nodes = { start, end, message, buttons, branch };
-    saveState();
-    // A copied snapshot survives deletion of the selected source.
-    click("کپی گره‌های انتخاب‌شده");
-    click("حذف گره‌های انتخاب‌شده");
-    assert(counts().nodes === 4, "Node delete failed");
-    click("Paste");
-    assert(counts().nodes === 5, "Clipboard lost its deleted source");
-    click("Undo");
-    assert(counts().nodes === 4, "Paste undo failed");
-    click("Undo");
-    assert(counts().nodes === 5, "Delete undo failed");
-    click("Redo");
-    assert(counts().nodes === 4, "Delete redo failed");
-    click("Undo");
-    saved();
+    await click("کپی گره‌های انتخاب‌شده");
+    await click("حذف گره‌های انتخاب‌شده");
+    await expectCounts(4);
+    await click("Paste");
+    await expectCounts(5);
+    await click("Undo");
+    await expectCounts(4);
+    await click("Undo");
+    await expectCounts(5);
+    await click("Redo");
+    await expectCounts(4);
+    await click("Undo");
+    await saved();
     pass("Copy snapshot, delete, paste, Undo and Redo preserve graph");
-    node(3);
-    fill("متن پیام", "پیام آزمایشی نسخهٔ دوم");
-    saved();
+    await node(3);
+    await fill("متن پیام", "پیام آزمایشی نسخهٔ دوم");
+    await saved();
     pass("Modify message and save a fresh revision");
-    ab("set", "viewport", "1440", "1000");
-    wait(
-      "document.querySelectorAll('.react-flow__node').length===5&&document.querySelectorAll('.react-flow__edge').length===5&&[...document.querySelectorAll('.react-flow__node')].every(n=>getComputedStyle(n).visibility==='visible'&&n.getBoundingClientRect().width>0)",
-    );
-    click("نمایش همهٔ گره‌ها");
-    saved();
-    const m = capture("editor-desktop");
-    assert(m.nodes.length === 5 && m.edges === 5, "Visible Canvas mismatch");
-    saved();
+    // Exercise the actual keyboard shortcuts with focus outside form controls.
+    await add("شروع و کنترل لغو", "QA_TEMP", "cancel");
+    await page.locator("main h1").click();
+    await page.keyboard.press("Control+z");
+    await expectCounts(5);
+    await page.keyboard.press("Control+Shift+z");
+    await expectCounts(6);
+    await page.keyboard.press("Control+z");
+    await saved();
+    pass("Keyboard Undo and Redo shortcuts");
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await wait("document.querySelectorAll('.react-flow__edge').length===5");
+    await click("نمایش همهٔ گره‌ها");
+    await saved();
+    const m = await capture("editor-desktop");
+    assert.equal(m.nodes.length, 5);
+    assert.equal(m.edges, 5);
+    assert(m.nodes.every((n) => n.width > 0 && n.visibility === "visible"));
     pass("Desktop Canvas renders every node and connection without overflow");
   }
   assert(state.id, "Run editor stage first");
   const path = `/studio/workflows/${state.id}`;
   if (phase === "all" || phase === "preview") {
     for (const platform of ["telegram", "bale"]) {
-      begin(platform, path + "/preview");
-      waitText("ادامهٔ آزمایشی");
-      click("ادامهٔ آزمایشی");
-      waitText("completed");
-      assert(
-        !text().includes("invalid_definition"),
-        "Created graph cannot simulate",
-      );
+      await begin(platform, path + "/preview");
+      await waitText("ادامهٔ آزمایشی");
+      await click("ادامهٔ آزمایشی");
+      await waitText("completed");
       pass(
-        `Created workflow preview traverses platform condition: ${platform}`,
+        "Created workflow preview traverses platform condition: " + platform,
       );
     }
     for (const platform of ["telegram", "bale"]) {
-      begin(platform, `/studio/workflows/${state.sampleId}/preview`);
-      waitText("سفارش آزمایشی 90001");
-      click("سفارش آزمایشی 90001");
-      waitText("محصول آزمایشی 90011");
-      click("محصول آزمایشی 90011");
-      waitText("کالا آسیب دیده");
-      click("کالا آسیب دیده");
-      waitText("توضیح کوتاهی اضافه کنید");
-      fill("پاسخ مشتری نمونه", "بسته‌بندی آزمایشی آسیب دیده");
-      click("ارسال نمونه");
-      waitText("ارسال تصویر آزمایشی");
-      click("ارسال تصویر آزمایشی");
-      waitText("این درخواست آزمایشی تأیید می‌شود");
-      click("تأیید");
-      waitText("completed");
-      waitText("create_return_request");
-      assert(
-        text().includes("درخواست مرجوعی واقعی ایجاد نشد"),
-        "Simulation did not finish safely",
-      );
-      capture("return-preview-" + platform);
+      await begin(platform, `/studio/workflows/${state.sampleId}/preview`);
+      await waitText("سفارش آزمایشی 90001");
+      await click("سفارش آزمایشی 90001");
+      await waitText("محصول آزمایشی 90011");
+      await click("محصول آزمایشی 90011");
+      await waitText("کالا آسیب دیده");
+      await click("کالا آسیب دیده");
+      await waitText("توضیح کوتاهی اضافه کنید");
+      await fill("پاسخ مشتری نمونه", "بسته‌بندی آزمایشی آسیب دیده");
+      await click("ارسال نمونه");
+      await waitText("ارسال تصویر آزمایشی");
+      await click("ارسال تصویر آزمایشی");
+      await waitText("این درخواست آزمایشی تأیید می‌شود");
+      await click("تأیید");
+      await waitText("completed");
+      await waitText("create_return_request");
+      await waitText("درخواست مرجوعی واقعی ایجاد نشد");
+      await capture("return-preview-" + platform);
       pass(
-        `Full synthetic Return Request with typed input, photo metadata and explicit stub: ${platform}`,
+        "Full synthetic Return Request, typed input, photo metadata and explicit stub: " +
+          platform,
       );
     }
-    begin("telegram", `/studio/workflows/${state.sampleId}/preview`);
-    waitText("سفارش آزمایشی 90001");
-    click("سفارش آزمایشی 90001");
-    waitText("محصول آزمایشی 90011");
-    click("بازگشت");
-    wait(
-      "[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='سفارش آزمایشی 90001'&&!b.disabled)",
-    );
-    click("لغو");
-    waitText("cancelled");
+    await begin("telegram", `/studio/workflows/${state.sampleId}/preview`);
+    await waitText("سفارش آزمایشی 90001");
+    await click("سفارش آزمایشی 90001");
+    await waitText("محصول آزمایشی 90011");
+    await click("بازگشت");
+    await button("سفارش آزمایشی 90001").waitFor();
+    await click("لغو");
+    await waitText("cancelled");
     pass("Preview Back and Cancel");
-    open(`/studio/workflows/${state.sampleId}/preview`);
-    select("سناریوی داده", "no_orders");
-    click("شروع شبیه‌سازی");
-    waitText("گزینهٔ آزمایشی واجد شرایطی وجود ندارد");
-    click("لغو");
-    waitText("cancelled");
+    await open(`/studio/workflows/${state.sampleId}/preview`);
+    await select("سناریوی داده", "no_orders");
+    await click("شروع شبیه‌سازی");
+    await waitText("گزینهٔ آزمایشی واجد شرایطی وجود ندارد");
+    await click("لغو");
+    await waitText("cancelled");
     pass("Empty-order scenario remains cancellable");
   }
   if (phase === "all" || phase === "versions") {
-    open(path + "/versions");
-    click("مقایسه");
-    waitText("Metadata:");
-    const oldRevision = read(
-      "Number(document.querySelectorAll('article h2')[1].innerText.match(/Revision (\\d+)/)[1])",
+    await open(path + "/versions");
+    await click("مقایسه");
+    await waitText("Metadata:");
+    const articles = page.locator("article");
+    const oldRevision = Number(
+      (await articles.nth(1).locator("h2").innerText()).match(
+        /Revision (\d+)/,
+      )[1],
     );
-    targetClick("article:nth-of-type(2) button:last-child");
-    wait(
+    await articles
+      .nth(1)
+      .getByRole("button", { name: /^Restore/ })
+      .click();
+    await wait(
       "document.querySelector('article h2')?.innerText.includes('restore')===true",
     );
-    targetClick("article:first-of-type button:first-child");
-    waitText("Snapshot r");
-    capture("versions-desktop");
-    editor(path);
-    saved();
+    await articles
+      .first()
+      .getByRole("button", { name: /^مشاهدهٔ Snapshot/ })
+      .click();
+    await waitText("Snapshot r");
+    await capture("versions-desktop");
+    await editor(path);
+    await saved();
     assert(
-      read("document.querySelector('main').innerText").includes(
+      (await page.locator("main").innerText()).includes(
         "Revision " + (oldRevision + 2),
       ),
-      "Restore did not append a revision",
     );
     pass(
       "Compare immutable versions, inspect Snapshot and restore as a new revision",
     );
   }
   if (phase === "all" || phase === "recovery") {
-    ab("set", "viewport", "1100", "1000");
-    editor(path);
-    saved();
-    node(3);
-    const previous = read(
-      "Number(document.querySelector('main').innerText.match(/Revision (\\d+)/)[1])",
+    await page.setViewportSize({ width: 1100, height: 1000 });
+    await editor(path);
+    await saved();
+    await node(3);
+    const previous = Number(
+      (await page.locator("main").innerText()).match(/Revision (\d+)/)[1],
     );
     const pattern = `**/api/admin/workflows/${state.id}`;
-    ab("network", "route", pattern, "--abort");
-    fill("متن پیام", "بررسی بازیابی پس از قطع ارتباط");
-    waitText("نتیجهٔ ذخیره نامشخص");
-    click("بررسی رسید ذخیره");
-    waitText("هنوز رسیدی یافت نشد");
-    assert(
-      read("document.querySelector('[aria-label=\"متن پیام\"]').value") ===
-        "بررسی بازیابی پس از قطع ارتباط",
-      "Unknown save lost the local document",
+    await context.route(pattern, (route) => route.abort());
+    await fill("متن پیام", "بررسی بازیابی پس از قطع ارتباط");
+    await waitText("نتیجهٔ ذخیره نامشخص");
+    await click("بررسی رسید ذخیره");
+    await waitText("هنوز رسیدی یافت نشد");
+    assert.equal(
+      await field("متن پیام").inputValue(),
+      "بررسی بازیابی پس از قطع ارتباط",
     );
-    ab("network", "unroute", pattern);
-    click("تکرار همان عملیات");
-    saved();
-    assert(
-      read(
-        "Number(document.querySelector('main').innerText.match(/Revision (\\d+)/)[1])",
-      ) ===
-        previous + 1,
-      "An exact retry appended multiple revisions",
+    await context.unroute(pattern);
+    await click("تکرار همان عملیات");
+    await saved();
+    assert.equal(
+      Number(
+        (await page.locator("main").innerText()).match(/Revision (\d+)/)[1],
+      ),
+      previous + 1,
     );
     pass(
-      "Abort save, inspect missing receipt, preserve local text and retry exact operation once",
+      "Abort save, inspect missing receipt, retain local text and retry exact operation once",
     );
   }
   if (phase === "all" || phase === "access") {
-    ab("set", "viewport", "1100", "1000");
-    editor(path);
-    saved();
-    click("انتخاب یک یا چند فروشگاه فعال");
-    ab("wait", '[role="dialog"]');
-    tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-    targetClick(
-      '[role="dialog"] input[type="radio"][aria-label^="انتخاب فروشگاه آزمایشی 2 "]',
-    );
-    click("اعمال انتخاب");
-    wait("document.querySelector('[role=dialog]')===null");
-    waitText("این نسخه فقط خواندنی است");
+    await page.setViewportSize({ width: 1100, height: 1000 });
+    await editor(path);
+    await saved();
+    await click("انتخاب یک یا چند فروشگاه فعال");
+    await page.getByRole("dialog").waitFor();
+    await page
+      .getByRole("radio", { name: /^انتخاب فروشگاه آزمایشی 2 / })
+      .check();
+    await click("اعمال انتخاب");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await waitText("این نسخه فقط خواندنی است");
     assert(
-      read(
-        "document.querySelector('[aria-label=\"جستجوی گره\"]').parentElement.querySelector('button[draggable]')?.disabled ?? [...document.querySelectorAll('button[draggable]')].every(b=>b.disabled)",
-      ),
-      "Wrong current Store retained editor controls",
+      await page
+        .locator("button[draggable]")
+        .evaluateAll(
+          (items) => items.length > 0 && items.every((b) => b.disabled),
+        ),
     );
-    click("انتخاب یک یا چند فروشگاه فعال");
-    ab("wait", '[role="dialog"]');
-    tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-    targetClick(
-      '[role="dialog"] input[type="radio"][aria-label^="انتخاب فروشگاه آزمایشی 1 "]',
-    );
-    click("اعمال انتخاب");
-    wait("document.querySelector('[role=dialog]')===null");
-    wait(
+    await click("انتخاب یک یا چند فروشگاه فعال");
+    await page.getByRole("dialog").waitFor();
+    await page
+      .getByRole("radio", { name: /^انتخاب فروشگاه آزمایشی 1 / })
+      .check();
+    await click("اعمال انتخاب");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await wait(
       "[...document.querySelectorAll('button[draggable]')].some(b=>!b.disabled)",
     );
     pass(
-      "Store context refresh remounts owned workflow read-only, then restores eligible editing",
+      "Store context refresh remounts owned workflow read-only and restores eligible editing",
     );
   }
   if (phase === "all" || phase === "layout") {
@@ -583,36 +572,36 @@ try {
       ["versions", path + "/versions"],
     ];
     for (const width of [320, 390, 768, 1440]) {
-      ab("set", "viewport", String(width), "1000");
+      await page.setViewportSize({ width, height: 1000 });
       for (const [name, route] of routes) {
-        open(route);
+        await open(route);
         for (const theme of ["light", "dark"]) {
           if (
-            read("document.documentElement.classList.contains('dark')") !==
+            (await read(
+              "document.documentElement.classList.contains('dark')",
+            )) !==
             (theme === "dark")
           )
-            click("تغییر حالت روشن و تاریک");
-          wait(
+            await click("تغییر حالت روشن و تاریک");
+          await wait(
             `document.documentElement.classList.contains('dark')===${theme === "dark"}`,
           );
-          const m = metrics();
-          assert(
-            m.width === m.scroll,
-            `${name}/${width}/${theme} overflow ${m.scroll}`,
-          );
-          assert(m.rtl === "rtl", "RTL missing");
+          const m = await metrics();
+          assert.equal(m.width, m.scroll, `${name}/${width}/${theme} overflow`);
+          assert.equal(m.rtl, "rtl");
           if (
             (width === 390 && theme === "dark") ||
             (width === 1440 && theme === "light")
           )
-            capture(`${name}-${width}-${theme}`);
+            await capture(`${name}-${width}-${theme}`);
         }
       }
       pass(`Six Studio routes, RTL, light and dark themes at ${width}px`);
     }
   }
-  assert(
-    JSON.stringify(businessCounts()) === JSON.stringify(before),
+  assert.deepEqual(
+    businessCounts(),
+    before,
     "Browser simulation changed business rows",
   );
   pass("Customer, cart, order, payment and support table counts unchanged");
@@ -625,14 +614,18 @@ try {
     reports.every(
       (item) => !item.configErrors?.length && !item.sessionErrors?.length,
     ),
-    "Next MCP reported errors",
   );
+  assert.deepEqual(runtimeErrors, [], "Uncaught browser runtime errors");
   pass("Next MCP reports no configuration or browser session errors");
   writeFileSync(
     output + "/acceptance-" + phase + ".json",
     JSON.stringify(
       {
         phase,
+        driver: "Playwright",
+        source_commit: execFileSync("git", ["rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim(),
         checks: evidence,
         live_provider_calls: 0,
         runtime_enabled: false,
@@ -642,12 +635,32 @@ try {
     ),
   );
 } catch (error) {
-  try {
-    writeFileSync(output + "/failure.txt", snapshot());
-    ab("screenshot", output + "/failure.png");
-  } catch {}
-  console.error("FAIL  " + error.message);
+  if (!page.url().includes("/login")) {
+    try {
+      writeFileSync(
+        output + "/failure.txt",
+        await page.locator("body").innerText(),
+      );
+      await page.screenshot({ path: output + "/failure.png" });
+    } catch {}
+  }
+  console.error(
+    page.url().includes("/login")
+      ? "FAIL  Normal QA login did not complete; private fields omitted"
+      : "FAIL  " +
+          String(error.message).replaceAll(
+            env.LIVE_ADMIN_PASSWORD,
+            "[private]",
+          ),
+  );
   process.exitCode = 1;
 } finally {
-  saveState();
+  persist();
+  // Revoke this runner's normal browser session through the existing logout UI.
+  try {
+    if (!page.url().includes("/login"))
+      await button("خروج امن").click({ timeout: 3000 });
+  } catch {}
+  await context.close();
+  await browser.close();
 }
