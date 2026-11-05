@@ -304,7 +304,7 @@ try {
   );
   pass("Next MCP confirms this checkout and running dev server");
   await page.goto(base + "/studio/workflows");
-  await page.locator("h1").waitFor();
+  await page.locator("h1").first().waitFor();
   if (page.url().includes("/login")) {
     authStage = "username";
     await page.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
@@ -405,7 +405,8 @@ try {
     await saved();
     pass("Modify message and save a fresh revision");
     // Exercise the actual keyboard shortcuts with focus outside form controls.
-    await add("شروع و کنترل لغو", "QA_TEMP", "cancel");
+    await click("شروع و کنترل لغو");
+    await expectCounts(6);
     await page.locator("main h1").click();
     await page.keyboard.press("Control+z");
     await expectCounts(5);
