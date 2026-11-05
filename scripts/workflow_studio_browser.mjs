@@ -23,13 +23,17 @@ const base = "http://localhost:3002",
   output = "/tmp/workflow-studio-browser";
 mkdirSync(output, { recursive: true, mode: 0o700 });
 function ab(...args) {
+  // Control names aid QA diagnosis; filled values (including MFA) stay private.
+  console.log("STEP", args[0], String(args[1] ?? "").slice(0, 100));
   try {
     return execFileSync(
       "agent-browser",
       ["--session", session, "--restore", session, ...args],
       { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] },
     ).trim();
-  } catch {
+  } catch (error) {
+    if (args[0] !== "fill")
+      console.log(String(error.stderr ?? error.code ?? "").slice(0, 500));
     throw Error(`Browser action failed: ${args[0]}`);
   }
 }
@@ -172,7 +176,7 @@ function waitText(value) {
   wait(`document.body.innerText.includes(${JSON.stringify(value)})`);
 }
 function click(name) {
-  ab("click", reference(snapshot(), `button "${name}"`));
+  ab("click", reference(snapshot(), `button "${name}`));
 }
 function fill(label, value) {
   ab("fill", `[aria-label=${JSON.stringify(label)}]`, String(value));
@@ -213,7 +217,7 @@ function node(index) {
   ab("click", `[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`);
 }
 function add(description, label) {
-  ab("click", reference(snapshot(), `button "${description}"`));
+  ab("click", reference(snapshot(), `button "${description}`));
   fill("عنوان گره", label);
   return read(
     "[...document.querySelectorAll('.react-flow__node')].at(-1).getAttribute('data-id')",
@@ -440,6 +444,69 @@ try {
     );
     pass(
       "Compare immutable versions, inspect Snapshot and restore as a new revision",
+    );
+  }
+  if (phase === "all" || phase === "recovery") {
+    ab("set", "viewport", "1100", "1000");
+    editor(path);
+    saved();
+    node(3);
+    const previous = read(
+      "Number(document.querySelector('main').innerText.match(/Revision (\\d+)/)[1])",
+    );
+    const pattern = `**/api/admin/workflows/${state.id}`;
+    ab("network", "route", pattern, "--abort");
+    fill("متن پیام", "بررسی بازیابی پس از قطع ارتباط");
+    waitText("نتیجهٔ ذخیره نامشخص");
+    click("بررسی رسید ذخیره");
+    waitText("هنوز رسیدی یافت نشد");
+    assert(
+      read("document.querySelector('[aria-label=\"متن پیام\"]').value") ===
+        "بررسی بازیابی پس از قطع ارتباط",
+      "Unknown save lost the local document",
+    );
+    ab("network", "unroute", pattern);
+    click("تکرار همان عملیات");
+    saved();
+    assert(
+      read(
+        "Number(document.querySelector('main').innerText.match(/Revision (\\d+)/)[1])",
+      ) ===
+        previous + 1,
+      "An exact retry appended multiple revisions",
+    );
+    pass(
+      "Abort save, inspect missing receipt, preserve local text and retry exact operation once",
+    );
+  }
+  if (phase === "all" || phase === "access") {
+    ab("set", "viewport", "1100", "1000");
+    editor(path);
+    saved();
+    click("انتخاب یک یا چند فروشگاه فعال");
+    ab("wait", '[role="dialog"]');
+    tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
+    ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 2 '));
+    click("اعمال انتخاب");
+    wait("document.querySelector('[role=dialog]')===null");
+    waitText("این نسخه فقط خواندنی است");
+    assert(
+      read(
+        "document.querySelector('[aria-label=\"جستجوی گره\"]').parentElement.querySelector('button[draggable]')?.disabled ?? [...document.querySelectorAll('button[draggable]')].every(b=>b.disabled)",
+      ),
+      "Wrong current Store retained editor controls",
+    );
+    click("انتخاب یک یا چند فروشگاه فعال");
+    ab("wait", '[role="dialog"]');
+    tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
+    ab("click", reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
+    click("اعمال انتخاب");
+    wait("document.querySelector('[role=dialog]')===null");
+    wait(
+      "[...document.querySelectorAll('button[draggable]')].some(b=>!b.disabled)",
+    );
+    pass(
+      "Store context refresh remounts owned workflow read-only, then restores eligible editing",
     );
   }
   if (phase === "all" || phase === "layout") {
