@@ -1,0 +1,149 @@
+{
+  "phase": "all",
+  "driver": "Playwright",
+  "source_commit": "e17aac89e2628bbd4c779b708b381938914c7677",
+  "checks": [
+    {
+      "check": "Next MCP confirms this checkout and running dev server",
+      "status": "PASS"
+    },
+    {
+      "check": "Normal password and MFA browser login",
+      "status": "PASS"
+    },
+    {
+      "check": "Create Start, End, message, buttons and condition; connect, validate, autosave and reload",
+      "status": "PASS"
+    },
+    {
+      "check": "Copy snapshot, delete, paste, Undo and Redo preserve graph",
+      "status": "PASS"
+    },
+    {
+      "check": "Modify message and save a fresh revision",
+      "status": "PASS"
+    },
+    {
+      "check": "Keyboard Undo/Redo and removal of stale selection",
+      "status": "PASS"
+    },
+    {
+      "check": "Desktop Canvas renders every node and connection without overflow",
+      "status": "PASS"
+    },
+    {
+      "check": "Action Catalog lists19 real contracts and filters group/effect/deprecation/search",
+      "status": "PASS"
+    },
+    {
+      "check": "Actual scoped Catalog Dry-run through signed Backend: telegram",
+      "status": "PASS"
+    },
+    {
+      "check": "Actual scoped Catalog Dry-run through signed Backend: bale",
+      "status": "PASS"
+    },
+    {
+      "check": "Input/output/error schemas and side-effect/confirmation/idempotency policies visible",
+      "status": "PASS"
+    },
+    {
+      "check": "Store switch remounts Catalog, drops previous Bot and denies foreign product Dry-run",
+      "status": "PASS"
+    },
+    {
+      "check": "Actual UI creates typed Action with five outcomes, exact version, constant inputs and declared output variable; save/reload",
+      "status": "PASS"
+    },
+    {
+      "check": "Typed Action preview with synthetic output and variable mapping: telegram",
+      "status": "PASS"
+    },
+    {
+      "check": "Typed Action preview with synthetic output and variable mapping: bale",
+      "status": "PASS"
+    },
+    {
+      "check": "Action Catalog and typed inspector RTL/light/dark at 320px",
+      "status": "PASS"
+    },
+    {
+      "check": "Action Catalog and typed inspector RTL/light/dark at 390px",
+      "status": "PASS"
+    },
+    {
+      "check": "Action Catalog and typed inspector RTL/light/dark at 768px",
+      "status": "PASS"
+    },
+    {
+      "check": "Action Catalog and typed inspector RTL/light/dark at 1440px",
+      "status": "PASS"
+    },
+    {
+      "check": "Catalog keyboard tab order reaches labelled native controls",
+      "status": "PASS"
+    },
+    {
+      "check": "Created workflow preview traverses platform condition: telegram",
+      "status": "PASS"
+    },
+    {
+      "check": "Created workflow preview traverses platform condition: bale",
+      "status": "PASS"
+    },
+    {
+      "check": "Full synthetic Return Request, typed input, photo metadata and explicit stub: telegram",
+      "status": "PASS"
+    },
+    {
+      "check": "Full synthetic Return Request, typed input, photo metadata and explicit stub: bale",
+      "status": "PASS"
+    },
+    {
+      "check": "Preview Back and Cancel",
+      "status": "PASS"
+    },
+    {
+      "check": "Empty-order scenario remains cancellable",
+      "status": "PASS"
+    },
+    {
+      "check": "Compare immutable versions, inspect Snapshot and restore as a new revision",
+      "status": "PASS"
+    },
+    {
+      "check": "Abort save, inspect missing receipt, retain local text and retry exact operation once",
+      "status": "PASS"
+    },
+    {
+      "check": "Store context refresh remounts owned workflow read-only and restores eligible editing",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 320px",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 390px",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 768px",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 1440px",
+      "status": "PASS"
+    },
+    {
+      "check": "Customer, cart, order, payment and support table counts unchanged",
+      "status": "PASS"
+    },
+    {
+      "check": "Next MCP reports no configuration or browser session errors",
+      "status": "PASS"
+    }
+  ],
+  "live_provider_calls": 0,
+  "runtime_enabled": false
+}
