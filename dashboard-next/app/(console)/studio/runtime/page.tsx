@@ -5,6 +5,7 @@ import { StudioHomeNav } from "@/components/workflows/studio-home-nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeRefresh } from "@/components/runtime/refresh";
+import { RuntimeOperationalOverview } from "@/components/runtime/overview";
 import { RuntimeGates } from "@/components/runtime/gates";
 import { RuntimePublications } from "@/components/runtime/publication";
 import { RuntimeBindings, RuntimeDeliveries, RuntimeHistory, RuntimeRuns } from "@/components/runtime/lists";
@@ -87,6 +88,7 @@ export default async function RuntimePage({
       <p className="text-xs leading-6 text-muted-foreground">در صف، ارسال‌شده و نتیجهٔ نامعلوم وضعیت‌های جدا هستند.</p>
     </RuntimePanel>
   </div>
+  <RuntimeOperationalOverview overview={overview} />
   <RuntimeGates key={context.current_store_id} overview={overview} bots={bots.items} storeId={context.current_store_id} />
   <RuntimePager page={botPage} hasMore={bots.has_more} href={p => `/studio/runtime?bot_page=${p}`} />
   <details className="rounded-xl border bg-card p-4">

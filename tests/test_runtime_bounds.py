@@ -419,3 +419,26 @@ async def test_pending_physical_action_respects_exhausted_run_budget(
     assert run.error_code == (
         "runtime_event_budget" if resource == "events" else "runtime_outbound_budget"
     )
+
+
+@pytest.mark.asyncio
+async def test_pending_direct_duplicate_waits_for_worker_without_reprocessing(
+    buyer, monkeypatch
+):
+    """A provider retry cannot start another Run while its accepted input is pending."""
+    connection, principal = buyer
+    await setup_runtime(connection, principal, monkeypatch)
+    event = inbound(1, "/wholesale", "command")
+    original = await handle(connection, context=principal.bot, event=event)
+    inbox = await connection.scalar(select(WorkflowInbox))
+    inbox.status = "pending"
+    inbox.outcome = {"handled": True, "status": "queued", "run_id": original["run_id"]}
+    expected = dict(inbox.outcome)
+    await connection.commit()
+    replay = await handle(connection, context=principal.bot, event=event)
+    assert replay == expected | {"duplicate": True}
+    assert inbox.duplicate_count == 1
+    assert await connection.scalar(select(func.count()).select_from(WorkflowRun)) == 1
+    assert (
+        await connection.scalar(select(func.count()).select_from(WorkflowOutbox)) == 1
+    )

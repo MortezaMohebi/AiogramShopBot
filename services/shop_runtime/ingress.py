@@ -9,17 +9,17 @@ from sqlalchemy import select
 import config
 from channels.contracts import Platform
 from db import session_maker
-from models.shop_delivery import ShopInboundUpdate
 from models.shop_content import ShopIdentity
+from models.shop_delivery import ShopInboundUpdate
 from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_workflow_runtime import WorkflowInbox
 from services import shop_admin_security as security
 from services.shop_bot_context import resolve_bot_context, resolve_legacy_bot_context
 from services.shop_bot_operations import legacy_state
 from services.shop_bot_profiles import get_bot_options
+from services.shop_bot_secrets import resolve_active_token
 from services.shop_identity import is_blocked, register_customer
 from services.shop_multibot_client import provider_client
-from services.shop_bot_secrets import resolve_active_token
 from services.shop_runtime import adapters, sessions
 
 
@@ -49,14 +49,14 @@ async def _existing_inbox(bot_id, payload) -> dict | None:
     if type(update_id) is not int or not 0 <= update_id <= 9_223_372_036_854_775_807:
         return None
     async with session_maker() as db:
-        state = await db.scalar(
-            select(WorkflowInbox.status).where(
+        inbox = await db.scalar(
+            select(WorkflowInbox).where(
                 WorkflowInbox.bot_id == bot_id,
                 WorkflowInbox.input_id == str(update_id),
             )
         )
-    if state is not None:
-        return {"handled": True, "duplicate": True, "status": state}
+        if inbox is not None:
+            return await sessions.replay_input(db, inbox)
     return None
 
 
@@ -103,10 +103,10 @@ async def try_ingress(context, payload, client=None) -> dict:
     if _financial(payload):
         return {"handled": False}
     prior = await _existing_inbox(getattr(context, "bot_id", None), payload)
-    if not _deployment_enabled():
-        return prior or {"handled": False}
-    if prior and prior["status"] != "pending":
+    if prior is not None:
         return prior
+    if not _deployment_enabled():
+        return {"handled": False}
     event = adapters.normalize(context, payload)
     if event is None:
         return prior or {"handled": False}
@@ -208,10 +208,10 @@ async def try_legacy_ingress(platform, payload, client=None) -> dict:
     except ValueError:
         return {"handled": False}
     prior = await _existing_inbox(LEGACY_BOT_IDS[platform.value], payload)
-    if not _deployment_enabled():
-        return prior or {"handled": False}
-    if prior and prior["status"] != "pending":
+    if prior is not None:
         return prior
+    if not _deployment_enabled():
+        return {"handled": False}
     async with session_maker() as db:
         state = await legacy_state(db, platform.value)
         options = await get_bot_options(db, platform.value)

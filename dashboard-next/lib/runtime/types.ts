@@ -17,6 +17,38 @@ export interface RuntimeOverview {
   deliveries: Record<string, number>;
   supported_nodes: string[];
   gates: RuntimeGate[];
+  /** Optional during API rollout; absence is unavailable, never a measured zero. */
+  metrics?: RuntimeMetrics;
+  active_groups?: RuntimeActiveGroup[];
+  active_groups_has_more?: boolean;
+  metrics_scope?: {
+    store_id: string;
+    window: "all_retained_history";
+    duration: string;
+    delivery_failures: string;
+    active: string;
+  };
+}
+export interface RuntimeActiveGroup {
+  workflow_id: string;
+  publication_id: string;
+  revision: number;
+  active_runs: number;
+}
+export interface RuntimeMetrics {
+  runs_started: number;
+  runs_completed: number;
+  runs_cancelled: number;
+  runs_failed: number;
+  completed_duration_seconds_avg: number | null;
+  node_transitions: number;
+  input_validation_errors: number;
+  action_failures: number;
+  timeouts: number;
+  duplicate_events: number;
+  outbox_retries: number;
+  outbox_deadletters: number;
+  delivery_failures_by_platform: Partial<Record<Platform, number>>;
 }
 export interface Publication {
   id: string;

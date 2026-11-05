@@ -323,3 +323,24 @@ async def test_overview_has_bounded_private_free_store_metrics(runtime_manager):
     assert body["metrics_scope"]["window"] == "all_retained_history"
     assert "must-never-appear" not in response.text
     assert "user_id" not in response.text and "chat_id" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_overview_timeouts_include_action_timeout_once(runtime_manager):
+    """SQL timeout totals cover Action deadlines and wait/Run expiry separately."""
+    from uuid import uuid4
+    from models.shop_workflow_runtime import WorkflowEvent
+
+    app = runtime_manager
+    _, run = await delivery_fixture(app, outcome="rejected")
+    for kind, error in [("action", "action_timeout"), ("timeout", "action_timeout"), ("action", "action_busy")]:
+        app.db.add(WorkflowEvent(
+            store_id=run.store_id, run_id=run.id, bot_id=run.bot_id,
+            input_id=str(uuid4()), kind=kind, node_id=run.node_id,
+            status="failed", error_code=error, summary={}, correlation_id=run.correlation_id,
+        ))
+    app.db.commit()
+    response = await app.request("GET", "/workflow-runtime")
+    assert response.status_code == 200, response.text
+    assert response.json()["metrics"]["timeouts"] == 2
+    assert response.json()["metrics"]["action_failures"] == 2

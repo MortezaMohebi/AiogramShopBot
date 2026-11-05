@@ -120,6 +120,12 @@ async def overview(db, scope, actor):
         .one()
     )
     metrics = dict(run_metrics)
+    # PostgreSQL AVG(EXTRACT(...)) returns Decimal; response JSON accepts a
+    # float duration while retaining null when there are no completed Runs.
+    average = metrics["completed_duration_seconds_avg"]
+    metrics["completed_duration_seconds_avg"] = (
+        float(average) if average is not None else None
+    )
     for status in ("completed", "cancelled", "failed"):
         metrics["runs_" + status] = dict(counts).get(status, 0)
     metrics["duplicate_events"] = await db.scalar(
@@ -147,7 +153,20 @@ async def overview(db, scope, actor):
                         0,
                     ).label("action_failures"),
                     func.coalesce(
-                        func.sum(case((WorkflowEvent.kind == "timeout", 1), else_=0)), 0
+                        func.sum(
+                            case(
+                                (
+                                    (WorkflowEvent.kind == "timeout")
+                                    | (
+                                        (WorkflowEvent.kind == "action")
+                                        & (WorkflowEvent.error_code == "action_timeout")
+                                    ),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
                     ).label("timeouts"),
                 ).where(WorkflowEvent.store_id == store)
             )

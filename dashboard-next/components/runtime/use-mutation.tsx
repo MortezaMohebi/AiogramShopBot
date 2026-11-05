@@ -80,11 +80,11 @@ export function useRuntimeMutation() {
         if (found) {
           pending.current = null;
           setState({ status: "done", message: "ثبت عملیات در تاریخچه تأیید شد.", intent });
+          router.refresh();
         } else setState(old => ({
           ...old,
           message: "در آخرین صفحهٔ تاریخچه نتیجهٔ قطعی پیدا نشد. درخواست دوباره ارسال نمی‌شود؛ تاریخچه و وضعیت جاری را بررسی کنید."
         }));
-        router.refresh();
       }
     } catch (error) {
       if (active.current) setState(old => ({

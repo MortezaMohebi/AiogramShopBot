@@ -14,7 +14,7 @@ function evaluate(file:string,require:(key:string)=>unknown) {
  const mod={exports:{} as Record<string,unknown>};
  runInNewContext(code,{module:mod,exports:mod.exports,require,AbortSignal,Date,JSON});return mod.exports;
 }
-function hook(fetcher:(url:string,request:RequestInit)=>Promise<Response>){
+function hook(fetcher:(url:string,request:RequestInit)=>Promise<Response>,refresh:()=>void=()=>undefined){
  const receipts=()=>evaluate("../lib/runtime/receipts.ts",()=>{throw Error("No runtime dependency expected");});
  // The transport's global fetch is provided through a second isolated evaluation.
  const source=ts.transpileModule(readFileSync(new URL("../lib/runtime/client.ts",import.meta.url),"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
@@ -29,7 +29,7 @@ function hook(fetcher:(url:string,request:RequestInit)=>Promise<Response>){
  const evaluatedModule=evaluate("../components/runtime/use-mutation.tsx",key=>{
   if(key==="react")return react;
   if(key==="react/jsx-runtime")return jsx;
-  if(key==="next/navigation")return {useRouter:()=>({refresh:()=>undefined})};
+  if(key==="next/navigation")return {useRouter:()=>({refresh})};
   if(key==="next/link")return {default:()=>null};
   if(key==="@/components/ui/button")return {Button:()=>null};
   if(key==="@/lib/runtime/client")return clientModule.exports;
@@ -48,9 +48,9 @@ for(const body of [null,{},[],{ok:false,code:"runtime_invalid_request"}])test(`i
  await current.execute(`/outbox/${targetId}/retry`,payload,"COMMITTED_SUCCESS");current=render();assert.equal(current.state.status,"unknown");assert.equal(posts,1);
 });
 test("unknown intent only reconciles an audit with the exact operation, action and target",async()=>{
- let posts=0,correct=false;
- const render=hook(async(_url,request)=>{if(request.method==="POST"){posts++;throw Error("lost");}return Response.json({items:[{id:operationId,action:"retry_delivery",target_id:correct?targetId:otherId,summary:{},created_at:"2026-11-05T00:00:00Z"}],page:1,has_more:false});});
+ let posts=0,correct=false,refreshes=0;
+ const render=hook(async(_url,request)=>{if(request.method==="POST"){posts++;throw Error("lost");}return Response.json({items:[{id:operationId,action:"retry_delivery",target_id:correct?targetId:otherId,summary:{},created_at:"2026-11-05T00:00:00Z"}],page:1,has_more:false});},()=>refreshes++);
  await render().execute(`/outbox/${targetId}/retry`,{expected_attempts:2,operation_id:operationId},"COMMITTED_SUCCESS",{operationId});
- await render().inspect();assert.equal(render().state.status,"unknown");assert.equal(posts,1);
- correct=true;await render().inspect();assert.equal(render().state.status,"done");assert.equal(posts,1);
+ await render().inspect();assert.equal(render().state.status,"unknown");assert.equal(posts,1);assert.equal(refreshes,0,"unmatched history must not remount version-keyed forms and erase a frozen unknown intent");
+ correct=true;await render().inspect();assert.equal(render().state.status,"done");assert.equal(posts,1);assert.equal(refreshes,1);
 });

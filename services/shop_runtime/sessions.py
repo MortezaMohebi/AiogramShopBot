@@ -403,6 +403,28 @@ async def finish_input(db, inbox, result):
     return result
 
 
+async def replay_input(db, inbox, *, count_duplicate=True):
+    """Replay durable ownership without resuming work or retaining private input.
+
+    The receiver and direct coordinator share this boundary. A real incoming
+    redelivery increments its counter once; worker reconciliation never does.
+    RETURNING reads the outcome from the same atomic update, avoiding a stale
+    identity-map receipt if the worker completed while the receiver waited.
+    """
+    if count_duplicate:
+        result = await db.execute(
+            update(WorkflowInbox)
+            .where(WorkflowInbox.id == inbox.id)
+            .values(duplicate_count=WorkflowInbox.duplicate_count + 1)
+            .returning(WorkflowInbox.status, WorkflowInbox.outcome)
+        )
+        status, outcome = result.one()
+    else:
+        status, outcome = inbox.status, inbox.outcome
+    await db.commit()
+    return (outcome or {"handled": True, "status": status}) | {"duplicate": True}
+
+
 async def system_event(db, run, *, kind, status, error_code=None, summary=None):
     """Append safe correlated system metadata without exceeding stored history."""
     if not await event_capacity(db, run):
@@ -733,17 +755,8 @@ async def handle(
             WorkflowInbox.input_id == event.update_id,
         )
     )
-    if duplicate is not None and not resume_pending:
-        await db.execute(
-            update(WorkflowInbox)
-            .where(WorkflowInbox.id == duplicate.id)
-            .values(duplicate_count=WorkflowInbox.duplicate_count + 1)
-        )
-        await db.commit()
-        if duplicate.status != "pending":
-            return (
-                duplicate.outcome or {"handled": True, "status": duplicate.status}
-            ) | {"duplicate": True}
+    if duplicate is not None and (not resume_pending or duplicate.status != "pending"):
+        return await replay_input(db, duplicate, count_duplicate=not resume_pending)
     if not await enabled(db, context):
         return {"handled": False}
     principal = await customer_principal(
@@ -868,11 +881,10 @@ async def handle(
         # Durability precedes processing; after a process crash a worker owns this input.
         await db.commit()
         slot = await _slot(db, context, event.user_id)
-    elif inbox.status != "pending":
-        await db.commit()
-        return (inbox.outcome or {"handled": True, "status": inbox.status}) | {
-            "duplicate": True
-        }
+    elif inbox.status != "pending" or not resume_pending:
+        # Another receiver may have accepted this update while we waited on
+        # the Slot. It is still one incoming duplicate, never a new execution.
+        return await replay_input(db, inbox, count_duplicate=not resume_pending)
     if await db.scalar(
         select(WorkflowEvent.id).where(
             WorkflowEvent.bot_id == context.bot_id,

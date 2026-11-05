@@ -355,6 +355,21 @@ async function nextRpc(method, params) {
 }
 const nextTool = (name) => nextRpc("tools/call", { name, arguments: {} });
 
+/** Validate installed Next 16.4 structured results, never success-like prose. */
+function assertNextClean(result, tool) {
+  const code = tool === "get_errors" ? "next_application_error" : "next_compilation_issue";
+  requireSafe(result && !result.isError && result.content?.length === 1 && result.content[0].type === "text", code);
+  let value;
+  try { value = JSON.parse(result.content[0].text); }
+  catch { throw new CheckFailure(code); }
+  requireSafe(value && typeof value === "object" && !Array.isArray(value) && !Object.hasOwn(value, "error"), code);
+  if (tool === "get_errors") {
+    requireSafe(Array.isArray(value.configErrors) && value.configErrors.length === 0 && Array.isArray(value.sessionErrors) && value.sessionErrors.length === 0, code);
+  } else {
+    requireSafe(tool === "get_compilation_issues" && Array.isArray(value.issues) && value.issues.length === 0, code);
+  }
+}
+
 /** Wait for a fresh TOTP step rather than reuse the parent's consumed proof. */
 async function freshOtp() {
   const deadline = Date.now() + 40000;
@@ -571,6 +586,49 @@ async function bff(session, path, { method = "GET", body, headers = {}, challeng
   const value = await response.json();
   if (path.startsWith("/api/admin/workflow-runtime")) assertPrivate(value);
   return value;
+}
+
+/** Compare visible private-free overview aggregates with the signed Store read. */
+async function assertOperationalOverview(page, overview) {
+  requireSafe(overview.metrics_scope?.window === "all_retained_history" && overview.metrics_scope.store_id === fixture.fixture.store_id, "runtime_metrics_scope_missing");
+  const metrics = page.locator("section").filter({ has: page.getByRole("heading", { name: "آمار عملیاتی فروشگاه", exact: true }) });
+  requireSafe((await metrics.innerText()).includes("تمام تاریخچهٔ نگهداری‌شدهٔ فروشگاه جاری"), "runtime_metrics_scope_not_rendered");
+  const fields = [
+    ["runs_started", "اجراهای آغازشده"], ["runs_completed", "اجراهای تکمیل‌شده"],
+    ["runs_cancelled", "اجراهای لغوشده"], ["runs_failed", "اجراهای ناموفق"],
+    ["node_transitions", "عبور از گره‌ها"], ["input_validation_errors", "خطاهای اعتبارسنجی ورودی"],
+    ["action_failures", "خطاهای Action"], ["timeouts", "پایان مهلت‌ها"],
+    ["duplicate_events", "رویدادهای تکراری"], ["outbox_retries", "تلاش‌های مجدد ارسال"],
+    ["outbox_deadletters", "ارسال‌های متوقف‌شده پس از خطا"],
+  ];
+  const shown = (label) => metrics.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) }).locator("dd").innerText();
+  for (const [key, label] of fields) {
+    const value = overview.metrics?.[key];
+    requireSafe(Number.isFinite(value) && value >= 0 && await shown(label) === value.toLocaleString("fa-IR"), "runtime_metric_not_exact");
+  }
+  const duration = overview.metrics.completed_duration_seconds_avg;
+  requireSafe(duration === null || (Number.isFinite(duration) && duration >= 0), "runtime_metric_duration_invalid");
+  const durationText = duration === null ? "نمونهٔ تکمیل‌شده‌ای وجود ندارد" : `${duration.toLocaleString("fa-IR", { maximumFractionDigits: 2 })} ثانیه`;
+  requireSafe(await shown("میانگین مدت اجرای تکمیل‌شده") === durationText, "runtime_metric_duration_not_exact");
+  requireSafe(overview.metrics.delivery_failures_by_platform && typeof overview.metrics.delivery_failures_by_platform === "object", "runtime_metric_delivery_missing");
+  for (const [platform, label] of [["telegram", "تلگرام"], ["bale", "بله"]]) {
+    const value = overview.metrics.delivery_failures_by_platform[platform] ?? 0;
+    requireSafe(Number.isFinite(value) && value >= 0 && await shown(label) === value.toLocaleString("fa-IR"), "runtime_metric_delivery_not_exact");
+  }
+  const groups = overview.active_groups;
+  requireSafe(Array.isArray(groups) && groups.length <= 100 && typeof overview.active_groups_has_more === "boolean", "runtime_active_groups_invalid");
+  const panel = page.locator("section").filter({ has: page.getByRole("heading", { name: "اجراهای فعال بر اساس فرایند و انتشار", exact: true }) });
+  requireSafe(await panel.locator("li").count() === groups.length, "runtime_active_groups_not_exact");
+  for (const [index, group] of groups.entries()) {
+    const row = panel.locator("li").nth(index);
+    for (const [label, expected] of [["فرایند", group.workflow_id], ["انتشار", group.publication_id], ["نسخه", group.revision.toLocaleString("fa-IR")], ["تعداد اجرای فعال", group.active_runs.toLocaleString("fa-IR")]]) {
+      requireSafe(await row.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) }).locator("dd").innerText() === expected, "runtime_active_group_metadata_not_exact");
+    }
+    const query = new URLSearchParams({ tab: "runs", workflow_id: group.workflow_id, publication_id: group.publication_id });
+    requireSafe(await row.getByRole("link", { name: "اجراهای این فرایند و انتشار", exact: true }).getAttribute("href") === `/studio/runtime?${query}`, "runtime_active_group_filter_not_exact");
+  }
+  if (!groups.length) requireSafe((await panel.innerText()).includes("اجرای فعالی در این گروه‌بندی وجود ندارد"), "runtime_active_groups_empty_missing");
+  requireSafe((await panel.innerText()).includes("فقط ۱۰۰ گروه اول") === overview.active_groups_has_more, "runtime_active_groups_truncation_not_exact");
 }
 
 /** Privacy is verified before any image is written; account/login are excluded. */
@@ -819,12 +877,18 @@ async function logout(session) {
     session.page = page;
     await page.goto(base + "/studio/runtime");
   }
+  // The responsive sweep ends at 390px with the navigation drawer closed.
+  // Restore the supported desktop navigation before using its normal control.
+  session.viewport = { width: 1100, height: 1000 };
+  await page.setViewportSize(session.viewport);
   if (new URL(page.url()).pathname === "/login") {
     // Prove the cookie cannot perform an authenticated read after expiry.
     await bff(session, "/api/admin/workflow-runtime", { status: 401 });
   } else {
     await ready(page);
-    await page.getByRole("button", { name: "خروج امن", exact: true }).click();
+    const control = page.getByRole("button", { name: "خروج امن", exact: true });
+    await control.waitFor({ state: "visible" });
+    await control.click();
     await page.waitForURL("**/login");
     await bff(session, "/api/admin/workflow-runtime", { status: 401 });
   }
@@ -846,7 +910,11 @@ try {
   const initialized = await check(checks[0], async () => {
     requireRuntimeCompose();
     const tools = await nextRpc("tools/list", {});
-    requireSafe(tools.tools?.some((tool) => tool.name === "get_errors"), "next_error_tool_missing");
+    for (const name of ["get_errors", "get_compilation_issues"]) {
+      const tool = tools.tools?.find((item) => item.name === name);
+      requireSafe(tool?.inputSchema?.type === "object" && !tool.inputSchema.required?.length, "next_tool_schema_unsupported");
+    }
+    assertNextClean(await nextTool("get_compilation_issues"), "get_compilation_issues");
     const metadata = await nextTool("get_project_metadata");
     requireSafe(JSON.stringify(metadata).includes(realpathSync("dashboard-next")), "wrong_next_checkout");
     fixture = bootstrapFixtures();
@@ -875,6 +943,7 @@ try {
     for (const tab of ["overview", "publications", "bindings", "runs", "outbox", "history"]) {
       const page = await open(admin, "/studio/runtime?tab=" + tab);
       requireSafe(await page.getByRole("navigation", { name: "بخش‌های Runtime", exact: true }).getByRole("link").count() === 6, "runtime_tabs_missing");
+      if (tab === "overview") await assertOperationalOverview(page, await bff(admin, "/api/admin/workflow-runtime"));
       await capture(admin, "initial-" + tab);
     }
     for (const platform of ["telegram", "bale"]) {
@@ -1047,8 +1116,10 @@ try {
     const unexpected = consoleErrors.filter((error) => !(error.resource && expectedUiFailures.has(error.path)));
     requireSafe(unexpected.length === 0, "browser_console_error");
     requireSafe(evidence.denied_browser_requests === 0, "browser_attempted_external_request");
-    const errors = await nextTool("get_errors");
-    requireSafe(/No errors detected/.test(JSON.stringify(errors)), "next_application_error");
+    // Keep the final navigated page alive while Next queries its HMR session.
+    await ready(admin.page);
+    assertNextClean(await nextTool("get_compilation_issues"), "get_compilation_issues");
+    assertNextClean(await nextTool("get_errors"), "get_errors");
     evidence.browser_error_counts = { page: pageErrors.length, unexpected_console: unexpected.length, private_response: privacyFailures };
   });
   await check(checks[14], async () => {

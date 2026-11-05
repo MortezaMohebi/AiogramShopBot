@@ -1,17 +1,20 @@
 """Keep authenticated Runtime routing before legacy at-most-once receipts."""
 
-from contextlib import asynccontextmanager
 import importlib
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import select
 
 import config
 from channels.contracts import Platform
 from models.shop_delivery import ShopInboundUpdate
+from models.shop_workflow_runtime import WorkflowInbox, WorkflowOutbox, WorkflowRun
 from services.shop_runtime import ingress, sessions
-from tests.test_action_security import buyer as buyer, db as db
+from tests.test_action_security import buyer as buyer
+from tests.test_action_security import db as db
 from tests.test_runtime_adapters import message
 from tests.test_runtime_sessions import setup_runtime
 
@@ -51,14 +54,20 @@ async def test_disabled_runtime_retains_durable_duplicate_ownership(
     db, principal = buyer
     await setup_runtime(db, principal, monkeypatch)
     use_database(monkeypatch, db)
-    await ingress.try_ingress(principal.bot, message(text="/wholesale"))
+    original = await ingress.try_ingress(principal.bot, message(text="/wholesale"))
     monkeypatch.setattr(config, flag, flag == "SHOP_WORKFLOW_RUNTIME_KILL_SWITCH")
-    for route in (
-        lambda payload: ingress.try_ingress(principal.bot, payload),
-        lambda payload: ingress.try_legacy_ingress(Platform.TELEGRAM, payload),
+    for expected_count, route in enumerate(
+        (
+            lambda payload: ingress.try_ingress(principal.bot, payload),
+            lambda payload: ingress.try_legacy_ingress(Platform.TELEGRAM, payload),
+        ),
+        start=1,
     ):
         replay = await route(message(text="/wholesale"))
-        assert replay == {"handled": True, "duplicate": True, "status": "processed"}
+        assert replay == original | {"duplicate": True}
+        assert (
+            await db.scalar(select(WorkflowInbox))
+        ).duplicate_count == expected_count
         assert await route(message(text="Alice") | {"update_id": 8}) == {
             "handled": False
         }
@@ -91,7 +100,8 @@ async def test_authenticated_ingress_durably_starts_and_deduplicates_run(
     first = await ingress.try_ingress(principal.bot, message(text="/wholesale"))
     assert first["handled"] and first["status"] == "waiting_input"
     again = await ingress.try_ingress(principal.bot, message(text="/wholesale"))
-    assert again["handled"] and again["duplicate"]
+    assert again == first | {"duplicate": True}
+    assert (await db.scalar(select(WorkflowInbox))).duplicate_count == 1
 
 
 @pytest.mark.asyncio
@@ -203,3 +213,53 @@ async def test_supervisor_offers_runtime_before_old_claim_and_propagates_crash(
             context().bot_id, update_id=7, payload=message(text="/wholesale")
         )
     supervisor.claim_update.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("disabled", [False, True])
+@pytest.mark.parametrize("legacy_bridge", [False, True])
+@pytest.mark.parametrize("old_outcome", [False, True])
+async def test_pending_duplicate_replays_once_without_coordinator_or_parse(
+    buyer, monkeypatch, disabled, legacy_bridge, old_outcome
+):
+    """Ingress owns accepted pending input; only its worker may resume processing."""
+    db, principal = buyer
+    await setup_runtime(db, principal, monkeypatch)
+    use_database(monkeypatch, db)
+    payload = message(text="/wholesale")
+    original = await ingress.try_legacy_ingress(Platform.TELEGRAM, payload)
+    inbox = await db.scalar(select(WorkflowInbox))
+    run = await db.scalar(select(WorkflowRun))
+    inbox.status = "pending"
+    inbox.outcome = (
+        {} if old_outcome else {"handled": True, "status": "queued", "run_id": run.id}
+    )
+    # This body could advance another node if a receiver erroneously resumes it.
+    inbox.payload = {"untrusted": "do not parse this duplicate"}
+    expected = (
+        {"handled": True, "status": "pending"} if old_outcome else dict(inbox.outcome)
+    )
+    await db.commit()
+    before_node = run.node_id
+    before_outbox = (await db.scalars(select(WorkflowOutbox))).all()
+    monkeypatch.setattr(config, "SHOP_WORKFLOW_RUNTIME_ENABLED", not disabled)
+    monkeypatch.setattr(
+        sessions,
+        "handle",
+        AsyncMock(side_effect=AssertionError("Duplicate must not reenter coordinator")),
+    )
+    monkeypatch.setattr(
+        ingress.adapters,
+        "normalize",
+        lambda *args: pytest.fail("Duplicate must not be parsed"),
+    )
+    route = (
+        (lambda: ingress.try_legacy_ingress(Platform.TELEGRAM, payload))
+        if legacy_bridge
+        else lambda: ingress.try_ingress(principal.bot, payload)
+    )
+    assert await route() == expected | {"duplicate": True}
+    assert (await db.scalar(select(WorkflowInbox))).duplicate_count == 1
+    assert (await db.scalar(select(WorkflowRun))).node_id == before_node
+    assert len((await db.scalars(select(WorkflowOutbox))).all()) == len(before_outbox)
+    assert original["handled"]
