@@ -1,0 +1,32 @@
+........................................................................ [  6%]
+........................................................................ [ 12%]
+........................................................................ [ 18%]
+........................................................................ [ 24%]
+........................................................................ [ 31%]
+........................................................................ [ 37%]
+........................................................................ [ 43%]
+........................................................................ [ 49%]
+........................................................................ [ 56%]
+........................................................................ [ 62%]
+........................................................................ [ 68%]
+........................................................................ [ 74%]
+........................................................................ [ 81%]
+........................................................................ [ 87%]
+........................................................................ [ 93%]
+........................................................................ [ 99%]
+..                                                                       [100%]
+=============================== warnings summary ===============================
+models/shop_content.py:203
+  /bot/models/shop_content.py:203: PytestCollectionWarning: cannot collect test class 'Testimonial' because it has a __init__ constructor (from: tests/test_multibot_catalog_acl_offline.py)
+    class Testimonial(Base):
+
+dashboard/next_operations.py:367
+  /bot/dashboard/next_operations.py:367: PytestCollectionWarning: cannot collect test class 'TestimonialPatch' because it has a __init__ constructor (from: tests/test_next_admin_operations_offline.py)
+    class TestimonialPatch(BaseModel):
+
+models/shop_content.py:203
+  /bot/models/shop_content.py:203: PytestCollectionWarning: cannot collect test class 'Testimonial' because it has a __init__ constructor (from: tests/test_shop_channel_catalog.py)
+    class Testimonial(Base):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1154 passed, 3 warnings in 206.99s (0:03:26)
