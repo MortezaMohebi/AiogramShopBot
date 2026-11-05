@@ -465,7 +465,7 @@ async def signed_checks(fixture):
                 "Real signed HTTP Catalog/dry-run preserves rows, rejects tenant/authority spoofing and exposes no live execute"
             )
     finally:
-        await revoke_diagnostic_session(identity[3])
+        await revoke_diagnostic_session(identity[0], identity[3])
 
 
 async def main():

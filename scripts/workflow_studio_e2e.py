@@ -75,7 +75,8 @@ async def business_counts():
                         "SELECT tablename FROM pg_tables WHERE schemaname='public' "
                         "AND (tablename LIKE 'shop_order%' OR tablename LIKE 'shop_cart%' "
                         "OR tablename LIKE 'shop_support%' OR tablename LIKE 'shop_payment%' "
-                        "OR tablename LIKE 'shop_customer%' OR tablename LIKE 'shop_identity%')"
+                        "OR tablename LIKE 'shop_customer%' OR tablename LIKE 'shop_identity%' "
+                        "OR tablename LIKE 'shop_action%')"
                     )
                 )
             )
