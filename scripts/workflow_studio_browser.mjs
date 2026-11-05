@@ -40,9 +40,23 @@ function ab(...args) {
 function assert(value, message) {
   if (!value) throw Error(message);
 }
+/** Observe two rendered frames; smooth scrolling must settle before hit testing. */
+function scrollTo(selector) {
+  ab("scrollintoview", selector);
+  ab(
+    "wait",
+    "--fn",
+    `(async()=>{
+    const positions=()=>JSON.stringify([...document.querySelectorAll('button,input,select,textarea')].map(n=>{const r=n.getBoundingClientRect();return [r.x,r.y,r.width,r.height]}));
+    const before=positions();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    return before===positions();
+  })()`,
+  );
+}
 /** Physical clicks require the target in view; never bypass hit testing. */
 function targetClick(selector) {
-  ab("scrollintoview", selector);
+  scrollTo(selector);
   ab("click", selector);
 }
 function reference(snapshot, description) {
@@ -181,16 +195,16 @@ function waitText(value) {
   wait(`document.body.innerText.includes(${JSON.stringify(value)})`);
 }
 function click(name) {
-  ab("scrollintoview", reference(snapshot(), `button "${name}`));
+  scrollTo(reference(snapshot(), `button "${name}`));
   // Scrolling invalidates the physical coordinates cached with an AX reference.
   ab("click", reference(snapshot(), `button "${name}`));
 }
 function fill(label, value) {
-  ab("scrollintoview", `[aria-label=${JSON.stringify(label)}]`);
+  scrollTo(`[aria-label=${JSON.stringify(label)}]`);
   ab("fill", `[aria-label=${JSON.stringify(label)}]`, String(value));
 }
 function select(label, value) {
-  ab("scrollintoview", `select[aria-label=${JSON.stringify(label)}]`);
+  scrollTo(`select[aria-label=${JSON.stringify(label)}]`);
   ab("select", `select[aria-label=${JSON.stringify(label)}]`, String(value));
 }
 function open(path) {
