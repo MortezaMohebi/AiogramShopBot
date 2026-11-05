@@ -32,7 +32,7 @@ function ab(...args) {
       { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] },
     ).trim();
   } catch (error) {
-    if (args[0] !== "fill")
+    if (args[0] !== "fill" || String(args[1]).startsWith("[aria-label"))
       console.log(String(error.stderr ?? error.code ?? "").slice(0, 500));
     throw Error(`Browser action failed: ${args[0]}`);
   }
@@ -181,12 +181,16 @@ function waitText(value) {
   wait(`document.body.innerText.includes(${JSON.stringify(value)})`);
 }
 function click(name) {
-  targetClick(reference(snapshot(), `button "${name}`));
+  ab("scrollintoview", reference(snapshot(), `button "${name}`));
+  // Scrolling invalidates the physical coordinates cached with an AX reference.
+  ab("click", reference(snapshot(), `button "${name}`));
 }
 function fill(label, value) {
+  ab("scrollintoview", `[aria-label=${JSON.stringify(label)}]`);
   ab("fill", `[aria-label=${JSON.stringify(label)}]`, String(value));
 }
 function select(label, value) {
+  ab("scrollintoview", `select[aria-label=${JSON.stringify(label)}]`);
   ab("select", `select[aria-label=${JSON.stringify(label)}]`, String(value));
 }
 function open(path) {
@@ -220,13 +224,30 @@ function capture(name) {
 }
 function node(index) {
   targetClick(`[aria-label="فهرست مراحل"] > button:nth-of-type(${index})`);
+  wait(
+    `document.querySelector('fieldset code')?.textContent.startsWith([...document.querySelectorAll('.react-flow__node')][${index - 1}].getAttribute('data-id')+' ·')===true`,
+  );
 }
-function add(description, label) {
-  targetClick(reference(snapshot(), `button "${description}`));
-  fill("عنوان گره", label);
-  return read(
+function add(description, label, type) {
+  const previous = counts().nodes;
+  click(description);
+  wait(
+    `document.querySelectorAll('.react-flow__node').length===${previous + 1}`,
+  );
+  const id = read(
     "[...document.querySelectorAll('.react-flow__node')].at(-1).getAttribute('data-id')",
   );
+  wait(
+    `document.querySelector('fieldset code')?.textContent.startsWith(${JSON.stringify(id + " ·")})===true`,
+  );
+  assert(
+    read("document.querySelector('fieldset code').textContent").endsWith(
+      " · " + type,
+    ),
+    "Palette added the wrong node type: " + type,
+  );
+  fill("عنوان گره", label);
+  return id;
 }
 function counts() {
   return read(
@@ -261,7 +282,7 @@ try {
       values.LIVE_ADMIN_PASSWORD,
     );
     ab("fill", reference(tree, 'textbox "کد احراز هویت'), otp());
-    targetClick(reference(tree, 'button "ورود امن"'));
+    click("ورود امن");
     ab("wait", "--url", "**/dashboard");
     pass("Normal password and MFA login");
   }
@@ -272,7 +293,9 @@ try {
   click("انتخاب یک یا چند فروشگاه فعال");
   ab("wait", '[role="dialog"]');
   tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-  targetClick(reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
+  targetClick(
+    '[role="dialog"] input[type="radio"][aria-label^="انتخاب فروشگاه آزمایشی 1 "]',
+  );
   click("اعمال انتخاب");
   wait("document.querySelector('[role=dialog]')===null");
   const fixture = JSON.parse(
@@ -291,15 +314,15 @@ try {
     wait("document.querySelector('[aria-label=\"جستجوی گره\"]')!==null");
     state.id = ab("get", "url").split("/").at(-1);
     saveState();
-    const start = add("شروع و کنترل شروع", "QA_START");
-    const end = add("شروع و کنترل پایان", "QA_END");
-    const message = add("پیام پیام متنی", "QA_MESSAGE");
+    const start = add("شروع و کنترل شروع", "QA_START", "start");
+    const end = add("شروع و کنترل پایان", "QA_END", "end");
+    const message = add("پیام پیام متنی", "QA_MESSAGE", "send_text");
     fill("متن پیام", "پیام آزمایشی نسخهٔ اول");
-    const buttons = add("تعامل پیام و دکمه", "QA_BUTTONS");
+    const buttons = add("تعامل پیام و دکمه", "QA_BUTTONS", "show_buttons");
     fill("متن پیام", "یک مسیر آزمایشی انتخاب کنید.");
     click("افزودن دکمه");
     fill("متن دکمه 1", "ادامهٔ آزمایشی");
-    const branch = add("شروع و کنترل شرط", "QA_BRANCH");
+    const branch = add("شروع و کنترل شرط", "QA_BRANCH", "condition");
     click("افزودن شرط");
     select("متغیر شرط", "context.platform");
     fill("مقدار مقایسه", "telegram");
@@ -492,7 +515,9 @@ try {
     click("انتخاب یک یا چند فروشگاه فعال");
     ab("wait", '[role="dialog"]');
     tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-    targetClick(reference(tree, 'radio "انتخاب فروشگاه آزمایشی 2 '));
+    targetClick(
+      '[role="dialog"] input[type="radio"][aria-label^="انتخاب فروشگاه آزمایشی 2 "]',
+    );
     click("اعمال انتخاب");
     wait("document.querySelector('[role=dialog]')===null");
     waitText("این نسخه فقط خواندنی است");
@@ -505,7 +530,9 @@ try {
     click("انتخاب یک یا چند فروشگاه فعال");
     ab("wait", '[role="dialog"]');
     tree = ab("snapshot", "-i", "-s", '[role="dialog"]');
-    targetClick(reference(tree, 'radio "انتخاب فروشگاه آزمایشی 1 '));
+    targetClick(
+      '[role="dialog"] input[type="radio"][aria-label^="انتخاب فروشگاه آزمایشی 1 "]',
+    );
     click("اعمال انتخاب");
     wait("document.querySelector('[role=dialog]')===null");
     wait(
