@@ -1,0 +1,33 @@
+{
+  "width": 1440,
+  "scroll": 1440,
+  "rtl": "rtl",
+  "nodes": [
+    {
+      "id": "node_377ec17a0dc0",
+      "visibility": "visible",
+      "width": 75.6363525390625
+    },
+    {
+      "id": "node_f52285202cdf",
+      "visibility": "visible",
+      "width": 75.6363525390625
+    },
+    {
+      "id": "node_9c7a5d9a14b0",
+      "visibility": "visible",
+      "width": 75.63638305664062
+    },
+    {
+      "id": "node_da6fd6f4a1a1",
+      "visibility": "visible",
+      "width": 75.6363525390625
+    },
+    {
+      "id": "node_098117f68813",
+      "visibility": "visible",
+      "width": 75.6363525390625
+    }
+  ],
+  "edges": 5
+}
