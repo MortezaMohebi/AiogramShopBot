@@ -110,6 +110,64 @@ async def test_cart_add_update_read_remove_reuse_live_quote(buyer):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", ["stock", "acl"])
+async def test_cart_removal_can_clean_up_multiple_unquotable_lines(buyer, invalid):
+    """Cleanup must commit while other stale lines remain, without leaking details."""
+    db, principal = buyer
+    first, second = seed(db)
+    for product in (first, second):
+        result = await invoke(
+            db, principal, request("cart.add_item", {"product_id": product.id})
+        )
+        assert result.status == "succeeded"
+    if invalid == "stock":
+        first.stock_quantity = second.stock_quantity = 0
+    else:
+        for product in (first, second):
+            db.add(
+                ShopBotProductRule(
+                    bot_id=principal.bot_id, product_id=product.id, effect="deny"
+                )
+            )
+    await db.commit()
+    removed = await invoke(
+        db,
+        principal,
+        request(
+            "cart.remove_item",
+            {
+                "product_id": first.id,
+                "expected_cart_revision": result.output["revision"],
+            },
+        ),
+    )
+    assert removed.status == "succeeded", removed.model_dump()
+    assert not removed.output["quote_available"]
+    assert removed.output["total_irr"] is None and removed.output["items"] == []
+    assert removed.output["unquoted_items"] == [
+        {"product_id": second.id, "quantity": 1}
+    ]
+    assert (
+        first.name not in removed.model_dump_json()
+        and second.name not in removed.model_dump_json()
+    )
+    final = await invoke(
+        db,
+        principal,
+        request(
+            "cart.remove_item",
+            {
+                "product_id": second.id,
+                "expected_cart_revision": removed.output["revision"],
+            },
+        ),
+    )
+    assert final.status == "succeeded" and final.output["items"] == []
+    assert final.output["quote_available"] and final.output["total_irr"] == 0
+    assert await db.scalar(select(func.count()).select_from(ShopCartItem)) == 0
+
+
+@pytest.mark.asyncio
 async def test_cart_mutation_dry_run_never_creates_cart_or_receipt(buyer):
     """Checking valid stock must not create an empty cart or claim an operation."""
     db, principal = buyer

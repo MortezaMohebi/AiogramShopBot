@@ -116,3 +116,40 @@ async def test_inactive_store_is_denied(buyer):
     await db.commit()
     with pytest.raises(ActionRejected, match="action_bot_unavailable"):
         await refresh_principal(db, principal)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["disabled", "paused", "maintenance"])
+@pytest.mark.parametrize(
+    "key", ["support.create_request", "order.list_customer_orders"]
+)
+async def test_legacy_operational_gate_applies_to_every_action_category(
+    buyer, state, key
+):
+    """The legacy disable switch must also block non-catalog reads and writes."""
+    from uuid import uuid4
+    from sqlalchemy import func, select
+    from models.shop_action import ShopActionExecution
+    from models.shop_bot_operations import ShopBotOperations
+    from models.shop_customer_support import ShopSupportTicket
+    from services.shop_actions.contracts import Invocation
+    from services.shop_actions.execution import invoke
+
+    db, principal = buyer
+    db.add(ShopBotOperations(bot_id=principal.bot_id, desired_state=state))
+    await db.commit()
+    result = await invoke(
+        db,
+        principal,
+        Invocation(
+            invocation_id=str(uuid4()),
+            action_key=key,
+            input={"body": "private note"} if key.startswith("support.") else {},
+            idempotency_key=str(uuid4()),
+        ),
+    )
+    assert (
+        result.status == "unavailable" and result.error.code == "action_bot_unavailable"
+    )
+    assert await db.scalar(select(func.count()).select_from(ShopSupportTicket)) == 0
+    assert await db.scalar(select(func.count()).select_from(ShopActionExecution)) == 0

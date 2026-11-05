@@ -195,7 +195,31 @@ async def cart_get(db, principal, _data):
     try:
         quote = await flow._quote(cart, db, bot_id=principal.bot_id)
     except CartRejected:
-        raise ActionRejected("action_cart_rejected") from None
+        # Stale stock/ACL/coupon/shipping may prevent a quote, but must not
+        # roll back a valid removal or trap the customer in an invalid cart.
+        # Return owned line IDs only; denied product names/prices remain private.
+        rows = (
+            await db.scalars(
+                select(ShopCartItem)
+                .where(
+                    ShopCartItem.cart_id == cart.id,
+                )
+                .order_by(ShopCartItem.id)
+            )
+        ).all()
+        output.update(
+            quote_available=False,
+            quote_error="action_cart_rejected",
+            unquoted_items=[
+                {"product_id": row.product_id, "quantity": row.quantity} for row in rows
+            ],
+            subtotal_irr=None,
+            discount_irr=None,
+            shipping_irr=None,
+            total_irr=None,
+            shipping_ready=False,
+        )
+        return output
     output.update(
         subtotal_irr=quote.subtotal,
         discount_irr=quote.discount,

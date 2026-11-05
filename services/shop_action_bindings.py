@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal, get_args, get_origin
+from datetime import date, datetime
 
 from pydantic import TypeAdapter
 
@@ -66,8 +67,14 @@ def _compatible(field, variable, name, *, output=False, action_key=""):
     if variable.type == "boolean":
         return bool in primitive
     if variable.type in {"string", "enum", "date", "datetime"}:
+        if output and variable.type in {"date", "datetime"}:
+            return (date if variable.type == "date" else datetime) in primitive
         if str not in primitive:
             return False
+        if output and variable.type == "enum":
+            return get_origin(field.annotation) is Literal and set(
+                get_args(field.annotation)
+            ) <= set(variable.choices)
         if get_origin(field.annotation) is Literal and not output:
             return variable.type == "enum" and set(variable.choices) <= set(
                 get_args(field.annotation)

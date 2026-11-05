@@ -140,3 +140,30 @@ test("Binding variable choices respect primitive and explicit reference fields",
     [],
   );
 });
+
+test("Output mapping cannot narrow arbitrary strings to date/datetime/enum", () => {
+  const variables = [
+    { name: "text", type: "string" },
+    { name: "date", type: "date" },
+    { name: "instant", type: "datetime" },
+    { name: "choice", type: "enum", choices: ["IRR"] },
+  ];
+  assert.deepEqual(
+    mappingVariables({ type: "string" }, "name", variables, true).map(
+      (v) => v.name,
+    ),
+    ["text"],
+  );
+  assert.deepEqual(
+    mappingVariables(
+      { type: "string", enum: ["IRR", "XTR"] },
+      "currency",
+      [
+        ...variables,
+        { name: "wide_choice", type: "enum", choices: ["IRR", "XTR", "USD"] },
+      ],
+      true,
+    ).map((v) => v.name),
+    ["text", "wide_choice"],
+  );
+});

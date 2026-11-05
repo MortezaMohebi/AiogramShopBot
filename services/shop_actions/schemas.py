@@ -177,12 +177,22 @@ class CartView(StrictModel):
     cart_id: int | None
     revision: int
     items: list[CartLine]
-    subtotal_irr: int
-    discount_irr: int
-    shipping_irr: int
-    total_irr: int
+    subtotal_irr: int | None
+    discount_irr: int | None
+    shipping_irr: int | None
+    total_irr: int | None
     shipping_required: bool
     shipping_ready: bool
+    quote_available: bool = True
+    quote_error: Literal["action_cart_rejected"] | None = None
+    unquoted_items: list["CartItemReference"] = Field(default_factory=list)
+
+
+class CartItemReference(StrictModel):
+    """Owned line identifiers allow cleanup without revealing denied product data."""
+
+    product_id: Id
+    quantity: Quantity
 
 
 class OrderStatus(StrictModel):

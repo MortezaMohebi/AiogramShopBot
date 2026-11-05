@@ -210,3 +210,35 @@ def test_unavailable_action_follows_its_unavailable_branch_in_preview():
     assert result["status"] == "completed", result
     text = str(result["messages"])
     assert "SAFE_UNAVAILABLE" in text and "WRONG_SUCCESS" not in text
+
+
+@pytest.mark.parametrize("target_type", ["date", "datetime", "enum"])
+def test_unconstrained_string_output_cannot_narrow_into_typed_variable(target_type):
+    """Successful validation must not promise a conversion that Preview rejects."""
+    value = graph(
+        action_key="catalog.get_product",
+        input_mapping={"product_id": {"kind": "variable", "name": "product"}},
+        output_mapping={"name": "typed_target"},
+    )
+    value["variables"].append(
+        {
+            "name": "typed_target",
+            "type": target_type,
+            "choices": ["allowed"] if target_type == "enum" else [],
+        }
+    )
+    assert "action_output_type_mismatch" in codes(value)
+
+
+@pytest.mark.parametrize(
+    "choices,valid", [(["IRR"], False), (["IRR", "XTR", "USD"], True)]
+)
+def test_literal_output_requires_all_source_values_in_target_enum(choices, valid):
+    """An enum target may widen, but cannot discard a legal Action result."""
+    value = graph(
+        action_key="order.get_status",
+        input_mapping={"order_id": {"kind": "constant", "value": 90001}},
+        output_mapping={"currency": "currency"},
+    )
+    value["variables"].append({"name": "currency", "type": "enum", "choices": choices})
+    assert ("action_output_type_mismatch" not in codes(value)) == valid

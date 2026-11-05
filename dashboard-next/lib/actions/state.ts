@@ -105,6 +105,19 @@ export function mappingVariables<
     if (variable.type === "boolean") return field.type === "boolean";
     if (["string", "enum", "date", "datetime"].includes(variable.type)) {
       if (field.type !== "string") return false;
+      if (output && ["date", "datetime"].includes(variable.type))
+        return (
+          field.format === (variable.type === "date" ? "date" : "date-time")
+        );
+      if (output && variable.type === "enum")
+        return (
+          !!field.enum &&
+          field.enum.every(
+            (choice) =>
+              typeof choice === "string" &&
+              (variable.choices ?? []).includes(choice),
+          )
+        );
       if (!output && field.enum)
         return (
           variable.type === "enum" &&

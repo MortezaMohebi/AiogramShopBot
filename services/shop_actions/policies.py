@@ -1,6 +1,7 @@
 """Contextual availability is independent of provider workers and UI visibility."""
 
 from services.shop_actions.contracts import ActionRejected
+from models.shop_bot_operations import ShopBotOperations
 from services.shop_bot_catalog_acl import resolve_scope
 from services.shop_channel_features import get_features
 
@@ -9,6 +10,9 @@ async def availability(db, principal, spec, invocation=None) -> dict:
     """Report structured reasons without granting access through metadata."""
     descriptor = spec.descriptor
     reasons = []
+    operations = await db.get(ShopBotOperations, principal.bot_id)
+    if operations is not None and operations.desired_state != "active":
+        reasons.append("action_bot_unavailable")
     context = {
         "store": principal.store_id,
         "bot": principal.bot_id,
