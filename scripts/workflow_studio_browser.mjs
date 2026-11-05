@@ -160,6 +160,14 @@ await context.route("**/*", (route) =>
 );
 const page = await context.newPage();
 const runtimeErrors = [];
+let secondFactor = "",
+  authStage = "initial navigation";
+const authResponses = [];
+page.on("response", (response) => {
+  const path = new URL(response.url()).pathname;
+  if (path.startsWith("/api/auth/"))
+    authResponses.push({ path, status: response.status() });
+});
 page.on("pageerror", (error) => runtimeErrors.push(error.message));
 page.setDefaultTimeout(30000);
 page.setDefaultNavigationTimeout(60000);
@@ -298,13 +306,18 @@ try {
   await page.goto(base + "/studio/workflows");
   await page.locator("h1").waitFor();
   if (page.url().includes("/login")) {
+    authStage = "username";
     await page.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
+    authStage = "password";
     await page
       .getByLabel("رمز عبور", { exact: true })
       .fill(env.LIVE_ADMIN_PASSWORD);
+    authStage = "MFA";
+    secondFactor = otp();
     await page
       .getByLabel("کد احراز هویت یا بازیابی (اگر فعال است)", { exact: true })
-      .fill(otp());
+      .fill(secondFactor);
+    authStage = "submit and redirect";
     await click("ورود امن");
     await page.waitForURL("**/dashboard");
     pass("Normal password and MFA browser login");
@@ -644,15 +657,40 @@ try {
       await page.screenshot({ path: output + "/failure.png" });
     } catch {}
   }
-  console.error(
-    page.url().includes("/login")
-      ? "FAIL  Normal QA login did not complete; private fields omitted"
-      : "FAIL  " +
-          String(error.message).replaceAll(
-            env.LIVE_ADMIN_PASSWORD,
-            "[private]",
-          ),
+  const privateValues = [
+    ...Object.entries(env)
+      .filter(
+        ([key, value]) =>
+          /password|secret|token|key/i.test(key) && value.length >= 8,
+      )
+      .map(([, value]) => value),
+    secondFactor,
+  ].filter(Boolean);
+  const message = privateValues.reduce(
+    (text, value) => text.replaceAll(value, "[private]"),
+    String(error.message),
   );
+  if (page.url().includes("/login")) {
+    const diagnostic = {
+      stage: authStage,
+      error: error.name,
+      message,
+      responses: authResponses,
+      labels: await page.locator("label").allTextContents(),
+      alerts: await page.locator('[role="alert"]').allTextContents(),
+    };
+    writeFileSync(
+      output + "/auth-diagnostic.json",
+      JSON.stringify(diagnostic, null, 2),
+    );
+    console.error(
+      "FAIL  QA login: " +
+        authStage +
+        " " +
+        error.name +
+        "; see private diagnostic",
+    );
+  } else console.error("FAIL  " + message);
   process.exitCode = 1;
 } finally {
   persist();
