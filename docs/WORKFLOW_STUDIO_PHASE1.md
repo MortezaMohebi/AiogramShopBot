@@ -61,6 +61,18 @@ schemas, defaults, form descriptors, port names and action-contract metadata.
 Platform overrides are partial copy/media overrides. Topology, variables,
 buttons, conditions and action bindings remain shared across platforms.
 
+| Family | Initial node types |
+| --- | --- |
+| Control | `start`, `end`, `cancel`, `condition`, `switch`, `wait_for_input`, `delay`, `go_to_step` |
+| Messages | `send_text`, `send_photo`, `send_video`, `send_document`, `send_media_group` |
+| Interaction | `show_buttons`, `confirm`, `ask_text`, `ask_number`, `ask_phone`, `ask_email`, `ask_photo`, `ask_document`, `ask_choice` |
+| Commerce | `show_categories`, `show_products`, `show_product_details`, `select_product`, `select_quantity`, `add_to_cart`, `view_cart`, `start_checkout`, `show_order_status` |
+| Requests | `create_support_request`, `create_return_request`, `request_admin_approval`, `notify_admin`, `request_wholesale_access` |
+
+All of these are draft/simulation nodes in this phase. Commerce/request results
+are explicitly synthetic; unavailable executors and media adapters remain visible
+as capability findings rather than working live actions.
+
 Validation reports structural/semantic graph errors separately from unavailable
 future executors. Incomplete drafts are editable and can be saved; invalid raw
 shapes, secrets and foreign Store/Bot/media references are rejected. Simulation
@@ -96,6 +108,22 @@ Workflow Web Locks additionally serialize its own challenge/dispatch sequence.
 | `POST /workflows/UUID/duplicate` | Distinct same-Store identity; receipt binds the source |
 | `POST /workflows/UUID/archive`, `/restore` | Lifecycle CAS; restore appends a new draft |
 | `POST /workflows/UUID/publish` | Always HTTP 409 `workflow_runtime_unavailable` |
+
+The executable request contracts are
+[`shop_workflow_requests.py`](../services/shop_workflow_requests.py); shared
+response interfaces are in
+[`types.ts`](../dashboard-next/lib/workflows/types.ts). In particular, creation
+uses `id`, `operation_id`, `key`, `name`, `description` and `template`; saving uses
+`operation_id`, `expected_revision`, metadata, `definition` and `layout`; restoring
+uses `operation_id`, `expected_revision` and the source `revision`. Simulation
+uses a pinned `revision`, owned `bot_id`, `platform`, synthetic `context` and
+bounded `events`.
+
+Malformed typed requests return 422; an incomplete but well-shaped graph is saved
+with validation findings. Reads outside visible Stores return 404, unauthorized
+roles return 403, wrong-current-Store or revision conflicts return 409, and the
+streamed body limit returns 413. None of these failures authorizes an automatic
+mutation retry with a new operation ID.
 
 `ShopWorkflow` stores the head; `ShopWorkflowRevision` stores append-only canonical
 snapshots and integrity/request hashes. Successful mutations append the revision
@@ -153,6 +181,20 @@ Next dev instance on port 3002. Keep private environment files out of Git.
 
 The PostgreSQL runner uses real separate AsyncSessions and a two-writer barrier;
 its scoped signed HTTP session is revoked in `finally`. The browser runner uses
-a worktree-owned `agent-browser` session, normal password/MFA authentication,
-synthetic fixtures and the running Next MCP endpoint. See the acceptance report
-for the exact commands, observed results, limitations and reviewed source head.
+an isolated Playwright context, normal password/MFA authentication, synthetic
+fixtures and the running Next MCP endpoint. Playwright 1.64.1 is a QA-only tool;
+it adds no dashboard runtime dependency. Install it in an isolated tools prefix:
+
+```bash
+npm --prefix /tmp/workflow-qa-browser install --save-exact playwright@1.64.1
+PLAYWRIGHT_BROWSERS_PATH=/tmp/workflow-qa-browsers \
+  /tmp/workflow-qa-browser/node_modules/.bin/playwright install chromium
+PLAYWRIGHT_BROWSERS_PATH=/tmp/workflow-qa-browsers \
+WORKFLOW_PLAYWRIGHT_MODULE=/tmp/workflow-qa-browser/node_modules/playwright-core/index.mjs \
+WORKFLOW_BROWSER_STAGE=all node scripts/workflow_studio_browser.mjs
+```
+
+The browser permits requests only to the isolated localhost Next origin. Network
+recovery tests abort a save; they never fabricate a successful save response.
+See the acceptance report for the exact commands, observed results, limitations
+and reviewed source head.

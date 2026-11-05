@@ -124,6 +124,8 @@ More Telegram bot GIF demos, admin flow examples, and screenshots are available 
 - [Cryptocurrency forwarding](docs.md#cryptocurrency-forwarding)
 - [SQLAdmin panel](docs.md#sqladmin-web-admin-panel)
 - [Multibot mode](docs.md#multibot-experimental)
+- [Bot Experience Studio — Phase 1](docs/WORKFLOW_STUDIO_PHASE1.md)
+- [Workflow Studio acceptance evidence](docs/qa/WORKFLOW_STUDIO_PHASE1_ACCEPTANCE.md)
 
 ## 🌍 Community
 
