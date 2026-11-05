@@ -132,6 +132,9 @@ async def entry(db, context, event, *, origin="customer"):
         kind, key = origin if origin != "internal" else "internal", event.text
     if kind is None:
         return None
+    # Routing reads a committed pointer; the resulting Run pins its immutable
+    # publication. Locking this parent before the customer slot would invert
+    # the FK key-share/slot lock order after the durable Inbox commit.
     return await db.scalar(
         select(RuntimeBinding)
         .where(
@@ -142,7 +145,6 @@ async def entry(db, context, event, *, origin="customer"):
             RuntimeBinding.enabled.is_(True),
         )
         .order_by(RuntimeBinding.priority.desc(), RuntimeBinding.id)
-        .with_for_update()
     )
 
 
