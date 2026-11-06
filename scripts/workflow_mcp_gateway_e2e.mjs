@@ -162,10 +162,15 @@ async function enroll(scopes) {
 async function gatewayLayout(phase) {
   for (const width of [390, 1280]) {
     await gatewayPage.setViewportSize({ width, height: 900 });
+    await gatewayPage.getByRole("heading").first().scrollIntoViewIfNeeded();
     const metrics = await gatewayPage.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth,
       direction: getComputedStyle(document.documentElement).direction }));
     assert.equal(metrics.direction, "rtl");assert(metrics.content <= metrics.width + 1);
-    await gatewayPage.screenshot({ path: output + "/gateway-" + phase + "-dark-" + width + ".png", fullPage: true });
+    await gatewayPage.screenshot({ path: output + "/gateway-" + phase + "-dark-" + width + ".png", fullPage: false });
+    if (phase === "approval") {
+      await gatewayPage.getByRole("button", { name: "بله، این درخواست را تأیید می‌کنم", exact: true }).scrollIntoViewIfNeeded();
+      await gatewayPage.screenshot({ path: output + "/gateway-approval-choices-dark-" + width + ".png", fullPage: false });
+    }
   }
 }
 

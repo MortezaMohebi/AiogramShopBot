@@ -77,7 +77,7 @@
   "database": "PostgreSQL",
   "fake_providers_only": true,
   "controlled_human_decisions": 1,
-  "native_commit": "e3b8bc7097617786799b4a84e19740c21d9a2f9c",
+  "native_commit": "0ab197c85bf92a9d7aed0d0c151d54b6fa5b53aa",
   "gateway_manifest_sha256": "34739bad7f67a542740fc8511641f34e6a87ccc7cc4310e767743ee56413da00",
   "protocol": "2026-07-28",
   "discovered": {
@@ -88,7 +88,7 @@
     "tool": "context.get_profile",
     "code": "CONNECTION_NOT_FOUND",
     "details": {
-      "correlation_id": "7ca83ca8-0fe1-4da8-9504-cf90957b0278"
+      "correlation_id": "af56005d-2728-4a80-9134-3afd431f5658"
     }
   },
   "inspector_version": "2.14.0",
@@ -97,9 +97,9 @@
     "dispatch_claim": true,
     "crashed_publication_leases": 1
   },
-  "operation_id": "dbd437a6-3df4-45a5-a5a0-adc9db756116",
-  "publication_id": "e017f8ae-0df3-45af-afb2-5795ee4ffc5e",
-  "workflow_id": "120167cf-7ccf-4644-95b4-4f19ce1ac59e",
+  "operation_id": "49dddf36-0cbb-4a76-81ee-ad85ed36224a",
+  "publication_id": "dc736ed0-b435-4718-9fce-0ff664f0e1d5",
+  "workflow_id": "001ea6b7-ace2-4843-8fa8-6fec060fa928",
   "runtime": {
     "status": "PASS",
     "platforms": [
