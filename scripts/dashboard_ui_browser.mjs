@@ -64,6 +64,7 @@ asyncio.run(main())`, fixture));
 
 let browser, context, page;
 const errors = [];
+evidence.network = [];
 const fixture = JSON.parse(docker('from pathlib import Path\nprint(Path("/qa/workflow-mcp-fixture.json").read_text())'));
 const sizes = [1440, 1024, 768, 390, 320];
 const theme = async (value) => {
@@ -97,7 +98,9 @@ try {
   await context.route("**/*", (route) => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   page = await context.newPage();page.setDefaultTimeout(25000);page.setDefaultNavigationTimeout(60000);
   page.setDefaultTimeout(25000);
-  page.on("pageerror", () => errors.push("pageerror"));
+  page.on("pageerror", (error) => errors.push(String(error.message).slice(0,180)));
+  page.on("requestfailed", (request) => evidence.network.push({path:new URL(request.url()).pathname, failure:request.failure()?.errorText}));
+  page.on("response", (response) => { const path=new URL(response.url()).pathname; if(path.startsWith("/api/auth/")) evidence.network.push({path,status:response.status()}); });
   await check("focused login has no technical or marketing filler", async () => {
     await page.goto(base + "/dashboard", {waitUntil:"domcontentloaded"});assert.equal(new URL(page.url()).pathname,"/login");
     await page.getByRole("heading", {name:"ورود به پنل مدیریت",exact:true}).waitFor();
@@ -122,15 +125,16 @@ try {
     assert.equal(await page.locator("#password").getAttribute("type"),"text");
     await page.getByRole("button",{name:"مخفی‌کردن رمز عبور",exact:true}).click();
     await page.getByRole("button",{name:"ورود",exact:true}).click();
-    await page.getByRole("alert").getByText("ورود انجام نشد",{exact:true}).waitFor();
-    assert(await page.getByRole("alert").evaluate((node)=>node===document.activeElement));
+    await page.locator("main").getByRole("alert").getByText("ورود انجام نشد",{exact:true}).waitFor();
+    assert(await page.locator("main").getByRole("alert").evaluate((node)=>node===document.activeElement));
     assert.equal(await page.locator("#password").inputValue(),"");
   });
   await check("real password and MFA login",async () => {
     await page.getByLabel("رمز عبور",{exact:true}).fill(env.LIVE_ADMIN_PASSWORD);
     await page.getByRole("button",{name:"ورود",exact:true}).click();
-    await page.getByRole("alert").getByText("تأیید دومرحله‌ای لازم است",{exact:true}).waitFor();
-    await page.getByLabel("کد تأیید دومرحله‌ای",{exact:true}).fill(await freshOtp());
+    await page.locator("main").getByRole("alert").getByText("تأیید دومرحله‌ای لازم است",{exact:true}).waitFor();
+    const proofStart=Date.now();const proof=await freshOtp();evidence.proof_duration_ms=Date.now()-proofStart;
+    await page.getByLabel("کد تأیید دومرحله‌ای",{exact:true}).fill(proof);
     await page.getByRole("button",{name:"ورود",exact:true}).click();await page.waitForURL("**/dashboard");
   });
   await check("store dialog traps focus, Escape closes and restores trigger focus",async () => {
@@ -185,12 +189,12 @@ try {
     await page.setViewportSize({width:1280,height:900});await loggedOut();await page.goto(base+"/settings");assert.equal(new URL(page.url()).pathname,"/login");
   });
   await check("expired-session message remains clear",async () => {
-    await page.goto(base+"/login?expired=1");await page.getByRole("alert").getByText("نشست شما پایان یافته است",{exact:true}).waitFor();
+    await page.goto(base+"/login?expired=1");await page.locator("main").getByRole("alert").getByText("نشست شما پایان یافته است",{exact:true}).waitFor();
   });
   await check("no browser runtime exceptions",async()=>assert.deepEqual(errors,[]));
   evidence.status="PASS";persist();
 } catch(error) {
-  evidence.status="FAIL";evidence.failure={name:error.name,message:String(error.message).slice(0,400),url:page ? new URL(page.url()).pathname : null};persist();
+  evidence.status="FAIL";evidence.ui_issue=page ? await page.locator("#login-error").innerText().catch(()=>null) : null;evidence.failure={name:error.name,message:String(error.message).slice(0,400),url:page ? new URL(page.url()).pathname : null};persist();
   if(page) await shot("failure").catch(()=>{});console.error("FAIL "+JSON.stringify(evidence.failure));process.exitCode=1;
 } finally {
   if(page) await loggedOut().catch(()=>{});

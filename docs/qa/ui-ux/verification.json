@@ -1,0 +1,42 @@
+{
+  "status": "BLOCKED_BROWSER_ACCEPTANCE",
+  "source_routes_audited": 54,
+  "local": {
+    "unit": {
+      "pass": 236,
+      "fail": 0,
+      "skipped": 0
+    },
+    "lint": "PASS",
+    "build": "PASS",
+    "typecheck": "PASS"
+  },
+  "observed_codespace": {
+    "auth_backend_pass": 31,
+    "login_browser_checks_passed": 3,
+    "login_widths": [
+      1440,
+      1024,
+      768,
+      390,
+      320
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "login_axe": {
+      "passes": 33,
+      "violations": 0,
+      "incomplete": 0
+    },
+    "next_compilation_issues": 0,
+    "next_config_errors": 0,
+    "next_session_errors": 0,
+    "authenticated_route_checks_accepted": false,
+    "successful_mfa_login_accepted": false
+  },
+  "blocker": "Automatic approval review denied observing the Codespace origin; final instrumented run and QA cleanup remain unverified.",
+  "production_deployed": false,
+  "live_provider_operations": false
+}

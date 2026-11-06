@@ -18,10 +18,12 @@
 
 ## Tasks
 - [x] Inventory routes/components and inspect the eight named official login pages (JS-only results require browser follow-up).
-- [ ] Simplify login and shared controls, shell and navigation; verify login/error/keyboard behavior.
-- [ ] Audit and fix commerce routes and domain controls.
-- [ ] Audit and fix settings, bots, stores, account and staff routes.
-- [ ] Audit and fix Studio, workflows, runtime and MCP controls.
+- [x] Simplify login and shared controls, shell and navigation; verify login/error/keyboard behavior.
+- [x] Audit and fix commerce routes and domain controls.
+- [x] Audit and fix settings, bots, stores, account and staff routes.
+- [x] Audit and fix Studio, workflows, runtime and MCP controls.
 - [ ] Run unit/type/lint/build checks; exercise changed routes in isolated PostgreSQL QA and browser.
 - [ ] Review screenshots at desktop/laptop/tablet/mobile sizes in both themes; debug and retest.
 - [ ] Independent final review, evidence report and reviewable branch.
+
+Local unit/type/lint/build verification and independent source review are complete. Browser acceptance and QA cleanup remain blocked by automatic browser-origin approval review; see `docs/qa/UI_UX_ACCEPTANCE.md`.

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 /**
  * Global route-level error boundary.
@@ -23,7 +23,7 @@ export default function ApplicationError({
       <Card className="w-full">
         <CardHeader className="space-y-3">
           <AlertTriangle aria-hidden="true" className="size-9 text-destructive" />
-          <CardTitle className="text-xl">بارگذاری این صفحه با مشکل روبه‌رو شد</CardTitle>
+          <h1 className="text-xl font-bold">بارگذاری این صفحه با مشکل روبه‌رو شد</h1>
         </CardHeader>
         <CardContent className="space-y-5">
           <p role="alert" className="text-sm leading-7 text-muted-foreground">

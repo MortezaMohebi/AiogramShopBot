@@ -197,7 +197,7 @@ async function logoutBrowsers() {
     await nativePage.setViewportSize({ width: 1280, height: 900 });
     await nativePage.goto(nativeOrigin + "/dashboard");
     if (new URL(nativePage.url()).pathname !== "/login") {
-      await nativePage.getByRole("button", { name: "خروج امن", exact: true }).click({ timeout: 10000 });
+      await nativePage.getByRole("button", { name: "خروج", exact: true }).click({ timeout: 10000 });
       await nativePage.waitForURL("**/login", { timeout: 10000 });
     }
   }
@@ -262,8 +262,8 @@ try {
     await nativePage.goto(nativeOrigin + "/studio/mcp");
     await nativePage.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
     await nativePage.getByLabel("رمز عبور", { exact: true }).fill(env.LIVE_ADMIN_PASSWORD);
-    await nativePage.getByLabel("کد احراز هویت یا بازیابی (اگر فعال است)", { exact: true }).fill(await freshOtp());
-    await nativePage.getByRole("button", { name: "ورود امن", exact: true }).click();await nativePage.waitForURL("**/dashboard");
+    await nativePage.getByLabel("کد تأیید دومرحله‌ای", { exact: true }).fill(await freshOtp());
+    await nativePage.getByRole("button", { name: "ورود", exact: true }).click();await nativePage.waitForURL("**/dashboard");
     await gatewayPage.goto(gatewayOrigin + "/dashboard/login");await gatewayPage.getByLabel("توکن توسعه").fill(token);
     await gatewayPage.getByRole("button", { name: "ادامه", exact: true }).click();await gatewayPage.waitForURL(gatewayOrigin + "/dashboard");
     await gatewayPage.getByRole("button", { name: "خروج", exact: true }).waitFor();

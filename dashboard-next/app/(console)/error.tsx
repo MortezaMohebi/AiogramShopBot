@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 /**
  * Guarded dashboard data/error fallback.
@@ -25,7 +25,7 @@ export default function DashboardError({
           <div className="mb-4 grid size-12 place-items-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300">
             <AlertTriangle aria-hidden="true" className="size-6" />
           </div>
-          <CardTitle>داده‌های داشبورد بارگذاری نشدند</CardTitle>
+          <h1 className="text-xl font-bold">داده‌های داشبورد بارگذاری نشدند</h1>
         </CardHeader>
         <CardContent className="space-y-5">
           <p role="alert" className="text-sm leading-7 text-muted-foreground">

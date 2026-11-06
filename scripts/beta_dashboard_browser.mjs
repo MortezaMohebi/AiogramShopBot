@@ -108,7 +108,7 @@ try {
   ab("fill", reference(snapshot, 'textbox "نام کاربری"'), "shopadmin");
   ab("fill", reference(snapshot, 'textbox "رمز عبور"'), values.LIVE_ADMIN_PASSWORD);
   ab("fill", reference(snapshot, 'textbox "کد احراز هویت'), otp());
-  ab("click", reference(snapshot, 'button "ورود امن"'));
+  ab("click", reference(snapshot, 'button "ورود"'));
   try { ab("wait", "--url", "**/dashboard"); }
   catch {
     writeFileSync(`${output}/login-error.txt`, ab("snapshot", "-i"));

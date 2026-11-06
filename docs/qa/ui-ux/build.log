@@ -1,0 +1,105 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> dual-messenger-shop-admin@0.1.0 build
+> next build
+
+▲ Next.js 16.4.3 (Turbopack)
+✓ Running next.config.ts took 205ms
+- Experiments (use with caution):
+  · serverActions
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.2s
+  Running TypeScript ...
+  Finished TypeScript in 3.5s ...
+  Collecting page data using 8 workers ...
+  Generating static pages using 8 workers (0/49) ...
+  Generating static pages using 8 workers (12/49) 
+  Generating static pages using 8 workers (24/49) 
+  Generating static pages using 8 workers (36/49) 
+✓ Generating static pages using 8 workers (49/49) in 475ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /account
+├ ƒ /account/mcp
+├ ○ /activate
+├ ƒ /api/account/[action]
+├ ƒ /api/admin/actions/[[...path]]
+├ ƒ /api/admin/bot-connections
+├ ƒ /api/admin/bot-connections/mode-request
+├ ƒ /api/admin/categories
+├ ƒ /api/admin/customers/[id]/export
+├ ƒ /api/admin/data-models/[model]/[action]
+├ ƒ /api/admin/data-models/[model]/import
+├ ƒ /api/admin/digital-assets/[id]
+├ ƒ /api/admin/mcp/[[...path]]
+├ ƒ /api/admin/preview/[kind]/[id]
+├ ƒ /api/admin/product-media/[id]
+├ ƒ /api/admin/products
+├ ƒ /api/admin/shop-settings
+├ ƒ /api/admin/telegram-transport/[operation]
+├ ƒ /api/admin/upload
+├ ƒ /api/admin/workflow-runtime/[[...path]]
+├ ƒ /api/admin/workflows/[[...path]]
+├ ƒ /api/auth/challenge
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/redeem
+├ ƒ /audit
+├ ƒ /bot-connections
+├ ƒ /bots
+├ ƒ /bots/[id]
+├ ƒ /campaigns
+├ ƒ /campaigns/[id]
+├ ƒ /campaigns/new
+├ ƒ /categories
+├ ƒ /coupons
+├ ƒ /customer-notifications
+├ ƒ /customers
+├ ƒ /customers/[id]
+├ ƒ /customers/retention
+├ ƒ /dashboard
+├ ƒ /data-models/[model]
+├ ƒ /digital-deliveries
+├ ƒ /finance
+├ ƒ /fulfillments
+├ ƒ /login
+├ ƒ /media
+├ ƒ /orders
+├ ƒ /payment-accounts
+├ ƒ /permissions
+├ ƒ /products
+├ ƒ /products/[id]/digital
+├ ƒ /products/[id]/edit
+├ ƒ /products/new
+├ ƒ /relay-workers
+├ ƒ /reports
+├ ƒ /reviews
+├ ƒ /settings
+├ ƒ /shipping
+├ ƒ /staff
+├ ƒ /staff/[id]/stores
+├ ƒ /store-customers
+├ ƒ /store-customers/[id]
+├ ƒ /stores
+├ ƒ /studio/actions
+├ ƒ /studio/mcp
+├ ƒ /studio/runtime
+├ ƒ /studio/runtime/runs/[id]
+├ ƒ /studio/workflows
+├ ƒ /studio/workflows/[id]
+├ ƒ /studio/workflows/[id]/preview
+├ ƒ /studio/workflows/[id]/settings
+├ ƒ /studio/workflows/[id]/versions
+├ ƒ /studio/workflows/new
+├ ƒ /support-tickets
+├ ƒ /support-tickets/[id]
+└ ƒ /uoms
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
