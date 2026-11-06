@@ -8,7 +8,7 @@ import json
 
 from sqlalchemy import select
 
-from models.shop_mcp import McpRequest
+from models.shop_mcp import McpChangeSet, McpChangeSetRevision, McpRequest
 from models.shop_workflow import ShopWorkflowRevision
 from services import shop_workflows as workflows
 from services.shop_mcp.contracts import McpRejected
@@ -86,6 +86,9 @@ async def recover(db, principal, row: McpRequest):
             workflow_id=record.workflow_id,
             operation_id=row.id,
         )
+    proposal = await _proposal_receipt(db, principal, row)
+    if proposal is not None:
+        return proposal
     if row.result_json is None:
         return None
     reference = json.loads(row.result_json)
@@ -121,6 +124,52 @@ async def recover(db, principal, row: McpRequest):
             revision=reference["revision"],
         )
     raise McpRejected("mcp_operation_unreadable", 503)
+
+
+async def _proposal_receipt(db, principal, row):
+    """Recover the immutable proposal version committed with this journal.
+
+    Proposal services commit before the dispatcher finalizes its reference.
+    The operation UUID on an immutable version, or a frozen apply reference,
+    identifies that effect without applying it again or reading a newer edit.
+    """
+    arguments = json.loads(row.arguments_json)
+    record = await db.scalar(
+        select(McpChangeSetRevision)
+        .join(McpChangeSet)
+        .where(
+            McpChangeSetRevision.operation_id == row.id,
+            McpChangeSet.grant_id == row.grant_id,
+            McpChangeSet.store_id == row.store_id,
+        )
+    )
+    if record is not None:
+        identity, version = record.change_set_id, record.version
+    elif row.tool == "changes.apply":
+        identity = await db.scalar(
+            select(McpChangeSet.id).where(
+                McpChangeSet.id == arguments["change_set_id"],
+                McpChangeSet.grant_id == row.grant_id,
+                McpChangeSet.store_id == row.store_id,
+                McpChangeSet.effect_operation_id == row.id,
+            )
+        )
+        version = arguments["expected_version"]
+    else:
+        return None
+    if identity is None:
+        return None
+    from services.shop_mcp.changes import get, owned
+
+    proposal = await owned(db, principal, identity)
+    result = await get(db, principal, identity, version)
+    pending = proposal.effect_operation_id == row.id and row.tool not in {
+        "changes.create",
+        "changes.update",
+    }
+    return result | (
+        {"requires_approval": True, "change_set_id": identity} if pending else {}
+    )
 
 
 async def finish(db, row, result: dict) -> dict:
@@ -160,9 +209,12 @@ async def status(db, principal, operation_id: str) -> dict:
         return {"operation_id": operation_id, "status": "not_observed"}
     result = await recover(db, principal, row)
     state = row.state
-    if result is not None and (
+    if result is not None and result.get("requires_approval"):
+        state = "awaiting_gateway"
+    elif result is not None and (
         "native_receipt" in result
-        or "revision" in result and not result.get("requires_approval")
+        or "revision" in result
+        or "version" in result
     ):
         state = "succeeded"
     return {
