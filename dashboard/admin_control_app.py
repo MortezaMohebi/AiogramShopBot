@@ -42,6 +42,9 @@ from dashboard.shop_customer_experience_api import router as customer_experience
 from dashboard.shop_workflow_api import router as workflow_router
 from dashboard.shop_action_api import router as action_router
 from dashboard.shop_runtime_api import router as runtime_router
+from dashboard.mcp_api import router as mcp_router
+from dashboard.shop_mcp_admin_api import router as mcp_admin_router
+from dashboard.shop_mcp_admin_api import account_router as mcp_account_router
 from services.shop_runtime.contracts import RuntimeRejected
 from dashboard.shop_digital_api import router as digital_router
 from dashboard.multibot_webhook import router as multi_webhook_router
@@ -106,6 +109,7 @@ def permission_for(path: str, method: str) -> str | None:
         "fulfillments": "orders.read" if method == "GET" else "orders.manage",
         "customer-notifications": "bots.read",
         "actions": "workflows.read",
+        "mcp": "workflows.read",
         "workflow-runtime": ("workflows.read" if method == "GET" else "workflows.publish" if "/publications/" in path else "workflows.runtime.manage"),
         "workflows": (
             "workflows.read"
@@ -309,6 +313,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "workflows",
                         "actions",
                         "workflow-runtime",
+                        "mcp",
                     }
                     # Read-only legacy views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
@@ -342,6 +347,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         and resource
                         not in {
                             "store-context",
+                            "mcp",
                         }
                     ):
                         scope.require(
@@ -391,6 +397,9 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(workflow_router)
     app.include_router(action_router)
     app.include_router(runtime_router)
+    app.include_router(mcp_router)
+    app.include_router(mcp_admin_router)
+    app.include_router(mcp_account_router)
     @app.exception_handler(RuntimeRejected)
     async def runtime_rejected(_request, error):
         return JSONResponse({"detail": error.code}, status_code=error.status, headers={"Cache-Control": "no-store"})

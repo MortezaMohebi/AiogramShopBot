@@ -1,0 +1,16 @@
+{
+  "gateway_commit": "a28a91fa25d4049edc460261dd41ef6207a97962",
+  "native_api_commit": "b14312601dc03b926125cf7c5873275e6cbb7995",
+  "source_suite": {
+    "pass": 563,
+    "fail": 0,
+    "skip": 0,
+    "duration_ms": 197383.780665
+  },
+  "provider_suite": {
+    "pass": 38,
+    "fail": 0
+  },
+  "boundary": "Actual official MCP SDK HTTP and real SQL; controlled native upstream. Cross-service PostgreSQL and browser acceptance remain pending.",
+  "deployment": "OFF; no merge, live providers or GitHub Actions enablement."
+}

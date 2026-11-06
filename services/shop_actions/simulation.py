@@ -55,6 +55,10 @@ def simulate_action(
         }
     elif key == "catalog.search_products":
         output = {"items": [product], "total": 1, "page": 1, "has_more": False}
+        if version == "2.0.0":
+            from services.shop_actions.catalog_projection import search_display
+
+            output["display_text"] = search_display(output)
     elif key == "catalog.get_product":
         output = product
     elif key == "catalog.get_price_uom":

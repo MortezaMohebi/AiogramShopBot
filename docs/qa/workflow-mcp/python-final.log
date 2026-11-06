@@ -1,0 +1,33 @@
+........................................................................ [  5%]
+........................................................................ [ 11%]
+........................................................................ [ 17%]
+........................................................................ [ 22%]
+........................................................................ [ 28%]
+........................................................................ [ 34%]
+........................................................................ [ 39%]
+........................................................................ [ 45%]
+........................................................................ [ 51%]
+........................................................................ [ 57%]
+........................................................................ [ 62%]
+........................................................................ [ 68%]
+........................................................................ [ 74%]
+........................................................................ [ 79%]
+........................................................................ [ 85%]
+........................................................................ [ 91%]
+........................................................................ [ 96%]
+.......................................                                  [100%]
+=============================== warnings summary ===============================
+models/shop_content.py:203
+  /workspace/scratch/3348955ffaf6/AiogramShopBot-workflow-builder/models/shop_content.py:203: PytestCollectionWarning: cannot collect test class 'Testimonial' because it has a __init__ constructor (from: tests/test_multibot_catalog_acl_offline.py)
+    class Testimonial(Base):
+
+dashboard/next_operations.py:367
+  /workspace/scratch/3348955ffaf6/AiogramShopBot-workflow-builder/dashboard/next_operations.py:367: PytestCollectionWarning: cannot collect test class 'TestimonialPatch' because it has a __init__ constructor (from: tests/test_next_admin_operations_offline.py)
+    class TestimonialPatch(BaseModel):
+
+models/shop_content.py:203
+  /workspace/scratch/3348955ffaf6/AiogramShopBot-workflow-builder/models/shop_content.py:203: PytestCollectionWarning: cannot collect test class 'Testimonial' because it has a __init__ constructor (from: tests/test_shop_channel_catalog.py)
+    class Testimonial(Base):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1263 passed, 3 warnings in 165.97s (0:02:45)

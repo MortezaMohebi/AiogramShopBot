@@ -1,0 +1,78 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @aiwb/saas-gateway@0.8.56 test:providers
+> npm run build && node --test --test-concurrency=2 test/provider-approvals.test.mjs test/provider-proof.test.mjs test/provider-recovery.test.mjs test/bot-workflow-client.test.mjs test/bot-workflow-mcp.test.mjs test/bot-workflow-approvals.test.mjs test/bot-workflow-config.test.mjs test/provider-usage.test.mjs test/provider-enrollment.test.mjs test/provider-enrollment-dashboard.test.mjs test/provider-limits.test.mjs
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> @aiwb/saas-gateway@0.8.56 build
+> tsc -p tsconfig.json
+
+✔ MCP App review includes the complete native proposal and uses the shared decision (1831.665495ms)
+✔ native revocation blocks new App disclosure and a previously issued decision capability (1450.922388ms)
+✔ dashboard renders the complete proposal as escaped data before the human choices (1397.585722ms)
+✔ native revocation blocks dashboard disclosure and submission of an older form (1518.111325ms)
+✔ a different public client and changed evidence cannot borrow a pending approval (1683.444639ms)
+✔ native calls bind exact bytes and current resolved identity without OAuth forwarding (37.23563ms)
+✔ human Studio links use a separate configured public origin without changing private calls (3.964518ms)
+✔ models cannot choose native routes, origins or caller authority (1.144385ms)
+✔ native redirects, malformed responses and excess output remain controlled uncertainty (9.68339ms)
+✔ review validates raw artifact hash and identity before exposing the same parsed evidence (11.276585ms)
+✔ the disabled provider does not make WordPress startup depend on native catalog files (445.598565ms)
+✔ pending enrollment uses only its signed pairing routes and cannot call business tools (9.464264ms)
+✔ bot provider configuration is optional, default off, and never starts a worker while loading (65.223484ms)
+✔ invalid flags, local profiles, reused purpose keys and arbitrary private origins fail closed (3.99917ms)
+✔ authenticated SDK discovery registers separate typed bot tools, resources and prompts (3812.180672ms)
+✔ OAuth read scope removes write tools and actual SDK rejects forged or invalid inputs (3538.985475ms)
+✔ resources and prompts reach only fixed signed native routes with resolved ownership (2424.920076ms)
+✔ a malformed native success remains uncertain instead of claiming a saved draft (1850.853771ms)
+✔ a gateway workspace downgrade stops future native draft writes (1678.327667ms)
+✔ the typed provider store lists only the authenticated client connections and preserves an exact operation receipt (2361.114151ms)
+✔ a native provider connection requires a dashboard manager and never becomes a WordPress credential (1313.120301ms)
+✔ bot publication uses one existing operation and requester-only shared dashboard approval (1697.440853ms)
+✔ only the current dispatch fence may record a provider outcome and history survives revocation (1417.27892ms)
+✔ provider revocation stops an unclaimed approval and reports a previously claimed dispatch as in flight (1108.339408ms)
+✔ a provider request expires before claiming and altered presentation cannot replace the reviewed intent (1204.248932ms)
+✔ adding a provider does not hide an existing WordPress review behind an unpageable list cutoff (2110.74978ms)
+✔ human enrollment stays pending through the dashboard until native confirmation is verified (1738.79549ms)
+✔ CSRF and unrelated gateway managers cannot create or inspect this requester connection (1299.381563ms)
+✔ an unavailable native reply exposes the same recovery ID without claiming enrollment succeeded (1358.000489ms)
+✔ a signed pairing stays pending until the same native grant is confirmed (1668.321851ms)
+✔ unknown native response preserves the same pending identity and exact retry (1049.243998ms)
+✔ an unrelated or malformed successful grant cannot activate a connection (1284.58156ms)
+✔ connection management is requester-only and never accepts an arbitrary installation origin (1010.111059ms)
+✔ a confirmed native grant remains recoverable after the gateway pairing window (1112.905639ms)
+✔ same-ID synchronization repairs a prepare that never reached Native without granting consent (1033.155041ms)
+✔ an expired missing pairing or an unavailable status is never silently recreated (2215.636207ms)
+✔ user capacity spans separate bot connections (1628.521167ms)
+✔ Store capacity is independent of connection capacity and rejects an unconsented Store (942.065184ms)
+✔ simulation, validation and publication have independent Store concurrency ceilings (1192.487012ms)
+✔ actual public preparation and Change Set calls cannot bypass their category ceiling (1101.464116ms)
+✔ user rate windows and pending approval limits fail with structured retry guidance (1210.861338ms)
+✔ the gateway emits the exact versioned Ed25519 wire fixture accepted by Python (5.995543ms)
+✔ the signer refuses invented staff authority, unknown scopes and arbitrary dispatch targets (2.385204ms)
+✔ independent request nonces do not turn the domain operation ID into a replayable credential (1.168781ms)
+✔ provider signing requires Ed25519 and a pinned HTTPS issuer (46.629686ms)
+✔ the configured issuer remains exact across the Python and Node trust boundary (1.066799ms)
+✔ human approval signing emits the exact native evidence-bound proof fixture (2.347017ms)
+✔ approval automatically dispatches exact work without another model call (1591.113739ms)
+✔ a lost successful response reconciles the native receipt instead of sending twice (1054.46126ms)
+✔ a timeout with no receipt stays uncertain and a later receipt finishes after revocation (1299.379268ms)
+✔ worker restart reconciles an expired dispatch claim before considering a retry (1060.697609ms)
+✔ revocation before claiming prevents native dispatch (1159.334183ms)
+✔ expired approval permits receipt reconciliation but no new commit (1055.484479ms)
+✔ competing worker ticks cannot claim the same approved effect twice (1115.360084ms)
+✔ an altered native review is never signed or executed (914.492237ms)
+✔ a definitive fresh review rejection finishes without blocking later approved work (1569.328153ms)
+✔ a recovered dispatch stays uncertain on review rejection because an earlier commit may exist (1018.778987ms)
+✔ native tool calls reserve the existing quota and record only safe operational facts (1548.506255ms)
+✔ a hard workspace quota blocks the native call before its private request (936.339816ms)
+✔ active-work capacity and circuit recovery use the same shared gateway policy (1232.658699ms)
+ℹ tests 60
+ℹ suites 0
+ℹ pass 60
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39036.411758

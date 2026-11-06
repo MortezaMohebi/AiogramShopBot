@@ -75,9 +75,18 @@ async def test_real_catalog_lists_versioned_policies_and_context(action_app):
     response = await action_app.request("GET", f"/actions?bot_id={BOT_A}")
     assert response.status_code == 200, response.text
     data = response.json()
-    assert data["total"] == 19 and data["runtime_available"] is False
+    assert data["total"] == 20 and data["runtime_available"] is False
+    versions = {
+        item["version"]
+        for item in data["items"]
+        if item["key"] == "catalog.search_products"
+    }
+    assert versions == {"1.0.0", "2.0.0"}
     search = next(
-        item for item in data["items"] if item["key"] == "catalog.search_products"
+        item
+        for item in data["items"]
+        if item["key"] == "catalog.search_products"
+        and item["version"] == "1.0.0"
     )
     assert search["version"] == "1.0.0" and search["side_effect"] == "read_only"
     assert search["availability"]["available"] and search["can_dry_run"]

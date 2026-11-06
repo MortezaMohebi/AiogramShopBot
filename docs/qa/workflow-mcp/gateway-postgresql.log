@@ -1,0 +1,24 @@
+PASS  separate real PostgreSQL database and restricted gateway role
+PASS  normal independent Native MFA and gateway dashboard login
+PASS  human enrollment verifies exact Native consent before activation
+PASS  authenticated MCP tool/resource/prompt and real catalog discovery
+EXPECTED_REJECTION {"tool":"bots.list","code":"CONNECTION_NOT_FOUND","details":{"correlation_id":"666e75c3-e5d8-49a9-9718-0910ff83d4c5"}}
+PASS  private signature replay and foreign Store requests fail closed
+PASS  official Inspector performs an authenticated native profile call
+EXPECTED_REJECTION {"tool":"workflow.create_draft","code":"BOT_NATIVE_REJECTED","details":{"http_status":409,"native_code":"mcp_operation_conflict","correlation_id":"a16f9e19-24b8-42aa-814e-d856b0585d63"}}
+PASS  MCP draft retry, altered retry and concurrent revision conflict
+PASS  exact Change Set and product inquiry graph through real MCP
+EXPECTED_REJECTION {"tool":"workflow.prepare_publish","code":"BOT_NATIVE_REJECTED","details":{"http_status":422,"native_code":"runtime_publication_not_ready","correlation_id":"91286b54-b6de-4d9c-a98f-1ff32b003cdb"}}
+PASS  Runtime incompatibility is rejected and corrected through typed MCP
+PASS  saved inquiry simulates on Telegram and Bale without commerce effects
+PASS  real PostgreSQL prevents proposal tampering and unrelated human review
+PASS  one controlled gateway decision automatically publishes after a worker crash
+PASS  Fake Telegram/Bale Runtime consumes the actual published inquiry
+PASS  public Runtime inspection excludes customer answers
+EXPECTED_REJECTION {"tool":"context.get_profile","code":"BOT_NATIVE_REJECTED","details":{"http_status":401,"native_code":"mcp_grant_invalid","correlation_id":"c7e6dcab-156f-421b-90cf-576bb67d23a4"}}
+EXPECTED_REJECTION {"tool":"context.get_profile","code":"CONNECTION_NOT_FOUND","details":{"correlation_id":"15c4e428-d6a0-4bf8-8b4c-6fab63845223"}}
+PASS  Native-first revocation blocks disclosure and future work while preserving historical receipt
+EXPECTED_REJECTION {"tool":"context.get_profile","code":"CONNECTION_NOT_FOUND","details":{"correlation_id":"af56005d-2728-4a80-9134-3afd431f5658"}}
+PASS  Gateway-first revocation stops public calls and Native withdrawal remains independent
+PASS  actual browser sessions have no uncaught application errors
+PASS  normal UI logout revokes both test browser sessions

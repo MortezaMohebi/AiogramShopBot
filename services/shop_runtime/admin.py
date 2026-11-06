@@ -76,7 +76,7 @@ def safe_outbox(row):
     }
 
 
-async def overview(db, scope, actor):
+async def overview(db, scope, actor, *, gate_page=None):
     """Aggregate finite operational state labels within the current Store only."""
     store = scope.current_store_id
     counts = (
@@ -93,9 +93,17 @@ async def overview(db, scope, actor):
             .group_by(WorkflowOutbox.status)
         )
     ).all()
-    gates = (
-        await db.scalars(select(RuntimeGate).where(RuntimeGate.store_id == store))
-    ).all()
+    gate_query = select(RuntimeGate).where(RuntimeGate.store_id == store)
+    if gate_page is not None:
+        if type(gate_page) is not int or not 1 <= gate_page <= 100_000:
+            raise RuntimeRejected("runtime_invalid_request", 422)
+        gate_query = gate_query.order_by(RuntimeGate.scope_key).offset(
+            (gate_page - 1) * 50
+        ).limit(51)
+    gates = (await db.scalars(gate_query)).all()
+    more_gates = gate_page is not None and len(gates) > 50
+    if gate_page is not None:
+        gates = gates[:50]
     duration = extract("epoch", WorkflowRun.updated_at) - extract(
         "epoch", WorkflowRun.created_at
     )
@@ -271,6 +279,8 @@ async def overview(db, scope, actor):
             }
             for x in gates
         ],
+        **({"gate_page": gate_page, "gate_has_more": more_gates}
+           if gate_page is not None else {}),
     }
 
 

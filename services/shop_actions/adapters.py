@@ -154,6 +154,14 @@ async def get_product(db, principal, data):
     )
 
 
+async def search_products_display(db, principal, data):
+    """Add scalar Workflow text from the same ACL-filtered version 1 page."""
+    from services.shop_actions.catalog_projection import search_display
+
+    page = await search_products(db, principal, data)
+    return page | {"display_text": search_display(page)}
+
+
 async def product_visibility(db, principal, data):
     """Do not reveal whether a denied product exists in another Store."""
     return {"visible": await allowed_for_bot(db, principal.bot_id, [data.product_id])}
