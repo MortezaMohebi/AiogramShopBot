@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "origin": "http://127.0.0.1:3005",
+  "checks": [
+    {
+      "name": "dedicated PostgreSQL/API and matching bridge",
+      "status": "PASS"
+    },
+    {
+      "name": "normal password and MFA login",
+      "status": "PASS"
+    },
+    {
+      "name": "exact pending Native identity and explicit consent",
+      "status": "PASS"
+    },
+    {
+      "name": "MCP BFF denies model-callable business approval routes",
+      "status": "PASS"
+    },
+    {
+      "name": "malformed post-commit withdrawal stays unknown until exact read",
+      "status": "PASS"
+    },
+    {
+      "name": "desktop/mobile light/dark Persian RTL without overflow",
+      "status": "PASS"
+    },
+    {
+      "name": "no browser application error and authoritative withdrawn receipt",
+      "status": "PASS"
+    }
+  ],
+  "screenshots": [
+    "connections-light-390.png",
+    "withdrawal-light-390.png",
+    "connections-light-1280.png",
+    "withdrawal-light-1280.png",
+    "connections-dark-390.png",
+    "withdrawal-dark-390.png",
+    "connections-dark-1280.png",
+    "withdrawal-dark-1280.png"
+  ],
+  "mutation_posts": 2
+}
