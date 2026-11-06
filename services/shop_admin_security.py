@@ -210,7 +210,13 @@ def totp(secret: str, timestamp: float) -> str:
 
 def matching_step(secret: str, code: str, instant: datetime) -> int | None:
     """Accept a narrow clock-skew window, never arbitrary OTP strings."""
-    if not re.fullmatch(r"\d{6}", code):
+    # Authenticator codes copied from Persian/Arabic interfaces use the same
+    # six decimal digits. Convert only those alphabets before constant-time
+    # comparison; other Unicode numerals must fail without raising TypeError.
+    code = "".join(code.split()).translate(str.maketrans(
+        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789",
+    ))
+    if not re.fullmatch(r"[0-9]{6}", code):
         return None
     step = int(instant.timestamp()) // 30
     for candidate in (step, step - 1, step + 1):

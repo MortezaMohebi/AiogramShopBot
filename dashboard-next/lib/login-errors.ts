@@ -1,7 +1,9 @@
 /** Allowlisted Persian login feedback; never show raw provider exceptions. */
-export type LoginErrorCode = "invalid_credentials" | "temporarily_locked" | "service_unavailable" | "security_check_failed" | "invalid_request" | "captcha_required" | "captcha_failed" | "captcha_unavailable" | "network_unavailable" | "session_expired" | "mfa_required" | "invalid_verification";
+export type LoginErrorCode = "invalid_credentials" | "temporarily_locked" | "service_unavailable" | "security_check_failed" | "invalid_request" | "captcha_required" | "captcha_failed" | "captcha_unavailable" | "network_unavailable" | "session_expired" | "mfa_required" | "invalid_verification" | "login_expired" | "mfa_unavailable";
 export interface LoginErrorMessage { title: string; description: string; canRetry: boolean }
 export const loginErrorMessages: Record<LoginErrorCode, LoginErrorMessage> = {
+  login_expired: { title: "زمان ورود پایان یافت", description: "برای ادامه، نام کاربری و رمز عبور را دوباره وارد کنید.", canRetry: true },
+  mfa_unavailable: { title: "تأیید دومرحله‌ای در دسترس نیست", description: "تأیید این حساب در حال حاضر ممکن نیست. برای بازیابی دسترسی با مدیر سامانه تماس بگیرید.", canRetry: false },
   invalid_credentials: { title: "ورود انجام نشد", description: "نام کاربری یا رمز عبور صحیح نیست. اطلاعات را بررسی و دوباره تلاش کنید.", canRetry: true },
   temporarily_locked: { title: "تلاش‌های ورود بیش از حد مجاز است", description: "برای حفاظت از حساب، ورود موقتاً محدود شده است. کمی بعد دوباره تلاش کنید.", canRetry: false },
   service_unavailable: { title: "سرویس ورود در دسترس نیست", description: "کمی بعد دوباره تلاش کنید. اگر مشکل ادامه داشت، با پشتیبانی تماس بگیرید.", canRetry: true },

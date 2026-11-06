@@ -262,3 +262,22 @@ def test_additive_bootstrap_preserves_existing_tables():
         permitted_missing({'shop_staff'}, expected, additions)
     with pytest.raises(RuntimeError):
         permitted_missing(expected | {'unknown'}, expected, additions)
+
+
+@pytest.mark.parametrize('digits', ['۰۱۲۳۴۵۶۷۸۹', '٠١٢٣٤٥٦٧٨٩'])
+def test_totp_accepts_localized_digits_without_changing_its_step(digits):
+    """Persian/Arabic input must use the same verified RFC counter."""
+    sec = security()
+    secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+    instant = datetime.fromtimestamp(59, timezone.utc)
+    localized = '287082'.translate(str.maketrans('0123456789', digits))
+    assert sec.matching_step(secret, localized, instant) == 1
+
+
+def test_totp_accepts_copied_groups_but_rejects_unrelated_unicode():
+    """Normalize human spacing without accepting arbitrary Unicode digits."""
+    sec = security()
+    secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+    instant = datetime.fromtimestamp(59, timezone.utc)
+    assert sec.matching_step(secret, '۲۸۷ ۰۸۲', instant) == 1
+    assert sec.matching_step(secret, '२८७०८२', instant) is None

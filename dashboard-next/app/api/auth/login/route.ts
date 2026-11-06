@@ -50,6 +50,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (error.status === 428) return failure(request, "mfa_required", 428);
       if (error.status === 401) return failure(request, error.code === "invalid_verification" ? "invalid_verification" : "invalid_credentials", 401);
       if (error.status === 429) return failure(request, "temporarily_locked", 429);
+      if (error.status === 503 && ["mfa_unavailable", "mfa_not_configured"].includes(error.code ?? "")) return failure(request, "mfa_unavailable", 503);
     }
     return failure(request, "service_unavailable", 503);
   }

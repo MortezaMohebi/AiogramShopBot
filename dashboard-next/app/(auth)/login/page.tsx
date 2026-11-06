@@ -18,7 +18,6 @@ export default async function LoginPage({ searchParams }: { searchParams: Params
           </span>
           <span className="text-sm font-semibold">مدیریت فروشگاه</span>
         </div>
-        <h1 id="login-title" className="mb-7 text-2xl font-bold">ورود به پنل مدیریت</h1>
         <LoginForm initialError={initialError} captcha={publicCaptchaConfig()} />
       </section>
     </main>
