@@ -23,7 +23,7 @@ Copy classifications: essential labels retained, helpful operational consequence
 
 | Check | Result |
 |---|---|
-| Dashboard unit suite | PASS — 251 tests, including receipt, account-feedback, Store-scope, CAPTCHA and loading-boundary regressions |
+| Dashboard unit suite | PASS — 254 tests, including receipt, account-feedback, Store-scope, CAPTCHA loading-boundary and media-thumbnail regressions |
 | TypeScript | PASS |
 | ESLint | PASS |
 | Production build | PASS — final source snapshot, independent worktree dependencies |
@@ -65,6 +65,10 @@ The mobile-menu evidence theme label was also corrected: the harness explicitly 
 ### Later scoped recheck: Thinking Orbs
 
 User requested adding `thinking-orbs`. It is pinned at 0.3.2 with the MIT notice retained. A fresh browser tab restored Codespace access. The orb integration passed a separate 14-check/62-capture matrix at five widths in both themes, including real-component loading fixtures and offline login pending/error UI. See `THINKING_ORBS_ACCEPTANCE.md`. This restores browser access and accepts that scope; the earlier full authenticated route sweep remains incomplete.
+
+### Later scoped recheck: lazy media
+
+User requested `lazysizes` for skeleton-backed lazy loading. It is pinned at 5.3.2 with its MIT notice retained. The media library and product editor use the existing private preview endpoint for raster-image thumbnails. The scoped browser matrix passed 13 checks and saved 12 views across five widths and both themes, including offscreen deferral, success/error/source replacement and a decoded no-JavaScript fallback. See `LAZYSIZES_ACCEPTANCE.md`. The full dashboard route sweep remains pending.
 
 ### Prior environment incident
 

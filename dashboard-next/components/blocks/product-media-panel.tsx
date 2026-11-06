@@ -13,6 +13,7 @@ import {
   FileVideo, LoaderCircle, Trash2, UploadCloud,
 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
+import { MediaThumbnail } from "@/components/blocks/media-thumbnail";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -296,6 +297,7 @@ export function ProductMediaPanel({
                 className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
               >
                 <div className="flex min-w-0 items-center gap-3">
+                  <MediaThumbnail mediaId={item.id} mimeType={item.mime_type} alt={item.caption || item.filename} />
                   <KindIcon kind={item.kind} />
                   <div className="min-w-0">
                     <p dir="ltr" className="max-w-xs break-all text-xs font-semibold">{item.filename}</p>

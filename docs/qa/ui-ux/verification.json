@@ -3,7 +3,7 @@
   "source_routes_audited": 54,
   "local": {
     "unit": {
-      "pass": 251,
+      "pass": 254,
       "fail": 0,
       "skipped": 0
     },
@@ -66,6 +66,17 @@
     "captures": 62,
     "status": "PASS",
     "scope": "production loading components and offline login UI; not full authenticated dashboard acceptance",
+    "next_mcp": "PASS",
+    "react_mount": "PASS",
+    "fixture_cleanup": "PASS",
+    "runtime_exceptions": 0
+  },
+  "lazysizes": {
+    "version": "5.3.2",
+    "ui_checks": 13,
+    "captures": 12,
+    "status": "PASS",
+    "scope": "production image components with offline private-preview responses; not live media transactions",
     "next_mcp": "PASS",
     "react_mount": "PASS",
     "fixture_cleanup": "PASS",

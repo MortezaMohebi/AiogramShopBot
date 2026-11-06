@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteMedia, editMedia, moderateMedia } from "@/app/(console)/media/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
+import { MediaThumbnail } from "@/components/blocks/media-thumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
           <Card key={item.id}>
             <CardContent className="grid gap-4 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
               <div className="space-y-2">
+                <MediaThumbnail mediaId={item.id} mimeType={item.mime_type} alt={item.caption || item.product_name} />
                 <div className="flex flex-wrap items-center gap-2">
                   <strong>{item.product_name}</strong>
                   <Badge tone={item.is_published ? "success" : "warning"}>{item.is_published ? "منتشرشده" : "در انتظار تأیید"}</Badge>
