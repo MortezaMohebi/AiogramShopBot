@@ -1,0 +1,11 @@
+{
+  "source_commit": "eb8b1362ff86de6bc76850c8edd52c009aac84c8",
+  "acceptance_snapshot": "2ab16c4 plus verified recovery-state line",
+  "account_panel_blob": "7272f4f7b1fd06c076270a060e8622371c8a77bf",
+  "python_tests": 1291,
+  "next_tests": 289,
+  "real_owner_credential_changes": 0,
+  "browser_connected_final_introspection": "NOT_RUN: daemon IPC error; native preview URL policy block; no browser workaround",
+  "temporary_fixture_cleanup": "PASS",
+  "owned_test_browser_cleanup": "PASS"
+}

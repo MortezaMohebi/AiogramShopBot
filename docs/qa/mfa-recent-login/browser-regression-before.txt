@@ -1,0 +1,6 @@
+{
+  name: 'TimeoutError',
+  message: 'locator.waitFor: Timeout 5000ms exceeded.\n' +
+    'Call log:\n' +
+    "\x1B[2m  - waiting for getByRole('button', { name: 'شروع فعال‌سازی MFA', exact: true }) to be visible\x1B[22m\n"
+}
