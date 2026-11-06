@@ -21,10 +21,14 @@ PASS: 287 Next tests, Typecheck through production build, Lint, Build. Independe
 
 PASS: failing baselines reproduced enrollment dependency and client ThemeScript creation before fixes. Vendor-patch tests cover both entry points, idempotency, version mismatch, and rejection before writes.
 
-BLOCKED locally: a separate offline clean npm ci lacked cached zustand archive. The existing installation's postinstall command passes. Clean installation in Codespace is pending.
+PASS: clean npm ci in an isolated Codespace directory installed 400 packages and ran the compatibility postinstall hook successfully. The initial local offline attempt lacked a cached archive; the Codespace clean install resolved that verification gap.
 
-PENDING: Codespace browser acceptance. `scripts/dashboard_enrollment_browser.mjs` prepares a guarded temporary synthetic fixture, checks real AccountPanel/Providers with intercepted writes, then removes only owned fixture files. It must be removed and the QA dev server restarted before the final Next MCP probe. This is component/runtime acceptance, not proof of a real owner's MFA enrollment.
+PASS: Codespace component/runtime browser acceptance on source `ff18cde`: 8 checks, 8 captures, light/dark, 320/390/768/1440px, initial hydration, theme toggling, independent client-root remounts, intercepted setup/confirmation/recovery and App Router navigation. Zero browser console/runtime errors and zero real authentication writes. This is component/runtime acceptance, not proof of a real owner's MFA enrollment.
 
-Earlier Remember-me browser run on source a900957: PASS 14 checks, 22 captures, zero real authentication writes. Browser-native password saving remains controlled by the browser; the app offers credentials only after verified complete login.
+PASS: the guarded temporary fixture was removed, QA port 3005 restarted, and all five Next MCP probes passed (metadata, routes, compilation, errors, page metadata). Mounted React introspection found the production LoginForm. The owned test browser was closed; the private QA server remains up. The older independent live stack is unchanged.
+
+Evidence: [browser/evidence.json](browser/evidence.json), [next-runtime.json](next-runtime.json), [react-tree.txt](react-tree.txt), [clean-install.log](clean-install.log). Initial enrollment examples: [dark mobile](browser/enrollment-dark-390.png), [light desktop](browser/enrollment-light-1440.png). [Current private login preview](login-preview.png) contains no entered credentials.
+
+Remember-me browser run on source a900957: PASS 14 checks, 22 captures, zero real authentication writes. Evidence: [../remember-login/evidence.json](../remember-login/evidence.json). Browser-native password saving remains controlled by the browser; the app offers credentials only after verified complete login.
 
 The full dashboard sweep and unrelated component-loading Studio acceptance remain outside this focused fix and are not declared complete.
