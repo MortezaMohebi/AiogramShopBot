@@ -1,0 +1,98 @@
+{
+  "status": "PASS",
+  "fixture": "offline PNG responses; production components; no business data",
+  "checks": [
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "light",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "light",
+      "width": 1024,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "light",
+      "width": 768,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "light",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "light",
+      "width": 320,
+      "status": "PASS"
+    },
+    {
+      "check": "load success, stable size, source replacement, offscreen deferral and one request per image",
+      "mode": "light",
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "dark",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "dark",
+      "width": 1024,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "dark",
+      "width": 768,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "dark",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "check": "reserved skeleton, error copy and RTL",
+      "mode": "dark",
+      "width": 320,
+      "status": "PASS"
+    },
+    {
+      "check": "load success, stable size, source replacement, offscreen deferral and one request per image",
+      "mode": "dark",
+      "status": "PASS"
+    },
+    {
+      "check": "no-JavaScript image fallback",
+      "status": "PASS"
+    }
+  ],
+  "screenshots": [
+    "pending-error-light-1440.png",
+    "pending-error-light-1024.png",
+    "pending-error-light-768.png",
+    "pending-error-light-390.png",
+    "pending-error-light-320.png",
+    "loaded-light-320.png",
+    "pending-error-dark-1440.png",
+    "pending-error-dark-1024.png",
+    "pending-error-dark-768.png",
+    "pending-error-dark-390.png",
+    "pending-error-dark-320.png",
+    "loaded-dark-320.png"
+  ],
+  "errors": [],
+  "blocked_mutations": 0,
+  "browser": "156.0.8078.4",
+  "fixture_cleanup": "PASS"
+}
