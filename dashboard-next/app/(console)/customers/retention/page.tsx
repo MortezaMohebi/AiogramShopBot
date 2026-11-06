@@ -1,3 +1,4 @@
+import { StoreScopeNotice } from "@/components/blocks/store-scope-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -7,7 +8,7 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { adminFetch, currentStaff } from "@/lib/bridge";
+import { optionalStoreRead, currentStaff } from "@/lib/bridge";
 
 type Policy = { note_retention_days: number; audit_retention_days: number };
 type Query = Promise<{ saved?: string; error?: string; count?: string }>;
@@ -19,8 +20,9 @@ export default async function CustomerRetentionPage({
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
   const [policy, query] = await Promise.all([
-    adminFetch<Policy>("/customer-retention"), searchParams,
+    optionalStoreRead<Policy>("/customer-retention"), searchParams,
   ]);
+  if (!policy) return <StoreScopeNotice title="سیاست نگهداری اطلاعات مشتری" />;
   const count = query.count && /^(0|[1-9][0-9]{0,15})$/.test(query.count)
     && Number.isSafeInteger(Number(query.count))
     ? Number(query.count).toLocaleString("fa-IR") : null;

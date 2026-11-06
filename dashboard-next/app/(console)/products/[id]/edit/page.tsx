@@ -59,7 +59,7 @@ export default async function EditProductPage({
           <Link href={`/products/${product.id}/digital`}>فایل و لایسنس محصول</Link>
         </Button>
       </div> : null}
-      {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ویرایش ذخیره نشد. داده‌ها یا تکراری‌بودن SKU را بررسی کنید.</p> : null}
+      {query.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ذخیرهٔ ویرایش‌ها تأیید نشد. پیش از تلاش دوباره، وضعیت محصول را بررسی کنید.</p> : null}
       <ProductEditor
         product={product} categories={categories} uoms={units.items}
         media={media.items}

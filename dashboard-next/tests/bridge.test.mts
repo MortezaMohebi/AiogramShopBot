@@ -17,6 +17,7 @@ const identity = { id: 11, version: 2 };
 type Bridge = {
   bridgeFetch: (p: string, m: string, d: unknown, i: unknown, t?: number) => Promise<unknown>;
   adminFetch: (p: string) => Promise<unknown>;
+  optionalStoreRead: (p: string) => Promise<unknown>;
 };
 
 function load(send: typeof fetch, authenticated = true) {
@@ -154,3 +155,15 @@ test("Runtime replay denial preserves its safe code and discards private upstrea
     }
   }
 });
+
+
+test("expected Store restriction becomes unavailable without exposing raw errors",async()=>{
+  const bridge=load(async()=>Response.json({detail:"store_scope_not_supported"},{status:409}));
+  assert.equal(await bridge.optionalStoreRead("/channel-features"),null);
+});
+for(const [status,detail] of [[403,"permission_denied"],[409,"configuration_changed"],[500,"PRIVATE_DATABASE_ERROR"]] as const) {
+  test(`optional Store read preserves unrelated failure ${status}/${detail}`,async()=>{
+    const bridge=load(async()=>Response.json({detail},{status}));
+    await assert.rejects(bridge.optionalStoreRead("/channel-features"),hasStatus(status));
+  });
+}

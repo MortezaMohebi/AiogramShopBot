@@ -3,17 +3,30 @@
   "source_routes_audited": 54,
   "local": {
     "unit": {
-      "pass": 236,
+      "pass": 247,
       "fail": 0,
       "skipped": 0
     },
     "lint": "PASS",
     "build": "PASS",
-    "typecheck": "PASS"
+    "typecheck": "PASS",
+    "harness_syntax": "PASS"
   },
   "observed_codespace": {
     "auth_backend_pass": 31,
-    "login_browser_checks_passed": 3,
+    "successful_mfa_login_observed": true,
+    "dialog_checks": [
+      "Store selection: 40 forward/reverse keys, Escape, focus restoration",
+      "Mobile menu: 80 keys, RTL edge, Escape, responsive dismissal",
+      "Category edit: 12 keys, Escape, focus restoration"
+    ],
+    "latest_route_sweep": {
+      "status": "FAIL",
+      "passed_viewport_cases": 36,
+      "next_case": "/orders at 1280px",
+      "failure": "Chromium renderer target crashed",
+      "full_sweep_accepted": false
+    },
     "login_widths": [
       1440,
       1024,
@@ -33,10 +46,17 @@
     "next_compilation_issues": 0,
     "next_config_errors": 0,
     "next_session_errors": 0,
-    "authenticated_route_checks_accepted": false,
-    "successful_mfa_login_accepted": false
+    "final_source_browser_retest": "PENDING",
+    "offline_captcha_browser": "PENDING",
+    "services_cleanup": "UNVERIFIED_AFTER_CONTROL_TIMEOUT",
+    "pre_sweep_checks_passed": 7
   },
-  "blocker": "Automatic approval review denied observing the Codespace origin; final instrumented run and QA cleanup remain unverified.",
+  "current_blocker": "Codespace browser control reads, documentation retrieval and runtime reset each timed out. Independent local Chrome launch denied a required socket. No bypass attempted.",
+  "recovery_changes": {
+    "screenshot_caret": "initial",
+    "client_readiness": "mounted control plus settled page; login password reveal assertion",
+    "verified": "JavaScript syntax only; browser rerun pending"
+  },
   "production_deployed": false,
   "live_provider_operations": false
 }

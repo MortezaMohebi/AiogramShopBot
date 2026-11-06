@@ -19,7 +19,25 @@ export function Dialog({ open, onClose, label, children, className }: {
     return () => { if (dialog?.open) dialog.close(); };
   }, [open]);
 
-  return <dialog ref={ref} aria-label={label} onCancel={(event) => {
+  return <dialog ref={ref} aria-label={label} onKeyDown={(event) => {
+    if (event.key !== "Tab") return;
+    // Keep sequential keyboard focus within the modal at both boundaries.
+    const dialog = event.currentTarget;
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button, input, select, textarea, summary, [tabindex]',
+    )).filter((node) => node.tabIndex >= 0 && !node.matches(":disabled") && node.getClientRects().length > 0);
+    const first = controls[0], last = controls[controls.length - 1];
+    if (!first) {
+      event.preventDefault();
+      dialog.focus();
+    } else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }} onCancel={(event) => {
     event.preventDefault();
     onClose();
   }} onClose={onClose} onClick={(event) => {

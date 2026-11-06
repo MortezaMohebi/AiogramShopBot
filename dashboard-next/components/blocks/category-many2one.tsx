@@ -1,8 +1,9 @@
 "use client";
 
-import { type KeyboardEvent, useId, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useId, useMemo, useState } from "react";
 import { Check, LoaderCircle, Pencil, Plus, Search, X } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
+import { Dialog } from "@/components/ui/dialog";
 import type { Category } from "@/lib/types";
 
 interface Props {
@@ -45,7 +46,7 @@ export function CategoryMany2One({
   const [highlight, setHighlight] = useState(0);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [updating, setUpdating] = useState(false);
 
@@ -121,7 +122,7 @@ export function CategoryMany2One({
     setEditName(selected.name);
     setError(null);
     setExpanded(false);
-    dialog.current?.showModal();
+    setEditing(true);
   }
 
   /** Edit exactly the selected database record, preserving the hidden ID. */
@@ -162,7 +163,7 @@ export function CategoryMany2One({
         item.id === selectedId ? { ...item, name } : item
       ));
       setValue(name);
-      dialog.current?.close();
+      setEditing(false);
     } catch (cause) {
       setError(categoryError(cause));
     } finally {
@@ -290,9 +291,8 @@ export function CategoryMany2One({
       <p className="text-xs text-muted-foreground">
         انتخاب اختیاری است؛ دسته‌بندی جدید ابتدا منتشرنشده می‌ماند.
       </p>
-      <dialog ref={dialog} aria-labelledby={id + "-edit-title"}
-        className="m-auto w-[min(94vw,28rem)] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60"
-        onClose={() => setError(null)}>
+      <Dialog open={editing} label="ویرایش دسته‌بندی" className="max-w-md"
+        onClose={() => { setEditing(false); setError(null); }}>
         <div dir="rtl" className="space-y-4 p-6">
           <h2 id={id + "-edit-title"} className="text-lg font-semibold">ویرایش دسته‌بندی</h2>
           <label className="block space-y-2 text-sm">
@@ -313,11 +313,11 @@ export function CategoryMany2One({
               className="h-10 rounded-md bg-primary px-4 text-sm text-primary-foreground disabled:opacity-50">
               {updating ? "در حال ذخیره..." : "ذخیره دسته‌بندی"}
             </button>
-            <button type="button" disabled={updating} onClick={() => dialog.current?.close()}
+            <button type="button" disabled={updating} onClick={() => setEditing(false)}
               className="h-10 rounded-md border border-border px-4 text-sm">انصراف</button>
           </div>
         </div>
-      </dialog>
+      </Dialog>
     </div>
   );
 }

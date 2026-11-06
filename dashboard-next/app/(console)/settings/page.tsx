@@ -6,7 +6,7 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { adminFetch, currentStaff } from "@/lib/bridge";
+import { adminFetch, currentStaff, optionalStoreRead } from "@/lib/bridge";
 import type { ShopSettings } from "@/lib/types";
 
 type Params = Promise<{ saved?: string; error?: string }>;
@@ -19,9 +19,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
   if (staff.role !== "superadmin") notFound();
   const [settings, policy, channels, paymentRails, params] = await Promise.all([
     adminFetch<ShopSettings>("/settings"),
-    adminFetch<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
-    adminFetch<{ items: ChannelFeature[] }>("/channel-features"),
-    adminFetch<{ items: PaymentRail[] }>("/payment-rails"),
+    optionalStoreRead<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
+    optionalStoreRead<{ items: ChannelFeature[] }>("/channel-features"),
+    optionalStoreRead<{ items: PaymentRail[] }>("/payment-rails"),
     searchParams,
   ]);
   return (
@@ -35,7 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
           <ShopSettingsForm initial={settings} />
         </CardContent>
       </Card>
-      <Card className="mt-6 max-w-4xl">
+      {channels ? <Card className="mt-6 max-w-4xl">
         <CardHeader>
           <CardTitle>قابلیت‌های تلگرام و بله</CardTitle>
           <CardDescription>سبد خرید و اعتبار داخلی برای هر پیام‌رسان مستقل است. غیرفعال‌سازی سوابق خرید، موجودی یا دفتر مالی را پاک نمی‌کند.</CardDescription>
@@ -60,8 +60,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
             <Button type="submit">ذخیره قابلیت‌های پیام‌رسان‌ها</Button>
           </form>
         </CardContent>
-      </Card>
-      <Card className="mt-6 max-w-4xl">
+      </Card> : null}
+      {paymentRails ? <Card className="mt-6 max-w-4xl">
         <CardHeader>
           <CardTitle>روش‌های پرداخت</CardTitle>
 
@@ -90,8 +90,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
             <Button type="submit">ذخیره روش‌های پرداخت</Button>
           </form>
         </CardContent>
-      </Card>
-      <Card className="mt-6 max-w-4xl">
+      </Card> : null}
+      {policy ? <Card className="mt-6 max-w-4xl">
         <CardHeader><CardTitle>پاداش معرفی مشتری</CardTitle><CardDescription>پاداش خرید اول از اعتبار داخلی فروشگاه تأمین می‌شود؛ هیچ موجودی بله یا رمز ارز تغییر نمی‌کند.</CardDescription></CardHeader>
         <CardContent>
           <form action={saveReferralPolicy} className="grid gap-4 md:grid-cols-2">
@@ -111,7 +111,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
             <div className="md:col-span-2"><Button type="submit">ذخیره پاداش معرفی</Button></div>
           </form>
         </CardContent>
-      </Card>
+      </Card> : null}
+      {(!channels || !paymentRails || !policy) ? <Card className="mt-6 max-w-4xl">
+        <CardHeader><CardTitle>تنظیمات ربات و پرداخت</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button asChild variant="outline"><Link href="/bots">تنظیمات ربات‌ها</Link></Button>
+          <Button asChild variant="outline"><Link href="/payment-accounts">حساب‌های پرداخت</Link></Button>
+        </CardContent>
+      </Card> : null}
     </div>
   );
 }

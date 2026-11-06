@@ -26,4 +26,4 @@
 - [ ] Review screenshots at desktop/laptop/tablet/mobile sizes in both themes; debug and retest.
 - [ ] Independent final review, evidence report and reviewable branch.
 
-Local unit/type/lint/build verification and independent source review are complete. Browser acceptance and QA cleanup remain blocked by automatic browser-origin approval review; see `docs/qa/UI_UX_ACCEPTANCE.md`.
+Local unit/type/lint/build verification and independent source review are complete (247 unit passes). Authorized Codespace access was restored and real MFA plus dialog checks passed. The route sweep stopped after 36 successful viewport cases when Chromium crashed. The latest harness correction and remaining acceptance/remote cleanup are now blocked by an unresponsive browser-control connection; see `docs/qa/UI_UX_ACCEPTANCE.md`.

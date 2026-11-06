@@ -30,7 +30,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
           validation: "مقادیر واردشده معتبر نیستند؛ نوع محصول، دسته‌بندی و فیلدهای عددی را بررسی کنید.",
           permission: "سطح دسترسی شما اجازهٔ ثبت محصول نمی‌دهد.",
           service: "سرویس مدیریت در دسترس نیست.",
-          unknown: "ثبت محصول انجام نشد. شمارهٔ پیگیری را برای بررسی نگه دارید.",
+          unknown: "نتیجهٔ ثبت محصول مشخص نیست. پیش از ثبت دوباره، وضعیت محصول را بررسی کنید.",
         } as Record<string, string>)[params.error] ?? "ثبت محصول انجام نشد."}
         {params.ref && /^[a-f0-9-]{36}$/i.test(params.ref) ? <details className="mt-2 text-xs">
           <summary className="cursor-pointer">اطلاعات پیگیری</summary>

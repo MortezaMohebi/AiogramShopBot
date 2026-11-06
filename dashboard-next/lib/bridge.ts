@@ -7,6 +7,7 @@ import type { Staff } from "@/lib/types";
 interface Identity { id: number; version: number; sid?: string }
 type Method = "GET" | "POST" | "PATCH" | "DELETE";
 const SAFE_CODES = new Set([
+  "store_scope_not_supported",
   // Closed native MCP errors may explain consent/receipt recovery.
   "mcp_admin_session_required",
   "mcp_approval_conflict",
@@ -273,4 +274,15 @@ export async function adminFetch<T>(
   const session = await readSession(); if (!session) redirect("/login");
   try { return await bridgeFetch<T>(path, method, data, session, timeoutMs); }
   catch (error) { if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1"); throw error; }
+}
+
+
+/** Treat only the explicit backend Store restriction as an unavailable read. */
+export async function optionalStoreRead<T>(path: string): Promise<T | null> {
+  try {
+    return await adminFetch<T>(path);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409 && error.code === "store_scope_not_supported") return null;
+    throw error;
+  }
 }

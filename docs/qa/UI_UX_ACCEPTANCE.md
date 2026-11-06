@@ -13,7 +13,7 @@ Copy classifications: essential labels retained, helpful operational consequence
 
 - Focused login with existing username/password, MFA, configured CAPTCHA and challenge enforcement; password visibility, pending/error feedback and support-detail reference remain.
 - Existing semantic tokens and shared Input/Textarea/Button/PageHeading improved; no UI dependency added. Input boundaries and focus indicators have stronger contrast. Mobile text inputs use 16px to avoid focus zoom.
-- Native modal dialog reused by mobile navigation and store selection: focus containment, background inertness, Escape and focus restoration. Navigation grouped by user tasks with an in-page skip link.
+- Native modal dialog reused by mobile navigation, store selection and category editing: focus containment, background inertness, Escape and focus restoration. Navigation grouped by user tasks with an in-page skip link.
 - Shorter Persian labels, specific CTAs, useful empty/filter states, visible form labels, mixed-direction identifiers, wrapping and table pagination boundaries.
 - Corrected misleading report period, product-access KPI and workflow-publication instructions.
 - Retention dry-run and explicit purge show only the count in a matching validated backend receipt. Existing deletion consent and confirmation protocol remain.
@@ -23,21 +23,28 @@ Copy classifications: essential labels retained, helpful operational consequence
 
 | Check | Result |
 |---|---|
-| Dashboard unit suite | PASS — 236 tests, including 11 retention receipt and 5 account feedback regressions |
+| Dashboard unit suite | PASS — 247 tests, including receipt, account-feedback, Store-scope and CAPTCHA lifecycle regressions |
 | TypeScript | PASS |
 | ESLint | PASS |
 | Production build | PASS — final source snapshot, independent worktree dependencies |
 | Independent source review | PASS after all three Minor findings and one follow-up were corrected; no open Critical/Important finding |
 | Backend auth/session/MFA/lifecycle regressions | PASS — 31 tests in Codespace |
-| Authenticated browser / PostgreSQL | BLOCKED — successful MFA retry and authenticated route checks not accepted |
+| Authenticated browser / PostgreSQL | PARTIAL / FAIL — password + MFA passed; 36 route/viewport cases passed, then Chromium crashed on /orders at 1280px |
 | Next.js runtime MCP / agent-browser | PASS — tools, empty compile/runtime issue lists, mounted React tree |
 | Login automated accessibility | PASS — axe, 0 violations and 0 incomplete checks |
 | Login visual / responsive / RTL | PASS — 1440, 1024, 768, 390 and 320px in both themes |
-| Other changed pages, dialogs and responsive layouts | BLOCKED — source review complete; browser acceptance pending |
+| Other changed pages, dialogs and responsive layouts | PARTIAL — Store, mobile-menu and category dialogs passed; full route/viewport and final-source acceptance pending |
 
 Initial local build with an external node_modules symlink was rejected by Turbopack's filesystem root boundary. Copying the installed dependencies into this worktree resolved the environment issue without changing application configuration or dependencies.
 
 The dedicated Codespace dev server needed a restart after archive source replacement: the watched `/login` route temporarily returned the not-found surface. Restart restored the actual route. This is recorded separately from product defects and all final acceptance checks must run on the settled source snapshot.
+
+Additional browser-driven fixes:
+- Explicit forward/reverse Tab containment in the shared native dialog, preserving Escape and focus restoration. The mobile drawer remains on the right in RTL.
+- Current-store Settings branding remains available when unrelated global controls return the backend's exact `409 store_scope_not_supported`. Restricted connection, relay and retention sections show Store-selection guidance. Other conflicts, permission denials and service failures remain errors; no backend access rule changed.
+- Visible Turnstile and reCAPTCHA v2 widgets request their documented compact layout for the 280px login content width at a 320px viewport. Token handling and server verification remain unchanged. Four lifecycle regressions pass; offline SDK browser layout testing is pending.
+- The Next.js development badge is disabled because its mobile position covered the navigation trigger. Framework compile/runtime diagnostics remain available; production UI is unchanged.
+- Product feedback preserves unknown save outcomes instead of claiming a confirmed failure.
 
 ## Operational boundaries
 
@@ -45,25 +52,29 @@ No merge/deployment, production setting change, live message, live payment or cu
 
 ## Browser status and handoff
 
-**Acceptance is incomplete.** Draft PR #19 remains a review checkpoint, not a production-readiness claim.
+**Acceptance is incomplete.** [Draft PR #19](https://github.com/MortezaMohebi/AiogramShopBot/pull/19) remains a review checkpoint.
 
-Observed in the Codespace before access was blocked:
-- Three initial browser checks passed: no login filler, five-width/both-theme login reflow, and password visibility/invalid-password/error-focus behavior.
-- The missing-MFA response was displayed correctly. A subsequent valid-MFA retry stayed on login and showed a network error; no successful dashboard navigation was observed. No production auth fix is justified until the request timings and server result are read.
-- The first test-script failure was an overly broad alert selector that also matched Next.js's route announcer. It is now scoped to the main content.
-- The real login page mounted in agent-browser with React introspection. Its axe scan reported 33 passes, 0 violations and 0 incomplete checks.
-- Next MCP returned empty compilation issue, configuration-error and session-error lists.
-- Backend auth/session/lifecycle tests passed 31/31 in the dedicated container.
+After the user authorized reopening the private Codespace, real password and MFA login succeeded. The earlier retry timeout came from synchronous Docker preparation of the synthetic MFA proof blocking Playwright's request-interception event loop. The harness now prepares the proof asynchronously; production authentication did not need a change.
 
-The last instrumented browser run was started against the then-current QA source. Its terminal output `/tmp/ui-browser-diagnostic.log` and evidence `/tmp/dashboard-ui-browser/evidence.json` were not read after the browser-origin block. The most recent three heading-level changes and preserved account feedback unit tests are host-verified; they have not been applied or browser-tested in QA.
+The latest observed browser run passed seven checks before the route inventory: focused login copy, five-width/both-theme login reflow, password/error behavior, real MFA login, Store dialog keyboard behavior, mobile-menu keyboard/RTL behavior, and category-dialog keyboard behavior. It then passed 36 route/viewport cases (18 routes in desktop light and mobile dark). The next case, `/orders` at 1280px, failed with a Chromium renderer target crash. This is a failed acceptance run; it does not establish an application defect in Orders or a complete route pass.
 
-Automatic approval review rejected further observation of `https://obscure-space-couscous-p7w6p4jrrxv3j59.github.dev`, stating that the origin approval gate did not grant access and a retry after the prior browser security denial posed unacceptable risk. Browser access was not bypassed. Local source work and GitHub publication continued independently.
+Runtime investigation observed no cgroup OOM kill and no process-limit exhaustion. Chromium diagnostics did not identify a conclusive crash cause. A separate Next.js hydration warning included screenshot-injected inline `caret-color: transparent` attributes. Playwright documents that screenshots hide the caret by default. The harness now uses `caret: "initial"` and waits for mounted client controls before inspection; login readiness is demonstrated through password reveal/hide behavior. These harness corrections are syntax-checked but have not been rerun in the browser. They are not proof that the renderer crash is resolved.
 
-Resume only after approved Codespace access:
-1. Read the last instrumented run and safe request timings/statuses before changing auth behavior. Preserve network-error versus confirmed-login distinctions.
-2. Verify the final feature-branch source matches the QA checkout, then complete the 38 static routes, available detail routes, dialog focus checks and key layouts at all planned sizes.
-3. Check activation/error fallback headings, category dialog, report period, retention preview count, CAPTCHA widget/failed-provider paths, role restrictions, logout and expired-session handling.
-4. Inspect the saved viewport screenshots, resolve any browser defects, and rerun relevant checks. Publish bounded evidence and update this ledger.
-5. Log out synthetic QA sessions and stop only this task's isolated services. Existing five project services must remain untouched.
+The mobile-menu evidence theme label was also corrected: the harness explicitly applies light and dark before the corresponding captures. Unexpected console errors are collected separately from expected failed-login/permission responses.
 
-Last known QA services: dedicated PostgreSQL, Redis, API and Next dev were running. Their final state and active synthetic sessions could not be verified or cleaned up after the origin denial. No live messenger or payment provider was configured.
+### Current environment blocker
+
+During upload of the updated harness, browser control became unresponsive. A Codespace state read, packaged troubleshooting-documentation read, and runtime reset each timed out. The upload result could not be reconciled. This is a control-connection failure after restored authorization, not a new approval denial.
+
+Independent local-browser verification could not proceed: Chrome's launch aborted because creation of a required process-singleton socket was denied (`Operation not permitted`). No sandbox or access restriction was bypassed. Unit, TypeScript, ESLint and production-build checks all completed successfully on the final local application source.
+
+### Remaining acceptance
+
+1. Restore the Codespace control connection and reconcile the harness upload before rerunning it. Verify source hashes against the published follow-up commit. Do not change production auth to compensate for a test-tool failure.
+2. Complete all 38 static routes and available detail routes, including workflow editor/settings/preview/versions and available product/staff details. The current first-level detail-link discovery may need recursive traversal. If a renderer crashes again, preserve its diagnostics; no failed case may be silently counted as passed.
+3. Complete settings save/reload/restore, reauthentication, original-Store retention dry-run, disabled/viewer restrictions, logout, expiration and activation errors. The harness is prepared; these checks are pending in the final run.
+4. Run offline SDK CAPTCHA layout/error tests for Turnstile, reCAPTCHA v2 and unavailable configuration at 320/390/1280px in both themes. The script blocks login POSTs; no real challenge or live verification is part of that layout test.
+5. Review the final screenshots at planned widths/themes and rerun Next.js MCP/agent-browser checks against the settled final source. Prior login axe results were 33 passes, 0 violations and 0 incomplete; prior framework results had empty compile/configuration/session-error lists. They do not certify the later source snapshot.
+6. Log out/revoke only synthetic QA sessions and stop only this task's dedicated services, retaining data volumes and leaving the original project services untouched.
+
+The latest run's evidence is in the dedicated Codespace at `/tmp/dashboard-ui-scope/evidence.json`; its terminal log is `/tmp/ui-browser-scope.log` and framework log `/tmp/ui-next-scope.log`. These diagnostics are remote and were not republished as final screenshot evidence. Dedicated PostgreSQL, Redis, API and Next dev were last observed running. Final remote cleanup remains unverified because the control connection timed out. The temporary host-side browser did not start and no host-side login occurred.

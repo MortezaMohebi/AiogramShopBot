@@ -1,3 +1,4 @@
+import { StoreScopeNotice } from "@/components/blocks/store-scope-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Boxes, Webhook } from "lucide-react";
@@ -6,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { adminFetch, currentStaff } from "@/lib/bridge";
+import { optionalStoreRead, currentStaff } from "@/lib/bridge";
 import type { RelayWorkersSnapshot } from "@/lib/relay-pool";
 import {
   createRelayWorker, setRelayWorkerState,
@@ -35,7 +36,8 @@ export default async function RelayWorkersPage({
   if (staff.role !== "superadmin") notFound();
 
   const query = await searchParams;
-  const data = await adminFetch<RelayWorkersSnapshot>("/relay-workers");
+  const data = await optionalStoreRead<RelayWorkersSnapshot>("/relay-workers");
+  if (!data) return <StoreScopeNotice title="سرویس‌های Relay" />;
   return <div className="space-y-6">
     <PageHeading title="سرویس‌های Relay" />
     <div className="flex flex-wrap gap-2">

@@ -1,3 +1,4 @@
+import { StoreScopeNotice } from "@/components/blocks/store-scope-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
@@ -5,7 +6,7 @@ import {
   ConnectionControlPanel, type ConnectionData,
 } from "@/components/blocks/connection-control-panel";
 import { TelegramTransportPanel, type TelegramTransportData } from "@/components/blocks/telegram-transport-panel";
-import { adminFetch, currentStaff } from "@/lib/bridge";
+import { optionalStoreRead, currentStaff } from "@/lib/bridge";
 
 type Params = Promise<{ saved?: string; verified?: string; error?: string }>;
 const problems: Record<string, string> = {
@@ -23,10 +24,11 @@ export default async function BotConnectionsPage({
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
   const [operations, telegramTransport, params] = await Promise.all([
-    adminFetch<ConnectionData>("/connection-changes"),
-    adminFetch<TelegramTransportData>("/telegram-transport"),
+    optionalStoreRead<ConnectionData>("/connection-changes"),
+    optionalStoreRead<TelegramTransportData>("/telegram-transport"),
     searchParams,
   ]);
+  if (!operations || !telegramTransport) return <StoreScopeNotice title="تنظیمات اتصال ربات‌ها" />;
   return <div className="space-y-6">
     <PageHeading title="تنظیمات اتصال ربات‌ها" />
     {params.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">تنظیمات ربات ثبت شد.</p> : null}
