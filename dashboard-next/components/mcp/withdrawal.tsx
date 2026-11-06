@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { connectionReceipt, type ConnectionMutation } from "@/lib/mcp/connection-state";
+import { mcpMutation } from "@/lib/mcp/client";
 
 interface OwnedGrant {
   id: string; version: number; revoked: boolean; expires_at: string;
@@ -50,9 +51,7 @@ export function McpWithdrawal({ initialId }: { initialId: string }) {
     const request = { id: grant.id, action: "revoke" as const, expectedVersion: grant.version, storeIds: [], scopes: [] };
     setMutation({ request, status: "sending" });
     try {
-      const response = await fetch("/api/admin/mcp/owned-grants/" + grant.id + "/revoke", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(20000),
-      });
+      const response = await mcpMutation("/owned-grants/" + grant.id + "/revoke");
       const result: unknown = await response.json();
       if (!response.ok || !receipt(result, grant.id) || !connectionReceipt(request, result)) throw new Error("unconfirmed");
       setGrant(result);setMutation({ request, status: "confirmed" });setConfirmed(false);

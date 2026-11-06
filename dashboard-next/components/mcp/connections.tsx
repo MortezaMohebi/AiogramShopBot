@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { connectionReceipt, gatewayDashboardUrl, reconcileConnection, type ConnectionMutation, type ConnectionRequest } from "@/lib/mcp/connection-state";
 import type { McpGrantView, McpHistoryPage, McpPage, McpPairingView } from "@/lib/mcp/types";
+import { mcpMutation } from "@/lib/mcp/client";
 
 const stamp = (value: string) => new Intl.DateTimeFormat("fa-IR", {
   dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Tehran",
@@ -70,10 +71,7 @@ export function McpConnections({ initial, history, pairing: initialPairing, pair
     const target = request.action === "confirm"
       ? `/pairings/${request.id}/confirm` : `/owned-grants/${request.id}/revoke`;
     try {
-      const response = await fetch("/api/admin/mcp" + target, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-        signal: AbortSignal.timeout(20000),
-      });
+      const response = await mcpMutation(target);
       const result: unknown = await response.json();
       if (!response.ok || !connectionReceipt(request, result)) throw new Error("unconfirmed");
       if (!mounted.current) return;
