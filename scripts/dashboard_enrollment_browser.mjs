@@ -23,9 +23,9 @@ if (process.argv.includes("--cleanup")) {
   assert(!existsSync(directory)); mkdirSync(directory);
   writeFileSync(`${directory}/page.tsx`, marker + `import { notFound } from "next/navigation";
 import { EnrollmentStage } from "./stage";
-export default function Page() {
+export default async function Page({searchParams}: {searchParams: Promise<{optional?: string}>}) {
   if (process.env.SHOP_MCP_QA !== "1" || process.env.SHOP_BETA_QA !== "1") notFound();
-  return <EnrollmentStage />;
+  return <EnrollmentStage optional={(await searchParams).optional === "1"} />;
 }
 `);
   writeFileSync(`${directory}/stage.tsx`, marker + `"use client";
@@ -43,7 +43,7 @@ const account: AccountData = {
  preferences: {language:"fa",calendar:"auto",notify_orders:true,notify_campaigns:true,notify_finance:true,notify_system:true},
  sessions:[],permissions:["account.manage_self"],events:[]
 };
-export function EnrollmentStage() {
+export function EnrollmentStage({optional}: {optional: boolean}) {
  const host = useRef<HTMLDivElement>(null), root = useRef<Root | null>(null);
  useEffect(() => () => {const mounted = root.current; queueMicrotask(() => mounted?.unmount());}, []);
  function mount() {
@@ -52,7 +52,7 @@ export function EnrollmentStage() {
  }
  return <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
   <header className="flex items-center justify-between gap-3"><h1 className="text-2xl font-bold">حساب من</h1><ThemeToggle /></header>
-  <AccountPanel initial={account} />
+  <AccountPanel initial={{...account, role: optional ? "viewer" : "superadmin", mfa_required_by_role: !optional}} />
   <section className="space-y-3 border-t pt-4" aria-label="Synthetic QA controls">
    <button onClick={mount}>Mount fresh Theme provider</button><div ref={host} />
    <Link href="/login">Login navigation</Link>
@@ -74,7 +74,7 @@ export function EnrollmentStage() {
     for (const theme of ["light", "dark"]) {
       const context = await browser.newContext({ viewport: { width: 390, height: 900 }, colorScheme: theme, reducedMotion: "reduce", serviceWorkers: "block" });
       await context.addInitScript(value => localStorage.setItem("theme", value), theme);
-      let setup = false, confirmation = false;
+      let setup = false, confirmation = false, behavior = "fresh";
       await context.route("**/*", async route => {
         const request = route.request(), url = new URL(request.url());
         if (url.origin !== base) return route.abort();
@@ -83,12 +83,18 @@ export function EnrollmentStage() {
           assert.equal(request.method(), "POST"); assert.equal(request.headers()["x-shop-login-challenge"], "C".repeat(43));
           const body = request.postDataJSON();
           if (url.pathname === "/api/account/mfa-setup") {
-            assert.equal(body.current_password, "SYNTHETIC-ONLY-password-123"); setup = true;
+            assert.deepEqual(body, {});
+            if (behavior === "expired") return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ ok: false, code: "reauthentication_required" }) });
+            setup = true;
             return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, secret: "SYNTHETIC-ONLY-NOT-A-REAL-TOTP-KEY", qr_data_uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" }) });
           }
           if (url.pathname === "/api/account/mfa-confirm") {
             assert.equal(body.code, "123456"); confirmation = true;
             return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, recovery_codes: ["SYNTHETIC-RECOVERY-ONLY"] }) });
+          }
+          if (url.pathname === "/api/account/reauthenticate") {
+            assert.equal(body.current_password, "SYNTHETIC-reauth-only-password-123"); behavior = "fresh";
+            return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
           }
           evidence.real_mutations++; return route.abort();
         }
@@ -98,7 +104,12 @@ export function EnrollmentStage() {
       });
       const page = await context.newPage(); page.setDefaultNavigationTimeout(60_000);
       page.on("pageerror", error => evidence.errors.push(error.message));
-      page.on("console", message => { if (message.type() === "error") evidence.errors.push(message.text()); });
+      page.on("console", message => {
+        if (message.type() !== "error") return;
+        if (behavior === "expired" && message.location().url === base + "/api/account/mfa-setup" && /403/.test(message.text())) {
+          evidence.expected_http_rejections = (evidence.expected_http_rejections ?? 0) + 1;
+        } else evidence.errors.push(message.text());
+      });
       await page.goto(base + "/enrollment-ui-qa");
       const toggle = page.getByRole("button", { name: "تغییر حالت روشن و تاریک", exact: true });
       await toggle.waitFor(); await toggle.click();
@@ -106,6 +117,7 @@ export function EnrollmentStage() {
       await toggle.click(); await page.waitForFunction(value => document.documentElement.classList.contains(value), theme);
       assert.equal(await page.getByRole("button", { name: "ذخیره مشخصات", exact: true }).count(), 0);
       assert.equal(await page.locator('[name="new_password"]').count(), 0);
+      assert.equal(await page.locator('[name="current_password"]').count(), 0);
       for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
@@ -118,8 +130,8 @@ export function EnrollmentStage() {
         assert.equal(await page.getByRole("button", { name: "تغییر حالت روشن و تاریک", exact: true }).count(), 2);
       }
       check("fresh independent client roots remount without script or Performance errors", theme);
-      await page.getByLabel("رمز فعلی", { exact: true }).fill("SYNTHETIC-ONLY-password-123");
-      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).click();
+      const start = page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true });
+      await start.focus(); await start.press("Enter");
       await page.getByRole("img", { name: "QR Code فعال‌سازی احراز هویت دومرحله‌ای", exact: true }).waitFor(); assert(setup);
       await page.getByLabel("کد تأیید", { exact: true }).fill("123456");
       await page.getByRole("button", { name: "تأیید و فعال‌سازی", exact: true }).click();
@@ -127,9 +139,24 @@ export function EnrollmentStage() {
       await page.getByRole("button", { name: "پنهان کردن کدها", exact: true }).click();
       assert.equal(await page.getByText("SYNTHETIC-RECOVERY-ONLY", { exact: true }).count(), 0);
       check("synthetic setup/confirmation and recovery display use intercepted actions only", theme);
-      await page.getByRole("link", { name: "Login navigation", exact: true }).click();
+      behavior = "expired"; await page.goto(base + "/enrollment-ui-qa");
+      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).click();
+      await page.getByText("زمان تأیید ورود پایان یافته است. دوباره وارد شوید و فعال‌سازی را ادامه دهید.", { exact: true }).waitFor();
+      assert.equal(await page.locator('[name="current_password"]').count(), 0);
+      assert.equal(await page.getByRole("link", { name: "ورود دوباره", exact: true }).getAttribute("href"), "/login");
+      await capture(page, `expired-proof-${theme}`);
+      check("expired proof offers sign-in without another password form on enrollment", theme);
+      await page.getByRole("link", { name: "ورود دوباره", exact: true }).click();
       await page.getByLabel("نام کاربری", { exact: true }).waitFor();
       check("App Router navigation remains usable after independent root mounts", theme);
+      behavior = "expired"; await page.goto(base + "/enrollment-ui-qa?optional=1");
+      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).click();
+      await page.getByRole("link", { name: "ورود دوباره", exact: true }).waitFor();
+      const reauth = page.getByRole("button", { name: "تأیید هویت برای پنج دقیقه", exact: true }).locator("..");
+      await reauth.getByLabel("رمز فعلی", { exact: true }).fill("SYNTHETIC-reauth-only-password-123");
+      await reauth.getByRole("button", { name: "تأیید هویت برای پنج دقیقه", exact: true }).click();
+      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).waitFor({timeout: 5000});
+      check("optional MFA setup recovers after successful in-account reauthentication", theme);
       await context.close();
     }
     assert.equal(evidence.real_mutations, 0); assert.deepEqual(evidence.errors, []);

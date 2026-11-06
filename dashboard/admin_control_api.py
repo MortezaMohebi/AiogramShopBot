@@ -57,6 +57,12 @@ class Proof(StrictPayload):
     second_factor: str = Field(default="", max_length=64)
 
 
+class MfaSetup(Proof):
+    """Reuse recent login proof; accept explicit proof from older clients."""
+
+    current_password: str = Field(default="", max_length=256)
+
+
 class PasswordChange(Proof):
     """Preserve all entered password characters, including whitespace."""
     new_password: str = Field(min_length=12, max_length=256)
@@ -142,11 +148,22 @@ def own_session(request: Request) -> str:
     return identifier
 
 
-async def fresh_proof(db: AsyncSession, staff: ShopStaff, payload: Proof) -> None:
+async def fresh_proof(
+    db: AsyncSession, staff: ShopStaff, payload: Proof, *,
+    request: Request | None = None,
+) -> None:
     """Serialize security changes against password rotation and MFA replay."""
     await throttle("reauth:" + str(staff.id), 8, 60)
     await db.execute(select(ShopStaff.id).where(ShopStaff.id == staff.id).with_for_update())
     await db.refresh(staff)
+    if request is not None:
+        # Setup subsequently writes this session. Lock it before Profile to
+        # match middleware's Session -> Profile order and avoid a lock cycle.
+        row = await db.run_sync(lambda sync: security.validate_session(
+            sync, staff, request.headers.get("x-shop-session", ""),
+        ))
+        if row.id != own_session(request):
+            raise security.SecurityRejected("session_expired", 401)
     if not await asyncio.to_thread(verify_password, payload.current_password, staff.password_hash):
         raise security.SecurityRejected("invalid_credentials", 401)
     def verify(sync):
@@ -361,12 +378,34 @@ async def revoke_all(request: Request, staff: Staff, db: Db) -> dict:
 
 
 @router.post("/account/mfa-setup")
-async def mfa_setup(payload: Proof, staff: Staff, db: Db) -> dict:
-    """Reveal a fresh enrollment secret only after current-password proof."""
+async def mfa_setup(
+    payload: MfaSetup, request: Request, staff: Staff, db: Db,
+) -> dict:
+    """Start first enrollment using this device's recently verified login."""
     member = required(staff)
-    await fresh_proof(db, member, payload)
+    if payload.current_password:
+        # Keep the previous explicit-proof contract during dashboard rollout.
+        await fresh_proof(db, member, payload, request=request)
+    else:
+        await throttle("reauth:" + str(member.id), 8, 60)
+        await db.execute(select(ShopStaff.id).where(
+            ShopStaff.id == member.id,
+        ).with_for_update())
+        await db.refresh(member)
+
     def start(sync):
+        """Stage first enrollment only after checking this locked session."""
+        # Recheck live authority under the security-write lock. A remembered
+        # session, browser flag or intervening revocation cannot grant proof.
+        row = security.validate_session(
+            sync, member, request.headers.get("x-shop-session", ""),
+        )
+        if row.id != own_session(request):
+            raise security.SecurityRejected("session_expired", 401)
+        if not payload.current_password:
+            security.require_recent(row)
         return security.begin_mfa(sync, security.profile_for(sync, member.id))
+
     secret = await db.run_sync(start)
     await db.commit()
     uri = make_otpauth_uri(secret, member.username)

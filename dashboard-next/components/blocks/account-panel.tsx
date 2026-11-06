@@ -2,10 +2,11 @@
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type AccountData, controlAction, permissionLabels } from "@/lib/account-control";
+import { type AccountData, ControlActionError, controlAction, permissionLabels } from "@/lib/account-control";
 
 /** Each proof is entered by the owner; passwords are never trimmed or persisted. */
 function ProofFields({ factor, disabled }: { factor: boolean; disabled: boolean }) {
@@ -27,6 +28,7 @@ const eventLabels: Record<string, string> = {
 export function AccountPanel({ initial }: { initial: AccountData }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [mfaLoginRequired, setMfaLoginRequired] = useState(false);
   const [enrollment, setEnrollment] = useState<{
     secret: string;
     qrDataUri: string;
@@ -53,6 +55,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     try {
       const result = await controlAction(action, payload);
       if (result.login_required) { router.replace("/login?expired=1"); router.refresh(); return; }
+      if (action === "reauthenticate" || action === "mfa-setup") setMfaLoginRequired(false);
       if (action === "mfa-setup") {
         if (
           !result.secret ||
@@ -81,7 +84,14 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       setNotice({ ok: true, text: successMessages[action] ?? "تغییرات حساب ذخیره شد." });
       if (action !== "profile" && action !== "preferences") form?.reset();
       router.refresh();
-    } catch (error) { setNotice({ ok: false, text: error instanceof Error ? error.message : "عملیات انجام نشد." }); }
+    } catch (error) {
+      if (action === "mfa-setup" && error instanceof ControlActionError && error.code === "reauthentication_required") {
+        setMfaLoginRequired(true);
+        setNotice({ ok: false, text: "زمان تأیید ورود پایان یافته است. دوباره وارد شوید و فعال‌سازی را ادامه دهید." });
+      } else {
+        setNotice({ ok: false, text: error instanceof Error ? error.message : "عملیات انجام نشد." });
+      }
+    }
     finally { setBusy(false); }
   }
   function submit(event: FormEvent<HTMLFormElement>, action: string) {
@@ -131,7 +141,12 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
           <label className="space-y-1 text-sm">کد تأیید<Input name="code" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="one-time-code" inputMode="numeric" required dir="ltr" disabled={busy} /></label>
           <Button type="submit" disabled={busy}>تأیید و فعال‌سازی</Button>
         </form>
-      </div> : <form onSubmit={(event) => submit(event, initial.mfa_enabled ? "mfa-disable" : "mfa-setup")} className="space-y-4">
+      </div> : !initial.mfa_enabled ? mfaLoginRequired ?
+        <Button asChild><Link href="/login">ورود دوباره</Link></Button> :
+        <form onSubmit={(event) => submit(event, "mfa-setup")} className="space-y-4">
+          <p className="text-sm leading-7">برای افزودن حساب به برنامهٔ Authenticator، فعال‌سازی را شروع کنید؛ سپس کد شش‌رقمی برنامه را وارد کنید.</p>
+          <Button type="submit" disabled={busy}>شروع فعال‌سازی MFA</Button>
+        </form> : <form onSubmit={(event) => submit(event, "mfa-disable")} className="space-y-4">
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />
         {!(initial.mfa_enabled && initial.mfa_required_by_role) ? <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button> : null}
       </form>}

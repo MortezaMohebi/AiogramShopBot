@@ -31,6 +31,13 @@ const errors: Record<string, string> = {
   configuration_changed: "تنظیم فعال تغییر کرده است؛ درخواست تازه‌ای ایجاد کنید.",
 };
 export interface ControlResult { ok?: boolean; code?: string; login_required?: boolean; secret?: string; qr_data_uri?: string; recovery_codes?: string[]; token?: string; expires_at?: string }
+/** Preserve the safe machine code for contextual recovery without raw messages. */
+export class ControlActionError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "ControlActionError";
+  }
+}
 /** Exact allowlisted route names are enforced again by the server. */
 export async function controlAction(action: string, data: unknown): Promise<ControlResult> {
   let token: string;
@@ -53,7 +60,10 @@ export async function controlAction(action: string, data: unknown): Promise<Cont
   });
   if (!value || typeof value !== "object") throw new Error("پاسخ سرویس معتبر نیست.");
   const result = value as ControlResult;
-  if (!response.ok || result.ok !== true) throw new Error(errors[result.code ?? ""] ?? "عملیات کامل نشد؛ وضعیت فعلی را بررسی و سپس دوباره تلاش کنید.");
+  if (!response.ok || result.ok !== true) {
+    const code = typeof result.code === "string" ? result.code : "";
+    throw new ControlActionError(code, errors[code] ?? "عملیات کامل نشد؛ وضعیت فعلی را بررسی و سپس دوباره تلاش کنید.");
+  }
   return result;
 }
 export interface AccountData {

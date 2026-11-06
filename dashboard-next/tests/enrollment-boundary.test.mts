@@ -42,4 +42,5 @@ test("non-MFA permission failures keep their original enforcement",async()=>{
 test("required first enrollment exposes only its MFA controls",()=>{
  const f=fixture(),Panel=f.load("components/blocks/account-panel.tsx").AccountPanel as ComponentType<{initial:unknown}>;
  const html=renderToStaticMarkup(createElement(Panel,{initial:account}));assert(html.includes("شروع فعال‌سازی MFA"));assert(!html.includes("ذخیره مشخصات"));assert(!html.includes('name="new_password"'));
+ assert(!html.includes('name="current_password"'), "the password just verified at login is not requested again for setup");
 });
