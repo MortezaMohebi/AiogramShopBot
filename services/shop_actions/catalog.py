@@ -37,6 +37,8 @@ def actions() -> Registry:
         descriptor = definition.descriptor
         adapter, preview = bindings.get(descriptor.key, (None, None))
         key, version = descriptor.key, descriptor.version
+        if (key, version) == ("catalog.search_products", "2.0.0"):
+            adapter = preview = a.search_products_display
         registry.register(
             ActionSpec(
                 descriptor,

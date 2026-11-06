@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from functools import lru_cache
 
-from services.shop_actions.contracts import ActionDescriptor
 from services.shop_actions import schemas as s
+from services.shop_actions.contracts import ActionDescriptor
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,14 +28,15 @@ def _definition(
     available=True,
     reason=None,
     sensitive=(),
-    external=False
+    external=False,
+    version="1.0.0",
 ):
     """Build one explicit reviewed descriptor with conservative execution policy."""
     category = key.split(".")[0]
     return ActionDefinition(
         ActionDescriptor(
             key=key,
-            version="1.0.0",
+            version=version,
             name=name,
             description=name,
             category=category,
@@ -78,6 +79,10 @@ def definitions() -> tuple[ActionDefinition, ...]:
         ),
         _definition(
             "catalog.search_products", "جستجوی محصولات مجاز", s.Search, s.ProductPage
+        ),
+        _definition(
+            "catalog.search_products", "جستجوی محصولات با متن نمایش",
+            s.Search, s.ProductSearchDisplay, version="2.0.0",
         ),
         _definition(
             "catalog.get_product", "جزئیات محصول", s.ProductInput, s.ProductPublic

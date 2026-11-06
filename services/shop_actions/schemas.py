@@ -169,6 +169,12 @@ class ProductPage(StrictModel):
     has_more: bool
 
 
+class ProductSearchDisplay(ProductPage):
+    """Version 2 adds bounded scalar text; version 1 remains unchanged."""
+
+    display_text: str = Field(max_length=4000)
+
+
 class Category(StrictModel):
     """A published same-Store category containing an entitled product."""
 
