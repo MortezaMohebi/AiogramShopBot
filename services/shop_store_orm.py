@@ -41,6 +41,7 @@ from models.shop_customer_notifications import (
 from services import shop_admin_security as security
 from models.shop_workflow import ShopWorkflow, ShopWorkflowRevision
 from models.shop_workflow_runtime import RUNTIME_MODELS
+from models.shop_mcp import McpChangeSet, McpIntent, McpRequest
 from models.shop_wholesale import ShopWholesaleApplication
 from services.shop_store_context import current_context
 
@@ -61,6 +62,7 @@ STORE_OWNED_MODELS = (
     ShopStockAlert, ShopCustomerNotificationOutbox,
     ShopDigitalAsset, ShopDigitalLicense, ShopDigitalDelivery,
     ShopWorkflow, ShopWorkflowRevision, ShopWholesaleApplication, *RUNTIME_MODELS,
+    McpChangeSet, McpIntent, McpRequest,
 )
 
 

@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-06",
+  "environment": "Codespace isolated aiogram-workflow-runtime-qa PostgreSQL 18",
+  "case": "Gateway admission vs Studio activation lock order",
+  "source_sha256": "03c6f3fee07181d85ff9386154c78607a99c401bac04d6401431df339436fd64",
+  "before": {
+    "status": "FAIL",
+    "sqlstate": "40P01",
+    "competitors": [
+      "ordered",
+      "40P01"
+    ],
+    "studio_first": "preview"
+  },
+  "after": {
+    "status": "PASS",
+    "competitors": [
+      "ordered",
+      "ordered"
+    ],
+    "studio_first": "store"
+  },
+  "scope": "Real publication.activate and lock_routes in two PostgreSQL transactions; synthetic private schema; stop after ordered parent locks before publication; same lock script for RED and GREEN.",
+  "preservation": "Final Layer 3 source unchanged; fixed source mounted read-only from /tmp and SHA matched; no provider calls."
+}

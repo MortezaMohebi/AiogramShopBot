@@ -72,6 +72,7 @@ from models.shop_customer_notifications import (
 )
 from models.shop_workflow import ShopWorkflow, ShopWorkflowRevision
 from models.shop_workflow_runtime import RUNTIME_MODELS
+from models.shop_mcp import MCP_MODELS
 from models.shop_wholesale import ShopWholesaleApplication
 from models.shop_action import ShopActionExecution, ShopActionAuthorization
 from models.shop_telegram_transport import (

@@ -54,6 +54,7 @@ class StoreContext:
     current_store_id: str
     default_store_id: str
     version: int
+    authority_kind: str = "admin_session"
 
     @property
     def allowed_store_ids(self) -> tuple[str, ...]:

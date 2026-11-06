@@ -510,6 +510,9 @@ async def activate(db, *, actor, scope, preview_id, approved):
     require_manager(actor, scope)
     if approved is not True:
         raise RuntimeRejected("runtime_approval_required", 422)
+    # Gateway admission already holds Store before any intent/preview lock.
+    # Studio must take the same parent order to avoid a Store/preview deadlock.
+    await lock_routes(db, scope.current_store_id)
     row = await db.scalar(
         select(PublicationPreview)
         .where(
@@ -531,7 +534,6 @@ async def activate(db, *, actor, scope, preview_id, approved):
         }
     if security.utc(row.expires_at) <= security.clock():
         raise RuntimeRejected("runtime_preview_expired")
-    await lock_routes(db, row.store_id)
     specs = [BindingSpec.model_validate(x) for x in row.request["bindings"]]
     definition, report = await readiness(
         db,
