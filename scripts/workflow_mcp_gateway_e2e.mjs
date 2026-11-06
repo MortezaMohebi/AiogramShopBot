@@ -1,10 +1,11 @@
 /** Real MCP SDK, private HTTP, PostgreSQL and controlled human UI acceptance. */
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey, randomBytes, randomUUID } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 const root = "/workspaces/wpmcp-bot-qa";
 const compose = "compose.workflow-mcp-qa.yml";
@@ -199,6 +200,16 @@ try {
   await check("private signature replay and foreign Store requests fail closed", async () => {
     const previous = captured;const response = await fetch(previous.url, previous.options);assert.equal(response.status, 409);
     await call("bots.list", { store_id: fixture.foreign_store_id }, true);
+  });
+  await check("official Inspector performs an authenticated native profile call", async () => {
+    const result = await promisify(execFile)("/workspaces/beta-qa-tools/inspector/node_modules/.bin/mcp-inspector", [
+      "--cli", gatewayOrigin + "/mcp", "--transport", "http", "--method", "tools/call",
+      "--tool-name", "bot.context.get_profile", "--tool-arg", "connection_id=" + connectionId,
+      "--header", "Authorization: Bearer " + token,
+    ], { encoding: "utf8", timeout: 45000, maxBuffer: 4 * 1024 * 1024 });
+    const value = JSON.parse(result.stdout);
+    assert.equal((value.structuredContent ?? value.result?.structuredContent).data.native_staff_id, fixture.admin_id);
+    evidence.inspector_version = readFileSync("/tmp/l4-inspector-version", "utf8").trim();
   });
   await check("MCP draft retry, altered retry and concurrent revision conflict", async () => {
     const create = nativeArgs({ id: randomUUID(), operation_id: randomUUID(), expected_revision: 0,

@@ -177,6 +177,9 @@
     "infra/postgres/migrations/0031_bot_provider_worker.up.sql": "93b858ed5bad705201a37a9ca254712f5181dd66956191825cf5b5ef4a806166",
     "infra/postgres/migrations/0032_provider_activity.up.sql": "fdc50f58c722e1c00f9269676db4341a25f600fd67e9fa1083956e9e771185e9",
     "infra/postgres/migrations/0033_provider_pairings.up.sql": "da8a28a2b230f006b45f0953bb42b48fb2c4e011c5d3010271972ab7970ea429",
-    "infra/postgres/migrations/0034_provider_limits.up.sql": "cc041ebeef5c5e1a86b22f70e08ec13eaf8d18cb414bd4d43ed5cce7544ec2f8"
+    "infra/postgres/migrations/0034_provider_limits.up.sql": "cc041ebeef5c5e1a86b22f70e08ec13eaf8d18cb414bd4d43ed5cce7544ec2f8",
+    "apps/saas-gateway/assets/Vazirmatn.LICENSE": "e6f4ce7b6c830d5a25a4f8ac777c267cd7d3c180bc2a7150ca57cbb9b280c4b7",
+    "apps/saas-gateway/assets/vazirmatn-arabic-wght-normal.woff2": "84a382e46c30fb4f73d0e3800c16d0af15888e2731e57fa5f93e2c29a2c6a957",
+    "apps/saas-gateway/assets/vazirmatn-latin-wght-normal.woff2": "d29c041cd4294af893cf3c01dfab6d47202c667ab55d702f68782599918c651d"
   }
 }
