@@ -1,6 +1,6 @@
 # Layer 4 WPMCP Workflow Adapter Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Manage bot workflows through WPMCP with one shared human approval authority and independently enforced native Store policies.
 
@@ -48,11 +48,11 @@
 
 **Interfaces:** produces `ProviderStore.enroll/resolve/list/prepare/claim/transition/status` and SQL provider connection authorization; existing `gateway_operation_json` and `apply_approval_decision` remain canonical. Provider metadata is `provider, installation_id, native_grant_id, subject, tenant_id, workspace_id, connection_id, status`.
 
-- [ ] Write failing real-database tests: bot connection enroll/resolve; WordPress resolver refuses it; tenant/member isolation; exact operation replay; changed hash conflicts; one requester-only review; same existing dashboard decision authority moves READY/DENIED; editor/foreign reviewer denied; revoked connection/expired review denied; existing WordPress decision still works.
-- [ ] Run `node --test test/provider-approvals.test.mjs` after build. Expected: FAIL because provider enrollment/authority is absent, not a fixture error.
-- [ ] Add provider identity, migrate operation FK/path constraints, preserve old WordPress entry points/wrappers, and route new provider operations through the same operation/approval tables. Define additive manager-authorized enrollment and atomic operation registration/claim with current requester authority. No bot-specific second approval table.
-- [ ] Run build and provider test plus existing approval/lease files. Expected: PASS. Run gateway `npm run test:source`; record any unrelated failures by name.
-- [ ] Commit verified gateway deliverable and update ledger.
+- [x] Write failing real-database tests: bot connection enroll/resolve; WordPress resolver refuses it; tenant/member isolation; exact operation replay; changed hash conflicts; one requester-only review; same existing dashboard decision authority moves READY/DENIED; editor/foreign reviewer denied; revoked connection/expired review denied; existing WordPress decision still works.
+- [x] Run `node --test test/provider-approvals.test.mjs` after build. Expected: FAIL because provider enrollment/authority is absent, not a fixture error.
+- [x] Add provider identity, migrate operation FK/path constraints, preserve old WordPress entry points/wrappers, and route new provider operations through the same operation/approval tables. Define additive manager-authorized enrollment and atomic operation registration/claim with current requester authority. No bot-specific second approval table.
+- [x] Run build and provider test plus existing approval/lease files. Expected: PASS. Run gateway `npm run test:source`; record any unrelated failures by name.
+- [x] Commit verified gateway deliverable and update ledger.
 
 ### Task 2: Signed delegation and native grant boundary
 
@@ -60,11 +60,11 @@
 
 **Interfaces:** produces `verify_delegation(token, method, target, body, configuration) -> Delegation`, `resolve_grant(db, delegation, store_id, required_scope) -> NativePrincipal`, pairing create/confirm/revoke services. Private fixed `/internal/mcp/v1` uses these before domain dispatch. Canonical JSON and proof fixtures shared across languages.
 
-- [ ] Write tests for a valid signed private read, wrong algorithm/key/issuer/audience/body/method/target/subject/client/tenant/grant/version, expiry/future token, duplicate keys, revoked staff/member/grant, Store/Bot selection and single-use pairing. Assert no domain write on denial.
-- [ ] Run focused Python/Node tests; Expected: missing feature FAIL.
-- [ ] Implement strict versioned Ed25519 proofs, current native grant/membership intersection and manager-confirmed pairing. Never use gateway token contents supplied in model arguments or fabricate dashboard sessions. Keep replay protection separate from domain idempotency.
-- [ ] Run focused tests and cross-language proof fixture. Expected: PASS, plus previous authority/lease gates remain PASS.
-- [ ] Commit verified bot/gateway parts and ledger results.
+- [x] Write tests for a valid signed private read, wrong algorithm/key/issuer/audience/body/method/target/subject/client/tenant/grant/version, expiry/future token, duplicate keys, revoked staff/member/grant, Store/Bot selection and single-use pairing. Assert no domain write on denial.
+- [x] Run focused Python/Node tests; Expected: missing feature FAIL.
+- [x] Implement strict versioned Ed25519 proofs, current native grant/membership intersection and manager-confirmed pairing. Never use gateway token contents supplied in model arguments or fabricate dashboard sessions. Keep replay protection separate from domain idempotency.
+- [x] Run focused tests and cross-language proof fixture. Expected: PASS, plus previous authority/lease gates remain PASS.
+- [x] Commit verified bot/gateway parts and ledger results.
 
 ### Task 3: Typed workflow services, patches and Change Sets
 
@@ -72,11 +72,11 @@
 
 **Interfaces:** produces closed `tool_catalog()` and `dispatch(db, principal, name, arguments) -> dict`; shared `apply_patches(definition, layout, operations) -> proposal`; Change Set create/get/update/validate/simulate/cancel/apply. All existing services receive trusted scope/actor.
 
-- [ ] Write real-service tests for context/platform/Bot/Action discovery, every typed patch, invalid/foreign media and Bot, exact UUID retry vs changed payload, stale revisions, all mutation paths' risk checks, immutable pending proposal, pure validation/simulation, bounded pagination/output and private Runtime projection.
-- [ ] Run focused tests; Expected: FAIL on absent services.
-- [ ] Implement read/mutation adapters over existing services, normalized patch engine and durable Change Sets with shared risk policy. Add resources and six bounded prompt contracts without executing user text. Staged high-risk changes return exact preparation, never effects.
-- [ ] Run `pytest tests/test_mcp_authority.py tests/test_mcp_workflows.py`; Expected: PASS. Run current domain workflow/Action/Runtime tests.
-- [ ] Commit verified services and ledger.
+- [x] Write real-service tests for context/platform/Bot/Action discovery, every typed patch, invalid/foreign media and Bot, exact UUID retry vs changed payload, stale revisions, all mutation paths' risk checks, immutable pending proposal, pure validation/simulation, bounded pagination/output and private Runtime projection.
+- [x] Run focused tests; Expected: FAIL on absent services.
+- [x] Implement read/mutation adapters over existing services, normalized patch engine and durable Change Sets with shared risk policy. Add resources and six bounded prompt contracts without executing user text. Staged high-risk changes return exact preparation, never effects.
+- [x] Run `pytest tests/test_mcp_authority.py tests/test_mcp_workflows.py`; Expected: PASS. Run current domain workflow/Action/Runtime tests.
+- [x] Commit verified services and ledger.
 
 ### Task 4: Exact sensitive intent and native receipt reconciliation
 
@@ -84,11 +84,11 @@
 
 **Interfaces:** `prepare(db, principal, kind, payload) -> immutable intent`; `commit(db, principal, intent_id, approval_proof) -> native receipt`; `receipt(db, principal, operation_id)`. Types include publish/rollback/ChangeSet/gate/run retry/cancel/known-rejected delivery retry. Unknown effects remain forbidden.
 
-- [ ] Write tests for exact hash/revision/Store/connection/actor/grant-version/expiry binding; real publication/recovery/gate services; stale revision/binding/dependency requires new review; no local decision API; duplicate approved request makes one effect; crash after domain commit reconciles; native revocation vs admission race.
-- [ ] Run focused tests; Expected: absent preparation/commit FAIL.
-- [ ] Persist native intent/operation receipt only, validate distinct generic approval proof, use stable existing domain operation IDs and exact publication previews. Reconcile existing revision/publication/audit receipts before retry; serialize native authority and effect admission in consistent lock order.
-- [ ] Run focused and existing Runtime publication/recovery tests; Expected: PASS.
-- [ ] Commit and ledger proof of RED/GREEN and receipt behavior.
+- [x] Write tests for exact hash/revision/Store/connection/actor/grant-version/expiry binding; real publication/recovery/gate services; stale revision/binding/dependency requires new review; no local decision API; duplicate approved request makes one effect; crash after domain commit reconciles; native revocation vs admission race.
+- [x] Run focused tests; Expected: absent preparation/commit FAIL.
+- [x] Persist native intent/operation receipt only, validate distinct generic approval proof, use stable existing domain operation IDs and exact publication previews. Reconcile existing revision/publication/audit receipts before retry; serialize native authority and effect admission in consistent lock order.
+- [x] Run focused and existing Runtime publication/recovery tests; Expected: PASS.
+- [x] Commit and ledger proof of RED/GREEN and receipt behavior.
 
 ### Task 5: Actual gateway MCP tools and automatic continuation
 
@@ -96,11 +96,11 @@
 
 **Interfaces:** consumes Tasks 1–4. `registerBotWorkflowTools(server,runtime)` registers only closed typed `bot.*` catalog/resources/prompts. `ProviderWorker.tick()` claims approved work, rechecks authority, signs exact private requests and reconciles native receipt after unknown response/restart.
 
-- [ ] Write actual SDK HTTP tests for auth, scoped tool/resource/prompt discovery, native calls, unavailable/forged routes, rejected input, namespace collisions and legacy client compatibility. Test auto continuation with no further model call; worker competition; timeout/restart; exact pending replay; revoked-before-claim denial; paused signed request after dispatch/revoke reflects in-flight semantics.
-- [ ] Run Node test files; Expected: missing registration/worker FAIL.
-- [ ] Implement fixed-origin signed client (no redirects/arbitrary URL), bounded responses/timeouts, DB leases/fences, persisted normalized proposal and exact approved proof. Extend supported WPMCP review surfaces with live native authority and requester restriction; no model-callable approve path.
-- [ ] Run actual transport tests and gateway source suite; Expected: PASS. Unavailable native/gateway/approval infrastructure fails closed and does not impersonate success.
-- [ ] Commit and ledger.
+- [x] Write actual SDK HTTP tests for auth, scoped tool/resource/prompt discovery, native calls, unavailable/forged routes, rejected input, namespace collisions and legacy client compatibility. Test auto continuation with no further model call; worker competition; timeout/restart; exact pending replay; revoked-before-claim denial; paused signed request after dispatch/revoke reflects in-flight semantics.
+- [x] Run Node test files; Expected: missing registration/worker FAIL.
+- [x] Implement fixed-origin signed client (no redirects/arbitrary URL), bounded responses/timeouts, DB leases/fences, persisted normalized proposal and exact approved proof. Extend supported WPMCP review surfaces with live native authority and requester restriction; no model-callable approve path.
+- [x] Run actual transport tests and gateway source suite; Expected: PASS. Unavailable native/gateway/approval infrastructure fails closed and does not impersonate success.
+- [x] Commit and ledger.
 
 ### Task 6: Enrollment, administration, quota and audit UX
 
@@ -108,11 +108,11 @@
 
 **Interfaces:** native manager-confirmed pair, list/get/revoke grants, audit/usage; WPMCP review URL/status only. Gateway manager connection enrollment and revocation report existing in-flight work accurately.
 
-- [ ] Read installed Next docs and existing UI conventions. Write failing behavior tests for exact enrollment grant, foreign-store redaction, revocation, pending/conflict/unknown response preservation, role-gated controls and no local approval decision.
-- [ ] Run focused Backend/Next tests; Expected: new behavior FAIL.
-- [ ] Wire actual APIs, durable counters/leases and safe audit. Implement Persian RTL/dark/responsive views with usable empty/error/loading states and canonical review links.
-- [ ] Run tests, Typecheck, Lint, Build and actual browser interactions at mobile/desktop in both themes. Expected: PASS; no private values or browser errors.
-- [ ] Commit and ledger.
+- [x] Read installed Next docs and existing UI conventions. Write failing behavior tests for exact enrollment grant, foreign-store redaction, revocation, pending/conflict/unknown response preservation, role-gated controls and no local approval decision.
+- [x] Run focused Backend/Next tests; Expected: new behavior FAIL.
+- [x] Wire actual APIs, durable counters/leases and safe audit. Implement Persian RTL/dark/responsive views with usable empty/error/loading states and canonical review links.
+- [x] Run tests, Typecheck, Lint, Build and actual browser interactions at mobile/desktop in both themes. Expected: PASS; no private values or browser errors.
+- [x] Commit and ledger.
 
 ### Task 7: Real product inquiry and PostgreSQL acceptance
 
@@ -120,11 +120,11 @@
 
 **Interfaces:** consumes complete actual MCP/private protocol. Fake transport/payment providers are external test boundaries; real DB/services/approval state machine remain real.
 
-- [ ] Write the product inquiry acceptance through real MCP: authenticate, discover Stores/Bots/platforms/Actions/catalog, draft Start/question/category/search/display/contact/confirmation/end, assign Telegram/Bale, validate; introduce/fix actual compatibility error; simulate both; exact ChangeSet/diff; one controlled human decision; auto publish; actual Fake Runtime/Action receipt and audit.
-- [ ] If scalar search output is required, first reproduce its absence, then add an additive versioned projection from actual visible catalog results. Existing version stays unchanged.
-- [ ] Run acceptance with actual PostgreSQL: independent workers, duplicate input, revision conflict, restart, signature/proof replay, reviewer/tenant isolation and native/gateway revocation order. Expected: all controlled gates PASS; no live provider call.
-- [ ] Attempt available Inspector/developer/ChatGPT client paths without publishing private QA. Record exact unavailable paths BLOCKED.
-- [ ] Commit safe evidence and ledger.
+- [x] Write the product inquiry acceptance through real MCP: authenticate, discover Stores/Bots/platforms/Actions/catalog, draft Start/question/category/search/display/contact/confirmation/end, assign Telegram/Bale, validate; introduce/fix actual compatibility error; simulate both; exact ChangeSet/diff; one controlled human decision; auto publish; actual Fake Runtime/Action receipt and audit.
+- [x] If scalar search output is required, first reproduce its absence, then add an additive versioned projection from actual visible catalog results. Existing version stays unchanged.
+- [x] Run acceptance with actual PostgreSQL: independent workers, duplicate input, revision conflict, restart, signature/proof replay, reviewer/tenant isolation and native/gateway revocation order. Expected: all controlled gates PASS; no live provider call.
+- [x] Attempt available Inspector/developer/ChatGPT client paths without publishing private QA. Record exact unavailable paths BLOCKED.
+- [x] Commit safe evidence and ledger.
 
 ### Task 8: Regression, final review and reviewable branches
 
@@ -132,8 +132,8 @@
 
 **Interfaces:** complete branches with safe acceptance evidence, full brief's 24-field handoff.
 
-- [ ] Run full Python, Next unit/type/lint/build, gateway source tests, Relay and PostgreSQL/browser acceptance after final product changes. Expected: PASS with inherited warnings/unavailable external gates identified.
-- [ ] Produce whole-branch review package for both repositories; one fresh reviewer checks security, domain authority, compatibility and recovery against the brief/design and ledger rulings. Regrade findings by user impact.
-- [ ] Reproduce Critical/Important findings RED, fix in one pass, then run affected full suites GREEN. Record deferred minors and rationale for any declined important finding.
-- [ ] Publish only isolated feature branches/Draft PRs with exact bases and evidence; preserve shared staging. Keep Actions OFF. Verify clean own worktrees and no owned QA service left running unnecessarily.
-- [ ] Report earned progress, commits/PRs, results, actual limitations, deferred items and rulings/costs. Never claim 100% while a locally runnable mandatory gate fails.
+- [x] Run full Python, Next unit/type/lint/build, gateway source tests, Relay and PostgreSQL/browser acceptance after final product changes. Expected: PASS with inherited warnings/unavailable external gates identified.
+- [x] Produce whole-branch review package for both repositories; one fresh reviewer checks security, domain authority, compatibility and recovery against the brief/design and ledger rulings. Regrade findings by user impact.
+- [x] Reproduce Critical/Important findings RED, fix in one pass, then run affected full suites GREEN. Record deferred minors and rationale for any declined important finding.
+- [x] Publish only isolated feature branches/Draft PRs with exact bases and evidence; preserve shared staging. Keep Actions OFF. Verify clean own worktrees and no owned QA service left running unnecessarily.
+- [x] Report earned progress, commits/PRs, results, actual limitations, deferred items and rulings/costs. Never claim 100% while a locally runnable mandatory gate fails.
