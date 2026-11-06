@@ -342,10 +342,10 @@ try {
     authStage = "MFA";
     secondFactor = otp();
     await page
-      .getByLabel("کد احراز هویت یا بازیابی (اگر فعال است)", { exact: true })
+      .getByLabel("کد تأیید دومرحله‌ای", { exact: true })
       .fill(secondFactor);
     authStage = "submit and redirect";
-    await click("ورود امن");
+    await click("ورود");
     await page.waitForURL("**/dashboard");
     pass("Normal password and MFA browser login");
   }
@@ -1000,7 +1000,7 @@ try {
   // Revoke this runner's normal browser session through the existing logout UI.
   try {
     if (!page.url().includes("/login")) {
-      await button("خروج امن").click({ timeout: 3000 });
+      await button("خروج").click({ timeout: 3000 });
       await page.waitForURL("**/login", { timeout: 10000 });
     }
   } catch {}

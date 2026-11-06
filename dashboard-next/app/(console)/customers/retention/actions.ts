@@ -27,8 +27,12 @@ export async function saveRetentionPolicy(form: FormData): Promise<void> {
 /** Purge only old internal notes after an explicit confirmation checkbox. */
 export async function purgeCustomerNotes(form: FormData): Promise<void> {
   const run = form.has("confirm");
+  let result: {
+    ok?: boolean; dry_run?: boolean;
+    notes_eligible?: number; notes_deleted?: number;
+  } | null;
   try {
-    await adminFetch("/customer-retention/purge", "POST", {
+    result = await adminFetch("/customer-retention/purge", "POST", {
       dry_run: !run,
       confirmation: run ? "PURGE_EXPIRED_NOTES" : "",
     });
@@ -36,6 +40,13 @@ export async function purgeCustomerNotes(form: FormData): Promise<void> {
     if (!(error instanceof ApiError)) throw error;
     redirect(`/customers/retention?error=${error.status === 428 ? "reauth" : "purge"}`);
   }
+  // Show the backend's confirmed count for the requested mode, never a guessed
+  // deletion count or a dry-run response as proof that deletion completed.
+  const count = run ? result?.notes_deleted : result?.notes_eligible;
+  if (result?.ok !== true || result.dry_run !== !run ||
+      typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+    redirect("/customers/retention?error=receipt");
+  }
   revalidatePath("/customers/retention");
-  redirect(`/customers/retention?saved=${run ? "purged" : "preview"}`);
+  redirect(`/customers/retention?saved=${run ? "purged" : "preview"}&count=${count}`);
 }

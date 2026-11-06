@@ -63,7 +63,7 @@ export function BotConnectionsPanel({
     } catch {
       setFeedback({
         ok: false,
-        message: "بررسی وضعیت API انجام نشد. اتصال Backend و اینترنت Codespaces را بررسی کنید.",
+        message: "بررسی اتصال انجام نشد. وضعیت سرور و اتصال اینترنت را بررسی کنید.",
       });
     } finally {
       setProbing(false);
@@ -75,7 +75,7 @@ export function BotConnectionsPanel({
       await navigator.clipboard.writeText(value);
       setFeedback({ ok: true, message: "آدرس Webhook کپی شد." });
     } catch {
-      setFeedback({ ok: false, message: "دسترسی به Clipboard ممکن نیست؛ آدرس را دستی انتخاب کنید." });
+      setFeedback({ ok: false, message: "کپی انجام نشد؛ آدرس را دستی انتخاب کنید." });
     }
   }
 
@@ -119,7 +119,7 @@ export function BotConnectionsPanel({
     } catch {
       setFeedback({
         ok: false,
-        message: "ثبت درخواست انجام نشد. سطح دسترسی و اتصال Backend را بررسی کنید.",
+        message: "درخواست ثبت نشد. دسترسی حساب و اتصال را بررسی کنید.",
       });
     } finally {
       setStaging(false);
@@ -148,13 +148,13 @@ export function BotConnectionsPanel({
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Telegram</CardTitle>
+            <CardTitle>تلگرام</CardTitle>
             <CardDescription>
               شیوهٔ دریافت پیام و اتصال به Telegram Bot API
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <p>بات پیکربندی شده: <strong>{initial.telegram.configured ? "بله" : "خیر"}</strong></p>
+            <p>ربات پیکربندی شده: <strong>{initial.telegram.configured ? "بله" : "خیر"}</strong></p>
             <p>
               روش فعال دریافت: <strong dir="ltr">
                 {initial.telegram.update_mode === "polling"
@@ -193,7 +193,7 @@ export function BotConnectionsPanel({
             {telegram ? (
               <div role="status" className="rounded-lg border p-3 text-xs leading-7">
                 <p>اتصال واقعی: <strong>{telegram.status === "connected" ? "برقرار" : "در دسترس نیست"}</strong></p>
-                {telegram.username ? <p>نام بات: <span dir="ltr">@{telegram.username}</span></p> : null}
+                {telegram.username ? <p>نام ربات: <span dir="ltr">@{telegram.username}</span></p> : null}
                 {telegram.provider_mode ? <p>روش ثبت‌شده نزد Telegram: {telegram.provider_mode}</p> : null}
                 {typeof telegram.pending_updates === "number" ? <p>پیام‌های در انتظار: {telegram.pending_updates}</p> : null}
                 {typeof telegram.webhook_matches === "boolean" ? (
@@ -205,7 +205,7 @@ export function BotConnectionsPanel({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Bale</CardTitle>
+            <CardTitle>بله</CardTitle>
             <CardDescription>
               وب‌هوک بازوی بله و اتصال مستقل به Bale Bot API
             </CardDescription>
@@ -214,8 +214,7 @@ export function BotConnectionsPanel({
             <p>بازو پیکربندی شده: <strong>{initial.bale.configured ? "بله" : "خیر"}</strong></p>
             <p>روش دریافت: <strong dir="ltr">Webhook</strong></p>
             <p className="text-xs text-muted-foreground">
-              در این نسخه، پردازش getUpdates برای Bale پیاده‌سازی نشده است؛
-              نمایش آن به‌عنوان گزینهٔ فعال گمراه‌کننده خواهد بود.
+              برای بله فقط دریافت با Webhook در دسترس است.
             </p>
             {initial.bale.webhook_url_label ? (
               <div className="space-y-2">
@@ -238,15 +237,14 @@ export function BotConnectionsPanel({
 
       <Button type="button" variant="outline" onClick={refresh} disabled={probing}>
         <RefreshCw aria-hidden="true" className={probing ? "size-4 animate-spin" : "size-4"} />
-        {probing ? "در حال بررسی Telegram و Bale..." : "بررسی اتصال واقعی هر دو API"}
+        {probing ? "در حال بررسی Telegram و Bale..." : "بررسی اتصال تلگرام و بله"}
       </Button>
 
       <Card>
         <CardHeader>
           <CardTitle>روش دریافت پیام‌های Telegram</CardTitle>
           <CardDescription>
-            تغییر حالتِ فعال نیازمند توقف کنترل‌شدهٔ Receiver و راه‌اندازی مجدد است.
-            تنظیم Pending به‌تنهایی هیچ Webhook را حذف نمی‌کند.
+            اعمال تغییر به راه‌اندازی مجدد سرویس دریافت پیام نیاز دارد. ثبت درخواست، اتصال فعلی را تغییر نمی‌دهد.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

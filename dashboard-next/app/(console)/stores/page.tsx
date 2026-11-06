@@ -40,10 +40,9 @@ export default async function StoresPage({
     : "";
 
   return <div className="space-y-6">
-    <PageHeading title="فروشگاه‌ها و سیاست اشتراک"
-      description="کالا و مشتری متعلق به Store هستند؛ اشتراک سبد و اعتبار فقط با انتخاب صریح انجام می‌شود." />
+    <PageHeading title="فروشگاه‌ها" />
     <div className="flex flex-wrap gap-3">
-      <Button asChild variant="outline"><Link href="/bots">مدیریت بات‌ها</Link></Button>
+      <Button asChild variant="outline"><Link href="/bots">مدیریت ربات‌ها</Link></Button>
       <Button asChild variant="outline"><Link href="/payment-accounts">حساب‌های پرداخت</Link></Button>
       <Button asChild variant="outline"><Link href="/store-customers">مشتریان فروشگاه</Link></Button>
     </div>
@@ -54,16 +53,19 @@ export default async function StoresPage({
       {note}
     </p> : null}
     {query.ux_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      تنظیمات منوی مشترک یا سیاست Checkout فروشگاه ذخیره شد.
+      تنظیمات منو و خرید فروشگاه ذخیره شد.
     </p> : null}
     {query.ux_error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      سیاست مشتری ثبت نشد؛ Store جاری، مجوزها، شرایط فروش و MFA را بررسی کنید.
+      تنظیمات خرید ذخیره نشد؛ فروشگاه جاری، مجوزها، شرایط فروش و MFA را بررسی کنید.
     </p> : null}
     <p className="text-sm leading-7 text-muted-foreground">
-      اشتراک Cart تنها برای هویت‌های متصل و تأییدشده عمل می‌کند. در حالت اشتراک،
+      اشتراک سبد خرید تنها برای هویت‌های متصل و تأییدشده عمل می‌کند. در حالت اشتراک،
       سبدهای قبلی جداگانه حفظ می‌شوند و هیچ ادغامی خودکار نیست. اعتبار مشترک هم
       تا انتقال حسابرسی‌شدهٔ مانده‌های موجود، فعال نخواهد شد.
     </p>
+    {!stores.items.length ? <p className="rounded-lg border p-4 text-sm">
+      هنوز فروشگاهی ثبت نشده است. <Link href="/bots" className="underline">فروشگاه ایجاد کنید</Link>.
+    </p> : null}
     <div className="grid gap-4 xl:grid-cols-2">
       {stores.items.map((store, index) => {
         const policy = policies[index];
@@ -71,7 +73,7 @@ export default async function StoresPage({
           <CardHeader><CardTitle>{store.name}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              {store.slug} · {store.state} · نسخهٔ سیاست {policy.version}
+              <bdi>{store.slug}</bdi> · {({ active: "فعال", paused: "متوقف", disabled: "غیرفعال", draft: "پیش‌نویس", archived: "بایگانی‌شده" } as Record<string, string>)[store.state] ?? store.state} · نسخهٔ سیاست {policy.version}
             </p>
             <form action={saveStoreCommercePolicy} className="space-y-4">
               <input type="hidden" name="store_id" value={store.id} />
@@ -79,14 +81,14 @@ export default async function StoresPage({
               <label className="block space-y-2 text-sm">مالکیت سبد خرید
                 <select name="cart_scope" defaultValue={policy.cart_scope}
                   className="block h-10 w-full rounded-md border bg-background px-3">
-                  <option value="bot">هر بات مستقل</option>
-                  <option value="customer">مشتری تأییدشده در Store مشترک</option>
+                  <option value="bot">هر ربات مستقل</option>
+                  <option value="customer">مشتری تأییدشده در فروشگاه مشترک</option>
                 </select>
               </label>
               <label className="block space-y-2 text-sm">مالکیت اعتبار داخلی
                 <select name="credit_scope" defaultValue={policy.credit_scope}
                   className="block h-10 w-full rounded-md border bg-background px-3">
-                  <option value="identity">اعتبار مستقل هر Identity</option>
+                  <option value="identity">اعتبار مستقل هر هویت پیام‌رسان</option>
                   <option value="customer">اعتبار مشترک مشتری پس از تطبیق موجودی</option>
                 </select>
               </label>
@@ -96,18 +98,18 @@ export default async function StoresPage({
                     autoComplete="current-password" />
                 </label>
                 <label className="block space-y-2 text-sm">کد MFA
-                  <Input name="second_factor" inputMode="numeric" pattern="[0-9]{6}"
+                  <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
                     maxLength={6} autoComplete="one-time-code" required />
                 </label>
               </div>
-              <Button type="submit" variant="outline">ذخیرهٔ سیاست Store</Button>
+              <Button type="submit" variant="outline">ذخیره تنظیمات اشتراک</Button>
             </form>
           </CardContent>
         </Card>;
       })}
     </div>
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold">منو و سیاست خرید هر Store</h2>
+      <h2 className="text-lg font-semibold">منو و خرید هر فروشگاه</h2>
       {stores.items.map((store, index) =>
         <div key={store.id} className="space-y-3 rounded-xl border p-4">
           <h3 className="font-semibold">{store.name}</h3>

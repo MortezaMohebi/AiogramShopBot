@@ -35,7 +35,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
     return `/audit?${next.toString()}`;
   };
   return <div className="space-y-6">
-    <PageHeading title="گزارش امنیت و تغییرات مدیران" description="رویدادهای ثبت‌شده در سرور؛ رمزها، لینک‌های یک‌بارمصرف و کلیدهای MFA در این گزارش نمایش داده نمی‌شوند." />
+    <PageHeading title="گزارش تغییرات مدیران" />
     <div><Button asChild variant="outline"><Link href="/staff">بازگشت به کارکنان</Link></Button></div>
     <Card><CardContent className="pt-6">
       <form method="get" className="grid gap-3 md:grid-cols-4">
@@ -68,7 +68,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
           <td className="p-3 font-mono text-xs" dir="ltr">{entry.target || "—"}</td>
         </tr>)}</tbody>
       </table>
-      {!history.items.length ? <p className="py-8 text-sm text-muted-foreground">رویدادی مطابق این فیلترها پیدا نشد.</p> : null}
+      {!history.items.length ? <p className="py-8 text-sm text-muted-foreground">{query.actor || query.action || query.since || query.until ? "رویدادی با این فیلترها پیدا نشد." : "هنوز رویدادی ثبت نشده است."}</p> : null}
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
         {page > 1 ? <Button asChild variant="outline"><Link href={pageLink(page - 1)}>قبلی</Link></Button> : <span />}
         <span>صفحه {page.toLocaleString("fa-IR")} از {last.toLocaleString("fa-IR")}</span>

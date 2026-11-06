@@ -1,6 +1,6 @@
 "use client";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowLeft, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CaptchaChallenge, type CaptchaChallengeHandle } from "@/components/blocks/captcha-challenge";
@@ -54,29 +54,30 @@ export function LoginForm({ initialError, captcha }: Props) {
   }
   const message = issue ? loginErrorMessages[issue.code] : null;
   return <form action="/api/auth/login" method="post" onSubmit={submit} className="space-y-5" aria-busy={working}>
-    {message ? <div ref={errorRef} tabIndex={-1} role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive focus:outline-none">
+    {message ? <div id="login-error" ref={errorRef} tabIndex={-1} role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive focus:outline-none">
       <div className="flex items-start gap-2"><AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><div className="space-y-1">
         <p className="font-semibold">{message.title}</p><p className="leading-7">{message.description}</p>
-        {issue?.requestId ? <p dir="ltr" className="text-xs">Request ID: {issue.requestId}</p> : null}
+        {issue?.requestId ? <details className="text-xs"><summary className="cursor-pointer py-1">اطلاعات پشتیبانی</summary><p dir="ltr" className="break-all py-1">Request ID: {issue.requestId}</p></details> : null}
         {issue?.code === "security_check_failed" ? <a href="/login" className="underline">بازکردن دوبارهٔ صفحهٔ ورود</a> : null}
       </div></div>
     </div> : null}
     <div className="space-y-2"><label htmlFor="username" className="text-sm font-medium">نام کاربری</label>
-      <Input id="username" name="username" dir="ltr" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} minLength={3} maxLength={80} disabled={working} required />
+      <Input id="username" name="username" aria-invalid={issue?.code === "invalid_credentials" || issue?.code === "invalid_request"} aria-describedby={issue ? "login-error" : undefined} dir="ltr" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} minLength={3} maxLength={80} disabled={working} required />
     </div>
     <div className="space-y-2"><label htmlFor="password" className="text-sm font-medium">رمز عبور</label>
       <div className="relative" dir="ltr">
-        <Input id="password" name="password" type={showPassword ? "text" : "password"} dir="ltr" autoComplete="current-password" minLength={1} maxLength={256} className="ps-12 text-start" disabled={working} required />
+        <Input id="password" name="password" aria-invalid={issue?.code === "invalid_credentials"} aria-describedby={issue ? "login-error" : undefined} type={showPassword ? "text" : "password"} dir="ltr" autoComplete="current-password" minLength={1} maxLength={256} className="ps-12 text-start" disabled={working} required />
         <button type="button" aria-label={showPassword ? "مخفی‌کردن رمز عبور" : "نمایش رمز عبور"} aria-pressed={showPassword} className="absolute start-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring" onClick={() => setShowPassword((value) => !value)} disabled={working}>
           {showPassword ? <EyeOff aria-hidden="true" className="size-4" /> : <Eye aria-hidden="true" className="size-4" />}
         </button>
       </div>
     </div>
-    <div className="space-y-2"><label htmlFor="second-factor" className="text-sm font-medium">کد احراز هویت یا بازیابی (اگر فعال است)</label>
-      <Input id="second-factor" name="second_factor" dir="ltr" autoComplete="one-time-code" maxLength={64} disabled={working} />
+    <div className="space-y-2"><label htmlFor="second-factor" className="text-sm font-medium">کد تأیید دومرحله‌ای</label>
+      <Input id="second-factor" name="second_factor" dir="ltr" autoComplete="one-time-code" aria-describedby="second-factor-help" maxLength={64} disabled={working} />
+      <p id="second-factor-help" className="text-xs leading-6 text-muted-foreground">اگر فعال است، کد برنامهٔ احراز هویت یا کد بازیابی را وارد کنید.</p>
     </div>
     <CaptchaChallenge ref={captchaRef} config={captcha} />
-    <Button type="submit" size="lg" className="w-full" disabled={working || captcha.provider === "unavailable"}>{working ? <><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{phase === "security" ? "در حال بررسی امنیت ورود..." : "در حال ورود..."}</> : <>ورود امن <ArrowLeft aria-hidden="true" className="size-4" /></>}</Button>
-    <p className="text-center text-xs leading-6 text-muted-foreground">اطلاعات ورود فقط از مسیر HTTPS به سرویس مدیریت ارسال می‌شوند.</p>
+    <Button type="submit" size="lg" className="w-full" disabled={working || captcha.provider === "unavailable"}>{working ? <><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{phase === "security" ? "در حال بررسی…" : "در حال ورود…"}</> : "ورود"}</Button>
+    <span role="status" className="sr-only">{working ? "در حال ورود…" : ""}</span>
   </form>;
 }

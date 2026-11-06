@@ -66,7 +66,19 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         });
       }
       if (result.recovery_codes) { setRecovery(result.recovery_codes); setEnrollment(null); }
-      setNotice({ ok: true, text: "عملیات ثبت شد و وضعیت حساب به‌روز شد." });
+      const successMessages: Record<string, string> = {
+        profile: "مشخصات ذخیره شد.",
+        preferences: "ترجیحات ذخیره شد.",
+        username: "نام کاربری تغییر کرد.",
+        password: "رمز عبور تغییر کرد.",
+        "mfa-setup": "کد برنامهٔ احراز هویت را برای تکمیل فعال‌سازی وارد کنید.",
+        "mfa-confirm": "احراز هویت دومرحله‌ای فعال شد.",
+        "mfa-disable": "احراز هویت دومرحله‌ای غیرفعال شد.",
+        reauthenticate: "هویت شما تأیید شد. این تأیید پنج دقیقه اعتبار دارد.",
+        "revoke-others": "نشست‌های دستگاه‌های دیگر بسته شد.",
+        "revoke-session": "نشست دستگاه بسته شد.",
+      };
+      setNotice({ ok: true, text: successMessages[action] ?? "تغییرات حساب ذخیره شد." });
       if (action !== "profile" && action !== "preferences") form?.reset();
       router.refresh();
     } catch (error) { setNotice({ ok: false, text: error instanceof Error ? error.message : "عملیات انجام نشد." }); }
@@ -123,7 +135,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
             </select>
           </label>
         </div>
-        <p className="text-xs text-muted-foreground">زبان ترجیحی برای سرویس‌های آینده ذخیره می‌شود؛ ترجمهٔ کامل همهٔ صفحات پنل هنوز ارائه نشده است. تغییر تقویم در تاریخ‌های حساب من اعمال می‌شود.</p>
+        <p className="text-xs text-muted-foreground">زبان ترجیحی ذخیره می‌شود؛ همهٔ صفحات پنل هنوز ترجمه نشده‌اند. انتخاب تقویم فقط تاریخ‌های حساب من را تغییر می‌دهد.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           {([
             ["notify_orders", "اعلان سفارش‌ها"],
@@ -167,7 +179,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       {recovery.length ? <div role="status" className="space-y-3 rounded-lg border p-4">
         <p className="text-sm">این کدها فقط همین بار نمایش داده می‌شوند. در محلی امن ذخیره کنید؛ هر کد یک‌بار قابل استفاده است.</p>
         <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
-        <Button type="button" variant="outline" onClick={() => setRecovery([])}>کدها ذخیره شدند؛ پنهان کن</Button>
+        <Button type="button" variant="outline" onClick={() => setRecovery([])}>پنهان کردن کدها</Button>
       </div> : null}
       {enrollment ? <div className="space-y-4">
         <p className="text-sm leading-7">
@@ -176,14 +188,14 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         </p>
         {/* QR generation happens in our Backend; the TOTP secret is never
             sent to a third-party image service or CDN. */}
-        <div className="mx-auto w-fit rounded-xl border bg-white p-3 shadow-sm">
+        <div className="mx-auto w-fit max-w-full rounded-xl border bg-white p-3 shadow-sm">
           <Image
             src={enrollment.qrDataUri}
             alt="QR Code فعال‌سازی احراز هویت دومرحله‌ای"
             width={260}
             height={260}
             unoptimized
-            className="h-auto max-w-[260px]"
+            className="h-auto w-full max-w-[260px]"
           />
         </div>
         <details className="rounded-lg border p-3 text-sm">
@@ -224,7 +236,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       <div className="grid gap-2 sm:grid-cols-2">{initial.permissions.map((permission) => <p key={permission} className="rounded-md bg-muted p-2 text-xs">{permissionLabels[permission] ?? permission}</p>)}</div>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>رویدادهای امنیتی اخیر</CardTitle></CardHeader><CardContent>
-      {initial.events.length ? initial.events.map((event) => <div key={event.id} className="flex justify-between gap-4 border-b py-2 text-xs"><span>{eventLabels[event.action] ?? event.action}</span><time>{date(event.created_at)}</time></div>) : <p className="text-sm text-muted-foreground">رویدادی ثبت نشده است.</p>}
+      {initial.events.length ? initial.events.map((event) => <div key={event.id} className="flex flex-wrap justify-between gap-4 border-b py-2 text-xs"><span>{eventLabels[event.action] ?? event.action}</span><time>{date(event.created_at)}</time></div>) : <p className="text-sm text-muted-foreground">رویدادی ثبت نشده است.</p>}
     </CardContent></Card>
   </div>;
 }

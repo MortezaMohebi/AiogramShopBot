@@ -27,7 +27,7 @@ export default async function DataModelPage({ params }: { params: Params }) {
       <Link href={backlinks[name].href}>{backlinks[name].title}</Link>
     </Button>
     <PageHeading title={`مدیریت داده: ${metadata.label}`}
-      description="Search، Filter، Group By و Import/Export از یک Registry مشترک؛ بدون اجرای SQL دلخواه یا دسترسی به Storeهای نامجاز." />
+      description="داده‌ها را جست‌وجو و گروه‌بندی کنید یا فایل خروجی بگیرید." />
     <ModelDataWorkbench metadata={metadata} />
   </div>;
 }

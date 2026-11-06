@@ -110,7 +110,7 @@ function MediaPicker({
                 onChange(multiple ? selected.filter((v) => v !== id) : null)
               }
             >
-              حذف #{id}
+              برداشتن انتخاب #{id}
             </Button>
           ))}
         </div>
@@ -399,7 +399,7 @@ export function Inspector({
           { value: "base", label: "تنظیم مشترک" },
           ...definition.target_platforms.map((p) => ({
             value: p,
-            label: p === "telegram" ? "Telegram override" : "Bale override",
+            label: p === "telegram" ? "تنظیم ویژهٔ تلگرام" : "تنظیم ویژهٔ بله",
           })),
         ]}
         onChange={(v) => setPlatform(v as typeof platform)}
@@ -529,9 +529,9 @@ export function Inspector({
       )}
       {spec.action_contract.simulation_only && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-6">
-          این Action در Preview فقط نتیجهٔ نمونه می‌دهد.
+          این عملیات در شبیه‌ساز فقط نتیجهٔ آزمایشی دارد.
           {!spec.action_contract.available &&
-            " قرارداد اجرای این قابلیت هنوز آماده نیست."}
+            " اجرای واقعی این قابلیت در دسترس نیست."}
         </p>
       )}
     </fieldset>

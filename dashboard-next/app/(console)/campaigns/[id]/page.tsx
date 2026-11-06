@@ -45,7 +45,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
     <div>
       <PageHeading title={`کمپین «${campaign.title}»`} description="بررسی دستی رسیدهای نامشخص و کنترل توقف؛ تغییر وضعیت پرداخت یا ارسال مجدد خودکار انجام نمی‌شود." />
       {query.saved ? <p role="status" className="mb-5 rounded-lg bg-accent p-3 text-sm">عملیات مدیریت رسانه ثبت شد. وضعیت پرونده و فایل‌ها را بررسی کنید.</p> : null}
-      {query.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{uploadErrorMessage(query.error, "درخواست انجام نشد. وضعیت Draft، محدودیت فایل و مدارک عملیات را بررسی کنید. در وضعیت نامشخص بله، بدون بررسی دوباره تلاش نکنید.")}</p> : null}
+      {query.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{uploadErrorMessage(query.error, "درخواست انجام نشد. وضعیت پیش‌نویس، محدودیت فایل و مدارک عملیات را بررسی کنید. در وضعیت نامشخص بله، بدون بررسی دوباره تلاش نکنید.")}</p> : null}
       <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
         <Card>
           <CardHeader><CardTitle>وضعیت ارسال</CardTitle></CardHeader>
@@ -58,7 +58,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
               <form action={changeCampaign} className="space-y-2">
                 <input type="hidden" name="id" value={id} />
                 <input type="hidden" name="action" value="cancel" />
-                <Input name="confirmation" dir="ltr" required placeholder="CANCEL_CAMPAIGN" />
+                <Input name="confirmation" aria-label="عبارت تأیید عملیات" dir="ltr" required placeholder="CANCEL_CAMPAIGN" />
                 <Button type="submit" variant="destructive">لغو باقی‌مانده کمپین</Button>
               </form>
             ) : null}
@@ -73,7 +73,11 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
                   <p className="text-sm font-semibold">گیرنده #{delivery.id} — {delivery.platform === "bale" ? "بله" : "تلگرام"}</p>
                   <Badge tone="warning">نامشخص</Badge>
                 </div>
-                <p className="mb-3 text-xs text-muted-foreground">پیام‌های تأییدشده: {delivery.completed_steps} · علت: {delivery.last_error_code ?? "نامشخص"}</p>
+                <p className="mb-3 text-xs text-muted-foreground">پیام‌های تأییدشده: {delivery.completed_steps}</p>
+                {delivery.last_error_code ? <details className="mb-3 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">اطلاعات پیگیری</summary>
+                  <p dir="ltr" className="mt-1 break-all">{delivery.last_error_code}</p>
+                </details> : null}
                 <form action={reconcileDelivery} className="space-y-3">
                   <input type="hidden" name="campaign_id" value={id} />
                   <input type="hidden" name="delivery_id" value={delivery.id} />
@@ -86,8 +90,8 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
                   <label className="block space-y-2 text-sm">مدرک / توضیح (حداقل ۱۲ نویسه)
                     <Textarea name="evidence" required minLength={12} maxLength={255} rows={3} />
                   </label>
-                  <Input name="confirmation" required dir="ltr" placeholder="RECONCILE_DELIVERY" />
-                  <Button variant="outline" type="submit">ثبت نتیجه در Audit</Button>
+                  <Input name="confirmation" aria-label="عبارت تأیید عملیات" required dir="ltr" placeholder="RECONCILE_DELIVERY" />
+                  <Button variant="outline" type="submit">ثبت نتیجهٔ بررسی</Button>
                 </form>
               </div>
             ))}
@@ -99,10 +103,10 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
         <Card className="mt-6">
           <CardHeader><CardTitle>آماده‌سازی رسانه برای بله</CardTitle></CardHeader>
           <CardContent>
-            <p className="mb-3 text-sm text-muted-foreground">ارسال آزمایشی فایل‌ها فقط به چت خصوصی آماده‌سازی مدیر در بله از API معمولی انجام می‌شود. این کار کمپین را شروع نمی‌کند؛ در خطای نامشخص، وضعیت را بررسی کنید و کورکورانه تکرار نکنید.</p>
+            <p className="mb-3 text-sm text-muted-foreground">فایل‌ها به گفت‌وگوی خصوصی مدیر در بله ارسال می‌شوند. این کار کمپین را شروع نمی‌کند. اگر نتیجه نامشخص بود، پیش از تکرار وضعیت را بررسی کنید.</p>
             <form action={prepareBaleMedia} className="flex flex-wrap items-center gap-3">
               <input name="campaign_id" type="hidden" value={id} />
-              <Input name="confirmation" dir="ltr" placeholder="PREPARE_BALE_MEDIA" required className="max-w-60 text-xs" />
+              <Input name="confirmation" aria-label="عبارت تأیید عملیات" dir="ltr" placeholder="PREPARE_BALE_MEDIA" required className="max-w-60 text-xs" />
               <Button type="submit" variant="secondary">آماده‌سازی فایل‌های بله در چت خصوصی</Button>
             </form>
           </CardContent>

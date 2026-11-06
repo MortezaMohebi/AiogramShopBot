@@ -23,10 +23,10 @@ export default async function StoreCustomersPage({
 
   return <div className="space-y-6">
     <PageHeading title="مشتریان فروشگاه"
-      description="یک Customer می‌تواند چند هویت پیام‌رسانی تأییدشده داشته باشد؛ شناسهٔ مساوی به معنای یک نفر نیست." />
+      description="هر پرونده می‌تواند چند حساب پیام‌رسان تأییدشده داشته باشد. شناسهٔ یکسان، مالکیت مشترک را ثابت نمی‌کند." />
     <div className="flex flex-wrap gap-2">
       <Button asChild size="sm" variant="outline">
-        <Link href="/data-models/customers">Search و Import/Export مشتریان</Link>
+        <Link href="/data-models/customers">جست‌وجوی پیشرفته و ورود و خروج مشتریان</Link>
       </Button>
     </div>
     <Card>
@@ -35,7 +35,7 @@ export default async function StoreCustomersPage({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[660px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
-              <th className="p-3">مشتری</th><th className="p-3">Store</th>
+              <th className="p-3">مشتری</th><th className="p-3">فروشگاه</th>
               <th className="p-3">هویت‌های تأییدشده</th><th className="p-3">جزئیات</th>
             </tr></thead>
             <tbody>{data.items.map(row => <tr key={row.id} className="border-b">
@@ -44,7 +44,7 @@ export default async function StoreCustomersPage({
               <td className="p-3">
                 {row.identities.map(identity =>
                   <p key={identity.id} className="text-xs">
-                    {identity.platform} · Bot {identity.bot_id.slice(0, 8)} · {identity.platform_user_id}
+                    {identity.platform === "bale" ? "بله" : "تلگرام"} · ربات <bdi dir="ltr">{identity.bot_id.slice(0, 8)}</bdi> · <bdi dir="ltr">{identity.platform_user_id}</bdi>
                   </p>)}
               </td>
               <td className="p-3"><Button asChild variant="outline" size="sm">

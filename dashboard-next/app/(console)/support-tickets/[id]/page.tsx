@@ -10,6 +10,9 @@ import { replyToTicket } from "../actions";
 
 type Params = Promise<{ id: string }>;
 type Query = Promise<{ saved?: string; error?: string }>;
+const STATUS_LABELS: Record<string, string> = {
+  open: "باز", pending: "در انتظار", resolved: "حل‌شده", closed: "بسته‌شده",
+};
 
 /** Show Store-scoped support messages with one versioned staff reply form. */
 export default async function TicketPage({
@@ -26,12 +29,12 @@ export default async function TicketPage({
       <Link href="/support-tickets">بازگشت به درخواست‌ها</Link>
     </Button>
     <PageHeading title={`تیکت #${ticket.id}`}
-      description={`موضوع: ${ticket.topic} · وضعیت: ${ticket.status} · Store: ${ticket.store_id}`} />
+      description={`موضوع: ${ticket.topic} · وضعیت: ${STATUS_LABELS[ticket.status] ?? ticket.status}`} />
     {query.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      پاسخ ذخیره شد. اطلاع‌رسانی مشتری از طریق Outbox مستقل انجام می‌شود.
+      پاسخ ذخیره شد. وضعیت ارسال به مشتری جداگانه پیگیری می‌شود.
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      پاسخ ثبت نشد؛ وضعیت تیکت، Store جاری و مجوزها را بررسی کنید.
+      پاسخ ثبت نشد؛ وضعیت درخواست، فروشگاه فعلی و دسترسی خود را بررسی کنید.
     </p> : null}
     <Card>
       <CardHeader><CardTitle>گفت‌وگو با مشتری #{ticket.customer_id}</CardTitle></CardHeader>
@@ -54,12 +57,11 @@ export default async function TicketPage({
         <label className="block space-y-2 text-sm">
           متن پاسخ
           <Textarea name="body" maxLength={4000} minLength={1}
-            required rows={5} placeholder="پاسخ دقیق و قابل پیگیری برای مشتری..." />
+            required rows={5} placeholder="پاسخ به مشتری…" />
         </label>
         <p className="text-xs leading-6 text-muted-foreground">
-          پاسخ به تاریخچهٔ همین تیکت اضافه می‌شود و از طریق پیام‌رسان Bot
-          مبدأ برای مشتری قابل پیگیری خواهد بود. ارسال پیام پس از Timeout
-          به‌صورت خودکار تکرار نمی‌شود.
+          پاسخ در تاریخچهٔ درخواست ثبت می‌شود. اگر نتیجهٔ ارسال نامشخص باشد،
+          پیام به‌صورت خودکار دوباره ارسال نمی‌شود.
         </p>
         <Button type="submit">ثبت پاسخ</Button>
       </form></CardContent>

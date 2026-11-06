@@ -32,10 +32,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Param
   const last = Math.max(1, Math.ceil(result.total / result.page_size));
   return (
     <div className="space-y-6">
-      <PageHeading title="سفارش‌ها" description="سفارش‌های تلگرام و بله با وضعیت واقعی پرداخت؛ مدیر فقط درخواست‌های پیش از پرداخت را قبول یا رد می‌کند." />
+      <PageHeading title="سفارش‌ها" description="درخواست‌های پیش از پرداخت را بررسی کنید. تأیید درخواست به معنای تأیید پرداخت نیست." />
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline" size="sm">
-          <Link href="/data-models/orders">Search، Group By تاریخ و Export سفارش‌ها</Link>
+          <Link href="/data-models/orders">جست‌وجوی پیشرفته و خروجی سفارش‌ها</Link>
         </Button>
       </div>
       {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">تصمیم مدیر در سوابق سفارش ثبت شد.</p> : null}
@@ -74,11 +74,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Param
           </CardContent>
         </Card>
       ) : null}
-      <OrderTable title="فهرست سفارش‌های مشترک" orders={result.items} />
+      <OrderTable title="فهرست سفارش‌ها" orders={result.items} />
       <nav aria-label="صفحه‌بندی سفارش" className="flex items-center justify-end gap-3">
-        <Button asChild variant="outline" size="sm"><Link href={`/orders?page=${Math.max(1, page - 1)}`}>قبلی</Link></Button>
+        {page <= 1 ? <Button variant="outline" size="sm" disabled>قبلی</Button> : <Button asChild variant="outline" size="sm"><Link href={`/orders?page=${page - 1}`}>قبلی</Link></Button>}
         <span className="text-sm tabular text-muted-foreground">صفحه {page} از {last}</span>
-        <Button asChild variant="outline" size="sm"><Link href={`/orders?page=${Math.min(last, page + 1)}`}>بعدی</Link></Button>
+        {page >= last ? <Button variant="outline" size="sm" disabled>بعدی</Button> : <Button asChild variant="outline" size="sm"><Link href={`/orders?page=${page + 1}`}>بعدی</Link></Button>}
       </nav>
     </div>
   );

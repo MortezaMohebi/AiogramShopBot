@@ -43,15 +43,15 @@ export default async function StoreCustomerPage({
       <Link href="/store-customers">بازگشت به مشتریان</Link>
     </Button>
     <PageHeading title={data.customer.display_name || `مشتری #${id}`}
-      description={`Store: ${data.customer.store_id} · هویت‌های متصل‌شده فقط با تأیید هر دو حساب`} />
+      description="اتصال حساب‌های پیام‌رسان فقط با تأیید هر دو حساب انجام می‌شود." />
     <Card>
       <CardHeader><CardTitle>هویت‌های ارتباطی تأییدشده</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         {data.identities.map(identity =>
           <div key={identity.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
-            <span>{identity.platform} · Bot {identity.bot_id.slice(0, 8)} · User {identity.platform_user_id}</span>
+            <span>{identity.platform === "bale" ? "بله" : "تلگرام"} · ربات <bdi dir="ltr">{identity.bot_id.slice(0, 8)}</bdi> · کاربر <bdi dir="ltr">{identity.platform_user_id}</bdi></span>
             <Button asChild variant="outline" size="sm">
-              <Link href={`/customers/${identity.id}`}>CRM این هویت</Link>
+              <Link href={`/customers/${identity.id}`}>پروندهٔ این حساب</Link>
             </Button>
           </div>)}
       </CardContent>
@@ -60,13 +60,13 @@ export default async function StoreCustomerPage({
       <CardHeader><CardTitle>دفتر اعتبار داخلی</CardTitle></CardHeader>
       <CardContent className="space-y-3 text-sm">
         <p className="leading-7 text-muted-foreground">
-          موجودی‌های مستقل Identity و موجودی مشترک Customer به‌صورت جداگانه نشان داده
+          اعتبار مستقل حساب‌های پیام‌رسان و اعتبار مشترک مشتری جداگانه نشان داده
           می‌شوند. این اعداد جمعِ قابل خرج‌کردن نیستند؛ انتقال اعتبار باید با سند
           مالی جدا و تأیید انجام شود.
         </p>
         {data.wallets.map(wallet =>
           <div key={wallet.id} className="flex justify-between gap-4 rounded-lg border p-3">
-            <span>{wallet.scope === "customer" ? "اعتبار مشترک" : `اعتبار مستقل Identity #${wallet.identity_id}`}</span>
+            <span>{wallet.scope === "customer" ? "اعتبار مشترک" : `اعتبار مستقل حساب #${wallet.identity_id}`}</span>
             <span dir="ltr">{wallet.balance_irr} IRR</span>
           </div>)}
         {!data.wallets.length ? <p>هنوز حساب اعتبار داخلی ثبت نشده است.</p> : null}
@@ -92,7 +92,7 @@ export default async function StoreCustomerPage({
           <p className="text-sm text-muted-foreground">مشتری هنوز نشانی‌ای ثبت نکرده است.</p>
           : null}
         <p className="text-xs text-muted-foreground">
-          نشانی‌های سفارش‌های قبلی Snapshot مستقل دارند؛ تغییر نشانی اینجا
+          نشانی هر سفارش جداگانه نگهداری می‌شود؛ تغییر نشانی مشتری
           سفارش پرداخت‌شده را بازنویسی نمی‌کند.
         </p>
       </CardContent>

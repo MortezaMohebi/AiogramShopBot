@@ -13,10 +13,10 @@ type Params = Promise<{ saved?: string; error?: string }>;
 const MESSAGES: Record<string, string> = {
   validation: "کد واحد، نسبت تبدیل و سایر فیلدها را بررسی کنید.",
   invalid_uom: "تعریف واحد معتبر نیست.",
-  uom_already_exists: "کد واحد یا دسته‌بندی قبلاً در این Store تعریف شده است.",
-  uom_category_not_found: "دسته‌بندی واحد در Store جاری موجود نیست.",
-  store_switch_required: "ابتدا Store جاری را انتخاب کنید.",
-  store_permission_denied: "برای تعریف واحد به مجوز Manager در Store نیاز دارید.",
+  uom_already_exists: "کد واحد یا دسته‌بندی قبلاً در این فروشگاه تعریف شده است.",
+  uom_category_not_found: "دسته‌بندی واحد در فروشگاه فعلی موجود نیست.",
+  store_switch_required: "ابتدا فروشگاه را انتخاب کنید.",
+  store_permission_denied: "برای تعریف واحد به دسترسی مدیر فروشگاه نیاز دارید.",
   reauth: "برای این تغییر باید هویت مدیر دوباره تأیید شود.",
 };
 
@@ -34,14 +34,14 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
   const isManager = store?.access_level === "manager";
 
   return <div className="space-y-6">
-    <PageHeading title="Units of Measure (UoM)"
-      description={`واحدهای اختصاصی Store جاری: ${store?.name ?? "نامشخص"} · تبدیل دقیق بدون اعداد Float`} />
+    <PageHeading title="واحدهای اندازه‌گیری"
+      description={`واحدهای فروشگاه: ${store?.name ?? "نامشخص"}`} />
     <div className="flex flex-wrap gap-2">
       <Button asChild size="sm" variant="outline"><Link href="/products">محصولات</Link></Button>
       <Button asChild size="sm" variant="outline"><Link href="/stores">فروشگاه‌ها</Link></Button>
     </div>
     {params.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      تعریف UoM ثبت شد. موجودی یا سفارش‌های قبلی تبدیل نشده‌اند.
+      واحد اندازه‌گیری ثبت شد. موجودی یا سفارش‌های قبلی تبدیل نشده‌اند.
     </p> : null}
     {params.error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
       {MESSAGES[params.error] ?? "ثبت انجام نشد."}
@@ -52,7 +52,7 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
         <p className="text-xs leading-7 text-muted-foreground">
           نسبت «صورت / مخرج» برحسب واحد مرجع همان دسته‌بندی است.
           مثال: ۱ دوجین برابر ۱۲ عدد؛ ۱ گرم برابر ۰٫۰۰۱ کیلوگرم.
-          Stock و Cart فعلاً تعداد صحیح واحد فروش را می‌پذیرند.
+          موجودی و سبد خرید فقط تعداد صحیح واحد فروش را می‌پذیرند.
         </p>
         {data.categories.map(category => <section key={category.id}
           className="space-y-2 rounded-lg border p-3">
@@ -62,9 +62,9 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
               <thead><tr className="border-b">
                 <th className="p-2">واحد</th>
                 <th className="p-2">کد</th>
-                <th className="p-2">Symbol</th>
+                <th className="p-2">نماد</th>
                 <th className="p-2">نسبت تبدیل</th>
-                <th className="p-2">Reference</th>
+                <th className="p-2">نوع واحد</th>
               </tr></thead>
               <tbody>{data.items.filter((unit) => unit.category_id === category.id)
                 .map(unit => <tr key={unit.id} className="border-b">
@@ -77,6 +77,9 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
             </table>
           </div>
         </section>)}
+        {!data.categories.length ? <p className="text-sm text-muted-foreground">
+          هنوز واحدی تعریف نشده است. ابتدا دسته‌بندی و واحد مرجع را اضافه کنید.
+        </p> : null}
       </CardContent>
     </Card>
 
@@ -86,21 +89,21 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
         <CardContent><form action={createUomCategory} className="space-y-4">
           <input type="hidden" name="store_id" value={storeId} />
           <label className="block space-y-2 text-sm">کد دسته‌بندی
-            <Input name="code" pattern="[a-z][a-z0-9_-]{0,31}"
+            <Input name="code" dir="ltr" pattern="[a-z][a-z0-9_-]{0,31}"
               placeholder="surface" required />
           </label>
           <label className="block space-y-2 text-sm">نام دسته‌بندی
             <Input name="name" required placeholder="سطح" maxLength={120} />
           </label>
           <label className="block space-y-2 text-sm">کد واحد مرجع
-            <Input name="base_code" pattern="[a-z][a-z0-9_-]{0,31}"
+            <Input name="base_code" dir="ltr" pattern="[a-z][a-z0-9_-]{0,31}"
               required placeholder="m2" />
           </label>
           <label className="block space-y-2 text-sm">نام واحد مرجع
             <Input name="base_name" required placeholder="مترمربع" />
           </label>
-          <label className="block space-y-2 text-sm">Symbol
-            <Input name="base_symbol" required placeholder="m²" maxLength={24} />
+          <label className="block space-y-2 text-sm">نماد
+            <Input name="base_symbol" dir="ltr" required placeholder="m²" maxLength={24} />
           </label>
           <Button type="submit" variant="outline">ثبت دسته‌بندی</Button>
         </form></CardContent>
@@ -118,33 +121,33 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
             </select>
           </label>
           <label className="block space-y-2 text-sm">کد واحد
-            <Input name="code" required pattern="[a-z][a-z0-9_-]{0,31}"
+            <Input name="code" dir="ltr" required pattern="[a-z][a-z0-9_-]{0,31}"
               placeholder="box6" />
           </label>
           <label className="block space-y-2 text-sm">نام واحد
             <Input name="name" required placeholder="بسته ۶ تایی" />
           </label>
-          <label className="block space-y-2 text-sm">Symbol
-            <Input name="symbol" required placeholder="pack" maxLength={24} />
+          <label className="block space-y-2 text-sm">نماد
+            <Input name="symbol" dir="ltr" required placeholder="pack" maxLength={24} />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="block space-y-2 text-sm">صورت نسبت
-              <Input name="ratio_num" type="number" min={1} max={1000000000}
+              <Input name="ratio_num" dir="ltr" type="number" min={1} max={1000000000}
                 defaultValue={6} required />
             </label>
             <label className="block space-y-2 text-sm">مخرج نسبت
-              <Input name="ratio_den" type="number" min={1} max={1000000000}
+              <Input name="ratio_den" dir="ltr" type="number" min={1} max={1000000000}
                 defaultValue={1} required />
             </label>
           </div>
-          <label className="block space-y-2 text-sm">حداقل Increment
-            <Input name="rounding" inputMode="decimal" defaultValue="1" required />
+          <label className="block space-y-2 text-sm">حداقل گام تعداد
+            <Input name="rounding" dir="ltr" inputMode="decimal" defaultValue="1" required />
           </label>
-          <Button type="submit" variant="outline">تعریف واحد</Button>
+          <Button type="submit" variant="outline" disabled={!data.categories.length}>افزودن واحد</Button>
         </form></CardContent>
       </Card>
     </div> : <p className="text-sm text-muted-foreground">
-      مدیریت UoM نیازمند مجوز Manager فروشگاه است.
+      برای مدیریت واحدهای اندازه‌گیری به دسترسی مدیر فروشگاه نیاز دارید.
     </p>}
   </div>;
 }

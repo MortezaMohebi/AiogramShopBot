@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -72,15 +72,15 @@ export default function ActivateAccountPage() {
       <CardContent className="space-y-5">
         {message ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm leading-7">{message}</p> : null}
         {completed ? <Button type="button" onClick={() => router.replace("/login")}>رفتن به صفحهٔ ورود</Button>
-          : claim ? <form onSubmit={submit} className="space-y-4">
-            <p className="text-sm leading-7 text-muted-foreground">رمز را خودتان انتخاب کنید؛ مدیر به رمز دسترسی ندارد. سیاست رمز عبور سازمان هنگام ثبت بررسی می‌شود.</p>
+          : claim ? <form onSubmit={submit} className="space-y-4" aria-busy={working}>
+            <p className="text-sm leading-7 text-muted-foreground">رمز عبور باید بین ۱۲ تا ۲۵۶ نویسه باشد.</p>
             <label className="block space-y-2 text-sm">رمز جدید
-              <Input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={256} dir="ltr" required />
+              <Input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={256} dir="ltr" disabled={working} required />
             </label>
             <label className="block space-y-2 text-sm">تکرار رمز جدید
-              <Input name="confirmation" type="password" autoComplete="new-password" minLength={12} maxLength={256} dir="ltr" required />
+              <Input name="confirmation" type="password" autoComplete="new-password" minLength={12} maxLength={256} dir="ltr" disabled={working} required />
             </label>
-            <Button type="submit" disabled={working}><ShieldCheck className="size-4" /> {working ? "در حال بررسی…" : "ثبت امن رمز عبور"}</Button>
+            <Button type="submit" disabled={working}>{working ? "در حال بررسی…" : "ذخیرهٔ رمز عبور"}</Button>
           </form> : <p role="alert" className="text-sm leading-7 text-destructive">لینک معتبر یافت نشد. برای دریافت لینک جدید با مدیر تماس بگیرید.</p>}
         <Link href="/login" className="inline-block text-sm underline underline-offset-4">بازگشت به ورود</Link>
       </CardContent>

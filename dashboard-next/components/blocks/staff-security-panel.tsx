@@ -79,7 +79,7 @@ export function StaffSecurityPanel({
         setLink(`${window.location.origin}/activate#${linkKind}=${result.token}`);
         setNotice("لینک فقط یک‌بار نمایش داده می‌شود. آن را از کانالی امن به صاحب حساب برسانید.");
       } else {
-        setNotice("تغییرات ثبت شد.");
+        setNotice(action === "password-policy" ? "سیاست رمز عبور ذخیره شد." : action === "staff-invite-cancel" ? "دعوت لغو شد." : "تغییرات ذخیره شد.");
       }
       router.refresh();
     } catch (error) {
@@ -121,7 +121,7 @@ export function StaffSecurityPanel({
         <p className="text-xs leading-7 text-muted-foreground">این لینک مانند رمز عبور محرمانه است. لینک دعوت ۴۸ ساعت و لینک بازیابی ۳۰ دقیقه اعتبار دارد.</p>
         <Input value={link} readOnly dir="ltr" aria-label="لینک یک‌بارمصرف" className="font-mono text-xs" onFocus={(event) => event.target.select()} />
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => void copyLink()}><Copy className="size-4" /> کپی لینک امن</Button>
+          <Button type="button" onClick={() => void copyLink()}><Copy className="size-4" /> کپی لینک</Button>
           <Button type="button" variant="outline" onClick={() => setLink(null)}><X className="size-4" /> پنهان‌کردن</Button>
         </div>
       </CardContent>
@@ -171,7 +171,7 @@ export function StaffSecurityPanel({
       <CardHeader><CardTitle>فهرست کارکنان</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input aria-label="جست‌وجوی نام کاربری کارکنان" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="جست‌وجوی نام کاربری…" className="ps-10" />
         </div>
         <div className="overflow-x-auto">
@@ -208,15 +208,15 @@ export function StaffSecurityPanel({
               <td className="p-3 text-xs">{member.last_login_at ? new Date(member.last_login_at).toLocaleString("fa-IR") : "هنوز وارد نشده"}</td>
               <td className="space-y-2 p-3">
                 {member.id === currentId ? <span className="text-xs text-muted-foreground">از حساب من ویرایش کنید</span> : <>
-                  <Button size="sm" variant="outline" type="submit" form={`member-${member.id}`}>ذخیره</Button>
+                  <Button size="sm" variant="outline" type="submit" form={`member-${member.id}`}>ذخیره دسترسی</Button>
                   <Button size="sm" type="button" variant="outline" disabled={busy || !member.is_active}
-                    onClick={() => void perform("staff-reset", { staff_id: member.id }, "reset")}>لینک بازیابی</Button>
+                    onClick={() => void perform("staff-reset", { staff_id: member.id }, "reset")}>ساخت لینک بازیابی</Button>
                 </>}
               </td>
             </tr>)}</tbody>
           </table>
         </div>
-        {!filtered.length ? <p className="py-5 text-sm text-muted-foreground">حسابی مطابق جست‌وجو نیست.</p> : null}
+        {!filtered.length ? <p className="py-5 text-sm text-muted-foreground">{search ? "حسابی با این نام کاربری پیدا نشد." : "هنوز حساب کارمندی ثبت نشده است."}</p> : null}
       </CardContent>
     </Card>
     <Card>

@@ -16,8 +16,8 @@ export function LogoutControl() {
       const value: unknown = await response.json();
       if (!value || typeof value !== "object" || !("ok" in value) || value.ok !== true) throw new Error("logout_failed");
       router.replace("/login"); router.refresh();
-    } catch { setError("خروج امن انجام نشد. اتصال را بررسی و دوباره تلاش کنید."); }
+    } catch { setError("خروج انجام نشد. اتصال را بررسی و دوباره تلاش کنید."); }
     finally { setWorking(false); }
   }
-  return <div className="space-y-2"><button type="button" onClick={logout} disabled={working} aria-busy={working} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">{working ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <LogOut aria-hidden="true" className="size-4" />}{working ? "در حال خروج..." : "خروج امن"}</button>{error ? <p role="alert" className="px-3 text-xs leading-6 text-destructive">{error}</p> : null}</div>;
+  return <div className="space-y-2"><button type="button" onClick={logout} disabled={working} aria-busy={working} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">{working ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <LogOut aria-hidden="true" className="size-4" />}{working ? "در حال خروج..." : "خروج"}</button>{error ? <p role="alert" className="px-3 text-xs leading-6 text-destructive">{error}</p> : null}</div>;
 }

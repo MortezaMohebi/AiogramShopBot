@@ -5,13 +5,16 @@ import type { ChannelStats } from "@/lib/types";
 const labels: Record<string, string> = { telegram: "تلگرام", bale: "بله" };
 
 /** Compact, accessible comparison; no invented chart points or exchange rates. */
-export function ChannelPerformance({ channels }: { channels: ChannelStats[] }) {
+export function ChannelPerformance({
+  channels,
+  periodLabel = "۳۰ روز گذشته",
+}: { channels: ChannelStats[]; periodLabel?: string }) {
   const max = Math.max(1, ...channels.map((channel) => channel.orders));
   return (
     <Card>
       <CardHeader>
         <CardTitle>عملکرد پیام‌رسان‌ها</CardTitle>
-        <CardDescription>مقایسه سفارش‌های ۳۰ روز گذشته؛ مبلغ Stars جداست.</CardDescription>
+        <CardDescription>سفارش‌های {periodLabel}؛ مبلغ Stars جداست.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {channels.map((channel) => (
@@ -24,7 +27,7 @@ export function ChannelPerformance({ channels }: { channels: ChannelStats[] }) {
             </div>
             <div
               className="h-2.5 overflow-hidden rounded-full bg-muted"
-              role="meter" aria-label={`تعداد سفارش‌های ${labels[channel.platform]}`}
+              role="meter" aria-label={`تعداد سفارش‌های ${labels[channel.platform] ?? channel.platform}`}
               aria-valuemin={0} aria-valuemax={max} aria-valuenow={channel.orders}
             >
               <div
@@ -41,6 +44,7 @@ export function ChannelPerformance({ channels }: { channels: ChannelStats[] }) {
             </div>
           </div>
         ))}
+        {!channels.length ? <p className="text-sm text-muted-foreground">آماری برای این بازه ثبت نشده است.</p> : null}
       </CardContent>
     </Card>
   );

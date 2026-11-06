@@ -60,7 +60,7 @@ export function RetryDelivery({
   canManage: boolean;
 }) {
   if (!canRetryDelivery(item, canManage)) return null;
-  return <ConfirmOperation label="ثبت تلاش مجدد ارسال" description="سرور شکست قطعی پیش از تحویل را تأیید کرده است. درخواست فقط ارسال را در صف می‌گذارد؛ تحویل هنوز انجام نشده است." path={`/outbox/${item.id}/retry`} payload={{
+  return <ConfirmOperation label="ثبت تلاش مجدد ارسال" description="شکست پیش از تحویل تأیید شده است. این درخواست، تلاش مجدد را در صف قرار می‌دهد؛ تحویل هنوز انجام نشده است." path={`/outbox/${item.id}/retry`} payload={{
     expected_attempts: item.expected_attempts
   }} success="تلاش مجدد در صف ارسال ثبت شد." />;
 }
@@ -85,7 +85,7 @@ export function RecoverRun({
 }) {
   const [operation, setOperation] = useState<RecoveryOperation | "">("");
   const allowed = recoveryOperations(run, canManage);
-  if (!canManage) return <p className="text-xs leading-6 text-muted-foreground">دسترسی مدیریت Runtime برای بازیابی لازم است.</p>;
+  if (!canManage) return <p className="text-xs leading-6 text-muted-foreground">برای بازیابی اجرا به دسترسی مدیریت اجرا نیاز دارید.</p>;
   if (!allowed.length) return <p className="text-xs leading-6 text-muted-foreground">عملیات بازیابی در وضعیت فعلی قابل ارائه نیست.</p>;
   return <div className="space-y-4">
   <label className="block space-y-2 text-xs">
@@ -97,7 +97,7 @@ export function RecoverRun({
       </option>)}
     </select>
   </label>
-  {operation && allowed.includes(operation) && <ConfirmOperation key={operation} label={recoveryLabels[operation]} description="سرور وضعیت و نسخهٔ اجرا را دوباره بررسی می‌کند. بازیابی اثر تجاری قبلی را برنمی‌گرداند و Action یا ارسال با نتیجهٔ نامعلوم را تکرار نمی‌کند." path={`/runs/${run.id}/recover`} payload={{
+  {operation && allowed.includes(operation) && <ConfirmOperation key={operation} label={recoveryLabels[operation]} description="بازیابی، اثر عملیات قبلی را برنمی‌گرداند و عملیات یا ارسال با نتیجهٔ نامعلوم را تکرار نمی‌کند." path={`/runs/${run.id}/recover`} payload={{
       expected_version: run.lock_version,
       operation
     }} success="عملیات بازیابی ثبت شد؛ وضعیت تازهٔ اجرا را بررسی کنید." danger={["cancel", "mark_failed"].includes(operation)} />}

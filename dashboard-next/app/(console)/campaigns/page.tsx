@@ -33,14 +33,14 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
     <div>
       <PageHeading
         title="کمپین‌های پیام‌رسانی"
-        description="ارسال دسته‌ای و خودکار در Telegram و Bale؛ فقط کاربران دارای رضایت و با محدودیت نرخ و هزینه."
+        description="پیام‌ها فقط برای مشتریان دارای رضایت ارسال می‌شوند."
         action={manage ? <Button asChild><Link href="/campaigns/new"><Plus /> ساخت کمپین</Link></Button> : undefined}
       />
       {params.saved ? <p role="status" className="mb-4 rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">تغییرات کمپین ثبت شد.</p> : null}
-      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{params.error === "create" ? "پیش‌نویس ساخته نشد. ربات فعال و دسترسی نوشتن در فروشگاه فعلی را بررسی کنید." : "درخواست اجرا نشد. عبارت تأیید، فروشگاه فعلی، وضعیت کمپین، فعال‌بودن Worker و محدودیت پرداخت را بررسی کنید."}</p> : null}
+      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{params.error === "create" ? "پیش‌نویس ساخته نشد. ربات فعال و دسترسی نوشتن در فروشگاه فعلی را بررسی کنید." : "درخواست اجرا نشد. عبارت تأیید، فروشگاه فعلی، وضعیت کمپین، فعال‌بودن ارسال خودکار و محدودیت پرداخت را بررسی کنید."}</p> : null}
       <div className="mb-6 flex flex-wrap gap-3 rounded-xl border border-border bg-card p-4 text-sm">
         <span className={capabilities.broadcast_worker_enabled ? "text-emerald-600 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>
-          <b>Worker:</b> {capabilities.broadcast_worker_enabled ? "مجوز اجرا فعال" : "غیرفعال تا تست عملی"}
+          <b>ارسال خودکار:</b> {capabilities.broadcast_worker_enabled ? "مجوز اجرا فعال" : "غیرفعال"}
         </span>
         <span className="text-muted-foreground">Business بله: {capabilities.bale_business_enabled ? "قابل انتخاب، هزینه‌دار" : "غیرفعال"}</span>
         <span className="text-muted-foreground">سقف درخواست پولی: {capabilities.max_paid_calls}</span>
@@ -111,7 +111,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
                       <label className="space-y-1 text-xs">سقف درخواست پولی (Business: {requiredPaid})
                         <Input name="approved_paid_calls" type="number" min={0} max={capabilities.max_paid_calls} defaultValue={0} className="w-40" />
                       </label>
-                      <Input name="confirmation" dir="ltr" required placeholder="START_CAMPAIGN / START_PAID_BALE" className="max-w-60 text-xs" />
+                      <Input name="confirmation" aria-label="عبارت تأیید عملیات" dir="ltr" required placeholder="START_CAMPAIGN / START_PAID_BALE" className="max-w-60 text-xs" />
                       <Button size="sm" disabled={!canStart} type="submit">شروع خودکار</Button>
                       {!canStart && campaign.bot_id !== null ? <p className="w-full text-xs text-muted-foreground">ارسال برای این ربات هنوز فعال نشده است.</p> : null}
                     </form>
@@ -120,7 +120,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
                     <form action={changeCampaign} className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="id" value={campaign.id} />
                       <input type="hidden" name="action" value={campaign.status === "sending" ? "pause" : "resume"} />
-                      <Input name="confirmation" dir="ltr" required placeholder={campaign.status === "sending" ? "PAUSE_CAMPAIGN" : "RESUME_CAMPAIGN"} className="max-w-52 text-xs" />
+                      <Input name="confirmation" aria-label="عبارت تأیید عملیات" dir="ltr" required placeholder={campaign.status === "sending" ? "PAUSE_CAMPAIGN" : "RESUME_CAMPAIGN"} className="max-w-52 text-xs" />
                       <Button size="sm" variant="secondary" type="submit">{campaign.status === "sending" ? "توقف" : "ادامه"}</Button>
                     </form>
                   ) : null}
@@ -133,7 +133,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
           <Card><CardContent className="flex flex-col items-center gap-3 py-16 text-center text-muted-foreground">
             <Megaphone className="size-10" />
             <p className="font-semibold">هنوز کمپینی تعریف نشده است.</p>
-            <p className="text-sm">بعد از ساخت و تأیید، Worker پایدار مسئول ارسال خواهد بود.</p>
+            <p className="text-sm">برای آماده‌کردن پیام و انتخاب ربات، کمپین بسازید.</p>
           </CardContent></Card>
         ) : null}
       </div>

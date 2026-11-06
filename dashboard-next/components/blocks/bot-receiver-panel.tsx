@@ -24,15 +24,14 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
   const ambiguous = receiver.state === "needs_review" || receiver.state === "applying";
 
   return <Card>
-    <CardHeader><CardTitle>Receiver مستقل و فعال‌سازی بات</CardTitle></CardHeader>
+    <CardHeader><CardTitle>دریافت پیام و فعال‌سازی ربات</CardTitle></CardHeader>
     <CardContent className="space-y-5 text-sm">
       <p className="leading-7">
-        Webhook یا Polling هر بات مستقل است. Secret و آدرس محرمانهٔ Receiver هیچ‌گاه
-        به مرورگر برنمی‌گردد؛ مرحلهٔ Stage هیچ درخواست خارجی ارسال نمی‌کند.
+        روش دریافت پیام هر ربات را جداگانه تنظیم کنید. ثبت اولیه، اتصال را فعال نمی‌کند.
       </p>
       <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
-        <p>وضعیت: <strong>{receiver.configured ? receiver.state : "نصب نشده"}</strong></p>
-        <p>نوع دریافت: <strong>{receiver.mode ?? "—"}</strong></p>
+        <p>وضعیت: <strong>{receiver.configured ? ({ staged: "ثبت اولیه", applying: "در حال اعمال تغییر", active: "فعال", paused: "متوقف", disabled: "غیرفعال", needs_review: "نتیجه نامشخص؛ نیازمند بررسی" } as const)[receiver.state] : "راه‌اندازی نشده"}</strong></p>
+        <p>نوع دریافت: <strong>{receiver.mode === "webhook" ? "Webhook" : receiver.mode === "polling" ? "Polling" : "—"}</strong></p>
         <p>نسخه: <strong>{receiver.version ?? "—"}</strong></p>
         <p>Offset بعدی: <strong>{receiver.next_update_id ?? "—"}</strong></p>
         <p>Runtime: <strong>{receiver.runtime_enabled ? "در سرور مجاز" : "در سرور غیرفعال"}</strong></p>
@@ -52,19 +51,18 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
           </select>
         </label>
         <Button type="submit" variant="outline" disabled={!pending?.verified_at}>
-          Stage بدون تغییر Provider
+          ثبت اولیهٔ روش دریافت
         </Button>
       </form> : null}
 
       {isDraft && !pending?.verified_at ?
         <p className="text-muted-foreground">
-          برای Stage ابتدا Token را با getMe تأیید کنید.
+          برای ثبت روش دریافت، ابتدا Token را با getMe تأیید کنید.
         </p> : null}
 
       {canActivate ? <form action={activateBotReceiver} className="space-y-4 rounded-lg border p-4">
         <p className="leading-7">
-          این اقدام Webhook یا Polling واقعی را برای همین بات فعال می‌کند. پس از
-          Timeout نامشخص، فراخوانی خودکار تکرار نمی‌شود و بررسی دستی لازم است.
+          این اقدام Webhook یا Polling واقعی را برای همین ربات فعال می‌کند. اگر نتیجهٔ فعال‌سازی مشخص نشد، پیش از تلاش دوباره وضعیت را بررسی کنید.
         </p>
         <input type="hidden" name="id" value={bot.id} />
         <input type="hidden" name="expected_version" value={receiver.version ?? ""} />
@@ -74,26 +72,25 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
               maxLength={256} autoComplete="current-password" />
           </label>
           <label className="block space-y-2">کد شش‌رقمی MFA
-            <Input name="second_factor" inputMode="numeric" pattern="[0-9]{6}"
+            <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
               maxLength={6} autoComplete="one-time-code" required />
           </label>
         </div>
-        <Button type="submit">فعال‌سازی واقعی Receiver همین بات</Button>
+        <Button type="submit">فعال‌سازی دریافت پیام</Button>
       </form> : null}
 
       {isDraft && receiver.state === "staged" && !canActivate ?
         <p className="rounded-lg border p-3 leading-7">
-          فعال‌سازی قفل است؛ Runtime و Lease باید در سرور فعال باشند و Token
-          همین بات باید تأیید شده باشد. Stage‌کردن به‌تنهایی باعث فروش نمی‌شود.
+          فعال‌سازی در دسترس نیست؛ سرویس دریافت پیام باید در سرور آماده و Token همین ربات تأیید شده باشد. ثبت اولیه، فروش را فعال نمی‌کند.
         </p> : null}
 
       {ambiguous ? <p role="alert" className="rounded-lg border p-3 leading-7">
-        آخرین تغییر Provider نتیجهٔ قطعی ندارد؛ Receiver قرنطینه شده و تا
+        نتیجهٔ آخرین تغییر اتصال مشخص نیست؛ اتصال قرنطینه شده و تا
         بررسی دستی، انتقال یا تلاش مجدد مجاز نیست.
       </p> : null}
 
       {receiver.state === "active" ? <p className="leading-7">
-        Receiver فعال است؛ توقف فروش را از کنترل وضعیت بات انجام دهید.
+        دریافت پیام فعال است؛ توقف فروش را از کنترل وضعیت ربات انجام دهید.
         رسید پرداخت‌های قبلی و درخواست‌های بازگشت وجه باید همچنان رسیدگی شوند.
       </p> : null}
     </CardContent>

@@ -97,7 +97,7 @@ export function ActionBindingEditor({
         />
       </Field>
       <Link href="/studio/actions" className="text-xs text-primary underline">
-        مشاهدهٔ Action Catalog و سیاست‌ها
+        مشاهدهٔ عملیات آماده و سیاست‌ها
       </Link>
       {selected ? (
         <>
@@ -107,16 +107,16 @@ export function ActionBindingEditor({
               <bdi>{selected.idempotency}</bdi>
             </p>
             <p>
-              Confirmation: <bdi>{selected.confirmation}</bdi>
+              شرایط تأیید: <bdi>{selected.confirmation}</bdi>
             </p>
             {!selected.service_available && (
               <p>
-                Adapter واقعی این Action آماده نیست. شبیه‌ساز فقط خروجی آزمایشی
+                اجرای واقعی این عملیات در دسترس نیست. شبیه‌ساز فقط خروجی آزمایشی
                 نشان می‌دهد.
               </p>
             )}
             {selected.deprecated && (
-              <p>این نسخه منسوخ شده است؛ جایگزین را در Catalog بررسی کنید.</p>
+              <p>این نسخه منسوخ شده است؛ جایگزین را در فهرست عملیات بررسی کنید.</p>
             )}
           </div>
           <div className="space-y-4">
@@ -215,7 +215,7 @@ export function ActionBindingEditor({
                     )}
                     {selected.sensitive_inputs.includes(name) && (
                       <p className="text-[11px] text-muted-foreground">
-                        ورودی خصوصی؛ محتوای آن در خلاصهٔ رسید و Log نمایش داده
+                        ورودی خصوصی؛ محتوای آن در خلاصهٔ رسید و گزارش‌ها نمایش داده
                         نمی‌شود.
                       </p>
                     )}

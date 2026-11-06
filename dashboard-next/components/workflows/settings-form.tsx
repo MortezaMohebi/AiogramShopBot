@@ -160,9 +160,9 @@ export function WorkflowSettings({
     <fieldset disabled={disabled} className="grid min-w-0 gap-6 lg:grid-cols-2">
       <legend className="sr-only">تنظیمات فرایند</legend>
       <div className="min-w-0 space-y-6 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">مالکیت و دسترسی ربات</h2>
-        <p className="break-all text-xs text-muted-foreground" dir="ltr">
-          Store: {storeId}
+        <h2 className="font-semibold">مشخصات فرایند و ربات‌ها</h2>
+        <p className="text-xs text-muted-foreground">
+          شناسهٔ فروشگاه: <bdi className="break-all" dir="ltr">{storeId}</bdi>
         </p>
         <Field label="نام فرایند">
           <Input
@@ -182,7 +182,7 @@ export function WorkflowSettings({
             }
           />
         </Field>
-        <Field label="پلتفرم‌های هدف">
+        <Field label="پیام‌رسان‌ها">
           <div className="flex gap-5">
             {(["telegram", "bale"] as const).map((p) => (
               <label key={p} className="flex gap-2 text-sm">
@@ -197,7 +197,7 @@ export function WorkflowSettings({
                     })
                   }
                 />
-                {p === "telegram" ? "Telegram" : "Bale"}
+                {p === "telegram" ? "تلگرام" : "بله"}
               </label>
             ))}
           </div>
@@ -239,46 +239,54 @@ export function WorkflowSettings({
           </p>
         )}
         <div className="space-y-3 border-t pt-5">
-          <h3 className="text-sm font-semibold">Entry Pointها</h3>
+          <h3 className="text-sm font-semibold">ورودی‌ها</h3>
           {d.entry_points.map((e, i) => (
             <div key={i} className="space-y-2 rounded-lg border p-3">
-              <Input
-                dir="ltr"
-                aria-label={`کلید ورودی ${i + 1}`}
-                value={e.key}
-                maxLength={64}
-                onChange={(ev) => entry(i, { key: ev.target.value })}
-              />
-              <Select
-                label={`نوع ورودی ${i + 1}`}
-                value={e.kind}
-                options={[
-                  { value: "start", label: "شروع" },
-                  { value: "command", label: "Command" },
-                  { value: "menu", label: "منو" },
-                  { value: "internal", label: "داخلی" },
-                ]}
-                onChange={(kind) =>
-                  entry(i, { kind: kind as EntryPoint["kind"] })
-                }
-              />
-              <Select
-                label={`گره ورودی ${i + 1}`}
-                value={e.node_id}
-                options={d.nodes.map((n) => ({
-                  value: n.id,
-                  label: n.label || n.id,
-                }))}
-                onChange={(node_id) => entry(i, { node_id })}
-              />
-              {e.kind === "command" && (
+              <Field label="کلید ورودی">
                 <Input
                   dir="ltr"
-                  aria-label={`Command ورودی ${i + 1}`}
-                  value={e.command}
-                  placeholder="request_return"
-                  onChange={(ev) => entry(i, { command: ev.target.value })}
+                  aria-label={`کلید ورودی ${i + 1}`}
+                  value={e.key}
+                  maxLength={64}
+                  onChange={(ev) => entry(i, { key: ev.target.value })}
                 />
+              </Field>
+              <Field label="نوع ورودی">
+                <Select
+                  label={`نوع ورودی ${i + 1}`}
+                  value={e.kind}
+                  options={[
+                    { value: "start", label: "شروع" },
+                    { value: "command", label: "دستور" },
+                    { value: "menu", label: "منو" },
+                    { value: "internal", label: "داخلی" },
+                  ]}
+                  onChange={(kind) =>
+                    entry(i, { kind: kind as EntryPoint["kind"] })
+                  }
+                />
+              </Field>
+              <Field label="گره ورودی">
+                <Select
+                  label={`گره ورودی ${i + 1}`}
+                  value={e.node_id}
+                  options={d.nodes.map((n) => ({
+                    value: n.id,
+                    label: n.label || n.id,
+                  }))}
+                  onChange={(node_id) => entry(i, { node_id })}
+                />
+              </Field>
+              {e.kind === "command" && (
+                <Field label="دستور">
+                  <Input
+                    dir="ltr"
+                    aria-label={`دستور ورودی ${i + 1}`}
+                    value={e.command}
+                    placeholder="request_return"
+                    onChange={(ev) => entry(i, { command: ev.target.value })}
+                  />
+                </Field>
               )}
               <Button
                 type="button"
@@ -290,7 +298,7 @@ export function WorkflowSettings({
                   })
                 }
               >
-                حذف Entry Point
+                حذف ورودی
               </Button>
             </div>
           ))}
@@ -315,7 +323,7 @@ export function WorkflowSettings({
               })
             }
           >
-            افزودن Entry Point
+            افزودن ورودی
           </Button>
         </div>
       </div>
@@ -371,9 +379,9 @@ export function WorkflowSettings({
             }
           />
         </Field>
-        <Field label="Timeout (ثانیهٔ مجازی)">
+        <Field label="مهلت پاسخ (ثانیه)">
           <Input
-            aria-label="Timeout"
+            aria-label="مهلت پاسخ (ثانیه)"
             type="number"
             min={1}
             max={86400}
@@ -389,7 +397,7 @@ export function WorkflowSettings({
           />
         </Field>
         <Select
-          label="نتیجه Timeout"
+          label="پس از پایان مهلت"
           value={d.timeout_policy.outcome}
           options={[
             { value: "cancel", label: "لغو" },
@@ -405,8 +413,7 @@ export function WorkflowSettings({
           }
         />
         <div className="rounded-lg border bg-muted/30 p-4 text-sm leading-7">
-          انتشار در این مرحله در دسترس نیست. پیش‌نویس و تنظیمات فقط در Studio
-          ذخیره می‌شوند.
+          ذخیرهٔ تنظیمات، نسخهٔ فعال ربات را تغییر نمی‌دهد. برای اعمال تغییرات روی ربات، نسخهٔ ذخیره‌شده را در بخش «انتشار و اجرا» منتشر کنید.
         </div>
       </div>
     </fieldset>

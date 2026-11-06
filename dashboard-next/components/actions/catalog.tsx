@@ -84,7 +84,7 @@ function DryRunForm({
       className="space-y-4 rounded-lg border p-4"
       aria-label="بررسی بدون تغییر"
     >
-      <h3 className="font-semibold">Dry-run</h3>
+      <h3 className="font-semibold">بررسی بدون تغییر</h3>
       <p className="text-xs leading-6 text-muted-foreground">
         دادهٔ واقعی کاتالوگ را با دسترسی همین ربات می‌خواند. سبد، سفارش و پرداخت
         تغییر نمی‌کنند.
@@ -142,7 +142,7 @@ function DryRunForm({
         },
       )}
       <Button type="button" disabled={busy} onClick={() => void run()}>
-        {busy ? "در حال بررسی…" : "اجرای Dry-run"}
+        {busy ? "در حال بررسی…" : "بررسی بدون تغییر"}
       </Button>
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -322,7 +322,16 @@ export function ActionCatalog({
                 "returns",
                 "wholesale",
                 "notification",
-              ].map((value) => ({ value, label: value })),
+              ].map((value) => ({ value, label: ({
+                catalog: "کاتالوگ",
+                cart: "سبد خرید",
+                order: "سفارش",
+                checkout: "تکمیل خرید",
+                support: "پشتیبانی",
+                returns: "مرجوعی",
+                wholesale: "فروش عمده",
+                notification: "اعلان",
+              } as Record<string, string>)[value] })),
             ]}
           />
         </Field>
@@ -354,9 +363,9 @@ export function ActionCatalog({
             ]}
           />
         </Field>
-        <Field label="Context ربات">
+        <Field label="ربات">
           <Select
-            label="Context ربات"
+            label="ربات"
             value={botId}
             onChange={setBotId}
             options={[
@@ -381,8 +390,7 @@ export function ActionCatalog({
         )}
       </div>
       <p className="text-xs leading-6 text-muted-foreground">
-        فروشگاه و دسترسی از نشست شما مشخص می‌شوند. انتخاب ربات فقط دسترسی Action
-        را بررسی می‌کند. مجوز اجرای فرایند در <Link className="text-primary underline" href="/studio/runtime">Runtime</Link> جداگانه مدیریت می‌شود.
+        انتخاب ربات، دسترسی عملیات را بررسی می‌کند. مجوز اجرا در بخش <Link className="text-primary underline" href="/studio/runtime">وضعیت اجرا</Link> جداگانه مدیریت می‌شود.
       </p>
       {observed.error && (
         <p
@@ -394,7 +402,7 @@ export function ActionCatalog({
       )}
       <p role="status" className="text-xs text-muted-foreground">
         {loading
-          ? "در حال بررسی Context و Actionها…"
+          ? "در حال بررسی عملیات و دسترسی ربات…"
           : `${data.total.toLocaleString("fa-IR")} Action پیدا شد.`}
       </p>
       <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)]">
@@ -477,7 +485,7 @@ export function ActionCatalog({
                   {[
                     ["اثر جانبی", sideEffectLabels[selected.side_effect]],
                     [
-                      "Confirmation",
+                      "تأیید مشتری",
                       ["customer_confirmation", "both"].includes(
                         selected.confirmation,
                       )
@@ -485,7 +493,7 @@ export function ActionCatalog({
                         : "لازم نیست",
                     ],
                     [
-                      "Approval",
+                      "تأیید مسئول",
                       ["operator_approval", "both"].includes(
                         selected.confirmation,
                       )
@@ -495,7 +503,7 @@ export function ActionCatalog({
                     ["Idempotency", selected.idempotency],
                     ["مهلت اجرا", `${selected.timeout_seconds} ثانیه`],
                     [
-                      "Retry",
+                      "تلاش مجدد",
                       `حداکثر ${selected.max_retries} · ${selected.backoff_seconds} ثانیه فاصله`,
                     ],
                     ["پیام‌رسان‌ها", selected.platforms.join(" / ")],
@@ -518,10 +526,10 @@ export function ActionCatalog({
                 >
                   <p>
                     {loading
-                      ? "در حال بررسی Context…"
+                      ? "در حال بررسی دسترسی ربات…"
                       : selected.availability?.available
-                        ? "سرویس برای این ربات آماده است؛ اجرای فرایند به انتشار و مجوز Runtime نیاز دارد."
-                        : "Action برای این Context آماده نیست."}
+                        ? "این عملیات برای ربات در دسترس است؛ اجرای فرایند به انتشار و مجوز اجرا نیاز دارد."
+                        : "این عملیات برای ربات انتخاب‌شده در دسترس نیست."}
                   </p>
                   {!loading &&
                     selected.availability?.reasons.map((reason) => (
@@ -539,9 +547,9 @@ export function ActionCatalog({
                   </summary>
                   <div className="min-w-0 space-y-3 pt-3">
                     {[
-                      ["Input", selected.input_schema],
-                      ["Output", selected.output_schema],
-                      ["Errors", selected.error_schema],
+                      ["ورودی", selected.input_schema],
+                      ["خروجی", selected.output_schema],
+                      ["خطاها", selected.error_schema],
                     ].map(([label, schema]) => (
                       <div key={String(label)}>
                         <h3 className="mb-1 text-xs font-semibold">
@@ -567,8 +575,7 @@ export function ActionCatalog({
               )}
               {!loading && !selected.can_dry_run && (
                 <p className="rounded border p-4 text-xs leading-6 text-muted-foreground">
-                  Dry-run این صفحه برای خواندن کاتالوگ با دسترسی مجاز فراهم است.
-                  برای طراحی مسیرهای مشتری از شبیه‌ساز Workflow استفاده کنید.
+                  بررسی بدون تغییر برای این عملیات در دسترس نیست. برای آزمایش مسیر گفت‌وگو از شبیه‌ساز فرایند استفاده کنید.
                 </p>
               )}
             </>

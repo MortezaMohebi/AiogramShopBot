@@ -16,6 +16,10 @@ type Receipt = {
 };
 
 const STATES = ["all", "queued", "sending", "delivered", "needs_review", "blocked"];
+const STATE_LABELS: Record<string, string> = {
+  all: "همه", queued: "در صف", sending: "در حال ارسال",
+  delivered: "تحویل‌شده", needs_review: "نیازمند بررسی", blocked: "مسدودشده",
+};
 
 /** Digital delivery receipts exclude license plaintext and storage secrets. */
 export default async function DigitalReceipts({
@@ -29,14 +33,14 @@ export default async function DigitalReceipts({
     items: Receipt[]; automatic_retries: boolean;
   }>(status === "all" ? "/digital-deliveries" : `/digital-deliveries?status=${status}`);
   return <div className="space-y-5">
-    <PageHeading title="تحویل امن محصولات دیجیتال"
-      description="رسید ارسال فایل/لایسنس بر اساس Message ID معتبر؛ حالت نامشخص خودکار تکرار نمی‌شود." />
+    <PageHeading title="تحویل محصولات دیجیتال"
+      description="وضعیت تحویل فایل و لایسنس را بررسی کنید. ارسال با نتیجهٔ نامشخص خودکار تکرار نمی‌شود." />
     <div className="flex flex-wrap gap-2">
       {STATES.map(item => <Button key={item} asChild size="sm"
         variant={status === item ? "secondary" : "outline"}>
         <Link href={item === "all" ? "/digital-deliveries"
-          : `/digital-deliveries?status=${item}`}>
-          {item}
+          : `/digital-deliveries?status=${item}`} aria-current={status === item ? "page" : undefined}>
+          {STATE_LABELS[item]}
         </Link>
       </Button>)}
     </div>
@@ -47,19 +51,22 @@ export default async function DigitalReceipts({
           <article key={item.id} className="space-y-2 rounded-lg border p-3 text-sm">
             <div className="flex flex-wrap justify-between gap-2">
               <strong>سفارش #{item.order_id} · محصول #{item.product_id}</strong>
-              <span>{item.status}</span>
+              <span>{STATE_LABELS[item.status] ?? item.status}</span>
             </div>
             <p>نوع: {item.kind === "file" ? "فایل" : "لایسنس"}</p>
-            <p dir="ltr" className="text-xs text-muted-foreground break-all">
-              Store {item.store_id.slice(0, 8)} · Bot {item.bot_id.slice(0, 8)}
+            <p className="text-xs text-muted-foreground break-all">
+              فروشگاه <bdi dir="ltr">{item.store_id.slice(0, 8)}</bdi> · ربات <bdi dir="ltr">{item.bot_id.slice(0, 8)}</bdi>
             </p>
             <p className="text-xs text-muted-foreground">
-              رسید پیام‌رسان: {item.provider_message_id ?? "ثبت نشده"} ·
-              علت توقف: {item.failure_code ?? "—"}
+              رسید پیام‌رسان: <bdi dir="ltr">{item.provider_message_id ?? "ثبت نشده"}</bdi>
             </p>
+            {item.failure_code ? <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">اطلاعات پیگیری توقف</summary>
+              <p dir="ltr" className="mt-1 break-all">{item.failure_code}</p>
+            </details> : null}
           </article>)}
         {!data.items.length ? <p className="text-sm text-muted-foreground">
-          در این وضعیت هنوز رکورد تحویل وجود ندارد.
+          در این وضعیت تحویلی ثبت نشده است.
         </p> : null}
       </CardContent>
     </Card>

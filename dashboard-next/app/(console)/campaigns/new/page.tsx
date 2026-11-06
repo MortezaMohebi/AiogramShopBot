@@ -16,7 +16,7 @@ export default async function NewCampaignPage() {
   const hasSender = options.legacy_available || options.bots.length > 0;
   return (
     <div>
-      <PageHeading title="کمپین جدید" description="ساخت پیش‌نویس؛ مخاطبان تا زمان تأیید مدیر و شروع مستقل Worker هیچ پیامی دریافت نمی‌کنند." />
+      <PageHeading title="کمپین جدید" description="ساخت پیش‌نویس، پیامی ارسال نمی‌کند. مخاطبان و شروع ارسال جداگانه تأیید می‌شوند." />
       <Card className="max-w-3xl">
         <CardHeader><CardTitle>پیام کمپین</CardTitle><CardDescription>فروشگاه: {options.store_name}. پیام فقط برای مشتریان دارای رضایتِ ربات انتخاب‌شده آماده می‌شود.</CardDescription></CardHeader>
         <CardContent>
@@ -43,7 +43,7 @@ export default async function NewCampaignPage() {
               </select>
             </label>
             {!hasSender ? <p role="status" className="text-sm text-muted-foreground">برای این فروشگاه ربات فعالی در دسترس نیست. پس از فعال‌شدن ربات، می‌توانید پیش‌نویس بسازید.</p> : null}
-            <p className="text-xs leading-7 text-muted-foreground">پس از ساخت، رسانه‌های کمپین را از صفحه جزئیات بارگذاری کنید؛ تأیید مخاطبان و شروع Worker مستقل‌اند.</p>
+            <p className="text-xs leading-7 text-muted-foreground">پس از ساخت پیش‌نویس، فایل‌ها را در صفحهٔ جزئیات اضافه کنید. سپس مخاطبان را تأیید و ارسال را شروع کنید.</p>
             <Button type="submit" disabled={!hasSender}>ساخت پیش‌نویس</Button>
           </form>
         </CardContent>

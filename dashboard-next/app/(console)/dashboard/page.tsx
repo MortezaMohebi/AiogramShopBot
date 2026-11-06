@@ -19,7 +19,6 @@ export default async function DashboardPage() {
     <div>
       <PageHeading
         title="نمای کلی فروشگاه"
-        description="وضعیت دو پیام‌رسان، فروشگاه و کمپین‌ها در یک نگاه؛ اعداد مستقیماً از پایگاه داده خوانده می‌شوند."
         action={
           <Button asChild variant="outline">
             <Link href="/reports">مشاهده گزارش‌ها <ArrowUpLeft /></Link>
@@ -34,7 +33,7 @@ export default async function DashboardPage() {
             <div className="mb-2 flex size-10 items-center justify-center rounded-lg bg-accent text-primary">
               <Megaphone className="size-5" />
             </div>
-            <CardTitle>وضعیت Broadcast</CardTitle>
+            <CardTitle>ارسال پیام‌های گروهی</CardTitle>
             <CardDescription>فقط به مشتریانی که دریافت اطلاعیه را پذیرفته‌اند.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">

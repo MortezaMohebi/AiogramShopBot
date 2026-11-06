@@ -30,20 +30,20 @@ const PERIODS: Array<[TimeGranularity, string]> = [
 ];
 
 const ERRORS: Record<string, string> = {
-  invalid_import_columns: "ستون‌ها باید دقیقاً مطابق Template باشند؛ فیلد ناشناخته یا تکراری مجاز نیست.",
+  invalid_import_columns: "ستون‌ها باید مطابق فایل الگو باشند؛ ستون ناشناخته یا تکراری مجاز نیست.",
   invalid_import_file: "فایل CSV یا XLSX معتبر و حداکثر ۸ مگابایت انتخاب کنید.",
-  import_formula_not_allowed: "فایل حاوی Formula است؛ فقط مقدارهای واقعی مجازند.",
-  import_too_many_rows: "هر فایل حداکثر هزار سطر دارد.",
-  import_identity_required: "برای تطبیق امن، External Reference یا SKU معتبر لازم است.",
-  import_duplicate_key: "یک شناسهٔ Import در چند سطر فایل تکرار شده است.",
-  import_stock_adjustment_required: "تغییر موجودی محصول قدیمی از Import مجاز نیست؛ سند اصلاح انبار لازم است.",
-  import_publish_requires_review: "انتشار محصول از طریق Import مجاز نیست.",
-  uom_locked: "واحد فروش محصول دارای موجودی یا سابقهٔ خرید را نمی‌توان از طریق Import تغییر داد.",
-  import_identity_conflict: "External Reference و SKU به دو رکورد متفاوت اشاره می‌کنند.",
-  import_preview_required: "Preview منقضی، مصرف یا متعلق به Store/نشست دیگری است؛ دوباره Preview بگیرید.",
-  import_data_changed: "داده‌های پایگاه‌داده پس از Preview تغییر کرده‌اند؛ دوباره Preview بگیرید.",
-  store_access_denied: "دسترسی این Store برای کاربر مجاز نیست.",
-  import_failed: "عملیات Import اجرا نشد؛ نسخهٔ داده و دسترسی‌ها را بررسی کنید.",
+  import_formula_not_allowed: "فایل حاوی فرمول است؛ فرمول‌ها را با مقدار جایگزین کنید.",
+  import_too_many_rows: "فایل باید حداکثر هزار سطر داشته باشد.",
+  import_identity_required: "برای تطبیق داده‌ها، External Reference یا SKU معتبر لازم است.",
+  import_duplicate_key: "یک شناسه در چند سطر فایل تکرار شده است.",
+  import_stock_adjustment_required: "برای تغییر موجودی محصول موجود، سند اصلاح انبار ثبت کنید.",
+  import_publish_requires_review: "انتشار محصول از طریق فایل امکان‌پذیر نیست.",
+  uom_locked: "واحد فروش محصول دارای موجودی یا سابقهٔ خرید را نمی‌توان از طریق فایل تغییر داد.",
+  import_identity_conflict: "External Reference و SKU به دو مورد متفاوت اشاره می‌کنند.",
+  import_preview_required: "پیش‌نمایش معتبر نیست یا قبلاً استفاده شده است؛ فایل را دوباره بررسی کنید.",
+  import_data_changed: "داده‌ها پس از پیش‌نمایش تغییر کرده‌اند؛ فایل را دوباره بررسی کنید.",
+  store_access_denied: "به این فروشگاه دسترسی ندارید.",
+  import_failed: "ورود اطلاعات انجام نشد؛ نسخهٔ داده و دسترسی‌ها را بررسی کنید.",
 };
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -108,6 +108,8 @@ export function ModelDataWorkbench({ metadata }: Props) {
       } else {
         setSearchResult(response.data);
       }
+    } catch {
+      setNotice("جست‌وجو انجام نشد. اتصال را بررسی و دوباره جست‌وجو کنید.");
     } finally { setBusy(false); }
   }
 
@@ -124,6 +126,8 @@ export function ModelDataWorkbench({ metadata }: Props) {
       );
       if (!response.ok) setNotice(response.error);
       else setGroupResult(response.data);
+    } catch {
+      setNotice("گروه‌بندی انجام نشد. اتصال را بررسی و دوباره تلاش کنید.");
     } finally { setBusy(false); }
   }
 
@@ -164,14 +168,14 @@ export function ModelDataWorkbench({ metadata }: Props) {
         return;
       }
       if (payload.result.committed) {
-        setNotice(`Import انجام شد: ${payload.result.creates} ایجاد · ${payload.result.updates} به‌روزرسانی`);
+        setNotice(`اطلاعات وارد شد: ${payload.result.creates} ایجاد · ${payload.result.updates} به‌روزرسانی`);
         setPreview(null);
         router.refresh();
       } else {
         setPreview(payload.result);
       }
     } catch {
-      setNotice("اتصال هنگام Import قطع شد؛ پیش از تکرار Apply وضعیت رکوردها را بررسی کنید.");
+      setNotice("اتصال هنگام ورود اطلاعات قطع شد؛ نتیجه مشخص نیست. پیش از تلاش دوباره، وضعیت داده‌ها را بررسی کنید.");
     } finally { setBusy(false); }
   }
 
@@ -179,10 +183,10 @@ export function ModelDataWorkbench({ metadata }: Props) {
     return `/api/admin/data-models/${metadata.model}/${action}?format=${extension}`;
   }
 
-  return <div className="space-y-6">
+  return <div className="space-y-6" aria-busy={busy}>
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2">
-        <Filter className="size-5" /> Search بر اساس فیلد
+        <Filter className="size-5" /> جست‌وجوی داده‌ها
       </CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_auto] lg:items-end">
@@ -205,7 +209,7 @@ export function ModelDataWorkbench({ metadata }: Props) {
           </label>
           <label className="space-y-2 text-sm">عبارت / مقدار
             <Input value={value} onChange={(event) => setValue(event.target.value)}
-              placeholder="مقدار دلخواه؛ تاریخ با UTC" maxLength={200} />
+              placeholder="برای تاریخ از UTC استفاده کنید" maxLength={200} />
           </label>
           <Button type="button" disabled={busy} variant="outline" onClick={addFilter}>
             افزودن فیلتر
@@ -215,11 +219,11 @@ export function ModelDataWorkbench({ metadata }: Props) {
           {filters.map((filter, index) => <button key={index} type="button"
             disabled={busy} onClick={() => setFilters(filters.filter((_, i) => i !== index))}
             className="rounded-lg border px-3 py-2 text-xs hover:bg-muted"
-            aria-label={`حذف فیلتر ${filter.field}`}>
-            {filter.field} · {filter.op} · {String(filter.value)} ×
+            aria-label={`حذف فیلتر ${metadata.fields.find((item) => item.key === filter.field)?.title ?? filter.field}`}>
+            {metadata.fields.find((item) => item.key === filter.field)?.title ?? filter.field} · {OPS.find(([key]) => key === filter.op)?.[1] ?? filter.op} · <bdi>{String(filter.value)}</bdi> ×
           </button>)}
           <Button type="button" size="sm" variant="outline"
-            onClick={() => setFilters([])} disabled={busy}>حذف همه</Button>
+            onClick={() => setFilters([])} disabled={busy}>پاک کردن فیلترها</Button>
         </div> : null}
         <div className="flex flex-wrap items-end gap-3">
           <label className="space-y-2 text-sm">مرتب‌سازی
@@ -234,7 +238,7 @@ export function ModelDataWorkbench({ metadata }: Props) {
             نزولی
           </label>
           <Button type="button" disabled={busy} onClick={() => void runSearch(1)}>
-            <Search className="size-4" /> جستجو
+            <Search className="size-4" /> جست‌وجو
           </Button>
         </div>
         {searchResult ? <div className="space-y-3">
@@ -256,6 +260,9 @@ export function ModelDataWorkbench({ metadata }: Props) {
                 </tr>)}</tbody>
             </table>
           </div>
+          {!searchResult.items.length ? <p className="text-sm text-muted-foreground">
+            {filters.length ? "موردی با این فیلترها پیدا نشد." : "هنوز داده‌ای ثبت نشده است."}
+          </p> : null}
           <div className="flex gap-3">
             <Button type="button" variant="outline" disabled={busy || searchResult.page <= 1}
               onClick={() => void runSearch(searchResult.page - 1)}>قبلی</Button>
@@ -268,11 +275,11 @@ export function ModelDataWorkbench({ metadata }: Props) {
     </Card>
     {groupable.length ? <Card>
       <CardHeader><CardTitle className="flex items-center gap-2">
-        <Layers3 className="size-5" /> Group By و دسته‌بندی زمانی
+        <Layers3 className="size-5" /> گروه‌بندی داده‌ها
       </CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-2 text-sm">فیلد Group By
+          <label className="space-y-2 text-sm">گروه‌بندی بر اساس
             <select value={groupField} onChange={(event) => setGroupField(event.target.value)}
               className="block h-10 min-w-44 rounded-md border bg-background px-3">
               {groupable.map((item) => <option key={item.key} value={item.key}>
@@ -304,48 +311,49 @@ export function ModelDataWorkbench({ metadata }: Props) {
                 <td className="p-2">{item.count}</td>
               </tr>)}</tbody>
           </table>
+          {!groupResult.items.length ? <p className="py-3 text-sm text-muted-foreground">
+            داده‌ای برای گروه‌بندی پیدا نشد.
+          </p> : null}
         </div> : null}
       </CardContent>
     </Card> : null}
 
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2">
-        <FileDown className="size-5" /> Excel / CSV Export
+        <FileDown className="size-5" /> دریافت فایل خروجی
       </CardTitle></CardHeader>
       <CardContent className="flex flex-wrap items-center gap-3">
         {(["xlsx", "csv"] as const).map((kind) =>
           <Button key={kind} asChild variant="outline">
             <a href={downloadUrl("export", kind)}>
-              <FileSpreadsheet className="size-4" /> Export {kind.toUpperCase()}
+              <FileSpreadsheet className="size-4" /> دریافت {kind.toUpperCase()}
             </a>
           </Button>)}
         <p className="text-xs leading-6 text-muted-foreground">
-          فقط Storeهای فعال؛ حداکثر ۵۰۰۰ ردیف در هر درخواست. اطلاعات مالی و Secretها در این خروجی‌ها وجود ندارند.
+          خروجی شامل فروشگاه‌های فعال و حداکثر ۵۰۰۰ ردیف است. اطلاعات مالی و کلیدهای محرمانه در خروجی نیستند.
         </p>
       </CardContent>
     </Card>
 
     {metadata.can_import ? <Card>
       <CardHeader><CardTitle className="flex items-center gap-2">
-        <Upload className="size-5" /> Import با Template
+        <Upload className="size-5" /> ورود اطلاعات از فایل
       </CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-3">
           {(["xlsx", "csv"] as const).map((kind) =>
             <Button key={kind} asChild variant="outline">
               <a href={downloadUrl("template", kind)}>
-                <FileDown className="size-4" /> Template {kind.toUpperCase()}
+                <FileDown className="size-4" /> دریافت الگوی {kind.toUpperCase()}
               </a>
             </Button>)}
         </div>
         <p className="text-xs leading-7 text-muted-foreground">
-          ابتدا Template را دریافت و تکمیل کنید. به‌روزرسانی فقط با External Reference یا SKU
-          انجام می‌شود و هر سطر بدون خطا باید با Store جاری سازگار باشد. هیچ مشتری
-          صرفاً براساس نام یا تلفن به حساب دیگری متصل نمی‌شود.
+          ابتدا فایل الگو را دریافت و تکمیل کنید. برای به‌روزرسانی، External Reference یا SKU لازم است و داده‌ها باید متعلق به فروشگاه جاری باشند. مشتریان صرفاً با نام یا تلفن به حساب دیگری متصل نمی‌شوند.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <label className="block space-y-2 text-sm">نوع فایل
-            <select value={format} onChange={(event) => {
+            <select value={format} disabled={busy} onChange={(event) => {
               setFormat(event.target.value as Format);
               setFile(null);
               setPreview(null);
@@ -355,8 +363,8 @@ export function ModelDataWorkbench({ metadata }: Props) {
             </select>
           </label>
           <label className="block min-w-48 flex-1 space-y-2 text-sm">
-            انتخاب فایل (حداکثر ۸ MB)
-            <Input type="file" accept={format === "xlsx" ? ".xlsx" : ".csv"}
+            انتخاب فایل (حداکثر ۸ مگابایت)
+            <Input type="file" disabled={busy} accept={format === "xlsx" ? ".xlsx" : ".csv"}
               onChange={(event) => {
                 setFile(event.target.files?.[0] ?? null);
                 setPreview(null);
@@ -364,21 +372,19 @@ export function ModelDataWorkbench({ metadata }: Props) {
               }} />
           </label>
           <Button type="button" disabled={busy || !file} variant="outline"
-            onClick={() => void importFile("preview")}>بررسی اولیه / Preview</Button>
+            onClick={() => void importFile("preview")}>بررسی فایل</Button>
         </div>
         {preview ? <div className="space-y-3 rounded-lg border p-4">
-          <p className="text-sm font-semibold">نتیجهٔ Preview — هنوز هیچ تغییری ذخیره نشده است.</p>
+          <p className="text-sm font-semibold">پیش‌نمایش تغییرات — هنوز ذخیره نشده است.</p>
           <p className="text-sm">
             {preview.rows} ردیف · {preview.creates} ایجاد · {preview.updates} به‌روزرسانی
           </p>
           <p className="text-xs leading-6 text-muted-foreground">
-            در Apply، فایل و وضعیت پایگاه‌داده دوباره بررسی می‌شود و Receipt
-            تأییدشده فقط یک بار، برای همان کاربر، نشست و Store اعتبار دارد.
-            وضعیت انتشار و تغییر موجودی محصولات قبلی نیازمند فرآیند جداگانه است.
+            هنگام ذخیره، فایل و داده‌های فعلی دوباره بررسی می‌شوند. هر پیش‌نمایش فقط یک‌بار در همین نشست و فروشگاه قابل استفاده است. انتشار محصول و اصلاح موجودی جداگانه انجام می‌شود.
           </p>
           <Button type="button" disabled={busy || !file}
             onClick={() => void importFile("apply")}>
-            تأیید و اعمال Import
+            ذخیره اطلاعات فایل
           </Button>
         </div> : null}
       </CardContent>

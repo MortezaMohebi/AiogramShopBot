@@ -22,7 +22,7 @@ export default async function ShippingPage() {
   if (!["superadmin", "sales"].includes(staff.role)) notFound();
   return (
     <div>
-      <PageHeading title="روش‌های ارسال" description="روش‌ها و هزینه‌ها از پایگاه داده تعریف می‌شوند؛ برای کالاهای فیزیکی تکمیل نشانی و روش ارسال الزامی است." />
+      <PageHeading title="روش‌های ارسال" description="برای خرید کالای فیزیکی، نشانی و روش ارسال الزامی است." />
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_1.5fr]">
         <Card><CardHeader><CardTitle>افزودن روش ارسال</CardTitle></CardHeader><CardContent>
           <form action={saveShipping} className="space-y-4">
@@ -38,7 +38,7 @@ export default async function ShippingPage() {
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" name="is_active" defaultChecked className="accent-primary" /> فعال
             </label>
-            <Button type="submit">ثبت روش</Button>
+            <Button type="submit">افزودن روش ارسال</Button>
           </form>
         </CardContent></Card>
         <Card><CardHeader><CardTitle>روش‌های تعریف‌شده</CardTitle></CardHeader><CardContent>
@@ -54,19 +54,25 @@ export default async function ShippingPage() {
                 </summary>
                 <form action={saveShipping} className="mt-4 grid gap-3 rounded-lg bg-muted/60 p-4">
                   <input type="hidden" name="id" value={item.id} />
-                  <Input name="name" defaultValue={item.name} required maxLength={120} aria-label="نام روش ارسال" />
+                  <label className="block space-y-2 text-sm">نام روش ارسال
+                    <Input name="name" defaultValue={item.name} required maxLength={120} />
+                  </label>
                   <div className="flex flex-wrap items-center gap-3">
-                    <Input name="price_irr" type="number" min={0} step={1} defaultValue={item.price_irr} className="max-w-48" aria-label="هزینه ریالی" />
-                    <Input name="position" type="number" min={0} defaultValue={item.position} className="max-w-28" aria-label="ترتیب" />
+                    <label className="block space-y-2 text-sm">هزینه ارسال (ریال)
+                      <Input name="price_irr" type="number" min={0} step={1} defaultValue={item.price_irr} dir="ltr" />
+                    </label>
+                    <label className="block space-y-2 text-sm">ترتیب
+                      <Input name="position" type="number" min={0} defaultValue={item.position} dir="ltr" />
+                    </label>
                     <label className="flex items-center gap-2 text-sm">
                       <input type="checkbox" name="is_active" defaultChecked={item.is_active} className="accent-primary" /> فعال
                     </label>
                   </div>
-                  <Button size="sm" type="submit">ثبت تغییر</Button>
+                  <Button size="sm" type="submit">ذخیرهٔ تغییرات</Button>
                 </form>
               </details>
             ))}
-            {shipping.length === 0 ? <p className="py-8 text-center text-muted-foreground">روش ارسالی تعریف نشده است.</p> : null}
+            {shipping.length === 0 ? <p className="py-8 text-center text-muted-foreground">هنوز روش ارسالی تعریف نشده است.</p> : null}
           </div>
         </CardContent></Card>
       </div>

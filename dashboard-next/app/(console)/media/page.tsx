@@ -32,8 +32,8 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
   const lastPage = Math.max(1, Math.ceil(result.total / result.page_size));
   return (
     <div className="space-y-6">
-      <PageHeading title="رسانه‌های فروشگاه" description="بارگذاری مستقیم و تأیید انتشار؛ فایل اصلی خصوصی می‌ماند و در تلگرام و بله از همان منبع استفاده می‌شود." />
-      {params.saved ? <p role="status" className="rounded-lg bg-accent px-4 py-3 text-sm">عملیات رسانه ثبت شد.</p> : null}
+      <PageHeading title="رسانه‌های فروشگاه" description="فایل‌های جدید تا زمان تأیید انتشار به مشتری نمایش داده نمی‌شوند." />
+      {params.saved ? <p role="status" className="rounded-lg bg-accent px-4 py-3 text-sm">تغییرات رسانه ثبت شد.</p> : null}
       {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{uploadErrorMessage(params.error, "ثبت انجام نشد. نوع فایل، حجم، شناسهٔ محصول یا وضعیت انتشار را بررسی کنید.")}</p> : null}
       <Card>
         <CardHeader><CardTitle>بارگذاری فایل جدید</CardTitle></CardHeader>
@@ -58,7 +58,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
             </label>
             <div className="lg:col-span-2">
               <p className="mb-3 text-xs text-muted-foreground">هیچ فایل تازه‌ای خودکار منتشر نمی‌شود؛ پس از مشاهدهٔ پیش‌نمایش آن را تأیید کنید.</p>
-              <Button type="submit">بارگذاری و ذخیره خصوصی</Button>
+              <Button type="submit">بارگذاری فایل</Button>
             </div>
           </form>
         </CardContent>
@@ -74,7 +74,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
                 </div>
                 <p className="break-all text-xs" dir="ltr">{item.filename}</p>
                 <p className="text-xs text-muted-foreground">#{item.id} · {item.kind} · {sizes.format(item.size_bytes / 1_000_000)} MB</p>
-                <a href={`/api/admin/preview/product/${item.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-medium text-primary underline underline-offset-4">پیش‌نمایش امن فایل</a>
+                <a href={`/api/admin/preview/product/${item.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-medium text-primary underline underline-offset-4">پیش‌نمایش فایل</a>
               </div>
               <div className="space-y-3">
                 <form action={editMedia} className="grid grid-cols-[minmax(0,1fr)_6rem_auto] items-end gap-2">
@@ -96,7 +96,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
                     </Button>
                   </form>
                   {!item.is_published ? (
-                    <form action={deleteMedia} className="flex items-center gap-2">
+                    <form action={deleteMedia} className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="id" value={item.id} />
                       <Input aria-label="عبارت تأیید حذف" name="confirmation" required placeholder="DELETE_DRAFT_MEDIA" dir="ltr" className="w-48 text-xs" />
                       <Button size="sm" variant="destructive" type="submit">حذف فایل</Button>
@@ -109,10 +109,10 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
         ))}
         {!result.items.length ? <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">هنوز رسانه‌ای ذخیره نشده است.</CardContent></Card> : null}
       </div>
-      <nav aria-label="صفحه‌بندی رسانه" className="flex items-center justify-between gap-4 text-sm">
-        <Button asChild variant="outline" size="sm"><Link aria-disabled={page <= 1} href={`/media?page=${Math.max(1, page - 1)}`}>صفحه قبل</Link></Button>
+      <nav aria-label="صفحه‌بندی رسانه" className="flex flex-wrap items-center justify-between gap-4 text-sm">
+        {page <= 1 ? <Button variant="outline" size="sm" disabled>صفحه قبل</Button> : <Button asChild variant="outline" size="sm"><Link href={`/media?page=${page - 1}`}>صفحه قبل</Link></Button>}
         <span>صفحه {page} از {lastPage} · {result.total} فایل</span>
-        <Button asChild variant="outline" size="sm"><Link aria-disabled={page >= lastPage} href={`/media?page=${Math.min(lastPage, page + 1)}`}>صفحه بعد</Link></Button>
+        {page >= lastPage ? <Button variant="outline" size="sm" disabled>صفحه بعد</Button> : <Button asChild variant="outline" size="sm"><Link href={`/media?page=${page + 1}`}>صفحه بعد</Link></Button>}
       </nav>
     </div>
   );

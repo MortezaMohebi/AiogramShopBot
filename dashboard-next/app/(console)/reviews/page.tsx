@@ -87,7 +87,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Para
                     {review.is_approved ? "لغو تأیید" : "تأیید برای نمایش"}
                   </Button>
                 </form>
-                {!review.is_approved ? <form action={deleteReview} className="flex items-center gap-2">
+                {!review.is_approved ? <form action={deleteReview} className="flex flex-wrap items-center gap-2">
                   <input type="hidden" name="id" value={review.id} />
                   <Input name="confirmation" required dir="ltr" placeholder="DELETE_DRAFT_REVIEW" aria-label="عبارت تأیید حذف" className="w-52 text-xs" />
                   <Button type="submit" variant="destructive" size="sm">حذف</Button>
@@ -98,10 +98,10 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Para
         ))}
         {!reviews.items.length ? <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">رضایتی ثبت نشده است.</CardContent></Card> : null}
       </div>
-      <nav aria-label="صفحه‌بندی رضایت مشتری" className="flex items-center justify-between text-sm">
-        <Button asChild variant="outline" size="sm"><Link href={`/reviews?page=${Math.max(1, page - 1)}`}>صفحه قبل</Link></Button>
+      <nav aria-label="صفحه‌بندی رضایت مشتری" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        {page <= 1 ? <Button variant="outline" size="sm" disabled>صفحه قبل</Button> : <Button asChild variant="outline" size="sm"><Link href={`/reviews?page=${page - 1}`}>صفحه قبل</Link></Button>}
         <span>{page} / {lastPage} · {reviews.total} مورد</span>
-        <Button asChild variant="outline" size="sm"><Link href={`/reviews?page=${Math.min(lastPage, page + 1)}`}>صفحه بعد</Link></Button>
+        {page >= lastPage ? <Button variant="outline" size="sm" disabled>صفحه بعد</Button> : <Button asChild variant="outline" size="sm"><Link href={`/reviews?page=${page + 1}`}>صفحه بعد</Link></Button>}
       </nav>
     </div>
   );

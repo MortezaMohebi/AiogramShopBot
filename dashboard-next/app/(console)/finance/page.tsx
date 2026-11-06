@@ -42,7 +42,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
   const limit = BigInt(capabilities.wallet_adjustment_limit_irr);
   return (
     <div className="space-y-6">
-      <PageHeading title="امور مالی" description="اعتبار داخلی فروشگاه مستقل از کیف پول بله است. تأیید پرداخت واقعی و بازپرداخت فقط توسط سرویس‌های مالی Python انجام می‌شود." />
+      <PageHeading title="امور مالی" description="اعتبار داخلی فروشگاه از کیف پول بله مستقل است." />
       {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">عملیات مالی ثبت شد؛ برای رسید قطعی، وضعیت پرونده یا دفتر اعتبار را بررسی کنید.</p> : null}
       {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">درخواست انجام نشد. مبلغ، مدرک تأیید یا وضعیت پرونده را بررسی کنید؛ از تکرار بازپرداخت نامشخص خودداری کنید.</p> : null}
       <div className="grid gap-5 xl:grid-cols-2">
@@ -67,7 +67,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
             {limit > BigInt(0) ? (
               <form action={adjustWallet} className="space-y-3">
                 <input type="hidden" name="operation_id" value={randomUUID()} />
-                <p className="text-xs text-muted-foreground">سقف مجاز هر عملیات: {formatIrr(capabilities.wallet_adjustment_limit_irr)}. هر عملیات کلید مستقل و ثبت در Ledger دارد.</p>
+                <p className="text-xs text-muted-foreground">سقف مجاز هر عملیات: {formatIrr(capabilities.wallet_adjustment_limit_irr)}.</p>
                 <label className="block space-y-1 text-sm">پیام‌رسان
                   <select name="platform" className="h-10 w-full rounded-md border border-input bg-background px-3">
                     <option value="bale">بله</option><option value="telegram">تلگرام</option>
@@ -90,9 +90,9 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
                 <label className="block space-y-1 text-sm">تأیید دستی
                   <Input name="confirmation" required dir="ltr" placeholder="CREDIT_CONFIRMED" />
                 </label>
-                <Button type="submit">ثبت تغییر در Ledger</Button>
+                <Button type="submit">ثبت تغییر اعتبار</Button>
               </form>
-            ) : <p className="text-sm leading-7 text-muted-foreground">اصلاح دستی اعتبار به‌صورت پیش‌فرض غیرفعال است. سقف عملیات باید توسط تنظیمات امن سرور فعال شود.</p>}
+            ) : <p className="text-sm leading-7 text-muted-foreground">اصلاح دستی اعتبار غیرفعال است.</p>}
           </CardContent>
         </Card>
       </div>
@@ -113,8 +113,10 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
                     <form action={resolveRefund} className="space-y-2">
                       <input type="hidden" name="case_id" value={refund.id} />
                       <input type="hidden" name="action" value="stars" />
-                      <p className="text-xs text-muted-foreground">این دکمه تماس واقعی با API بازپرداخت Telegram Stars را اجرا می‌کند. در نتیجه نامشخص، تکرار نکنید.</p>
+                      <p className="text-xs text-muted-foreground">مبلغ از طریق Telegram Stars بازپرداخت می‌شود. اگر نتیجه نامشخص بود، پیش از تکرار وضعیت را بررسی کنید.</p>
+                      <label className="block space-y-1 text-xs">عبارت تأیید بازپرداخت
                       <Input name="confirmation" required dir="ltr" placeholder="REFUND_STARS_EXECUTE" />
+                    </label>
                       <Button variant="destructive" type="submit">اجرای بازپرداخت Stars</Button>
                     </form>
                   ) : <p className="text-xs leading-6 text-muted-foreground">بازپرداخت Stars در حال حاضر قابل اجرا نیست؛ وضعیت را در پیام‌رسان بررسی کنید.</p>
@@ -127,14 +129,16 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
                         <Input name="provider_reference" minLength={8} maxLength={128} required dir="ltr" />
                       </label>
                     ) : <p className="text-xs text-muted-foreground">بازگشت فقط از دفتر اعتبار داخلی، بدون پرداخت خارجی.</p>}
-                    <Input name="confirmation" required dir="ltr" placeholder="REFUND_VERIFIED" />
+                    <label className="block space-y-1 text-xs">عبارت تأیید بازپرداخت
+                      <Input name="confirmation" required dir="ltr" placeholder="REFUND_VERIFIED" />
+                    </label>
                     <Button size="sm" type="submit">ثبت بازپرداخت تأییدشده</Button>
                   </form>
                 )
               ) : null}
             </div>
           ))}
-          {!refunds.length ? <p className="py-8 text-center text-sm text-muted-foreground">پرونده‌ای وجود ندارد.</p> : null}
+          {!refunds.length ? <p className="py-8 text-center text-sm text-muted-foreground">پروندهٔ بازپرداختی ثبت نشده است.</p> : null}
         </CardContent>
       </Card>
       <Card>

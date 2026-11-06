@@ -33,8 +33,7 @@ export default async function WorkflowsPage({
     <div className="min-w-0">
       <StudioHomeNav current="workflows" />
       <PageHeading
-        title="Bot Experience Studio"
-        description="طراحی فرایندهای مکالمه برای Telegram و Bale؛ تعریف قابل‌حمل، تاریخچهٔ نسخه و شبیه‌سازی در فروشگاه شما."
+        title="فرایندها"
         action={
           catalog.can_write ? (
             <Button asChild>
@@ -44,15 +43,14 @@ export default async function WorkflowsPage({
         }
       />
       <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 px-5 py-4 text-sm leading-7">
-        ویرایش و شبیه‌ساز روی پیش‌نویس کار می‌کنند. اجرای ربات به نسخهٔ منتشرشده،
-        انتخاب ورودی و مجوز جداگانهٔ فروشگاه و ربات نیاز دارد.{" "}
-        <Link href="/studio/runtime" className="text-primary underline">بررسی وضعیت Runtime</Link>
+        پیش‌نویس روی ربات اجرا نمی‌شود. برای اجرا، نسخه را منتشر کنید و ورودی، ربات و مجوز اجرا را مشخص کنید.{" "}
+        <Link href="/studio/runtime" className="text-primary underline">بررسی وضعیت اجرا</Link>
       </div>
       <form
         action="/studio/workflows"
         className="mb-5 flex flex-wrap items-end gap-3"
       >
-        <label className="min-w-0 flex-1 space-y-2 text-xs font-semibold">
+        <label className="min-w-0 flex-1 basis-48 space-y-2 text-xs font-semibold">
           جستجوی فرایند
           <Input
             name="q"
@@ -65,7 +63,7 @@ export default async function WorkflowsPage({
           وضعیت
           <select
             name="status"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
             defaultValue={status}
           >
             <option value="draft">پیش‌نویس</option>
@@ -75,7 +73,7 @@ export default async function WorkflowsPage({
           </select>
         </label>
         <Button type="submit" variant="outline">
-          اعمال
+          اعمال فیلتر
         </Button>
       </form>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -101,9 +99,11 @@ export default async function WorkflowsPage({
                     : "حذف‌شده"}
               </span>
             </div>
-            <p className="line-clamp-2 min-h-12 text-xs leading-6 text-muted-foreground">
-              {item.description || "بدون توضیحات"}
-            </p>
+            {item.description && (
+              <p className="line-clamp-2 text-xs leading-6 text-muted-foreground">
+                {item.description}
+              </p>
+            )}
             <p dir="ltr" className="break-all text-xs text-muted-foreground">
               {item.key} · r{item.revision}
             </p>
@@ -137,16 +137,23 @@ export default async function WorkflowsPage({
       </div>
       {!data.items.length && (
         <div className="rounded-xl border border-dashed bg-card px-6 py-16 text-center">
-          <h2 className="font-semibold">فرایندی در این فهرست نیست</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-muted-foreground">
-            از یک فرایند خالی یا نمونهٔ مرجوعی شروع کنید؛ بعد گره‌ها و مسیرهای
-            گفت‌وگو را در ویرایشگر بچینید.
-          </p>
+          <h2 className="font-semibold">
+            {q ? "فرایندی با این جستجو پیدا نشد" : "فرایندی در این فهرست نیست"}
+          </h2>
+          {q ? (
+            <Link href={`/studio/workflows?status=${status}`} className="mt-3 inline-block text-sm text-primary underline">
+              پاک‌کردن جستجو
+            </Link>
+          ) : catalog.can_write && status === "draft" ? (
+            <Link href="/studio/workflows/new" className="mt-3 inline-block text-sm text-primary underline">
+              ایجاد فرایند
+            </Link>
+          ) : null}
         </div>
       )}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm">
         <span>
-          {data.total} فرایند · صفحهٔ {page}
+          {data.total.toLocaleString("fa-IR")} فرایند · صفحهٔ {page.toLocaleString("fa-IR")}
         </span>
         <div className="flex gap-4">
           {page > 1 && (

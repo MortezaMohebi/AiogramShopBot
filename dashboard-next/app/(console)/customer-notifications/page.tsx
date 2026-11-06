@@ -14,6 +14,11 @@ interface NotificationReport {
   delivery_outbox: Count[];
   unknown_delivery_requires_review: boolean;
 }
+const STATUS_LABELS: Record<string, string> = {
+  active: "فعال", queued: "در صف", processing: "در حال پردازش",
+  notified: "اطلاع‌رسانی‌شده", sent: "ارسال‌شده",
+  needs_review: "نیازمند بررسی", cancelled: "لغوشده",
+};
 
 /** Read-only delivery telemetry; uncertain sends are never blindly replayed. */
 export default async function CustomerNotificationsPage() {
@@ -22,17 +27,17 @@ export default async function CustomerNotificationsPage() {
   const status = await adminFetch<NotificationReport>("/customer-notifications");
   return <div className="space-y-5">
     <PageHeading title="اعلان‌های مشتری و موجودی"
-      description="اشتراک موجودی برای هر Bot جداست؛ ارسال نامشخص نیازمند بررسی است و به‌صورت خودکار تکرار نمی‌شود." />
+      description="اعلان موجودی برای هر ربات جداست. ارسال نامشخص نیازمند بررسی است و خودکار تکرار نمی‌شود." />
     <div className="grid gap-4 lg:grid-cols-2">
       {([
-        ["Subscriptionهای موجودی", status.stock_alerts],
-        ["Outbox عملیاتی", status.delivery_outbox],
+        ["درخواست‌های اطلاع از موجودی", status.stock_alerts],
+        ["صف اعلان‌ها", status.delivery_outbox],
       ] as const).map(([title, items]) => <Card key={title}>
         <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {items.map(item => <div key={item.store_id + item.status}
             className="flex flex-wrap justify-between gap-3 border-b p-2 text-sm">
-            <span>{item.store_id.slice(0, 8)} · {item.status}</span>
+            <span>فروشگاه <bdi dir="ltr">{item.store_id.slice(0, 8)}</bdi> · {STATUS_LABELS[item.status] ?? item.status}</span>
             <strong>{item.count}</strong>
           </div>)}
           {!items.length ? <p className="text-sm text-muted-foreground">رکوردی ثبت نشده است.</p> : null}
@@ -40,8 +45,7 @@ export default async function CustomerNotificationsPage() {
       </Card>)}
     </div>
     <p className="text-sm leading-7 text-muted-foreground">
-      این بخش آمار صف را نشان می‌دهد، نه تأیید دریافت اعلان در Telegram یا Bale.
-      پیاده‌سازی Dispatch Worker و آزمایش واقعی Provider شرط فعال‌سازی است.
+      این آمار، وضعیت صف اعلان‌ها را نشان می‌دهد و تأیید دریافت پیام در تلگرام یا بله نیست.
     </p>
   </div>;
 }

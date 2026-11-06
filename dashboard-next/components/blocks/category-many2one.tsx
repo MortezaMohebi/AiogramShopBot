@@ -12,6 +12,20 @@ interface Props {
 }
 
 const normalized = (value: string) => value.normalize("NFKC").trim().toLocaleLowerCase();
+const CHALLENGE_ERRORS: Record<string, string> = {
+  security_check_failed: "بررسی نشست انجام نشد. صفحه را تازه‌سازی کنید.",
+  service_unavailable: "سرویس دسته‌بندی در دسترس نیست.",
+  network_unavailable: "ارتباط با سرویس دسته‌بندی برقرار نشد.",
+};
+
+/** A transport failure does not establish whether the category was saved. */
+function categoryError(error: unknown): string {
+  if (error instanceof Error) {
+    if (Object.hasOwn(CHALLENGE_ERRORS, error.message)) return CHALLENGE_ERRORS[error.message];
+    if (error.name === "Error") return error.message;
+  }
+  return "نتیجهٔ ذخیرهٔ دسته‌بندی مشخص نشد. پیش از تکرار، وضعیت دسته‌بندی را بررسی کنید.";
+}
 
 /**
  * Odoo-like many2one picker: search by name, select an ID, quick-create
@@ -95,7 +109,7 @@ export function CategoryMany2One({
       setOptions((previous) => [...previous, record]);
       choose(record);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "ارتباط برقرار نشد.");
+      setError(categoryError(cause));
     } finally {
       setCreating(false);
     }
@@ -150,7 +164,7 @@ export function CategoryMany2One({
       setValue(name);
       dialog.current?.close();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "ارتباط با سرور برقرار نشد.");
+      setError(categoryError(cause));
     } finally {
       setUpdating(false);
     }
@@ -162,7 +176,7 @@ export function CategoryMany2One({
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
       setExpanded(true);
-      setHighlight((index) => Math.min(index + 1, matching.length - 1));
+      setHighlight((index) => Math.max(0, Math.min(index + 1, matching.length - 1)));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setHighlight((index) => Math.max(0, index - 1));
@@ -193,7 +207,7 @@ export function CategoryMany2One({
           aria-controls={id + "-list"}
           aria-expanded={expanded}
           aria-activedescendant={
-            expanded && matching.length ? id + "-option-" + highlight : undefined
+            expanded && matching[highlight] ? id + "-option-" + highlight : undefined
           }
           autoComplete="off"
           value={value}
@@ -276,12 +290,11 @@ export function CategoryMany2One({
       <p className="text-xs text-muted-foreground">
         انتخاب اختیاری است؛ دسته‌بندی جدید ابتدا منتشرنشده می‌ماند.
       </p>
-      <dialog ref={dialog}
+      <dialog ref={dialog} aria-labelledby={id + "-edit-title"}
         className="m-auto w-[min(94vw,28rem)] rounded-xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60"
         onClose={() => setError(null)}>
         <div dir="rtl" className="space-y-4 p-6">
-          <p className="text-xs text-muted-foreground">محصول / دسته‌بندی / ویرایش</p>
-          <h2 className="text-lg font-semibold">ویرایش دسته‌بندی</h2>
+          <h2 id={id + "-edit-title"} className="text-lg font-semibold">ویرایش دسته‌بندی</h2>
           <label className="block space-y-2 text-sm">
             نام دسته‌بندی
             <input value={editName} autoFocus maxLength={255}

@@ -28,18 +28,17 @@ export default async function ProductsPage({ searchParams }: { searchParams: Par
     <div>
       <PageHeading
         title="محصولات"
-        description="کاتالوگ مشترک تلگرام و بله؛ تمام نام‌ها، قیمت‌ها، وضعیت انتشار و تعداد کالاها از دیتابیس خوانده می‌شود."
         action={canEdit ? <Button asChild><Link href="/products/new"><Plus /> محصول جدید</Link></Button> : undefined}
       />
       <div className="mb-4 flex flex-wrap gap-2">
         <Button asChild variant="outline" size="sm">
-          <Link href="/data-models/products">Search، Group By، Import/Export</Link>
+          <Link href="/data-models/products">جست‌وجوی پیشرفته و ورود و خروج داده</Link>
         </Button>
         <Button asChild variant="outline" size="sm">
-          <Link href="/uoms">Units of Measure</Link>
+          <Link href="/uoms">واحدهای اندازه‌گیری</Link>
         </Button>
       </div>
-      {q.saved ? <p role="status" className="mb-4 rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">محصول در دیتابیس ذخیره شد.</p> : null}
+      {q.saved ? <p role="status" className="mb-4 rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">محصول ذخیره شد.</p> : null}
       <Card>
         <CardContent className="pt-5">
           <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
@@ -68,19 +67,19 @@ export default async function ProductsPage({ searchParams }: { searchParams: Par
                   </TableCell>
                 </TableRow>
               ))}
-              {!data.items.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">محصولی برای نمایش یافت نشد.</TableCell></TableRow> : null}
+              {!data.items.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
             </TableBody>
           </Table>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
             <span className="text-muted-foreground">جمع کل: {new Intl.NumberFormat("fa-IR").format(data.total)} محصول</span>
             <div className="flex items-center gap-2">
-              <Button asChild size="sm" variant="outline" disabled={page <= 1}>
-                <Link aria-disabled={page <= 1} href={`/products?page=${Math.max(1, page - 1)}&search=${encodeURIComponent(search)}`}>قبلی</Link>
-              </Button>
+              {page <= 1 ? <Button size="sm" variant="outline" disabled>قبلی</Button> : <Button asChild size="sm" variant="outline">
+                <Link href={`/products?page=${page - 1}&search=${encodeURIComponent(search)}`}>قبلی</Link>
+              </Button>}
               <span className="tabular">{page} / {lastPage}</span>
-              <Button asChild size="sm" variant="outline" disabled={page >= lastPage}>
-                <Link aria-disabled={page >= lastPage} href={`/products?page=${Math.min(lastPage, page + 1)}&search=${encodeURIComponent(search)}`}>بعدی</Link>
-              </Button>
+              {page >= lastPage ? <Button size="sm" variant="outline" disabled>بعدی</Button> : <Button asChild size="sm" variant="outline">
+                <Link href={`/products?page=${page + 1}&search=${encodeURIComponent(search)}`}>بعدی</Link>
+              </Button>}
             </div>
           </div>
         </CardContent>

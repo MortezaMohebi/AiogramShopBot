@@ -11,7 +11,7 @@ const stamp = (value: string) => new Intl.DateTimeFormat("fa-IR", {
   dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Tehran",
 }).format(new Date(value));
 const historyLabels: Record<string, string> = {
-  pending: "نتیجهٔ نامعلوم", succeeded: "رسید Native ثبت شد",
+  pending: "نتیجهٔ نامعلوم", succeeded: "رسید درخواست ثبت شد",
   awaiting_gateway: "در انتظار تصمیم در WPMCP", cancelled: "لغو شد",
 };
 const panel = "min-w-0 space-y-4 rounded-xl border border-border bg-card p-5";
@@ -94,52 +94,52 @@ export function McpConnections({ initial, history, pairing: initialPairing, pair
   }
 
   return <div className="min-w-0 space-y-6">
-    <section className={panel} aria-label="مرز دسترسی MCP">
+    <section className={panel} aria-label="دسترسی اتصال‌های MCP">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">اتصال‌های شما در Store انتخاب‌شده</h2>
+        <h2 className="font-semibold">اتصال‌های شما در فروشگاه انتخاب‌شده</h2>
         <Button variant="outline" onClick={refresh} disabled={reading || mutation?.status === "sending"}>
           {reading ? "در حال دریافت…" : "بررسی وضعیت"}
         </Button>
       </div>
-      <p className="text-sm leading-7 text-muted-foreground">این صفحه فقط دسترسی اتصال را مدیریت می‌کند. تصمیم انسانی دربارهٔ انتشار، تغییر حساس یا کنترل Runtime در WPMCP ثبت می‌شود.</p>
-      <p className="text-sm">وضعیت Adapter: <strong>{data.enabled ? "فعال" : "غیرفعال"}</strong></p>
-      <p className="text-sm">Store: <bdi className={technical}>{data.store_id}</bdi></p>
+      <p className="text-sm leading-7 text-muted-foreground">این صفحه فقط دسترسی اتصال را مدیریت می‌کند. تصمیم انسانی دربارهٔ انتشار، تغییر حساس یا کنترل اجرا در WPMCP ثبت می‌شود.</p>
+      <p className="text-sm">وضعیت سرویس MCP: <strong>{data.enabled ? "فعال" : "غیرفعال"}</strong></p>
+      <p className="text-sm">شناسهٔ فروشگاه: <bdi className={technical}>{data.store_id}</bdi></p>
       {notice && <p role="status" aria-live="polite" className="rounded-lg border border-border bg-muted/40 p-3 text-sm leading-7">{notice}</p>}
       {mutation?.status === "unknown" && <p className="text-sm">شناسهٔ درخواست: <bdi className={technical}>{mutation.request.id}</bdi> · <Link className="underline" href="/account">حساب کاربری</Link></p>}
     </section>
 
-    {pairingError && <div role="alert" className={panel}>درخواست اتصال در دسترس نیست، منقضی شده یا دسترسی مدیریت همهٔ Storeهای آن را ندارید.</div>}
+    {pairingError && <div role="alert" className={panel}>درخواست اتصال در دسترس نیست، منقضی شده یا دسترسی مدیریت همهٔ فروشگاه‌های آن را ندارید.</div>}
     {pairing && <section className={panel} aria-labelledby="pairing-title">
       <h2 id="pairing-title" className="text-lg font-semibold">بررسی دسترسی اتصال</h2>
-      <p className="text-sm leading-7 text-muted-foreground">هویت WPMCP، Storeها و scopeها را بررسی کنید. ثبت این دسترسی به معنی تأیید انتشار یا اجرای عملیات تجاری نیست.</p>
+      <p className="text-sm leading-7 text-muted-foreground">هویت WPMCP، فروشگاه‌ها و دسترسی‌های درخواستی را بررسی کنید. ثبت این دسترسی به معنی تأیید انتشار یا اجرای عملیات تجاری نیست.</p>
       <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-[minmax(8rem,1fr)_minmax(0,3fr)]">
-        {[["Gateway", pairing.identity.iss], ["Client", pairing.identity.client_id], ["Requester", pairing.identity.sub],
-          ["Workspace", pairing.identity.workspace_id], ["Tenant", pairing.identity.tenant_id], ["Connection", pairing.identity.connection_id],
-          ["Grant", pairing.id]].map(([label, value]) => <div className="contents" key={label}>
+        {[["درگاه (Gateway)", pairing.identity.iss], ["برنامه (Client)", pairing.identity.client_id], ["درخواست‌دهنده", pairing.identity.sub],
+          ["فضای کاری (Workspace)", pairing.identity.workspace_id], ["حساب (Tenant)", pairing.identity.tenant_id], ["اتصال", pairing.identity.connection_id],
+          ["شناسهٔ دسترسی (Grant)", pairing.id]].map(([label, value]) => <div className="contents" key={label}>
             <dt className="text-muted-foreground">{label}</dt><dd className="min-w-0 break-all"><bdi>{value}</bdi></dd>
           </div>)}
       </dl>
-      <div><h3 className="mb-2 text-sm font-semibold">Storeهای درخواستی</h3><ul className="space-y-2">{pairing.store_ids.map((id) => <li key={id}><bdi className={technical}>{id}</bdi></li>)}</ul></div>
-      <div><h3 className="mb-2 text-sm font-semibold">Scopeهای درخواستی</h3><ul className="flex flex-wrap gap-2">{pairing.scopes.map((scope) => <li key={scope}><bdi className={technical}>{scope}</bdi></li>)}</ul></div>
-      <p className="text-sm text-muted-foreground">مهلت تأیید: {stamp(pairing.expires_at)} به وقت تهران. برای تغییر Store یا scope، درخواست تازه‌ای در WPMCP بسازید.</p>
+      <div><h3 className="mb-2 text-sm font-semibold">فروشگاه‌های درخواستی</h3><ul className="space-y-2">{pairing.store_ids.map((id) => <li key={id}><bdi className={technical}>{id}</bdi></li>)}</ul></div>
+      <div><h3 className="mb-2 text-sm font-semibold">دسترسی‌های درخواستی</h3><ul className="flex flex-wrap gap-2">{pairing.scopes.map((scope) => <li key={scope}><bdi className={technical}>{scope}</bdi></li>)}</ul></div>
+      <p className="text-sm text-muted-foreground">مهلت تأیید: {stamp(pairing.expires_at)} به وقت تهران. برای تغییر فروشگاه یا دسترسی‌ها، درخواست تازه‌ای در WPMCP بسازید.</p>
       {pairing.confirmed || mutation?.status === "confirmed" && mutation.request.action === "confirm"
         ? <p role="status">دسترسی این اتصال قبلاً ثبت شده است.</p>
         : <Button disabled={!data.enabled || !pairing.can_confirm || unsettled} onClick={() => change({
           id: pairing.id, action: "confirm", expectedVersion: 0, storeIds: pairing.store_ids, scopes: pairing.scopes,
-        })}>ثبت همین دسترسی اتصال</Button>}
+        })}>ثبت دسترسی این اتصال</Button>}
       {!pairing.can_confirm && !pairing.confirmed && <p className="text-sm text-muted-foreground">ثبت دسترسی با هویت و مجوز فعلی در دسترس نیست.</p>}
     </section>}
 
     <section className="min-w-0 space-y-3" aria-label="فهرست اتصال‌ها">
-      {!data.items.length && <p className={panel}>برای این Store هنوز اتصال متعلق به شما ثبت نشده است. درخواست اتصال را از WPMCP شروع کنید.</p>}
+      {!data.items.length && <p className={panel}>برای این فروشگاه هنوز اتصالی متعلق به شما ثبت نشده است. درخواست اتصال را از WPMCP شروع کنید.</p>}
       {data.items.map((grant) => {
         const gateway = gatewayDashboardUrl(grant.gateway.issuer, grant.gateway.workspace_id);
         return <article className={panel} key={grant.id}>
           <div className="flex flex-wrap items-start justify-between gap-3"><h2 className="min-w-0 break-all font-semibold"><bdi>{grant.gateway.client_id}</bdi></h2>
             <span className="rounded-md border px-2 py-1 text-xs">{grant.revoked ? "لغوشده" : grant.expired ? "منقضی" : "دارای دسترسی"}</span></div>
           <p className="break-all text-sm text-muted-foreground"><bdi>{grant.gateway.issuer}</bdi></p>
-          <p className="text-sm">Grant: <bdi className={technical}>{grant.id}</bdi></p>
-          <ul className="flex flex-wrap gap-2" aria-label="Scopeهای اتصال">{grant.scopes.map((scope) => <li key={scope}><bdi className={technical}>{scope}</bdi></li>)}</ul>
+          <p className="text-sm">شناسهٔ دسترسی: <bdi className={technical}>{grant.id}</bdi></p>
+          <ul className="flex flex-wrap gap-2" aria-label="دسترسی‌های اتصال">{grant.scopes.map((scope) => <li key={scope}><bdi className={technical}>{scope}</bdi></li>)}</ul>
           <p className="text-sm text-muted-foreground">انقضای دسترسی: {stamp(grant.expires_at)} به وقت تهران</p>
           <div className="flex flex-wrap gap-3">{gateway && <Button asChild variant="outline"><a href={gateway} target="_blank" rel="noopener noreferrer">بررسی در WPMCP</a></Button>}
             {grant.can_revoke && <Button variant="outline" disabled={unsettled} onClick={() => setWithdraw(grant.id)}>لغو دسترسی</Button>}</div>
@@ -155,10 +155,10 @@ export function McpConnections({ initial, history, pairing: initialPairing, pair
         {data.has_more && <Link className="underline" href={`/studio/mcp?page=${data.page + 1}`}>صفحهٔ بعد</Link>}</div>}
     </section>
 
-    <section className={panel} aria-label="رسیدهای Native">
-      <h2 className="font-semibold">آخرین رسیدهای Native</h2>
-      <p className="text-sm text-muted-foreground">متن درخواست‌ها و اطلاعات مشتریان در این فهرست نمایش داده نمی‌شوند. وضعیت تصمیم و اجرای WPMCP را در همان Gateway بررسی کنید.</p>
-      {!history.items.length ? <p className="text-sm">هنوز رسیدی برای شما در این Store ثبت نشده است.</p>
+    <section className={panel} aria-label="رسیدهای درخواست‌های MCP">
+      <h2 className="font-semibold">آخرین رسیدهای درخواست‌های MCP</h2>
+      <p className="text-sm text-muted-foreground">این رسیدها نتیجهٔ تصمیم یا اجرای WPMCP را تأیید نمی‌کنند. وضعیت آن‌ها را در WPMCP بررسی کنید.</p>
+      {!history.items.length ? <p className="text-sm">هنوز رسیدی برای شما در این فروشگاه ثبت نشده است.</p>
         : <ul className="space-y-4">{history.items.map((item) => <li className="min-w-0 border-t pt-3 text-sm" key={item.operation_id}>
           <div className="flex flex-wrap justify-between gap-2"><bdi>{item.tool}</bdi><span>{historyLabels[item.state] ?? "وضعیت در دسترس نیست"}</span></div>
           <bdi className="mt-2 block break-all font-mono text-xs">{item.operation_id}</bdi>

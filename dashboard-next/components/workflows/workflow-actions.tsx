@@ -22,8 +22,7 @@ export function WorkflowActions({
     <section className="space-y-4 rounded-xl border bg-card p-5">
       <h2 className="font-semibold">مدیریت پیش‌نویس</h2>
       <p className="text-xs leading-6 text-muted-foreground">
-        ابتدا تغییرات را ذخیره کنید. بایگانی یا حذف فقط با Revision
-        نمایش‌داده‌شده انجام می‌شود؛ تاریخچه برای Restore حفظ خواهد شد.
+        ابتدا تغییرات را ذخیره کنید. پس از بایگانی یا حذف پیش‌نویس، نسخه‌های قبلی برای بازیابی حفظ می‌شوند.
       </p>
       <div className="flex flex-wrap gap-3">
         {record.can_write && (

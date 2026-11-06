@@ -14,8 +14,7 @@ export default async function ActionsPage() {
     <div className="min-w-0">
       <StudioHomeNav current="actions" />
       <PageHeading
-        title="Action Catalog"
-        description="قراردادها، اثر جانبی و دسترسی Actionها را بررسی کنید و خواندن کاتالوگ را بدون تغییر داده امتحان کنید."
+        title="عملیات آماده"
       />
       <ActionCatalog
         key={`${data.store_id}:${data.can_inspect_data}`}

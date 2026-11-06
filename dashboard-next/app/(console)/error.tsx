@@ -29,30 +29,21 @@ export default function DashboardError({
         </CardHeader>
         <CardContent className="space-y-5">
           <p role="alert" className="text-sm leading-7 text-muted-foreground">
-            درخواست به سرویس مدیریتی کامل نشد. این پیام لزوماً به
-            معنی قطعی پایگاه داده نیست؛ ارتباط داخلی، نشست مدیریتی
-            یا پردازش API نیز ممکن است دچار خطا شده باشد.
-            تا تأیید وضعیت، اطلاعات ساختگی نمایش داده نمی‌شوند.
+            اطلاعات این صفحه دریافت نشد. دوباره بارگذاری کنید. اگر پیش از این تغییری ثبت کرده‌اید، ابتدا آخرین وضعیت آن را بررسی کنید.
           </p>
           {error.digest ? (
-            <p dir="ltr" className="break-all rounded-md bg-muted p-3 text-xs text-muted-foreground">
-              Error reference: {error.digest}
-            </p>
+            <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">اطلاعات پشتیبانی</summary><p dir="ltr" className="break-all">Error reference: {error.digest}</p></details>
           ) : null}
           <div className="flex flex-wrap gap-3">
             <Button type="button" onClick={reset}>
               <RotateCcw aria-hidden="true" className="size-4" />
-              تلاش دوباره
+              بارگذاری دوباره
             </Button>
             <Button asChild variant="outline">
               <Link href="/login">ورود دوباره</Link>
             </Button>
           </div>
-          <p className="text-xs leading-6 text-muted-foreground">
-            مدیر سیستم می‌تواند در Codespaces با دستور
-            <code dir="ltr" className="mx-1">bash scripts/setup_codespace.sh dashboard-probe</code>
-            وضعیت PostgreSQL و APIهای امضاشده را بررسی کند.
-          </p>
+
         </CardContent>
       </Card>
     </div>

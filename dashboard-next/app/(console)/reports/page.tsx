@@ -20,7 +20,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
 
   return (
     <div>
-      <PageHeading title="گزارش‌های فروشگاه" description="آمار ریالی واقعی درگاه‌ها، اعتبار داخلی و Stars مستقل است؛ سوابق قدیمی تلگرام تا مهاجرت داده در این گزارش نیست." />
+      <PageHeading title="گزارش‌های فروشگاه" description="مبالغ درگاه‌ها، اعتبار داخلی و Stars جداگانه محاسبه می‌شوند. سوابق قدیمی تلگرام در این گزارش نیست." />
       <div className="mb-6 flex flex-wrap gap-2">
         {periods.map(({ n, label }) => (
           <Link key={n} href={`/reports?days=${n}`}
@@ -31,7 +31,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
         ))}
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
-        <ChannelPerformance channels={report.channels} />
+        <ChannelPerformance channels={report.channels}
+          periodLabel={period === 0 ? "همهٔ سوابق موجود" : `${period.toLocaleString("fa-IR")} روز گذشته`} />
         <Card>
           <CardHeader><CardTitle>دفترکل و تسویه</CardTitle></CardHeader>
           <CardContent className="space-y-5 text-sm">
@@ -39,7 +40,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Para
             <div className="flex justify-between border-b border-border pb-3"><span className="text-muted-foreground">کسر اعتبار داخلی</span><b>{formatIrr(report.credit_spent_irr)}</b></div>
             <div className="flex justify-between border-b border-border pb-3"><span className="text-muted-foreground">پرونده بازپرداخت باز</span><b>{report.open_refund_cases}</b></div>
             <div className="flex justify-between"><span className="text-muted-foreground">ارسال نامشخص کمپین</span><b>{report.campaigns.unknown}</b></div>
-            <p className="text-xs leading-6 text-muted-foreground">این گزارش جایگزین تطبیق بانکی و استعلام تراکنش Provider نیست.</p>
+            <p className="text-xs leading-6 text-muted-foreground">برای تسویه، تراکنش‌ها را با گزارش بانک یا ارائه‌دهندهٔ پرداخت تطبیق دهید.</p>
           </CardContent>
         </Card>
       </div>

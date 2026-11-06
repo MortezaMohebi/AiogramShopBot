@@ -7,6 +7,9 @@ import type { SupportTicketSummary } from "@/lib/customer-experience";
 
 type Query = Promise<{ status?: string }>;
 const STATUSES = ["all", "open", "pending", "resolved", "closed"];
+const STATUS_LABELS: Record<string, string> = {
+  all: "همه", open: "باز", pending: "در انتظار", resolved: "حل‌شده", closed: "بسته‌شده",
+};
 
 /** A Staff member sees only active, authorized Store tickets. */
 export default async function SupportTickets({
@@ -21,12 +24,13 @@ export default async function SupportTickets({
   );
   return <div className="space-y-5">
     <PageHeading title="مرکز پشتیبانی مشتریان"
-      description="تیکت‌های Telegram/Bale با مالکیت Store و Customer؛ هیچ وضعیت پرداختی از این بخش تغییر نمی‌کند." />
-    <nav className="flex flex-wrap gap-2">
+      />
+    <nav className="flex flex-wrap gap-2" aria-label="فیلتر وضعیت درخواست‌ها">
       {STATUSES.map(item => <Button key={item} asChild
         variant={item === status ? "secondary" : "outline"} size="sm">
-        <Link href={item === "all" ? "/support-tickets" : `/support-tickets?status=${item}`}>
-          {item === "all" ? "همه" : item}
+        <Link href={item === "all" ? "/support-tickets" : `/support-tickets?status=${item}`}
+          aria-current={item === status ? "page" : undefined}>
+          {STATUS_LABELS[item]}
         </Link>
       </Button>)}
     </nav>
@@ -37,9 +41,9 @@ export default async function SupportTickets({
           <table className="w-full min-w-[670px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
               <th className="p-3">شناسه</th>
-              <th className="p-3">Customer</th>
+              <th className="p-3">مشتری</th>
               <th className="p-3">موضوع</th>
-              <th className="p-3">Store / Bot</th>
+              <th className="p-3">فروشگاه / ربات</th>
               <th className="p-3">وضعیت</th>
               <th className="p-3">جزئیات</th>
             </tr></thead>
@@ -50,7 +54,7 @@ export default async function SupportTickets({
               <td className="p-3 text-xs" dir="ltr">
                 {ticket.store_id.slice(0, 8)} / {ticket.bot_id.slice(0, 8)}
               </td>
-              <td className="p-3">{ticket.status}</td>
+              <td className="p-3">{STATUS_LABELS[ticket.status] ?? ticket.status}</td>
               <td className="p-3"><Button asChild variant="outline" size="sm">
                 <Link href={`/support-tickets/${ticket.id}`}>مشاهده</Link>
               </Button></td>

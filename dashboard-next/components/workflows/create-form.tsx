@@ -45,7 +45,7 @@ export function CreateWorkflowForm({
       <fieldset disabled={busy} className="space-y-5">
         <Field label="نام فرایند">
           <Input
-            aria-label="نام فرایند جدید"
+            aria-label="نام فرایند"
             required
             minLength={1}
             maxLength={160}
@@ -55,7 +55,7 @@ export function CreateWorkflowForm({
           />
         </Field>
         <Field
-          label="کلید پایدار"
+          label="کلید فرایند"
           hint="با حرف کوچک انگلیسی شروع شود؛ فقط حروف کوچک، عدد، خط تیره و زیرخط."
         >
           <Input
@@ -69,9 +69,9 @@ export function CreateWorkflowForm({
             placeholder="request_return"
           />
         </Field>
-        <Field label="توضیحات">
+        <Field label="توضیحات (اختیاری)">
           <Textarea
-            aria-label="توضیحات فرایند جدید"
+            aria-label="توضیحات فرایند"
             value={description}
             maxLength={4000}
             onChange={(e) => setDescription(e.target.value)}
@@ -88,18 +88,17 @@ export function CreateWorkflowForm({
                 { value: "wholesale_application", label: "درخواست همکاری عمده" },
                 {
                   value: "return_request",
-                  label: "نمونهٔ Request Return · فقط پیش‌نویس و شبیه‌سازی",
+                  label: "نمونهٔ مرجوعی · فقط شبیه‌سازی",
                 },
               ]}
             />
           </Field>
         )}
         <p className="text-sm leading-7 text-muted-foreground">
-          فرایند در فروشگاه جاری ذخیره می‌شود. پس از ساخت، می‌توانید ربات‌ها و
-          پلتفرم‌های مجاز را انتخاب کنید.
+          فرایند در فروشگاه جاری ذخیره می‌شود و تا زمان انتشار روی ربات اجرا نمی‌شود.
         </p>
         <Button type="submit">
-          {busy ? "در حال ثبت…" : source ? "ساخت کپی مستقل" : "ساخت پیش‌نویس"}
+          {busy ? "در حال ایجاد…" : source ? "ایجاد کپی مستقل" : "ایجاد پیش‌نویس"}
         </Button>
       </fieldset>
       <OperationNotice operation={operation} />

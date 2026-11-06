@@ -27,19 +27,17 @@ export default function ApplicationError({
         </CardHeader>
         <CardContent className="space-y-5">
           <p role="alert" className="text-sm leading-7 text-muted-foreground">
-            درخواست کامل نشد. اتصال شبکه یا وضعیت سرویس را بررسی کنید.
+            صفحه دریافت نشد. دوباره بارگذاری کنید.
             برای جلوگیری از عملیات تکراری، پیش از ثبت دوبارهٔ پرداخت یا بازپرداخت
             آخرین وضعیت را در پنل بررسی کنید.
           </p>
           {error.digest ? (
-            <p className="text-xs text-muted-foreground" dir="ltr">
-              Error reference: {error.digest}
-            </p>
+            <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">اطلاعات پشتیبانی</summary><p dir="ltr" className="break-all">Error reference: {error.digest}</p></details>
           ) : null}
           <div className="flex flex-wrap gap-3">
             <Button type="button" onClick={reset}>
               <RefreshCw aria-hidden="true" className="size-4" />
-              تلاش دوباره
+              بارگذاری دوباره
             </Button>
             <Button asChild variant="outline">
               <Link href="/login">بازگشت به ورود</Link>

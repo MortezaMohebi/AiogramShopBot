@@ -28,7 +28,7 @@ export default async function McpPage({ searchParams }: {
   }
   return <div className="min-w-0">
     <StudioHomeNav current="mcp" />
-    <PageHeading title="MCP connections" description="دسترسی اتصال‌های WPMCP به Store انتخاب‌شده و رسیدهای Native را بررسی کنید." />
+    <PageHeading title="اتصال‌های MCP" />
     <McpConnections key={`${data.actor_id}:${data.store_id}:${data.enabled}:${data.page}:${history.page}:${pairing?.id ?? "none"}:${pairing?.can_confirm}`} initial={data} history={history} pairing={pairing} pairingError={pairingError} />
   </div>;
 }
