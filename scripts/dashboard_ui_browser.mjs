@@ -163,7 +163,7 @@ try {
     assert.equal(await page.locator("#password").getAttribute("type"),"password");
     const text = await page.locator("main").innerText();
     for (const filler of ["HTTPS", "پایگاه داده", "کنترل نقش", "ورود امن", "پیچیدگی", "حساب مدیریتی اختصاصی"]) assert(!text.includes(filler), filler);
-    assert.equal(await page.getByRole("button",{name:"ورود",exact:true}).count(),1);
+    assert.equal(await page.getByRole("button",{name:"ادامه",exact:true}).count(),1);
     assert.equal(await page.getByRole("link",{name:/Google|SSO|بازیابی رمز/}).count(),0);
   });
   await check("login reflows at five widths in both themes", async () => {
@@ -181,17 +181,17 @@ try {
     await page.getByRole("button",{name:"نمایش رمز عبور",exact:true}).click();
     assert.equal(await page.locator("#password").getAttribute("type"),"text");
     await page.getByRole("button",{name:"مخفی‌کردن رمز عبور",exact:true}).click();
-    await page.getByRole("button",{name:"ورود",exact:true}).click();
+    await page.getByRole("button",{name:"ادامه",exact:true}).click();
     await page.locator("main").getByRole("alert").getByText("ورود انجام نشد",{exact:true}).waitFor();
     assert(await page.locator("main").getByRole("alert").evaluate((node)=>node===document.activeElement));
-    assert.equal(await page.locator("#password").inputValue(),"");
+    assert.equal(await page.locator("#password").inputValue(),"invalid-qa-password");
   });
   await check("real password and MFA login",async () => {
     await page.getByLabel("رمز عبور",{exact:true}).fill(env.LIVE_ADMIN_PASSWORD);
-    await page.getByRole("button",{name:"ورود",exact:true}).click();
-    await page.locator("main").getByRole("alert").getByText("تأیید دومرحله‌ای لازم است",{exact:true}).waitFor();
+    await page.getByRole("button",{name:"ادامه",exact:true}).click();
+    await page.getByRole("heading",{name:"تأیید دومرحله‌ای",exact:true}).waitFor();
     const proofStart=Date.now();const proof=await freshOtp();evidence.proof_duration_ms=Date.now()-proofStart;
-    await page.getByLabel("کد تأیید دومرحله‌ای",{exact:true}).fill(proof);
+    await page.getByLabel("کد تأیید",{exact:true}).fill(proof);
     await page.getByRole("button",{name:"ورود",exact:true}).click();await page.waitForURL("**/dashboard");
   });
   await check("store dialog traps focus, Escape closes and restores trigger focus",async () => {
@@ -351,12 +351,12 @@ asyncio.run(main())`,fixture));
     await page.goto(base+"/login");
     await page.getByLabel("نام کاربری",{exact:true}).fill(roleFixtures.disabled.username);
     await page.getByLabel("رمز عبور",{exact:true}).fill(roleFixtures.disabled.password);
-    await page.getByRole("button",{name:"ورود",exact:true}).click();
+    await page.getByRole("button",{name:"ادامه",exact:true}).click();
     await page.locator("#login-error").getByText("ورود انجام نشد",{exact:true}).waitFor();
     assert.equal((await context.cookies(base)).filter((cookie)=>cookie.name==="shop_admin_dev").length,0);
     await page.getByLabel("نام کاربری",{exact:true}).fill(roleFixtures.viewer.username);
     await page.getByLabel("رمز عبور",{exact:true}).fill(roleFixtures.viewer.password);
-    await page.getByRole("button",{name:"ورود",exact:true}).click();await page.waitForURL("**/dashboard");
+    await page.getByRole("button",{name:"ادامه",exact:true}).click();await page.waitForURL("**/dashboard");
     assert.equal(await page.locator('a[href="/finance"]').count(),0);
     for(const route of ["/finance","/settings","/staff"]) {
       expected404.add(route);const response=await page.goto(base+route);assert.equal(response.status(),404,route);

@@ -281,3 +281,64 @@ def test_totp_accepts_copied_groups_but_rejects_unrelated_unicode():
     instant = datetime.fromtimestamp(59, timezone.utc)
     assert sec.matching_step(secret, '۲۸۷ ۰۸۲', instant) == 1
     assert sec.matching_step(secret, '२८७०८२', instant) is None
+
+
+def test_remembered_session_survives_restart_interval_but_remains_revocable():
+    """Opt-in persistence must be enforced by the revocable database session."""
+    sec = security()
+    engine = create_engine('sqlite:///:memory:')
+    create_shop_schema(engine)
+    user = SimpleNamespace(id=1, session_version=2, is_active=True, role='sales')
+    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        token = sec.issue_session(db, user, 'Remembered browser', remember_me=True, now=now)
+        db.commit()
+        row = sec.validate_session(db, user, token, now=now + timedelta(days=7))
+        assert sec.utc(row.expires_at) == now + timedelta(days=30)
+        sec.revoke_session(db, user.id, row.id, now=now + timedelta(days=7))
+        db.commit()
+        with pytest.raises(sec.SecurityRejected):
+            sec.validate_session(db, user, token, now=now + timedelta(days=7, minutes=1))
+
+
+def test_remembered_session_cannot_outlive_its_absolute_expiry_or_version():
+    """Remember me never overrides expiration, disabling or password rotation."""
+    sec = security()
+    engine = create_engine('sqlite:///:memory:')
+    create_shop_schema(engine)
+    user = SimpleNamespace(id=1, session_version=2, is_active=True, role='sales')
+    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        token = sec.issue_session(db, user, 'Browser', remember_me=True, now=now)
+        db.commit()
+        with pytest.raises(sec.SecurityRejected):
+            sec.validate_session(db, user, token, now=now + timedelta(days=30))
+        user.session_version = 3
+        with pytest.raises(sec.SecurityRejected):
+            sec.validate_session(db, user, token, now=now + timedelta(days=1))
+
+
+def test_remembered_session_still_requires_recent_proof_for_sensitive_actions():
+    """A persistent login cannot substitute for a fresh password/MFA proof."""
+    sec = security()
+    engine = create_engine('sqlite:///:memory:')
+    create_shop_schema(engine)
+    user = SimpleNamespace(id=1, session_version=2, is_active=True, role='sales')
+    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    with Session(engine) as db:
+        token = sec.issue_session(db, user, 'Browser', remember_me=True, now=now)
+        db.commit()
+        row = sec.validate_session(db, user, token, now=now + timedelta(days=1))
+        with pytest.raises(sec.SecurityRejected) as error:
+            sec.require_recent(row, now=now + timedelta(days=1))
+        assert error.value.code == 'reauthentication_required'
+
+
+def test_login_persistence_flag_is_strictly_boolean():
+    """String values must not silently widen the browser session lifetime."""
+    from dashboard.admin_control_api import Login
+    from pydantic import ValidationError
+
+    assert Login(username='qa.synthetic', password='synthetic').remember_me is False
+    with pytest.raises(ValidationError):
+        Login(username='qa.synthetic', password='synthetic', remember_me='true')

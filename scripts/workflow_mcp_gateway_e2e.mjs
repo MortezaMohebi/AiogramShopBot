@@ -262,7 +262,8 @@ try {
     await nativePage.goto(nativeOrigin + "/studio/mcp");
     await nativePage.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
     await nativePage.getByLabel("رمز عبور", { exact: true }).fill(env.LIVE_ADMIN_PASSWORD);
-    await nativePage.getByLabel("کد تأیید دومرحله‌ای", { exact: true }).fill(await freshOtp());
+    await nativePage.getByRole("button", { name: "ادامه", exact: true }).click();
+    await nativePage.getByLabel("کد تأیید", { exact: true }).fill(await freshOtp());
     await nativePage.getByRole("button", { name: "ورود", exact: true }).click();await nativePage.waitForURL("**/dashboard");
     await gatewayPage.goto(gatewayOrigin + "/dashboard/login");await gatewayPage.getByLabel("توکن توسعه").fill(token);
     await gatewayPage.getByRole("button", { name: "ادامه", exact: true }).click();await gatewayPage.waitForURL(gatewayOrigin + "/dashboard");

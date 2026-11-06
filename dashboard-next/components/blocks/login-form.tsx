@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { CaptchaChallenge, type CaptchaChallengeHandle } from "@/components/blocks/captcha-challenge";
 import type { PublicCaptchaConfig } from "@/lib/captcha-types";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
+import { offerPasswordStorage } from "@/lib/password-storage";
 import { type LoginErrorCode, loginErrorMessages, normalizeLoginError } from "@/lib/login-errors";
 interface Props { initialError?: string | null; captcha: PublicCaptchaConfig }
 interface Issue { code: LoginErrorCode; requestId?: string }
-interface PendingCredentials { username: string; password: string; expiresAt: number }
+interface PendingCredentials { username: string; password: string; rememberMe: boolean; expiresAt: number }
 /** Convert supported authenticator digits and copied whitespace only. */
 export function normalizeAuthenticatorCode(value: string): string {
   const digits = "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩";
@@ -24,6 +25,7 @@ export function LoginForm({ initialError, captcha }: Props) {
   const [step, setStep] = useState<"credentials" | "mfa">("credentials");
   const [method, setMethod] = useState<"authenticator" | "recovery">("authenticator");
   const [username, setUsername] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const pending = useRef<PendingCredentials | null>(null);
   const activeRequest = useRef<AbortController | null>(null), generation = useRef(0);
   const factorRef = useRef<HTMLInputElement>(null);
@@ -38,11 +40,11 @@ export function LoginForm({ initialError, captcha }: Props) {
   useEffect(() => {
     if (step !== "mfa") return;
     factorRef.current?.focus();
-    const timer = window.setTimeout(() => restart("login_expired"), Math.max(0, (pending.current?.expiresAt ?? 0) - Date.now()));
+    const timer = window.setTimeout(() => { if (pending.current) restart("login_expired"); }, Math.max(0, (pending.current?.expiresAt ?? 0) - Date.now()));
     return () => window.clearTimeout(timer);
   }, [step, restart]);
   useEffect(() => () => {
-    // No credentials enter URL/history/storage, cookies or hidden fields.
+    // Pending passwords never enter URL/history, app storage or hidden fields.
     pending.current = null; generation.current += 1; activeRequest.current?.abort();
   }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -52,6 +54,7 @@ export function LoginForm({ initialError, captcha }: Props) {
     if (verifying && (!held || held.expiresAt <= Date.now())) { restart("login_expired"); return; }
     const loginName = verifying ? held!.username : String(data.get("username") ?? "").trim().toLowerCase();
     const password = verifying ? held!.password : String(data.get("password") ?? "");
+    const persistent = verifying ? held!.rememberMe : rememberMe;
     const rawFactor = verifying ? String(data.get("second_factor") ?? "").trim() : "";
     const second_factor = method === "authenticator" ? normalizeAuthenticatorCode(rawFactor) : rawFactor;
     if (!/^[a-z0-9][a-z0-9_.-]{2,79}$/.test(loginName) || !password || password.length > 256) { setIssue({ code: "invalid_request" }); return; }
@@ -69,7 +72,7 @@ export function LoginForm({ initialError, captcha }: Props) {
       const response = await fetch("/api/auth/login", {
         method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
         headers: { "Content-Type": "application/json", Accept: "application/json", "X-Shop-Login-Challenge": challenge },
-        body: JSON.stringify({ username: loginName, password, second_factor, captchaToken }), signal: request.signal,
+        body: JSON.stringify({ username: loginName, password, second_factor, captchaToken, remember_me: persistent }), signal: request.signal,
       });
       if (!(response.headers.get("content-type") ?? "").includes("application/json")) throw new Error("network_unavailable");
       const result: unknown = await response.json();
@@ -79,7 +82,7 @@ export function LoginForm({ initialError, captcha }: Props) {
       // Python sends 428 only after checking the password; it creates no session.
       // Every MFA submission still revalidates the password and second factor.
       if (response.status === 428 && reply.ok === false && reply.code === "mfa_required" && !verifying) {
-        pending.current = { username: loginName, password, expiresAt: Date.now() + 5 * 60 * 1000 };
+        pending.current = { username: loginName, password, rememberMe: persistent, expiresAt: Date.now() + 5 * 60 * 1000 };
         form.reset(); setShowPassword(false); setMethod("authenticator"); setStep("mfa");
         captchaRef.current?.reset(); return;
       }
@@ -88,11 +91,14 @@ export function LoginForm({ initialError, captcha }: Props) {
         if (verifying && (code === "invalid_credentials" || code === "temporarily_locked")) { restart(code); return; }
         setIssue({ code, requestId: typeof reply.requestId === "string" && /^[a-f0-9-]{36}$/i.test(reply.requestId) ? reply.requestId : undefined });
         captchaRef.current?.reset();
-        if (code === "invalid_credentials") { const input = form.elements.namedItem("password"); if (input instanceof HTMLInputElement) input.value = ""; }
+        // Keep the failed form/value present. Clearing/removing a password field
+        // can look like successful AJAX login to native password managers.
         return;
       }
       if (reply.redirect !== "/dashboard" && reply.redirect !== "/account?enroll=1") throw new Error("service_unavailable");
       pending.current = null;
+      await offerPasswordStorage(loginName, password);
+      if (attempt !== generation.current) return;
       // A fresh navigation avoids a cached unauthenticated RSC tree.
       window.location.replace(reply.redirect);
     } catch (error) {
@@ -106,7 +112,7 @@ export function LoginForm({ initialError, captcha }: Props) {
     }
   }
   const message = issue ? loginErrorMessages[issue.code] : null;
-  return <form action="/api/auth/login" method="post" onSubmit={submit} className="space-y-5" aria-busy={working}>
+  return <form id="login" action="/api/auth/login" method="post" onSubmit={submit} className="space-y-5" aria-busy={working}>
     <h1 id="login-title" className="mb-7 text-2xl font-bold">{step === "mfa" ? "تأیید دومرحله‌ای" : "ورود به پنل مدیریت"}</h1>
     {step === "mfa" ? <p className="text-sm leading-7 text-muted-foreground">ورود به حساب <bdi className="font-semibold text-foreground">{username}</bdi></p> : null}
     {message ? <div id="login-error" ref={errorRef} tabIndex={-1} role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive focus:outline-none">
@@ -128,6 +134,10 @@ export function LoginForm({ initialError, captcha }: Props) {
         </button>
       </div>
     </div>
+    <label className="flex cursor-pointer items-center gap-3 text-sm">
+      <input type="checkbox" name="remember_me" checked={rememberMe} disabled={working} onChange={event => setRememberMe(event.target.checked)} className="size-4 shrink-0 accent-primary" />
+      مرا به خاطر بسپار
+    </label>
     </> : <>
     <div className="space-y-2"><label htmlFor="second-factor" className="text-sm font-medium">{method === "authenticator" ? "کد تأیید" : "کد بازیابی"}</label>
       <Input key={method} ref={factorRef} id="second-factor" name="second_factor" dir="ltr" autoComplete={method === "authenticator" ? "one-time-code" : "off"} inputMode={method === "authenticator" ? "numeric" : "text"} spellCheck={false} autoCapitalize="none" aria-invalid={issue?.code === "invalid_verification"} aria-describedby={issue ? "login-error second-factor-help" : "second-factor-help"} maxLength={64} disabled={working} required />

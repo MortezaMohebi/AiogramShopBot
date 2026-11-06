@@ -19,7 +19,10 @@ from scripts import manage_shop_staff
 @pytest.fixture
 def account(monkeypatch):
     """Create a synthetic administrator with an enrolled authenticator."""
-    monkeypatch.setenv('SHOP_SECURITY_ENCRYPTION_KEY', base64.urlsafe_b64encode(b'x' * 32).decode())
+    monkeypatch.setenv(
+        'SHOP_SECURITY_ENCRYPTION_KEY',
+        base64.urlsafe_b64encode(b'x' * 32).decode(),
+    )
     # The repository-wide legacy harness replaces passlib with a placeholder.
     # Keep this security regression on a real Argon2 proof instead.
     hasher = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1)
@@ -35,13 +38,19 @@ def account(monkeypatch):
     engine = create_engine('sqlite:///:memory:')
     create_shop_schema(engine)
     with Session(engine) as db:
-        user = ShopStaff(username='shopadmin', password_hash=hasher.hash('Synthetic-only-password-123'), role='superadmin', is_active=True, session_version=3)
+        user = ShopStaff(
+            username='shopadmin',
+            password_hash=hasher.hash('Synthetic-only-password-123'),
+            role='superadmin', is_active=True, session_version=3,
+        )
         db.add(user)
         db.flush()
         profile = security.profile_for(db, user.id)
         now = datetime.now(timezone.utc)
         secret = security.begin_mfa(db, profile, now=now)
-        security.confirm_mfa(db, profile, security.totp(secret, now.timestamp()), now=now)
+        security.confirm_mfa(
+            db, profile, security.totp(secret, now.timestamp()), now=now,
+        )
         security.issue_session(db, user, 'Synthetic browser', now=now)
         db.commit()
         yield db, user, profile

@@ -49,8 +49,8 @@ try {
     assert.equal(await page.locator("#password").getAttribute("type"),"text");
     await page.getByRole("button",{name:"مخفی‌کردن رمز عبور",exact:true}).click();
     if(provider==="unavailable") {
-      await page.getByRole("button",{name:"ورود",exact:true}).waitFor();
-      assert.equal(await page.getByRole("button",{name:"ورود",exact:true}).isDisabled(),true);
+      await page.getByRole("button",{name:"ادامه",exact:true}).waitFor();
+      assert.equal(await page.getByRole("button",{name:"ادامه",exact:true}).isDisabled(),true);
       await page.locator("main").getByRole("alert").filter({hasText:"تنظیمات بررسی امنیتی ورود کامل نیست"}).waitFor();
     } else {
       await page.locator('[data-captcha-stub="compact"]').waitFor();

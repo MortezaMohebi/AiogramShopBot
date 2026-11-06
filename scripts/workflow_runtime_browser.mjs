@@ -543,9 +543,11 @@ async function login(session, username, password, factor = false) {
   requireSafe(new URL(page.url()).pathname === "/login", "normal_login_not_required");
   await page.getByLabel("نام کاربری", { exact: true }).fill(username);
   await page.getByLabel("رمز عبور", { exact: true }).fill(password);
-  if (factor)
-    await page.getByLabel("کد تأیید دومرحله‌ای", { exact: true }).fill(await freshOtp());
-  await page.getByRole("button", { name: "ورود", exact: true }).click();
+  await page.getByRole("button", { name: "ادامه", exact: true }).click();
+  if (factor) {
+    await page.getByLabel("کد تأیید", { exact: true }).fill(await freshOtp());
+    await page.getByRole("button", { name: "ورود", exact: true }).click();
+  }
   await page.waitForURL("**/dashboard");
   session.loggedIn = true;
   session.username = username;

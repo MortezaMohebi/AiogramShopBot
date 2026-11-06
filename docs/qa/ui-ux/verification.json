@@ -3,7 +3,7 @@
   "source_routes_audited": 54,
   "local": {
     "unit": {
-      "pass": 265,
+      "pass": 267,
       "fail": 0,
       "skipped": 0
     },
@@ -51,7 +51,7 @@
     "services_cleanup": "UNVERIFIED_AFTER_CONTROL_TIMEOUT",
     "pre_sweep_checks_passed": 7
   },
-  "current_blocker": "Component skeleton browser acceptance: Codespace source upload denied by automatic approval review; local Chromium cannot create required socket (EPERM).",
+  "current_blocker": null,
   "recovery_changes": {
     "screenshot_caret": "initial",
     "client_readiness": "mounted control plus settled page; login password reveal assertion",
@@ -83,16 +83,28 @@
     "runtime_exceptions": 0
   },
   "component_skeletons": {
-    "status": "PENDING_BROWSER_ACCEPTANCE",
+    "status": "PENDING_STUDIO_BROWSER_ACCEPTANCE",
     "unit_regressions": 11,
     "unit_regressions_pass": 11,
     "independent_review": "No Critical or Important findings",
-    "ui_checks": 0,
+    "ui_checks": 12,
     "captures": 0,
     "next_mcp": "BLOCKED_NO_BROWSER_SESSION",
     "react_mount": "BLOCKED_LOCAL_CHROMIUM_LAUNCH",
     "fixture_cleanup": "PASS",
-    "source_published": false,
-    "scope": "Products, Orders independent list/review queue, single-response overview, deferred Studio forms"
+    "source_published": true,
+    "scope": "Partial light-theme data-state browser pass; Studio harness cleanup failed; not full accepted scope",
+    "approval": "User explicitly authorized Codespace update; earlier approval blocker resolved"
+  },
+  "two_step_login": {
+    "status": "PASS_SCOPED_UI",
+    "application_source": "01fb2bc5d95394cb3e22945c771b31e41e8874c2",
+    "python_focused_pass": 25,
+    "browser_checks": 14,
+    "captures": 22,
+    "real_auth_mutations": 0,
+    "agent_executed_mfa_reset": false,
+    "preview_port": 3005,
+    "full_python_retest": "NO_FINAL_RESULT_HOST_SESSION_DISAPPEARED"
   }
 }

@@ -31,6 +31,9 @@ test("initial login asks for credentials without an MFA field or recovery code",
   const html = renderToStaticMarkup(createElement(LoginForm, {captcha: {provider:"none"}}));
   assert(html.includes('name="username"'));
   assert(html.includes('name="password"'));
+  assert(html.includes('name="remember_me"'));
+  const checkbox=html.match(/<input(?=[^>]*name="remember_me")[^>]*>/)?.[0];
+  assert(checkbox);assert(!/\bchecked(?:=|\s|>)/.test(checkbox));
   assert(!html.includes('name="second_factor"'), "MFA belongs to the verified second screen");
   assert(!html.includes('autocomplete="one-time-code"'));
 });

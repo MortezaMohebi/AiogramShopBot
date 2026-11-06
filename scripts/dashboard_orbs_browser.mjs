@@ -89,11 +89,11 @@ try {
   await login.goto(base+"/login");
   await login.getByLabel("نام کاربری",{exact:true}).fill("qa_orb");
   await login.getByLabel("رمز عبور",{exact:true}).fill("offline-ui-fixture");
-  await login.getByRole("button",{name:"ورود",exact:true}).click();
+  await login.getByRole("button",{name:"ادامه",exact:true}).click();
   const pending=login.getByRole("button",{name:"در حال بررسی…",exact:true});await pending.waitFor();assert(await pending.isDisabled());
   await pending.locator("canvas").waitFor();await reflow(login);
   const file=`login-pending-${mode}-320.png`;await login.screenshot({path:output+"/"+file,caret:"initial"});evidence.screenshots.push(file);
-  release();await login.locator("#login-error").waitFor();assert.equal(await login.locator("canvas").count(),0);assert(await login.getByRole("button",{name:"ورود",exact:true}).isEnabled());
+  release();await login.locator("#login-error").waitFor();assert.equal(await login.locator("canvas").count(),0);assert(await login.getByRole("button",{name:"ادامه",exact:true}).isEnabled());
   evidence.checks.push({check:"real login pending UI and offline failure recovery",mode,status:"PASS"});await ctx.close();
  }
  assert.deepEqual(evidence.errors,[]);evidence.status="PASS";save();console.log(`PASS orb UI: ${evidence.checks.length} checks, ${evidence.screenshots.length} captures, zero backend auth calls`);

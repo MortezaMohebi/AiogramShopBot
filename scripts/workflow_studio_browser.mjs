@@ -339,10 +339,11 @@ try {
     await page
       .getByLabel("رمز عبور", { exact: true })
       .fill(env.LIVE_ADMIN_PASSWORD);
+    await click("ادامه");
     authStage = "MFA";
     secondFactor = otp();
     await page
-      .getByLabel("کد تأیید دومرحله‌ای", { exact: true })
+      .getByLabel("کد تأیید", { exact: true })
       .fill(secondFactor);
     authStage = "submit and redirect";
     await click("ورود");

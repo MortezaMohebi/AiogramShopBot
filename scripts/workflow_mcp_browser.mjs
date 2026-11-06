@@ -90,7 +90,8 @@ try {
     assert.equal(new URL(page.url()).pathname, "/login");
     await page.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
     await page.getByLabel("رمز عبور", { exact: true }).fill(env.LIVE_ADMIN_PASSWORD);
-    await page.getByLabel("کد تأیید دومرحله‌ای", { exact: true }).fill(await freshOtp());
+    await page.getByRole("button", { name: "ادامه", exact: true }).click();
+    await page.getByLabel("کد تأیید", { exact: true }).fill(await freshOtp());
     await page.getByRole("button", { name: "ورود", exact: true }).click();
     await page.waitForURL("**/dashboard");
   });

@@ -16,11 +16,13 @@
 - Unicode digit/space normalization remains narrow and retains replay protection.
 
 ## Tasks
-- [ ] Reproduce Unicode OTP failures and initial-login MFA field regression before implementation.
-- [ ] Update LoginForm/Page heading with distinct credential/MFA screens, focus, Back, expiry and recovery mode; keep signed bridge enforcement.
-- [ ] Normalize supported OTP digits/spacing in server verification; expose allowlisted MFA service feedback.
-- [ ] Check only non-secret account/configuration metadata in QA. Never disable/reset/read the user's MFA proof automatically.
-- [ ] Run Python regression/security suite and full Next tests/type/lint/build, then review.
-- [ ] Update existing QA Codespace and use isolated fake auth responses to verify both screens, bad password/code, recovery, Back, expiry, RTL/themes. Real account login is user-owned; no secret extraction or MFA reset.
+- [x] Reproduce Unicode OTP failures and initial-login MFA field regression before implementation.
+- [x] Update LoginForm/Page heading with distinct credential/MFA screens, focus, Back, expiry and recovery mode; keep signed bridge enforcement.
+- [x] Normalize supported OTP digits/spacing in server verification; expose allowlisted MFA service feedback.
+- [x] Check only non-secret account/configuration metadata in QA. Never disable/reset/read the user's MFA proof automatically.
+- [x] Run Python regression/security suite and full Next tests/type/lint/build, then review.
+- [x] Update existing QA Codespace and use isolated fake auth responses to verify both screens, bad password/code, recovery, Back, expiry, RTL/themes. Real account login is user-owned; no secret extraction or MFA reset.
 
 Prior component-loading browser harness acceptance remains pending and is kept separate from this login fix.
+
+Evidence: scoped browser14PASS/22captures, Python25PASS, Next267PASS, Typecheck/Lint/BuildPASS. Full Python rerun had no final terminal result; report preserves that limit. Owner recovery is prepared for the user and was not executed by the assistant.

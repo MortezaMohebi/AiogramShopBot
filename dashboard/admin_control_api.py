@@ -48,6 +48,7 @@ class Login(StrictPayload):
     password: str = Field(min_length=1, max_length=256)
     second_factor: str = Field(default="", max_length=64)
     device: str = Field(default="Browser", max_length=160)
+    remember_me: bool = Field(default=False, strict=True)
 
 
 class Proof(StrictPayload):
@@ -180,7 +181,10 @@ async def login(payload: Login, staff: Staff, db: Db) -> dict:
             def complete(sync):
                 profile = security.profile_for(sync, account.id)
                 security.verify_second_factor(sync, profile, payload.second_factor)
-                return security.issue_session(sync, account, payload.device), bool(profile.mfa_secret)
+                return security.issue_session(
+                    sync, account, payload.device,
+                    remember_me=payload.remember_me,
+                ), bool(profile.mfa_secret)
             token, has_mfa = await db.run_sync(complete)
         except security.SecurityRejected as error:
             if error.status == 401:
@@ -190,6 +194,10 @@ async def login(payload: Login, staff: Staff, db: Db) -> dict:
         await limiter.delete(failure_key)
         return {"id": account.id, "username": account.username, "role": account.role,
                 "session_version": account.session_version, "session_token": token,
+                "session_ttl_seconds": int((
+                    security.REMEMBERED_LIMIT if payload.remember_me
+                    else security.ABSOLUTE_LIMIT
+                ).total_seconds()),
                 "mfa_setup_required": account.role in security.MFA_REQUIRED_ROLES
                     and not has_mfa}
     except (security.SecurityRejected, HTTPException):
@@ -242,7 +250,7 @@ async def account(request: Request, staff: Staff, db: Db) -> dict:
             "last_seen_at": row.last_seen_at.isoformat(), "expires_at": row.expires_at.isoformat(),
             "revoked": row.revoked_at is not None,
             "active": row.revoked_at is None and row.version == member.session_version and security.utc(row.expires_at) > security.clock()
-                and security.utc(row.last_seen_at) + security.IDLE_LIMIT > security.clock()} for row in rows],
+                and security.utc(row.last_seen_at) + security.session_idle_limit(row) > security.clock()} for row in rows],
         "events": [{"id": row.id, "action": row.action,
                     "created_at": row.created_at.isoformat()} for row in events],
     }
