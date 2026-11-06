@@ -21,10 +21,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ActivityIndicator } from "@/components/ui/activity-indicator";
+import { FormSkeleton } from "@/components/data/skeletons";
 import { Input } from "@/components/ui/input";
-import { Inspector } from "./inspector";
 import { WorkflowActions } from "./workflow-actions";
-import { WorkflowSettings } from "./settings-form";
 import { StudioNav } from "./studio-nav";
 import { useDraftSave } from "./use-draft-save";
 import {
@@ -46,6 +45,21 @@ import type {
   WorkflowButton,
   WorkflowRecord,
 } from "@/lib/workflows/types";
+
+// Draft and save state stay in the editor while these optional forms load.
+const Inspector = dynamic(
+  () => import("./inspector").then((module) => module.Inspector),
+  {
+    loading: () => <FormSkeleton label="در حال دریافت ویژگی‌های مرحله…" />,
+  },
+);
+const WorkflowSettings = dynamic(
+  () => import("./settings-form").then((module) => module.WorkflowSettings),
+  {
+    loading: () => <FormSkeleton label="در حال دریافت تنظیمات فرایند…" />,
+  },
+);
+
 const WorkflowCanvas = dynamic(
   () => import("./canvas").then((m) => m.WorkflowCanvas),
   {

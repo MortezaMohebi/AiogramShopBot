@@ -86,3 +86,9 @@ Independent local-browser verification could not proceed: Chrome's launch aborte
 6. Log out/revoke only synthetic QA sessions and stop only this task's dedicated services, retaining data volumes and leaving the original project services untouched.
 
 The latest run's evidence is in the dedicated Codespace at `/tmp/dashboard-ui-scope/evidence.json`; its terminal log is `/tmp/ui-browser-scope.log` and framework log `/tmp/ui-next-scope.log`. These diagnostics are remote and were not republished as final screenshot evidence. Dedicated PostgreSQL, Redis, API and Next dev were last observed running. Final remote cleanup remains unverified because the control connection timed out. The temporary host-side browser did not start and no host-side login occurred.
+
+### Component skeletons and deferred Studio forms
+
+The authorized component-loading changes are implemented locally. Products streams results below its search controls; Orders streams the list and permitted review queue independently; Dashboard waits once for `/overview`; Studio imports inspector/settings forms when rendered. All 265 dashboard tests, Typecheck, Lint and the production Build pass. An independent source review found no Critical or Important issues. See `COMPONENT_SKELETONS_ACCEPTANCE.md`.
+
+Browser acceptance for this change is **blocked**. Automatic approval review denied uploading the source delta to the private Codespace, citing absent explicit destination authorization. A local alternative also failed: Chromium aborted because required socket creation was denied (`EPERM`), and agent-browser could not start. No controls were bypassed. Zero browser cases or screenshots are counted for this scope. The owned fixture was removed and the dedicated local Next server stopped; no remote source, service, session or data was changed in this attempt.

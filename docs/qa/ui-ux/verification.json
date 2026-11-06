@@ -3,7 +3,7 @@
   "source_routes_audited": 54,
   "local": {
     "unit": {
-      "pass": 254,
+      "pass": 265,
       "fail": 0,
       "skipped": 0
     },
@@ -51,7 +51,7 @@
     "services_cleanup": "UNVERIFIED_AFTER_CONTROL_TIMEOUT",
     "pre_sweep_checks_passed": 7
   },
-  "current_blocker": null,
+  "current_blocker": "Component skeleton browser acceptance: Codespace source upload denied by automatic approval review; local Chromium cannot create required socket (EPERM).",
   "recovery_changes": {
     "screenshot_caret": "initial",
     "client_readiness": "mounted control plus settled page; login password reveal assertion",
@@ -81,5 +81,18 @@
     "react_mount": "PASS",
     "fixture_cleanup": "PASS",
     "runtime_exceptions": 0
+  },
+  "component_skeletons": {
+    "status": "PENDING_BROWSER_ACCEPTANCE",
+    "unit_regressions": 11,
+    "unit_regressions_pass": 11,
+    "independent_review": "No Critical or Important findings",
+    "ui_checks": 0,
+    "captures": 0,
+    "next_mcp": "BLOCKED_NO_BROWSER_SESSION",
+    "react_mount": "BLOCKED_LOCAL_CHROMIUM_LAUNCH",
+    "fixture_cleanup": "PASS",
+    "source_published": false,
+    "scope": "Products, Orders independent list/review queue, single-response overview, deferred Studio forms"
   }
 }
