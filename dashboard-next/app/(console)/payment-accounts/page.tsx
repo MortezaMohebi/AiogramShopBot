@@ -1,18 +1,17 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CreditCard, KeyRound } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
-import type { StoreRecord } from "@/lib/bot-registry";
+import type { StoreContextSnapshot } from "@/lib/store-context";
 import type { PaymentAccountList, PaymentRail } from "@/lib/store-commerce";
 import {
   createPaymentAccount, setPaymentAccountState,
 } from "./actions";
 
-type StoreList = { items: StoreRecord[]; default_store_id: string };
 type Query = Promise<{ store_id?: string; saved?: string; error?: string }>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -47,9 +46,14 @@ export default async function PaymentAccountsPage({
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
   const query = await searchParams;
-  const stores = await adminFetch<StoreList>("/stores");
-  const storeId = query.store_id && UUID.test(query.store_id)
-    ? query.store_id : stores.default_store_id;
+  const context = await adminFetch<StoreContextSnapshot>("/store-context");
+  const stores = context.stores.filter(store => context.active_store_ids.includes(store.id));
+  // A Store switch can leave the previous GET selection in the address bar.
+  // Clear it before requesting policy data outside this session's active set.
+  if (query.store_id && (!UUID.test(query.store_id) || !stores.some(store => store.id === query.store_id))) {
+    redirect("/payment-accounts");
+  }
+  const storeId = query.store_id || context.current_store_id;
   const accounts = await adminFetch<PaymentAccountList>(
     `/stores/${storeId}/payment-accounts`,
   );
@@ -65,7 +69,7 @@ export default async function PaymentAccountsPage({
       <label className="block space-y-2 text-sm">فروشگاه
         <select name="store_id" defaultValue={storeId}
           className="block h-10 min-w-48 rounded-md border bg-background px-3">
-          {stores.items.map(store =>
+          {stores.map(store =>
             <option value={store.id} key={store.id}>{store.name}</option>)}
         </select>
       </label>

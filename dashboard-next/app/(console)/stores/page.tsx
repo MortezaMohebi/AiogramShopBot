@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
-import type { StoreRecord } from "@/lib/bot-registry";
+import type { StoreContextSnapshot } from "@/lib/store-context";
 import type { StoreCommercePolicy } from "@/lib/store-commerce";
 import type { CustomerMenuPolicy, CheckoutPolicy } from "@/lib/customer-experience";
 import { CustomerExperiencePolicyPanel } from "@/components/blocks/customer-experience-policy-panel";
@@ -14,7 +14,6 @@ import { saveStoreCommercePolicy } from "./commerce-actions";
 type Query = Promise<{
   saved?: string; error?: string; ux_saved?: string; ux_error?: string;
 }>;
-type StoreList = { items: StoreRecord[]; default_store_id: string };
 
 /** Configured Store boundaries, with explicit and conservative sharing. */
 export default async function StoresPage({
@@ -23,14 +22,15 @@ export default async function StoresPage({
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
   const query = await searchParams;
-  const stores = await adminFetch<StoreList>("/stores");
-  const policies = await Promise.all(stores.items.map(item =>
+  const context = await adminFetch<StoreContextSnapshot>("/store-context");
+  const stores = context.stores.filter(store => context.active_store_ids.includes(store.id));
+  const policies = await Promise.all(stores.map(item =>
     adminFetch<StoreCommercePolicy>(`/stores/${item.id}/commerce`),
   ));
-  const menuPolicies = await Promise.all(stores.items.map(item =>
+  const menuPolicies = await Promise.all(stores.map(item =>
     adminFetch<CustomerMenuPolicy>(`/stores/${item.id}/customer-menu`),
   ));
-  const checkoutPolicies = await Promise.all(stores.items.map(item =>
+  const checkoutPolicies = await Promise.all(stores.map(item =>
     adminFetch<CheckoutPolicy>(`/stores/${item.id}/checkout-policy`),
   ));
   const note = query.error === "legacy_credit_requires_reconciliation"
@@ -63,11 +63,11 @@ export default async function StoresPage({
       سبدهای قبلی جداگانه حفظ می‌شوند و هیچ ادغامی خودکار نیست. اعتبار مشترک هم
       تا انتقال حسابرسی‌شدهٔ مانده‌های موجود، فعال نخواهد شد.
     </p>
-    {!stores.items.length ? <p className="rounded-lg border p-4 text-sm">
+    {!stores.length ? <p className="rounded-lg border p-4 text-sm">
       هنوز فروشگاهی ثبت نشده است. <Link href="/bots" className="underline">فروشگاه ایجاد کنید</Link>.
     </p> : null}
     <div className="grid gap-4 xl:grid-cols-2">
-      {stores.items.map((store, index) => {
+      {stores.map((store, index) => {
         const policy = policies[index];
         return <Card key={store.id}>
           <CardHeader><CardTitle>{store.name}</CardTitle></CardHeader>
@@ -110,7 +110,7 @@ export default async function StoresPage({
     </div>
     <section className="space-y-4">
       <h2 className="text-lg font-semibold">منو و خرید هر فروشگاه</h2>
-      {stores.items.map((store, index) =>
+      {stores.map((store, index) =>
         <div key={store.id} className="space-y-3 rounded-xl border p-4">
           <h3 className="font-semibold">{store.name}</h3>
           <CustomerExperiencePolicyPanel
