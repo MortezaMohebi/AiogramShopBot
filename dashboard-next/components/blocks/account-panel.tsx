@@ -90,8 +90,58 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     for (const [key, value] of values) if (typeof value === "string") payload[key] = value;
     void perform(action, payload, form);
   }
+  const noticeMessage = notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null;
+  const mfaCard = <Card><CardHeader><CardTitle>احراز هویت دومرحله‌ای</CardTitle></CardHeader><CardContent className="space-y-4">
+      <p className="text-sm">وضعیت: <strong>{initial.mfa_enabled ? "فعال" : "غیرفعال"}</strong></p>
+      {initial.mfa_required_by_role ? <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">برای نقش شما MFA اجباری است. تا زمان فعال‌سازی، دسترسی به امکانات مدیریتی محدود می‌ماند.</p> : null}
+      {recovery.length ? <div role="status" className="space-y-3 rounded-lg border p-4">
+        <p className="text-sm">این کدها فقط همین بار نمایش داده می‌شوند. در محلی امن ذخیره کنید؛ هر کد یک‌بار قابل استفاده است.</p>
+        <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
+        <Button type="button" variant="outline" onClick={() => setRecovery([])}>پنهان کردن کدها</Button>
+      </div> : null}
+      {enrollment ? <div className="space-y-4">
+        <p className="text-sm leading-7">
+          در برنامهٔ Authenticator گزینهٔ افزودن حساب و اسکن QR Code را
+          انتخاب کنید. سپس کد شش‌رقمی برنامه را برای فعال‌سازی وارد کنید.
+        </p>
+        {/* QR generation happens in our Backend; the TOTP secret is never
+            sent to a third-party image service or CDN. */}
+        <div className="mx-auto w-fit max-w-full rounded-xl border bg-white p-3 shadow-sm">
+          <Image
+            src={enrollment.qrDataUri}
+            alt="QR Code فعال‌سازی احراز هویت دومرحله‌ای"
+            width={260}
+            height={260}
+            unoptimized
+            className="h-auto w-full max-w-[260px]"
+          />
+        </div>
+        <details className="rounded-lg border p-3 text-sm">
+          <summary className="cursor-pointer font-medium">
+            امکان اسکن ندارم؛ نمایش کلید برای ورود دستی
+          </summary>
+          <p className="mt-3 text-xs leading-6 text-muted-foreground">
+            این کلید محرمانه است. آن را با دیگران به اشتراک نگذارید.
+          </p>
+          <code dir="ltr" className="mt-2 block select-all break-all rounded-md bg-muted p-3 text-xs">
+            {enrollment.secret}
+          </code>
+        </details>
+        <form onSubmit={(event) => submit(event, "mfa-confirm")} className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1 text-sm">کد تأیید<Input name="code" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="one-time-code" inputMode="numeric" required dir="ltr" disabled={busy} /></label>
+          <Button type="submit" disabled={busy}>تأیید و فعال‌سازی</Button>
+        </form>
+      </div> : <form onSubmit={(event) => submit(event, initial.mfa_enabled ? "mfa-disable" : "mfa-setup")} className="space-y-4">
+        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
+        {!(initial.mfa_enabled && initial.mfa_required_by_role) ? <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button> : null}
+      </form>}
+    </CardContent></Card>;
+  // Only enrollment actions are allowed until the role’s mandatory factor exists.
+  if (initial.mfa_required_by_role && !initial.mfa_enabled) {
+    return <div className="mx-auto max-w-2xl space-y-5" aria-busy={busy}>{noticeMessage}{mfaCard}</div>;
+  }
   return <div className="space-y-5" aria-busy={busy}>
-    {notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null}
+    {noticeMessage}
     <Card><CardHeader><CardTitle>مشخصات من</CardTitle></CardHeader><CardContent>
       <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b>{({superadmin:"مدیر اصلی",finance:"مالی",sales:"فروش",content:"محتوا",marketing:"بازاریابی",viewer:"مشاهده"} as Record<string,string>)[initial.role] ?? initial.role}</b></p>
       <form onSubmit={(event) => submit(event, "profile")} className="grid gap-4 md:grid-cols-2">
@@ -173,51 +223,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         <Button type="submit" disabled={busy}>تغییر رمز و خروج از همه دستگاه‌ها</Button>
       </form>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>احراز هویت دومرحله‌ای</CardTitle></CardHeader><CardContent className="space-y-4">
-      <p className="text-sm">وضعیت: <strong>{initial.mfa_enabled ? "فعال" : "غیرفعال"}</strong></p>
-      {initial.mfa_required_by_role ? <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">برای نقش شما MFA اجباری است. تا زمان فعال‌سازی، دسترسی به امکانات مدیریتی محدود می‌ماند.</p> : null}
-      {recovery.length ? <div role="status" className="space-y-3 rounded-lg border p-4">
-        <p className="text-sm">این کدها فقط همین بار نمایش داده می‌شوند. در محلی امن ذخیره کنید؛ هر کد یک‌بار قابل استفاده است.</p>
-        <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
-        <Button type="button" variant="outline" onClick={() => setRecovery([])}>پنهان کردن کدها</Button>
-      </div> : null}
-      {enrollment ? <div className="space-y-4">
-        <p className="text-sm leading-7">
-          در برنامهٔ Authenticator گزینهٔ افزودن حساب و اسکن QR Code را
-          انتخاب کنید. سپس کد شش‌رقمی برنامه را برای فعال‌سازی وارد کنید.
-        </p>
-        {/* QR generation happens in our Backend; the TOTP secret is never
-            sent to a third-party image service or CDN. */}
-        <div className="mx-auto w-fit max-w-full rounded-xl border bg-white p-3 shadow-sm">
-          <Image
-            src={enrollment.qrDataUri}
-            alt="QR Code فعال‌سازی احراز هویت دومرحله‌ای"
-            width={260}
-            height={260}
-            unoptimized
-            className="h-auto w-full max-w-[260px]"
-          />
-        </div>
-        <details className="rounded-lg border p-3 text-sm">
-          <summary className="cursor-pointer font-medium">
-            امکان اسکن ندارم؛ نمایش کلید برای ورود دستی
-          </summary>
-          <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            این کلید محرمانه است. آن را با دیگران به اشتراک نگذارید.
-          </p>
-          <code dir="ltr" className="mt-2 block select-all break-all rounded-md bg-muted p-3 text-xs">
-            {enrollment.secret}
-          </code>
-        </details>
-        <form onSubmit={(event) => submit(event, "mfa-confirm")} className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1 text-sm">کد تأیید<Input name="code" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="one-time-code" inputMode="numeric" required dir="ltr" disabled={busy} /></label>
-          <Button type="submit" disabled={busy}>تأیید و فعال‌سازی</Button>
-        </form>
-      </div> : <form onSubmit={(event) => submit(event, initial.mfa_enabled ? "mfa-disable" : "mfa-setup")} className="space-y-4">
-        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        {!(initial.mfa_enabled && initial.mfa_required_by_role) ? <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button> : null}
-      </form>}
-    </CardContent></Card>
+    {mfaCard}
     <Card><CardHeader><CardTitle>تأیید مجدد هویت برای عملیات حساس</CardTitle></CardHeader><CardContent>
       <form onSubmit={(event) => submit(event, "reauthenticate")} className="space-y-4">
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />
@@ -225,10 +231,10 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       </form>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>نشست‌ها و دستگاه‌ها</CardTitle></CardHeader><CardContent className="space-y-3">
-      <p className="text-xs leading-6 text-muted-foreground">نشست پس از ۳۰ دقیقه بی‌فعالیتی یا حداکثر ۸ ساعت پایان می‌یابد. مشخصات مرورگر برای شناسایی دستگاه است، نه اثبات هویت آن.</p>
+      <p className="text-xs leading-6 text-muted-foreground">ورود عادی پس از ۳۰ دقیقه بی‌فعالیتی یا حداکثر ۸ ساعت پایان می‌یابد. با انتخاب «مرا به خاطر بسپار»، نشست تا ۳۰ روز اعتبار دارد. خروج از حساب یا تغییر رمز، نشست را زودتر می‌بندد.</p>
       <Button type="button" variant="outline" disabled={busy} onClick={() => void perform("revoke-others", {})}>خروج از همه دستگاه‌های دیگر</Button>
       {initial.sessions.map((session) => <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-xs">
-        <div className="min-w-0 space-y-1"><p dir="ltr" className="break-all">{session.label}</p><p>{session.current ? "این دستگاه · " : ""}{session.active ? "فعال" : "پایان‌یافته"} · آخرین فعالیت: {date(session.last_seen_at)}</p></div>
+        <div className="min-w-0 space-y-1"><p dir="ltr" className="break-all">{session.label}</p><p>{session.current ? "این دستگاه · " : ""}{session.active ? "فعال" : "پایان‌یافته"} · آخرین فعالیت: {date(session.last_seen_at)}</p><p>پایان اعتبار: {date(session.expires_at)}</p></div>
         {session.active ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void perform("revoke-session", { session_id: session.id })}>خروج از دستگاه</Button> : null}
       </div>)}
     </CardContent></Card>

@@ -273,7 +273,17 @@ export async function adminFetch<T>(
 ): Promise<T> {
   const session = await readSession(); if (!session) redirect("/login");
   try { return await bridgeFetch<T>(path, method, data, session, timeoutMs); }
-  catch (error) { if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1"); throw error; }
+  catch (error) {
+    if (error instanceof ApiError) {
+      if (error.status === 401) redirect("/login?expired=1");
+      // Page and layout reads run concurrently. Each must take the same safe
+      // enrollment route, rather than leaving a child render to throw a 428.
+      if (method === "GET" && path !== "/account" && error.status === 428 && error.code === "mfa_enrollment_required") {
+        redirect("/account?enroll=1");
+      }
+    }
+    throw error;
+  }
 }
 
 
