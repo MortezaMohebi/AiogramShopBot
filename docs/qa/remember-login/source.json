@@ -1,0 +1,4 @@
+{
+  "source_commit": "a9009573c00e38e952131605a38bf273d99441e9",
+  "scope": "production LoginForm; fake CSRF/auth replies; no real account proof or session"
+}

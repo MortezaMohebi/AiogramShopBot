@@ -1,0 +1,105 @@
+{
+  "status": "PASS",
+  "scope": "production LoginForm; fake CSRF/auth replies; no real account proof or session",
+  "checks": [
+    {
+      "name": "failed password form stays present; no credential storage",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "verified password opens a separate focused MFA screen; no password field",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "localized copied OTP normalizes; rejection stays on MFA",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "unchanged recovery code reaches the verified redirect",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "Back clears password; malformed success cannot redirect",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "five-minute MFA wait expires and clears pending credentials",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "opt-out survives; credentials offered only after full success",
+      "theme": "light",
+      "status": "PASS"
+    },
+    {
+      "name": "failed password form stays present; no credential storage",
+      "theme": "dark",
+      "status": "PASS"
+    },
+    {
+      "name": "verified password opens a separate focused MFA screen; no password field",
+      "theme": "dark",
+      "status": "PASS"
+    },
+    {
+      "name": "localized copied OTP normalizes; rejection stays on MFA",
+      "theme": "dark",
+      "status": "PASS"
+    },
+    {
+      "name": "unchanged recovery code reaches the verified redirect",
+      "theme": "dark",
+      "status": "PASS"
+    },
+    {
+      "name": "Back clears password; malformed success cannot redirect",
+      "theme": "dark",
+      "status": "PASS"
+    },
+    {
+      "name": "five-minute MFA wait expires and clears pending credentials",
+      "theme": "dark",
+      "status": "PASS"
+    },
+    {
+      "name": "opt-out survives; credentials offered only after full success",
+      "theme": "dark",
+      "status": "PASS"
+    }
+  ],
+  "screenshots": [
+    "credentials-light-1440.png",
+    "credentials-light-1024.png",
+    "credentials-light-768.png",
+    "credentials-light-390.png",
+    "credentials-light-320.png",
+    "mfa-light-1440.png",
+    "mfa-light-1024.png",
+    "mfa-light-768.png",
+    "mfa-light-390.png",
+    "mfa-light-320.png",
+    "mfa-error-light.png",
+    "credentials-dark-1440.png",
+    "credentials-dark-1024.png",
+    "credentials-dark-768.png",
+    "credentials-dark-390.png",
+    "credentials-dark-320.png",
+    "mfa-dark-1440.png",
+    "mfa-dark-1024.png",
+    "mfa-dark-768.png",
+    "mfa-dark-390.png",
+    "mfa-dark-320.png",
+    "mfa-error-dark.png"
+  ],
+  "errors": [],
+  "real_mutations": 0,
+  "browser": "156.0.8078.4",
+  "fake_auth_requests": 16,
+  "browser_cleanup": "PASS"
+}
