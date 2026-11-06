@@ -6,7 +6,7 @@ never call Telegram/Bale, create real orders, or change live webhook state.
 
 from __future__ import annotations
 
-from tests.schema_support import create_shop_schema, seed_legacy_registry
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -17,8 +17,6 @@ from sqlalchemy.orm import Session
 
 from models.base import Base
 from models.shop_admin_control import AdminEvent
-from models.shop_bot_profile import ShopBotProfile
-from models.shop_channel_features import ShopChannelFeature
 from models.shop_content import ShopIdentity
 from models.shop_customer_crm import (
     ShopCustomerAudit,
@@ -27,10 +25,9 @@ from models.shop_customer_crm import (
     ShopCustomerProfile,
 )
 from models.shop_customer_links import (
-    ShopCustomerIdentityLink,
     ShopCustomerLinkRequest,
 )
-from models.shop_payment_rail import ShopPaymentRail
+from models.shop_store_commerce import ShopStoreCustomerLinkEvent
 from models.shop_staff import ShopStaff
 from models.shop_staff_state import ShopStaffState
 from models.shop_admin_control import AdminSession
@@ -38,7 +35,6 @@ from services import shop_admin_security as security
 from services import shop_customer_crm as crm
 from services import shop_identity_links as linking
 from services import shop_payment_rails as rails
-from services.shop_bot_profiles import get_bot_options, validate_allowed_updates
 
 
 @pytest.fixture
@@ -47,6 +43,7 @@ def session():
     engine = create_engine("sqlite:///:memory:")
     create_shop_schema(engine)
     with Session(engine) as db:
+        seed_registry(db)
         db.add_all([
             ShopStaff(
                 id=10, username="operator", password_hash="test-hash",
@@ -57,22 +54,21 @@ def session():
                 role="sales", is_active=True, session_version=1,
             ),
             ShopIdentity(
-                id=101, platform="telegram", platform_user_id=5001,
+                id=101, platform="telegram", bot_id=TEST_BOT_IDS["telegram"], platform_user_id=5001,
                 username="sender", first_name="Sender",
                 is_blocked=False, allow_announcements=False,
             ),
             ShopIdentity(
-                id=102, platform="bale", platform_user_id=6001,
+                id=102, platform="bale", bot_id=TEST_BOT_IDS["bale"], platform_user_id=6001,
                 username="receiver", first_name="Receiver",
                 is_blocked=False, allow_announcements=False,
             ),
             ShopIdentity(
-                id=103, platform="bale", platform_user_id=7001,
+                id=103, platform="bale", bot_id=TEST_BOT_IDS["bale"], platform_user_id=7001,
                 username="intruder", first_name="Intruder",
                 is_blocked=False, allow_announcements=False,
             ),
         ])
-        seed_legacy_registry(db)
         from models.shop_store_commerce import ShopStoreCustomer
         for identity in db.query(ShopIdentity).all():
             customer = ShopStoreCustomer(store_id=identity.store_id, display_name=identity.first_name)
@@ -165,67 +161,47 @@ def test_three_step_link_requires_source_confirmation(session):
     """A claim alone never links two users or their financial histories."""
     adapter = AsyncSessionAdapter(session)
     token = asyncio.run(linking.begin(
-        adapter, platform="telegram", user_id=5001,
+        adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001,
     ))
     assert len(token) == 43
     assert token not in session.query(ShopCustomerLinkRequest).first().token_hash
 
     with pytest.raises(linking.LinkRejected):
         asyncio.run(linking.claim(
-            adapter, platform="telegram", user_id=5001, token=token,
+            adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001, token=token,
         ))
     asyncio.run(linking.claim(
-        adapter, platform="bale", user_id=6001, token=token,
+        adapter, bot_id=TEST_BOT_IDS["bale"], platform="bale", user_id=6001, token=token,
     ))
-    assert session.query(ShopCustomerIdentityLink).count() == 0
+    assert session.query(ShopStoreCustomerLinkEvent).count() == 0
 
     with pytest.raises(linking.LinkRejected):
         asyncio.run(linking.approve(
-            adapter, platform="bale", user_id=6001, token=token,
+            adapter, bot_id=TEST_BOT_IDS["bale"], platform="bale", user_id=6001, token=token,
         ))
     asyncio.run(linking.approve(
-        adapter, platform="telegram", user_id=5001, token=token,
+        adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001, token=token,
     ))
-    assert session.query(ShopCustomerIdentityLink).count() == 1
+    assert session.query(ShopStoreCustomerLinkEvent).count() == 1
+    assert session.get(ShopIdentity, 101).customer_id == session.get(ShopIdentity, 102).customer_id
     with pytest.raises(linking.LinkRejected):
         asyncio.run(linking.approve(
-            adapter, platform="telegram", user_id=5001, token=token,
+            adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001, token=token,
         ))
 
 
-def test_payment_methods_are_provider_scoped_and_default_compatible(session):
-    """Bale wallet toggles do not alter Telegram payments or old balances."""
+def test_payment_methods_require_explicit_registered_accounts(session):
+    """An unconfigured bot cannot inherit a platform-wide payment rail."""
     adapter = AsyncSessionAdapter(session)
-    assert asyncio.run(rails.rail_enabled(adapter, "telegram", "telegram_stars"))
-    assert not asyncio.run(rails.rail_enabled(adapter, "bale", "telegram_stars"))
-    session.add(ShopPaymentRail(
-        platform="bale", rail_type="bale_wallet",
-        display_name="کیف پول بله", enabled=False,
+    assert not asyncio.run(rails.rail_enabled(
+        adapter, "telegram", "telegram_stars", bot_id=TEST_BOT_IDS["telegram"],
     ))
-    session.commit()
-    assert not asyncio.run(rails.rail_enabled(adapter, "bale", "bale_wallet"))
-    assert asyncio.run(rails.rail_enabled(adapter, "telegram", "store_credit"))
-
-
-def test_bot_profile_persisted_maintenance_and_allowed_updates(session):
-    """Never store provider tokens; options are effective per provider."""
-    adapter = AsyncSessionAdapter(session)
-    session.add(ShopBotProfile(
-        platform="bale", maintenance_enabled=True,
-        display_name="Store Bale",
-        environment="codespaces",
-        poll_timeout_seconds=9,
-        request_timeout_seconds=20,
-        allowed_updates_json='["message","callback_query"]',
+    assert not asyncio.run(rails.rail_enabled(
+        adapter, "bale", "telegram_stars", bot_id=TEST_BOT_IDS["bale"],
     ))
-    session.commit()
-    profile = asyncio.run(get_bot_options(adapter, "bale"))
-    assert profile.maintenance_enabled is True
-    assert profile.poll_timeout_seconds == 9
-    assert profile.allowed_updates == ("callback_query", "message")
-    assert "TOKEN" not in str(profile)
-    with pytest.raises(ValueError):
-        validate_allowed_updates(["message", "message"])
+    assert asyncio.run(rails.rail_enabled(
+        adapter, "telegram", "store_credit", bot_id=TEST_BOT_IDS["telegram"],
+    ))
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Offer authenticated Telegram/Bale updates to Runtime before legacy claims."""
+"""Offer authenticated Telegram/Bale updates to Runtime before commerce receipt claims."""
 
 from __future__ import annotations
 
@@ -11,12 +11,9 @@ from channels.contracts import Platform
 from db import session_maker
 from models.shop_content import ShopIdentity
 from models.shop_delivery import ShopInboundUpdate
-from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_workflow_runtime import WorkflowInbox
 from services import shop_admin_security as security
-from services.shop_bot_context import resolve_bot_context, resolve_legacy_bot_context
-from services.shop_bot_operations import legacy_state
-from services.shop_bot_profiles import get_bot_options
+from services.shop_bot_context import resolve_bot_context
 from services.shop_bot_secrets import resolve_active_token
 from services.shop_identity import is_blocked, register_customer
 from services.shop_multibot_client import provider_client
@@ -94,9 +91,9 @@ async def _acknowledge(context, payload, *, client=None) -> None:
 
 
 async def try_ingress(context, payload, client=None) -> dict:
-    """Handle a Runtime-owned authenticated input or return legacy fallback.
+    """Handle a Runtime-owned authenticated input or return to the commerce dispatcher.
 
-    The receiver must invoke this before claiming its legacy provider receipt.
+    The receiver must invoke this before claiming its commerce provider receipt.
     The coordinator commits the Inbox before any upload download/transition;
     this layer never delivers customer prompts or business effects inline.
     """
@@ -111,7 +108,7 @@ async def try_ingress(context, payload, client=None) -> dict:
     if event is None:
         return prior or {"handled": False}
     async with session_maker() as db:
-        # Preserve at-most-once legacy quarantine across enabling Runtime.
+        # Preserve at-most-once commerce quarantine across enabling Runtime.
         receipt = await db.scalar(
             select(ShopInboundUpdate.status).where(
                 ShopInboundUpdate.bot_id == context.bot_id,
@@ -134,19 +131,14 @@ async def try_ingress(context, payload, client=None) -> dict:
             db, current
         ):
             return prior or {"handled": False}
-        if current.runtime_owner == "legacy":
-            state = await legacy_state(db, event.platform)
-            options = await get_bot_options(db, event.platform)
-            if state.state != "active" or options.maintenance_enabled:
-                return prior or {"handled": False}
         if await is_blocked(
             db,
             bot_id=current.bot_id,
             platform=current.platform,
             platform_user_id=event.user_id,
         ):
-            # Legacy paid-order refunds remain reachable for restricted
-            # customers; their exact ownership is checked by the old flow.
+            # Paid-order refunds remain reachable for restricted
+            # customers; their exact ownership is checked by the commerce flow.
             if event.kind == "callback" and not event.callback.startswith(
                 ("wf:", "wfe:")
             ):
@@ -193,34 +185,3 @@ async def try_ingress(context, payload, client=None) -> dict:
     if result.get("handled") and event.kind == "callback":
         await _acknowledge(current, payload, client=client)
     return result
-
-
-async def try_legacy_ingress(platform, payload, client=None) -> dict:
-    """Bridge an authenticated original receiver after its current Bot gate.
-
-    This helper is shared by webhooks, polling and the outer Aiogram middleware
-    so direct message/photo/document input gets the same durable Inbox chance.
-    """
-    if _financial(payload):
-        return {"handled": False}
-    try:
-        platform = Platform(platform)
-    except ValueError:
-        return {"handled": False}
-    prior = await _existing_inbox(LEGACY_BOT_IDS[platform.value], payload)
-    if prior is not None:
-        return prior
-    if not _deployment_enabled():
-        return {"handled": False}
-    async with session_maker() as db:
-        state = await legacy_state(db, platform.value)
-        options = await get_bot_options(db, platform.value)
-        if state.state != "active" or options.maintenance_enabled:
-            return prior or {"handled": False}
-        try:
-            context = await resolve_legacy_bot_context(
-                db, authenticated_platform=platform
-            )
-        except security.SecurityRejected:
-            return prior or {"handled": False}
-    return await try_ingress(context, payload, client=client)

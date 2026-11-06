@@ -73,10 +73,12 @@ def test_compose_ports_and_paid_flags_are_explicitly_bounded() -> None:
         "SHOP_BROADCAST_WORKER_ENABLED",
     ):
         assert f'{key}: "false"' in compose
-    assert 'CODESPACE_MANUAL_WEBHOOK: "true"' in compose
+    assert 'MULTIBOT_V2_RUNTIME_ENABLED: "false"' in compose
     gateway = (root / "deploy/codespaces/nginx.conf").read_text("utf-8")
-    assert "location = /hooks/telegram" in gateway
-    assert "location ^~ /webhooks/bale/" in gateway
+    assert "^/webhooks/v2/" in gateway
+    assert "limit_except POST { deny all; }" in gateway
+    assert "/hooks/telegram" not in gateway
+    assert "/webhooks/bale/" not in gateway
     assert "location / { return 404; }" in gateway
     # Restrict Nginx master/worker to UID/GID 101 and keep all
     # Linux capabilities dropped, with writable temporary paths.

@@ -19,11 +19,11 @@ from sqlalchemy.orm import Session
 from models.base import Base
 from models.shop_admin_control import AdminEvent
 from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
-from models.shop_bot_profile import ShopBotProfile
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopBotCredential,
+    DEFAULT_STORE_ID, ShopBot, ShopBotCredential,
     ShopBotRegistryEvent, ShopStore,
 )
+from models.shop_multibot_receiver import ShopBotReceiver
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 from services import shop_bot_operations as operations
@@ -97,21 +97,25 @@ class AsyncDb:
         self.db.add(record)
 
 
-def _legacy(db: Session, platform: str) -> ShopBot:
-    """Register one original platform bot with known durable identity."""
+def _active_bot(db: Session, platform: str) -> ShopBot:
+    """Register an isolated Registry bot with explicit encrypted credentials."""
     row = ShopBot(
-        id=LEGACY_BOT_IDS[platform], store_id=DEFAULT_STORE_ID,
-        slug=f"legacy-{platform}", name=f"Legacy {platform}",
-        platform=platform, status="legacy", runtime_owner="legacy",
+        id=str(uuid4()), store_id=DEFAULT_STORE_ID,
+        slug=f"registered-{platform}", name=f"Registered {platform}",
+        platform=platform, status="active", runtime_owner="registry",
         version=1, credential_version=1,
     )
     db.add(row)
     db.add(ShopBotCredential(
         id=str(uuid4()), bot_id=row.id, version=1,
-        source="environment", environment_key=(
-            "TOKEN" if platform == "telegram" else "BALE_BOT_TOKEN"
-        ), state="active",
+        source="encrypted", ciphertext="offline-encrypted-token", state="active",
     ))
+    db.add(ShopBotReceiver(
+        bot_id=row.id, binding_id=str(uuid4()), mode="webhook", state="active",
+        credential_version=1, webhook_secret_ciphertext="offline-secret",
+        webhook_secret_digest="f" * 64,
+    ))
+    db.add(ShopBotOperations(bot_id=row.id, desired_state="active"))
     return row
 
 
@@ -122,14 +126,10 @@ def _reject(action, code: str) -> None:
     assert rejected.value.code == code
 
 
-def test_legacy_pause_and_enable_are_independent(db: Session) -> None:
+def test_registry_pause_and_enable_are_independent(db: Session) -> None:
     """Telegram pause must not affect Bale, and pending receipts stay intact."""
-    telegram = _legacy(db, "telegram")
-    bale = _legacy(db, "bale")
-    db.add_all([
-        ShopBotProfile(platform="telegram", maintenance_enabled=False),
-        ShopBotProfile(platform="bale", maintenance_enabled=False),
-    ])
+    telegram = _active_bot(db, "telegram")
+    bale = _active_bot(db, "bale")
     db.commit()
     operations.change_state(
         db, bot_id=telegram.id, actor_id=1,
@@ -138,9 +138,8 @@ def test_legacy_pause_and_enable_are_independent(db: Session) -> None:
     )
     db.commit()
     assert db.get(ShopBotOperations, telegram.id).desired_state == "paused"
-    assert db.get(ShopBotOperations, bale.id) is None
-    assert db.get(ShopBotProfile, "telegram").maintenance_enabled is False
-    assert telegram.status == "legacy"
+    assert db.get(ShopBotOperations, bale.id).desired_state == "active"
+    assert telegram.status == "paused"
     assert telegram.version == 2
     assert bale.version == 1
     audit = db.scalars(select(ShopBotOperationsEvent).where(
@@ -149,28 +148,20 @@ def test_legacy_pause_and_enable_are_independent(db: Session) -> None:
     assert len(audit) == 1
     assert audit[0].previous_state == "active"
     assert audit[0].next_state == "paused"
-    assert asyncio.run(operations.legacy_state(
-        AsyncDb(db), "telegram",
-    )).state == "paused"
-    assert asyncio.run(operations.legacy_state(
-        AsyncDb(db), "bale",
-    )).state == "active"
     operations.change_state(
         db, bot_id=telegram.id, actor_id=1,
         expected_version=2, state="maintenance", reason="Planned maintenance",
     )
     db.commit()
-    assert db.get(ShopBotProfile, "telegram").maintenance_enabled is True
     operations.change_state(
         db, bot_id=telegram.id, actor_id=1,
         expected_version=3, state="active", reason="All checks passed",
     )
     db.commit()
-    assert db.get(ShopBotProfile, "telegram").maintenance_enabled is False
     assert db.get(ShopBotOperations, telegram.id).desired_state == "active"
 
 
-def test_only_legacy_can_be_activated_before_runtime_migration(db: Session):
+def test_draft_requires_active_receiver_before_activation(db: Session):
     """A verified draft is still offline and cannot start receiving updates."""
     bot = registry.register_bot(
         db, store_id=DEFAULT_STORE_ID, platform="telegram",
@@ -188,7 +179,7 @@ def test_only_legacy_can_be_activated_before_runtime_migration(db: Session):
 
 def test_optimistic_state_and_reason_enforcement(db: Session) -> None:
     """A stale request or undocumented disable must not change anything."""
-    bot = _legacy(db, "telegram")
+    bot = _active_bot(db, "telegram")
     db.commit()
     _reject(lambda: operations.change_state(
         db, bot_id=bot.id, actor_id=1, expected_version=1,
@@ -199,13 +190,13 @@ def test_optimistic_state_and_reason_enforcement(db: Session) -> None:
         state="maintenance", reason="Planned",
     ), "configuration_changed")
     assert bot.version == 1
-    assert db.get(ShopBotOperations, bot.id) is None
+    assert db.get(ShopBotOperations, bot.id).desired_state == "active"
 
 
 def test_per_bot_details_not_shared_across_platforms(db: Session) -> None:
     """Public bot copy, support and owner settings are scoped by bot UUID."""
-    telegram = _legacy(db, "telegram")
-    bale = _legacy(db, "bale")
+    telegram = _active_bot(db, "telegram")
+    bale = _active_bot(db, "bale")
     db.commit()
     operations.update_details(
         db, bot_id=telegram.id, actor_id=1,
@@ -218,7 +209,7 @@ def test_per_bot_details_not_shared_across_platforms(db: Session) -> None:
     first = db.get(ShopBotOperations, telegram.id)
     assert first.welcome_message == "Welcome Telegram"
     assert first.support_url == "https://example.org/support"
-    assert db.get(ShopBotOperations, bale.id) is None
+    assert db.get(ShopBotOperations, bale.id).desired_state == "active"
     _reject(lambda: operations.update_details(
         db, bot_id=bale.id, actor_id=1,
         expected_version=1, name="Bale Shop",
@@ -318,28 +309,24 @@ def test_provider_id_cannot_be_assigned_to_two_bots(db: Session):
     assert second.provider_bot_id is None
 
 
-def test_legacy_owner_can_verify_existing_env_credential(
-    db: Session, monkeypatch,
-):
-    """getMe for an existing bot only reads its secret from Deployment."""
-    bot = _legacy(db, "telegram")
-    monkeypatch.setenv("TOKEN", TOKEN_A)
+def test_active_credential_cannot_be_reverified_as_staged(db: Session):
+    """An active encrypted version cannot bypass staged credential review."""
+    bot = _active_bot(db, "telegram")
     db.commit()
 
-    async def legacy_me(platform: str, token: str):
-        """Return one deterministic real-provider-shaped identity."""
-        assert token == TOKEN_A
-        return verification.ProviderBotIdentity(1000800, "legacy_test")
+    async def must_not_probe(platform: str, token: str):
+        """Refuse any network request for a non-staged credential."""
+        raise AssertionError("Active credential must not reach getMe")
 
-    result = asyncio.run(verification.verify_bot(
-        AsyncDb(db), bot_id=bot.id, actor_id=1,
-        probe=legacy_me,
-    ))
-    assert result["runtime_activated"] is False
-    assert bot.provider_bot_id == 1000800
-    assert bot.status == "legacy"
+    with pytest.raises(security.SecurityRejected) as refused:
+        asyncio.run(verification.verify_bot(
+            AsyncDb(db), bot_id=bot.id, actor_id=1, version=1,
+            probe=must_not_probe,
+        ))
+    assert refused.value.code == "invalid_credential_state"
+    assert bot.status == "active"
     assert bot.credential_version == 1
-    assert bot.version == 2
+    assert bot.version == 1
 
 
 def test_revoked_token_can_be_staged_again_without_active_duplication(

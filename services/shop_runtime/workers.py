@@ -17,6 +17,7 @@ from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import ShopBot, ShopStore
 from models.shop_workflow_runtime import (
     PublishedWorkflow,
+    RuntimeBinding,
     RuntimeGate,
     RuntimeSlot,
     WorkflowActionJob,
@@ -41,6 +42,8 @@ from services.shop_runtime.contracts import TERMINAL, DeliveryRejected, RuntimeI
 from services.shop_runtime.publication import digest
 from services.shop_runtime.sessions import (
     InvalidStoredRun,
+    _SUPPORTED_ENTRY_KINDS,
+    _supported_binding,
     quarantine_run,
     action_budget,
     enabled,
@@ -60,7 +63,8 @@ def eligible_bots():
         select(ShopBot.id)
         .join(ShopStore, ShopStore.id == ShopBot.store_id)
         .where(
-            ShopBot.status.in_(("active", "legacy")),
+            ShopBot.status == "active",
+            ShopBot.runtime_owner == "registry",
             ShopStore.state == "active",
             ~select(ShopBotOperations.bot_id)
             .where(
@@ -96,11 +100,25 @@ def eligible_bots():
 
 def eligible_runs():
     """Project scheduling gates without using customer data as metric dimensions."""
-    return select(WorkflowRun.id).where(WorkflowRun.bot_id.in_(eligible_bots()))
+    return select(WorkflowRun.id).where(
+        WorkflowRun.bot_id.in_(eligible_bots()),
+        select(RuntimeBinding.id).where(
+            RuntimeBinding.id == WorkflowRun.binding_id,
+            RuntimeBinding.store_id == WorkflowRun.store_id,
+            RuntimeBinding.bot_id == WorkflowRun.bot_id,
+            RuntimeBinding.kind.in_(_SUPPORTED_ENTRY_KINDS),
+            RuntimeBinding.fallback == "ignore",
+        ).exists(),
+    )
 
 
 async def context_for(db, run):
-    """Re-resolve a currently authenticated Bot identity without provider secrets."""
+    """Recheck persisted entry authority and the current registered bot identity."""
+    binding = await db.scalar(select(RuntimeBinding).where(
+        RuntimeBinding.id == run.binding_id,
+    ).execution_options(populate_existing=True))
+    if not _supported_binding(binding, store_id=run.store_id, bot_id=run.bot_id):
+        raise security.SecurityRejected("runtime_entry_unavailable", 409)
     return await resolve_bot_context(
         db,
         authenticated_bot_id=run.bot_id,

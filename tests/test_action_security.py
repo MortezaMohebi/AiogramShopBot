@@ -7,28 +7,20 @@ import pytest_asyncio
 
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore
+from models.shop_multibot import DEFAULT_STORE_ID, ShopBot, ShopStore
 from models.shop_store_commerce import ShopStoreCustomer
 from services.shop_actions.context import customer_principal, refresh_principal
 from services.shop_actions.contracts import ActionRejected
 from services.shop_bot_context import resolve_bot_context
 from tests.test_shared_cart import db
+from tests.schema_support import TEST_BOT_IDS, seed_customer
 
 
 @pytest_asyncio.fixture
 async def buyer(db):
     """Bind an existing identity without invoking enrollment or a real provider."""
-    customer = ShopStoreCustomer(store_id=DEFAULT_STORE_ID, display_name="QA buyer")
-    db.add(customer)
-    await db.flush()
-    identity = ShopIdentity(
-        store_id=DEFAULT_STORE_ID,
-        customer_id=customer.id,
-        bot_id=LEGACY_BOT_IDS["telegram"],
-        platform="telegram",
-        platform_user_id=101,
-    )
-    db.add(identity)
+    identity = seed_customer(db.session, "telegram", 101)
+    (await db.get(ShopStoreCustomer, identity.customer_id)).display_name = "QA buyer"
     await db.commit()
     bot = await resolve_bot_context(
         db,
@@ -123,10 +115,10 @@ async def test_inactive_store_is_denied(buyer):
 @pytest.mark.parametrize(
     "key", ["support.create_request", "order.list_customer_orders"]
 )
-async def test_legacy_operational_gate_applies_to_every_action_category(
+async def test_registry_operational_gate_applies_to_every_action_category(
     buyer, state, key
 ):
-    """The legacy disable switch must also block non-catalog reads and writes."""
+    """The Registry disable switch also blocks non-catalog reads and writes."""
     from uuid import uuid4
     from sqlalchemy import func, select
     from models.shop_action import ShopActionExecution

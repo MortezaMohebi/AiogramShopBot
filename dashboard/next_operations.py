@@ -19,8 +19,6 @@ from starlette.datastructures import UploadFile
 from starlette.responses import FileResponse
 
 import config
-from channels.contracts import Platform
-from channels.bale import BaleTransport, BaleApiError
 from dashboard.media_storage import (
     UnsupportedMediaError,
     safe_media_path,
@@ -30,7 +28,7 @@ from dashboard.next_api import (
     Db, Staff, admin_store_context, campaign_for_store,
     order_payment_data, require_staff, require_store_access,
 )
-from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_multibot import ShopBot
 from models.shop_content import Product, ProductMedia, Testimonial, ShopIdentity
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignMedia, ShopReferralPolicy, ShopWalletAccount,
@@ -514,12 +512,32 @@ async def delete_campaign_media(
     return {"deleted": True}
 
 
+@router.get("/wallets/identities")
+async def wallet_identity_options(staff: Staff, session: Db) -> list[dict]:
+    """Offer current-Store identities, including customers without a wallet."""
+    member = require_staff(staff, "finance")
+    scope = admin_store_context(member)
+    rows = (await session.execute(select(
+        ShopIdentity.id, ShopIdentity.platform, ShopIdentity.platform_user_id,
+        ShopBot.name,
+    ).join(ShopBot, ShopBot.id == ShopIdentity.bot_id).where(
+        ShopIdentity.store_id == scope.current_store_id,
+        ShopBot.store_id == ShopIdentity.store_id,
+        ShopBot.platform == ShopIdentity.platform,
+        ShopBot.runtime_owner == "registry",
+    ).order_by(ShopIdentity.id.desc()).limit(300))).all()
+    return [
+        {"id": identity_id, "platform": platform, "user_id": str(user_id),
+         "bot_name": bot_name}
+        for identity_id, platform, user_id, bot_name in rows
+    ]
+
+
 class WalletAdjustment(BaseModel):
     """Validated, idempotent shop credit adjustment, never Bale balance."""
 
     model_config = ConfigDict(extra="forbid")
-    platform: Platform
-    user_id: int = Field(gt=0)
+    identity_id: int = Field(gt=0)
     amount_irr: int = Field(gt=0)
     direction: str = Field(pattern="^(credit|debit)$")
     reason: str = Field(min_length=12, max_length=200)
@@ -533,20 +551,28 @@ async def wallet_adjust(
 ) -> dict:
     """Apply a reviewable manual ledger operation under the existing cap."""
     operator = require_staff(staff, "finance")
-    if not (await get_features(session, payload.platform.value)).store_credit_enabled:
-        raise HTTPException(
-            status_code=409, detail="Store credit is disabled for provider",
-        )
     ceiling = config.SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR
     if ceiling <= 0:
         raise HTTPException(status_code=409, detail="Manual credit adjustment disabled")
     if payload.confirmation != "CREDIT_CONFIRMED" or payload.amount_irr > ceiling:
         raise HTTPException(status_code=422, detail="Confirmation or amount invalid")
-    identity = await ShopWalletService.find_identity(
-        session, payload.platform, payload.user_id
-    )
+    scope = admin_store_context(operator)
+    identity = await session.scalar(select(ShopIdentity).join(
+        ShopBot, ShopBot.id == ShopIdentity.bot_id,
+    ).where(
+        ShopIdentity.id == payload.identity_id,
+        ShopIdentity.store_id == scope.current_store_id,
+        ShopBot.store_id == ShopIdentity.store_id,
+        ShopBot.platform == ShopIdentity.platform,
+        ShopBot.runtime_owner == "registry",
+    ).with_for_update())
     if identity is None:
         raise HTTPException(status_code=404, detail="Customer not found")
+    require_store_access(scope, identity.store_id, write=True)
+    if not (await get_features(
+        session, identity.platform, bot_id=identity.bot_id,
+    )).store_credit_enabled:
+        raise HTTPException(status_code=409, detail="Store credit is disabled for bot")
     delta = payload.amount_irr if payload.direction == "credit" else -payload.amount_irr
     try:
         entry, created = await ShopWalletService.apply(
@@ -611,7 +637,6 @@ async def resolve_refund(
         await resolve_admin_refund(
             session, scope=admin_store_context(operator), case_id=case_id,
             action=payload.action, provider_reference=payload.provider_reference,
-            legacy_telegram_bot=getattr(request.app.state, "telegram_bot", None),
         )
     except SecurityRejected as exc:
         raise HTTPException(status_code=exc.status, detail=exc.code) from None
@@ -799,65 +824,3 @@ async def review_unpaid_order(
     order.status = new_status
     await session.commit()
     return {"id": order.id, "status": new_status}
-
-
-class BaleMediaPrepareDecision(BaseModel):
-    """Require a deliberate operator action before seeding Bale file IDs."""
-
-    model_config = ConfigDict(extra="forbid")
-    confirmation: str
-
-
-@router.post("/broadcast/prepare/{campaign_id}")
-async def prepare_bale_broadcast_media(
-    campaign_id: int,
-    payload: BaleMediaPrepareDecision,
-    request: Request,
-    staff: Staff,
-    session: Db,
-) -> dict:
-    """Use only the normal Bale Bot API and the configured private seed chat.
-
-    This never starts, pays for, or sends the campaign to customers. Any
-    uncertain seed result is surfaced to the operator rather than retried.
-    """
-    require_staff(staff, "marketing")
-    if payload.confirmation != "PREPARE_BALE_MEDIA":
-        raise HTTPException(status_code=422, detail="Confirmation required")
-    if not config.BALE_BOT_TOKEN or config.BALE_BROADCAST_PREPARE_CHAT_ID <= 0:
-        raise HTTPException(
-            status_code=409, detail="Private Bale seed chat is not configured"
-        )
-
-    campaign = await campaign_for_store(
-        session, campaign_id, write=True, lock=True,
-    )
-    if campaign.bot_id is not None or campaign.store_id != DEFAULT_STORE_ID:
-        raise HTTPException(
-            status_code=409,
-            detail="Registry campaigns require per-bot media preparation",
-        )
-    if campaign.status not in ("draft", "approved"):
-        raise HTTPException(status_code=409, detail="Campaign cannot be prepared")
-    try:
-        attachments = await ShopCampaignService._attachments(session, campaign)
-    except CampaignRejected as error:
-        raise HTTPException(status_code=409, detail=str(error)) from None
-    if not attachments:
-        raise HTTPException(status_code=409, detail="Campaign has no media")
-
-    client = getattr(request.app.state, "bale_http_client", None)
-    if client is None:
-        raise HTTPException(status_code=503, detail="Bale API client unavailable")
-    standard_api = BaleTransport(config.BALE_BOT_TOKEN, client)
-    try:
-        for attachment in attachments:
-            await standard_api.send_media(
-                config.BALE_BROADCAST_PREPARE_CHAT_ID, attachment
-            )
-    except BaleApiError:
-        raise HTTPException(
-            status_code=502,
-            detail="Media preparation requires provider reconciliation",
-        ) from None
-    return {"ok": True, "prepared": len(attachments)}

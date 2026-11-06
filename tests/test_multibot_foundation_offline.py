@@ -7,7 +7,7 @@ are executed.
 
 from __future__ import annotations
 
-from tests.schema_support import create_shop_schema
+from tests.schema_support import TEST_BOT_IDS, create_shop_schema
 
 import asyncio
 from uuid import NAMESPACE_URL, uuid5
@@ -23,7 +23,6 @@ from models.shop_admin_control import AdminEvent
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
     DEFAULT_STORE_ID,
-    LEGACY_BOT_IDS,
     ShopBot,
     ShopBotCredential,
     ShopBotRegistryEvent,
@@ -36,7 +35,6 @@ from services import shop_bot_secrets as vault
 from services.shop_bot_context import (
     BotContext,
     resolve_bot_context,
-    resolve_legacy_bot_context,
 )
 
 FAKE_TELEGRAM_TOKEN = "12345678:" + "A" * 35
@@ -90,16 +88,13 @@ def expect_code(action, code: str) -> None:
     assert failure.value.code == code
 
 
-def test_legacy_ids_are_stable_across_migrations() -> None:
-    """Use fixed UUIDs so old bots have immutable noncolliding identities."""
+def test_default_store_identity_is_stable_without_implicit_bots(db: Session) -> None:
+    """Store initialization never synthesizes provider-owned bot records."""
     assert DEFAULT_STORE_ID == str(uuid5(
         NAMESPACE_URL, "aiogramshopbot:store:default:v1",
     ))
-    for platform in ("telegram", "bale"):
-        assert LEGACY_BOT_IDS[platform] == str(uuid5(
-            NAMESPACE_URL, f"aiogramshopbot:bot:legacy:{platform}:v1",
-        ))
-    assert LEGACY_BOT_IDS["telegram"] != LEGACY_BOT_IDS["bale"]
+    assert db.scalars(select(ShopBot)).all() == []
+    assert db.scalars(select(ShopBotCredential)).all() == []
 
 
 def test_new_store_and_bot_are_not_live(db: Session) -> None:
@@ -120,7 +115,6 @@ def test_new_store_and_bot_are_not_live(db: Session) -> None:
     assert db.scalars(select(ShopBotCredential)).all() == []
     snapshot = registry.registry_snapshot(db, store_id=second.id)
     assert snapshot["bots"][0]["id"] == bot.id
-    assert snapshot["runtime_migration_complete"] is False
     expect_code(
         lambda: registry.register_bot(
             db, store_id=second.id, platform="bale",
@@ -224,13 +218,15 @@ def test_invalid_token_and_missing_key_fail_closed(db: Session, monkeypatch) -> 
     )
 
 
-def test_legacy_environment_tokens_are_not_copied(db: Session, monkeypatch) -> None:
-    """Read original credentials only through the fixed legacy key binding."""
+def test_environment_credentials_cannot_supply_registry_tokens(
+    db: Session, monkeypatch,
+) -> None:
+    """Historical environment receipts cannot bypass encrypted bot storage."""
     monkeypatch.setenv("TOKEN", FAKE_TELEGRAM_TOKEN)
     bot = ShopBot(
-        id=LEGACY_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
-        slug="legacy-telegram", name="Existing Bot",
-        platform="telegram", status="legacy", runtime_owner="legacy",
+        id=TEST_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
+        slug="registry-telegram", name="Registered Bot",
+        platform="telegram", status="active", runtime_owner="registry",
         version=1, credential_version=1,
     )
     db.add(bot)
@@ -241,26 +237,51 @@ def test_legacy_environment_tokens_are_not_copied(db: Session, monkeypatch) -> N
         environment_key="TOKEN",
     ))
     db.commit()
-    assert vault.resolve_active_token(db, bot_id=bot.id) == FAKE_TELEGRAM_TOKEN
+    expect_code(
+        lambda: vault.resolve_active_token(db, bot_id=bot.id),
+        "bot_secret_unavailable",
+    )
     assert all(
         row.ciphertext is None for row in db.scalars(
             select(ShopBotCredential)
         ).all()
     )
+
+
+def test_historical_bot_owner_cannot_resolve_or_stage_credentials(db: Session) -> None:
+    """Preserved FK owners remain unreachable from Registry runtime services."""
+    bot = ShopBot(
+        id=TEST_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
+        slug="historical-telegram", name="Historical Owner",
+        platform="telegram", status="legacy", runtime_owner="legacy",
+        version=1, credential_version=1,
+    )
+    db.add(bot)
+    db.commit()
+    expect_code(
+        lambda: vault.resolve_active_token(db, bot_id=bot.id),
+        "bot_not_active",
+    )
     expect_code(
         lambda: vault.stage_bot_token(
             db, bot_id=bot.id, token=FAKE_TELEGRAM_TOKEN_2, actor_id=1,
         ),
-        "legacy_bot_credential_locked",
+        "invalid_bot_runtime",
     )
+    with pytest.raises(security.SecurityRejected) as failure:
+        asyncio.run(resolve_bot_context(
+            AsyncDbAdapter(db), authenticated_bot_id=bot.id,
+            authenticated_platform=Platform.TELEGRAM,
+        ))
+    assert failure.value.code == "bot_not_active"
 
 
 def test_bot_context_is_scoped_and_does_not_carry_token(db: Session) -> None:
-    """Two bots and their users never share an implicit owner key."""
+    """Two registry bots never share an implicit owner key or credential."""
     first = ShopBot(
-        id=LEGACY_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
-        slug="legacy-telegram", name="Legacy Telegram",
-        platform="telegram", status="legacy", runtime_owner="legacy",
+        id=TEST_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
+        slug="registry-telegram", name="Registered Telegram",
+        platform="telegram", status="active", runtime_owner="registry",
         version=1, credential_version=1,
     )
     second = registry.register_bot(
@@ -270,8 +291,9 @@ def test_bot_context_is_scoped_and_does_not_carry_token(db: Session) -> None:
     db.add(first)
     db.commit()
     adapter = AsyncDbAdapter(db)
-    context = asyncio.run(resolve_legacy_bot_context(
-        adapter, authenticated_platform=Platform.TELEGRAM,
+    context = asyncio.run(resolve_bot_context(
+        adapter, authenticated_bot_id=first.id,
+        authenticated_platform=Platform.TELEGRAM,
     ))
     assert isinstance(context, BotContext)
     assert context.bot_id == first.id
@@ -294,18 +316,36 @@ def test_bot_context_is_scoped_and_does_not_carry_token(db: Session) -> None:
 
 
 def test_paused_store_never_exposes_live_bot(db: Session) -> None:
-    """Disabling a store prevents otherwise valid bot dispatch context."""
+    """Disabling a Store prevents otherwise valid Registry bot dispatch."""
     bot = ShopBot(
-        id=LEGACY_BOT_IDS["bale"], store_id=DEFAULT_STORE_ID,
-        slug="legacy-bale", name="Existing Bale",
-        platform="bale", status="legacy", runtime_owner="legacy",
+        id=TEST_BOT_IDS["bale"], store_id=DEFAULT_STORE_ID,
+        slug="registered-bale", name="Registered Bale",
+        platform="bale", status="active", runtime_owner="registry",
         version=1, credential_version=1,
     )
     db.add(bot)
     db.get(ShopStore, DEFAULT_STORE_ID).state = "paused"
     db.commit()
     with pytest.raises(security.SecurityRejected) as failure:
-        asyncio.run(resolve_legacy_bot_context(
-            AsyncDbAdapter(db), authenticated_platform=Platform.BALE,
+        asyncio.run(resolve_bot_context(
+            AsyncDbAdapter(db), authenticated_bot_id=bot.id,
+            authenticated_platform=Platform.BALE,
         ))
     assert failure.value.code == "store_not_active"
+
+
+def test_registry_creation_defaults_to_current_store_instead_of_global_default(db):
+    """A Store switch must not submit new bots to an inactive default Store."""
+    from services.shop_store_context import AuthorizedStore, StoreContext, bind_context
+
+    selected = registry.create_store(db, slug="selected-store", name="Selected", actor_id=1)
+    db.commit()
+    stores = tuple(AuthorizedStore(id=row.id, slug=row.slug, name=row.name,
+                                   state=row.state, access_level="manager")
+                   for row in db.scalars(select(ShopStore)).all())
+    context = StoreContext(staff_id=1, session_id="qa-selection", allowed_stores=stores,
+                           active_store_ids=(selected.id,), current_store_id=selected.id,
+                           default_store_id=DEFAULT_STORE_ID, version=1)
+    with bind_context(context):
+        result = registry.registry_snapshot(db)
+    assert result["default_store_id"] == selected.id

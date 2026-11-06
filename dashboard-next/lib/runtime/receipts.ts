@@ -11,7 +11,7 @@ export interface RuntimeMutationIntent {
   context: Readonly<RuntimeMutationContext>;
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const kinds = ["command", "menu", "start", "internal", "legacy_bridge", "admin_test"];
+const kinds = ["command", "menu", "start", "internal", "admin_test"];
 const runStates = ["active", "waiting_input", "waiting_action", "waiting_approval", "waiting_timeout", "completed", "cancelled", "failed", "expired", "suspended"];
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -66,10 +66,10 @@ function binding(value: unknown): Record<string, unknown> | null {
   const result = {
     bot_id: value.bot_id.toLowerCase(), kind: value.kind, key: value.key, node_id: value.node_id,
     priority: value.priority === undefined ? 0 : value.priority, enabled: value.enabled === undefined ? true : value.enabled,
-    eligibility: value.eligibility === undefined ? "all" : value.eligibility, fallback: value.fallback === undefined ? "legacy" : value.fallback,
+    eligibility: value.eligibility === undefined ? "all" : value.eligibility, fallback: value.fallback === undefined ? "ignore" : value.fallback,
     version_policy: value.version_policy === undefined ? "active_publication" : value.version_policy,
   };
-  return integer(result.priority) && result.priority <= 100 && typeof result.enabled === "boolean" && ["all", "existing_customer"].includes(result.eligibility as string) && ["legacy", "ignore"].includes(result.fallback as string) && result.version_policy === "active_publication" ? result : null;
+  return integer(result.priority) && result.priority <= 100 && typeof result.enabled === "boolean" && ["all", "existing_customer"].includes(result.eligibility as string) && ["ignore"].includes(result.fallback as string) && result.version_policy === "active_publication" ? result : null;
 }
 function pointer(value: unknown): value is Record<string, unknown> {
   return object(value) && id(value.id) && id(value.bot_id) && id(value.publication_id) && text(value.node_id, 64) && integer(value.version, 1) && typeof value.kind === "string" && kinds.includes(value.kind) && typeof value.key === "string" && /^[a-z][a-z0-9_-]{0,63}$/.test(value.key) && typeof value.enabled === "boolean";

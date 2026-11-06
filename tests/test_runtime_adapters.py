@@ -12,7 +12,8 @@ from sqlalchemy import func, select
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import Platform
 from channels.telegram import TelegramTransport
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS
+from models.shop_multibot import DEFAULT_STORE_ID
+from tests.schema_support import TEST_BOT_IDS, seed_customer
 from models.shop_workflow_runtime import WorkflowUpload
 from services.shop_bot_context import BotContext
 from services.shop_runtime import adapters
@@ -26,12 +27,12 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"verified fixture" * 4
 def context(platform="telegram"):
     """Represent an identity already authenticated by a receiver."""
     return BotContext(
-        bot_id=LEGACY_BOT_IDS[platform],
+        bot_id=TEST_BOT_IDS[platform],
         store_id=DEFAULT_STORE_ID,
         platform=Platform(platform),
         provider_bot_id=100,
-        status="legacy",
-        runtime_owner="legacy",
+        status="active",
+        runtime_owner="registry",
         credential_version=1,
         registry_version=1,
     )
@@ -564,14 +565,8 @@ async def test_verify_upload_uses_bale_client_and_identical_customer_scope(buyer
     from services.shop_bot_context import resolve_bot_context
 
     db, principal = buyer
-    identity = ShopIdentity(
-        store_id=principal.store_id,
-        customer_id=principal.customer_id,
-        bot_id=LEGACY_BOT_IDS["bale"],
-        platform="bale",
-        platform_user_id=101,
-    )
-    db.add(identity)
+    identity = seed_customer(db.session, "bale", 101)
+    identity.customer_id = principal.customer_id
     await db.commit()
     bot = await resolve_bot_context(
         db, authenticated_bot_id=identity.bot_id, authenticated_platform=Platform.BALE
@@ -591,7 +586,7 @@ async def test_verify_upload_uses_bale_client_and_identical_customer_scope(buyer
         bot_id=bot.bot_id, download_runtime=AsyncMock(return_value=PNG)
     )
     handle = await adapters.verify_upload(db, bot, event, scoped, client=client)
-    assert (await db.get(WorkflowUpload, handle)).bot_id == LEGACY_BOT_IDS["bale"]
+    assert (await db.get(WorkflowUpload, handle)).bot_id == TEST_BOT_IDS["bale"]
     client.download_runtime.assert_awaited_once_with("bale_png", max_bytes=len(PNG))
 
 

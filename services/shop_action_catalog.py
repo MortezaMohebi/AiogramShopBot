@@ -28,7 +28,7 @@ async def environment(db, *, scope, actor, store_id=None, bot_id=None, platform=
     bot, features, operations = None, None, None
     if bot_id is not None:
         bot = await db.scalar(
-            select(ShopBot).where(ShopBot.id == bot_id, ShopBot.store_id == owner)
+            select(ShopBot).where(ShopBot.id == bot_id, ShopBot.store_id == owner, ShopBot.runtime_owner == "registry")
         )
         if bot is None:
             raise security.SecurityRejected("action_bot_unavailable", 404)
@@ -50,7 +50,7 @@ def contextual_view(descriptor, env, actor) -> dict:
     if bot is None:
         reasons.append("action_bot_required")
     else:
-        active = (bot.runtime_owner == "legacy" and bot.status == "legacy") or (
+        active = (
             bot.runtime_owner == "registry"
             and bot.status == "active"
             and bot.credential_version is not None
@@ -261,7 +261,6 @@ async def workflow_report(db, *, scope, actor, store_id, definition):
     Findings aggregate by node/platform/reason so output cannot grow per Bot.
     """
     from sqlalchemy import func
-    from models.shop_channel_features import ShopChannelFeature
     from models.shop_store_commerce import ShopBotCommercePolicy
     from services.shop_actions.definitions import definition as lookup
     from services.shop_workflow_validation import validate_definition
@@ -277,13 +276,11 @@ async def workflow_report(db, *, scope, actor, store_id, definition):
         ShopBot.credential_version.is_(None),
         ShopBotOperations.desired_state,
         ShopBotCommercePolicy.cart_enabled,
-        ShopChannelFeature.cart_enabled,
     )
     query = (
         select(func.min(ShopBot.id))
         .outerjoin(ShopBotOperations, ShopBotOperations.bot_id == ShopBot.id)
         .outerjoin(ShopBotCommercePolicy, ShopBotCommercePolicy.bot_id == ShopBot.id)
-        .outerjoin(ShopChannelFeature, ShopChannelFeature.platform == ShopBot.platform)
         .where(
             ShopBot.store_id == store_id,
             ShopBot.platform.in_(definition.target_platforms),
@@ -292,7 +289,7 @@ async def workflow_report(db, *, scope, actor, store_id, definition):
     if definition.assignment.mode == "selected":
         query = query.where(ShopBot.id.in_(definition.assignment.bot_ids))
     else:
-        query = query.where(ShopBot.status.in_(("active", "legacy")))
+        query = query.where(ShopBot.status == "active")
     samples = (await db.scalars(query.group_by(*groups))).all()
     environments = [
         await environment(

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint,
+    CheckConstraint, DateTime, ForeignKey, String,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,29 +46,6 @@ class ShopCustomerLinkRequest(Base):
     )
 
 
-class ShopCustomerIdentityLink(Base):
-    """An approved relation only; balances and orders remain provider-scoped."""
-
-    __tablename__ = "shop_customer_identity_links"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    source_id: Mapped[int] = mapped_column(
-        ForeignKey("shop_identities.id", ondelete="CASCADE"),
-        nullable=False, unique=True,
-    )
-    target_id: Mapped[int] = mapped_column(
-        ForeignKey("shop_identities.id", ondelete="CASCADE"),
-        nullable=False, unique=True,
-    )
-    approved_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-    )
-    __table_args__ = (
-        CheckConstraint("source_id != target_id", name="ck_customer_link_distinct"),
-    )
-
-
 CUSTOMER_LINK_TABLES = frozenset({
     ShopCustomerLinkRequest.__tablename__,
-    ShopCustomerIdentityLink.__tablename__,
 })

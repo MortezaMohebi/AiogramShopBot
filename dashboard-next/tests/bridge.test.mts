@@ -135,7 +135,7 @@ test("explicit JSON request deadline aborts the transport and never retries", as
       }, { once: true });
     });
   });
-  await assert.rejects(bridge.bridgeFetch("/bot-connections/probe", "GET", null, identity, 5), hasStatus(504));
+  await assert.rejects(bridge.bridgeFetch("/bot-registry/20000000-0000-4000-8000-000000000001", "GET", null, identity, 5), hasStatus(504));
   assert.equal(count, 1);
 });
 

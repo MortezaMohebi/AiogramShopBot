@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 
 
@@ -25,7 +27,6 @@ def require_isolated_lab() -> None:
         "POSTGRES_DB": database_name,
         "POSTGRES_USER": database_user,
         "DB_HOST": "postgres",
-        "WEBHOOK_HOST": "https://disabled.invalid",
         "NEXT_ADMIN_BRIDGE_ENABLED": "true",
         "SHOP_CAMPAIGN_DISPATCH_ENABLED": "false",
         "SHOP_BROADCAST_WORKER_ENABLED": "false",
@@ -34,9 +35,7 @@ def require_isolated_lab() -> None:
         "TELEGRAM_STARS_CHECKOUT_ENABLED": "false",
         "TELEGRAM_FIAT_CHECKOUT_ENABLED": "false",
         "BALE_WALLET_CHECKOUT_ENABLED": "false",
-        "CRYPTO_FORWARDING_MODE": "false",
         "SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR": "0",
-        "BALE_BROADCAST_PREPARE_CHAT_ID": "0",
     }
     for name, expected in required.items():
         if os.environ.get(name) != expected:
@@ -58,6 +57,9 @@ def require_isolated_lab() -> None:
 
     forbidden = (
         "TOKEN",
+        "TELEGRAM_BOT_TOKEN",
+        "LIVE_TELEGRAM_TOKEN",
+        "LIVE_BALE_TOKEN",
         "BALE_BOT_TOKEN",
         "BALE_WALLET_PROVIDER_TOKEN",
         "TELEGRAM_FIAT_PROVIDER_TOKEN",
@@ -74,5 +76,13 @@ def require_isolated_lab() -> None:
     if len(os.environ.get("NEXT_ADMIN_BRIDGE_SECRET", "")) < 32:
         raise RuntimeError("The test bridge must use a strong unique key.")
 
-    if len(os.environ.get("JWT_SECRET_KEY", "")) < 32:
-        raise RuntimeError("The admin test secret is missing.")
+
+    try:
+        encryption_key = base64.b64decode(
+            os.environ.get("SHOP_SECURITY_ENCRYPTION_KEY", ""),
+            altchars=b"-_", validate=True,
+        )
+    except (ValueError, binascii.Error) as error:
+        raise RuntimeError("The test encryption key is invalid.") from error
+    if len(encryption_key) != 32:
+        raise RuntimeError("The test encryption key is missing or invalid.")

@@ -1,0 +1,199 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.27kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.codespaces
+#2 transferring dockerfile: 1.24kB 0.0s done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/node:22-alpine
+#3 ...
+
+#4 [auth] library/node:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:22-alpine
+#3 DONE 1.0s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 101B 0.0s done
+#5 DONE 0.1s
+
+#6 [deps 1/5] FROM docker.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
+#6 resolve docker.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 0.1s done
+#6 DONE 0.1s
+
+#7 [internal] load build context
+#7 transferring context: 103.69kB 0.6s done
+#7 DONE 0.7s
+
+#8 [deps 3/5] COPY package*.json ./
+#8 CACHED
+
+#9 [deps 4/5] COPY scripts/patch-next-themes.mjs ./scripts/patch-next-themes.mjs
+#9 CACHED
+
+#10 [deps 5/5] RUN npm ci --no-audit --no-fund
+#10 CACHED
+
+#11 [deps 2/5] WORKDIR /app
+#11 CACHED
+
+#12 [build 3/7] COPY --from=deps /app/node_modules ./node_modules
+#12 CACHED
+
+#13 [build 4/7] COPY . .
+#13 DONE 1.8s
+
+#14 [build 5/7] RUN npm run typecheck
+#14 4.581
+#14 4.581 > dual-messenger-shop-admin@0.1.0 typecheck
+#14 4.581 > tsc --noEmit
+#14 4.581
+#14 32.58 npm notice
+#14 32.58 npm notice New major version of npm available! 10.9.9 -> 12.2.2
+#14 32.58 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+#14 32.58 npm notice To update run: npm install -g npm@12.2.2
+#14 32.58 npm notice
+#14 DONE 32.7s
+
+#15 [build 6/7] RUN npm run lint
+#15 0.522
+#15 0.522 > dual-messenger-shop-admin@0.1.0 lint
+#15 0.522 > eslint .
+#15 0.522
+#15 DONE 39.9s
+
+#16 [build 7/7] RUN npm run build
+#16 0.789
+#16 0.789 > dual-messenger-shop-admin@0.1.0 build
+#16 0.789 > next build
+#16 0.789
+#16 2.740 ▲ Next.js 16.4.3 (Turbopack)
+#16 3.319 ✓ Running next.config.ts took 575ms
+#16 3.359 - Experiments (use with caution):
+#16 3.359   · serverActions
+#16 3.359
+#16 3.564   Creating an optimized production build ...
+#16 26.85 ✓ Compiled successfully in 23.3s
+#16 26.93   Running TypeScript ...
+#16 48.54   Finished TypeScript in 21.6s ...
+#16 48.55   Collecting page data using 1 worker ...
+#16 50.10   Generating static pages using 1 worker (0/48) ...
+#16 50.59   Generating static pages using 1 worker (12/48)
+#16 50.67   Generating static pages using 1 worker (24/48)
+#16 50.75   Generating static pages using 1 worker (36/48)
+#16 50.84 ✓ Generating static pages using 1 worker (48/48) in 739ms
+#16 50.84   Finalizing page optimization ...
+#16 51.64
+#16 51.65 Route (app)
+#16 51.65 ┌ ○ /
+#16 51.65 ├ ○ /_not-found
+#16 51.65 ├ ƒ /account
+#16 51.65 ├ ƒ /account/mcp
+#16 51.65 ├ ○ /activate
+#16 51.65 ├ ƒ /api/account/[action]
+#16 51.65 ├ ƒ /api/admin/actions/[[...path]]
+#16 51.65 ├ ƒ /api/admin/categories
+#16 51.65 ├ ƒ /api/admin/customers/[id]/export
+#16 51.65 ├ ƒ /api/admin/data-models/[model]/[action]
+#16 51.65 ├ ƒ /api/admin/data-models/[model]/import
+#16 51.65 ├ ƒ /api/admin/digital-assets/[id]
+#16 51.65 ├ ƒ /api/admin/mcp/[[...path]]
+#16 51.65 ├ ƒ /api/admin/preview/[kind]/[id]
+#16 51.65 ├ ƒ /api/admin/product-media/[id]
+#16 51.65 ├ ƒ /api/admin/products
+#16 51.65 ├ ƒ /api/admin/shop-settings
+#16 51.65 ├ ƒ /api/admin/upload
+#16 51.65 ├ ƒ /api/admin/workflow-runtime/[[...path]]
+#16 51.65 ├ ƒ /api/admin/workflows/[[...path]]
+#16 51.65 ├ ƒ /api/auth/challenge
+#16 51.65 ├ ƒ /api/auth/login
+#16 51.65 ├ ƒ /api/auth/logout
+#16 51.65 ├ ƒ /api/auth/redeem
+#16 51.65 ├ ƒ /audit
+#16 51.65 ├ ƒ /bots
+#16 51.65 ├ ƒ /bots/[id]
+#16 51.65 ├ ƒ /campaigns
+#16 51.65 ├ ƒ /campaigns/[id]
+#16 51.65 ├ ƒ /campaigns/new
+#16 51.65 ├ ƒ /categories
+#16 51.65 ├ ƒ /coupons
+#16 51.65 ├ ƒ /customer-notifications
+#16 51.65 ├ ƒ /customers
+#16 51.65 ├ ƒ /customers/[id]
+#16 51.65 ├ ƒ /customers/retention
+#16 51.65 ├ ƒ /dashboard
+#16 51.65 ├ ƒ /data-models/[model]
+#16 51.65 ├ ƒ /digital-deliveries
+#16 51.65 ├ ƒ /finance
+#16 51.65 ├ ƒ /fulfillments
+#16 51.65 ├ ƒ /login
+#16 51.65 ├ ƒ /media
+#16 51.65 ├ ƒ /orders
+#16 51.65 ├ ƒ /payment-accounts
+#16 51.65 ├ ƒ /permissions
+#16 51.65 ├ ƒ /products
+#16 51.65 ├ ƒ /products/[id]/digital
+#16 51.65 ├ ƒ /products/[id]/edit
+#16 51.65 ├ ƒ /products/new
+#16 51.65 ├ ƒ /relay-workers
+#16 51.65 ├ ƒ /reports
+#16 51.65 ├ ƒ /reviews
+#16 51.65 ├ ƒ /settings
+#16 51.65 ├ ƒ /shipping
+#16 51.65 ├ ƒ /staff
+#16 51.65 ├ ƒ /staff/[id]/stores
+#16 51.65 ├ ƒ /store-customers
+#16 51.65 ├ ƒ /store-customers/[id]
+#16 51.65 ├ ƒ /stores
+#16 51.65 ├ ƒ /studio/actions
+#16 51.65 ├ ƒ /studio/mcp
+#16 51.65 ├ ƒ /studio/runtime
+#16 51.65 ├ ƒ /studio/runtime/runs/[id]
+#16 51.65 ├ ƒ /studio/workflows
+#16 51.65 ├ ƒ /studio/workflows/[id]
+#16 51.65 ├ ƒ /studio/workflows/[id]/preview
+#16 51.65 ├ ƒ /studio/workflows/[id]/settings
+#16 51.65 ├ ƒ /studio/workflows/[id]/versions
+#16 51.65 ├ ƒ /studio/workflows/new
+#16 51.65 ├ ƒ /support-tickets
+#16 51.65 ├ ƒ /support-tickets/[id]
+#16 51.65 └ ƒ /uoms
+#16 51.65
+#16 51.65
+#16 51.65 ƒ Proxy (Middleware)
+#16 51.65
+#16 51.65 ○  (Static)   prerendered as static content
+#16 51.65 ƒ  (Dynamic)  server-rendered on demand
+#16 51.65
+#16 DONE 53.2s
+
+#17 [runner 3/6] RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+#17 CACHED
+
+#18 [runner 4/6] COPY --from=build --chown=nextjs:nextjs /app/.next/standalone ./
+#18 DONE 2.1s
+
+#19 [runner 5/6] COPY --from=build --chown=nextjs:nextjs /app/.next/static ./.next/static
+#19 DONE 0.2s
+
+#20 [runner 6/6] COPY --from=build --chown=nextjs:nextjs /app/THIRD_PARTY_NOTICES.txt ./THIRD_PARTY_NOTICES.txt
+#20 DONE 0.2s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 3.6s done
+#21 exporting manifest sha256:13529aeec16b52bbb7fb557113273b6c3e8987cb13afd6de72a8c7801dffa99d 0.0s done
+#21 exporting config sha256:337e09e2bb606aaafad8d32abc47866967e722f5cfab0374fa69f76bdee114e5 0.0s done
+#21 exporting attestation manifest sha256:b06b48285604c0de101276b9c8a14e64d5e6d66e2764577b734728ba1d4576a5
+#21 exporting attestation manifest sha256:b06b48285604c0de101276b9c8a14e64d5e6d66e2764577b734728ba1d4576a5 0.1s done
+#21 exporting manifest list sha256:c9601b4cc1ad78f4205fc734ad61fe00f8de257b4d8384a835257fbd84e59d75 0.0s done
+#21 naming to docker.io/library/aiogram-registry-dashboard:current 0.0s done
+#21 unpacking to docker.io/library/aiogram-registry-dashboard:current
+#21 unpacking to docker.io/library/aiogram-registry-dashboard:current 2.2s done
+#21 DONE 6.2s
+
+#22 resolving provenance for metadata file
+#22 DONE 0.1s
+ aiogram-registry-dashboard:current  Built

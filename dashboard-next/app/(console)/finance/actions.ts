@@ -10,15 +10,13 @@ function text(form: FormData, field: string): string {
 
 /** Adjust only merchant store-credit using a durable per-form idempotency key. */
 export async function adjustWallet(form: FormData) {
-  const platform = text(form, "platform");
   const direction = text(form, "direction");
-  const userId = text(form, "user_id");
+  const identityId = text(form, "identity_id");
   const amount = text(form, "amount_irr");
   const key = text(form, "operation_id");
   if (
-    !["telegram", "bale"].includes(platform) ||
     !["credit", "debit"].includes(direction) ||
-    !/^[1-9]\d*$/.test(userId) ||
+    !/^[1-9]\d*$/.test(identityId) ||
     !/^[1-9]\d*$/.test(amount) ||
     !/^[0-9a-f-]{36}$/i.test(key) ||
     text(form, "confirmation") !== "CREDIT_CONFIRMED"
@@ -28,10 +26,9 @@ export async function adjustWallet(form: FormData) {
   let failed = false;
   try {
     await adminFetch("/wallets/adjust", "POST", {
-      platform,
       direction,
       // Pydantic validates decimal identifiers exactly; avoid JS number rounding.
-      user_id: userId,
+      identity_id: identityId,
       amount_irr: Number(amount),
       operation_id: key,
       reason: text(form, "reason"),

@@ -120,7 +120,7 @@ export function RuntimeBindings({
       </div>
       <div>
         <dt className="text-muted-foreground">قاعده</dt>
-        <dd className="mt-1">اولویت {item.priority} · {item.eligibility === "all" ? "همهٔ مشتریان" : "مشتری موجود"} · جایگزین {item.fallback === "legacy" ? "مسیر قبلی ربات" : "بدون پاسخ"}</dd>
+        <dd className="mt-1">اولویت {item.priority} · {item.eligibility === "all" ? "همهٔ مشتریان" : "مشتری موجود"} · جایگزین بدون پاسخ</dd>
       </div>
     </dl>
     <Link className="text-xs text-primary underline" href={`/studio/runtime?tab=publications&workflow_id=${item.workflow_id}`}>بررسی نسخه‌های این فرایند</Link>

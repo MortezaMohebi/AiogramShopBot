@@ -29,7 +29,6 @@ from scripts.beta_storefront_e2e import FakeBaleSession, FakeTelegram
 from sqlalchemy import func, select, text
 
 import config
-from channels.telegram import TelegramTransport
 from db import engine, session_maker
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_content import ShopIdentity
@@ -273,11 +272,7 @@ async def start_campaign(campaign_id: int) -> None:
 
 def worker() -> BroadcastWorker:
     """Enable only the explicit production Registry factory inside this process."""
-    return BroadcastWorker(
-        telegram=None,
-        bale_session=None,
-        registry_transport_factory=registry_transport,
-    )
+    return BroadcastWorker(registry_transport_factory=registry_transport)
 
 
 async def drain(workers: list[BroadcastWorker], *, rounds: int = 12) -> None:
@@ -418,16 +413,17 @@ async def _run_with_bots(bots: list[SyntheticBot]) -> dict:
             await start_campaign(campaign_id)
             normal.append(campaign_id)
 
-        # Even an enabled process with legacy client objects must not consume
-        # Registry campaigns without the explicit per-bot factory.
-        legacy_tg = FakeTelegram()
-        legacy_bale = FakeBaleSession()
-        legacy = BroadcastWorker(
-            telegram=TelegramTransport(legacy_tg),
-            bale_session=legacy_bale,
-        )
-        assert await legacy.process_next() is False
-        assert not legacy_tg.messages and not legacy_bale.messages
+        # A process without an explicit Registry factory must leave every
+        # approved recipient untouched and never open a provider connection.
+        missing_transport = BroadcastWorker()
+        assert await missing_transport.process_next() is False
+        assert fake.opened == fake.closed == 0
+        for bot, campaign_id in zip(bots, normal, strict=True):
+            rows = await deliveries(campaign_id)
+            assert len(rows) == 1 and rows[0].status == "queued"
+            assert rows[0].bot_id == bot.id and rows[0].completed_steps == 0
+            assert rows[0].worker_id is None and rows[0].claimed_at is None
+            assert fake.message_count(bot) == 0
 
         await drain([worker(), worker()])
         for bot, campaign_id in zip(bots, normal, strict=True):
@@ -604,6 +600,7 @@ async def _run_with_bots(bots: list[SyntheticBot]) -> dict:
         "result": "passed",
         "providers": "native-fakes-only",
         "simultaneous_workers": 2,
+        "missing_registry_transport_left_queue_untouched": True,
         "isolated_bots": len(bots),
         "sent": len(normal),
         "opt_out_skipped": 1,

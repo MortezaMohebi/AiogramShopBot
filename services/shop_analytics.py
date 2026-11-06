@@ -84,7 +84,7 @@ async def build_shop_analytics(
 
     Order counts use the order's creation timestamp. Paid revenue and Stars
     use the payment's settlement timestamp. Reports intentionally exclude
-    legacy Telegram `Buy` and `Deposit` rows until migration is reviewed.
+    retired original tables.
     """
     if type(days) is not int or days not in _ALLOWED_PERIODS:
         raise ValueError("Reporting period must be 0, 7, 30, 90 or 365 days.")

@@ -6,7 +6,10 @@ run a Telegram crypto operation or contact a real payment provider.
 
 from __future__ import annotations
 
-from tests.schema_support import create_shop_schema, seed_legacy_registry
+from tests.schema_support import (
+    create_shop_schema, seed_registry, TEST_BOT_IDS, test_bot_context,
+    allow_test_catalog,
+)
 
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -28,8 +31,6 @@ from models.shop_engagement import (
     ShopWalletEntry,
 )
 from models.shop_payment import ShopPaymentAttempt
-from models.shop_channel_features import ShopChannelFeature
-from models.shop_payment_rail import ShopPaymentRail
 from services.shop_referrals import ShopReferralService
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 
@@ -97,7 +98,7 @@ def db():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     create_shop_schema(engine)
     with Session(engine) as session:
-        seed_legacy_registry(session)
+        seed_registry(session)
         yield AsyncDB(session)
     engine.dispose()
 
@@ -105,8 +106,12 @@ def db():
 @pytest.mark.asyncio
 async def test_wallet_idempotency_and_platform_isolation(db):
     """Never debit another platform's user with the same numeric ID."""
-    telegram = ShopIdentity(platform="telegram", platform_user_id=101)
-    bale = ShopIdentity(platform="bale", platform_user_id=101)
+    telegram = ShopIdentity(
+        platform="telegram", platform_user_id=101, bot_id=TEST_BOT_IDS["telegram"]
+    )
+    bale = ShopIdentity(
+        platform="bale", platform_user_id=101, bot_id=TEST_BOT_IDS["bale"]
+    )
     db.session.add_all([telegram, bale])
     db.session.commit()
 
@@ -124,8 +129,18 @@ async def test_wallet_idempotency_and_platform_isolation(db):
     assert changed is True
     assert changed_again is False
     assert first.id == repeated.id
-    assert await ShopWalletService.balance(db, Platform.TELEGRAM, 101) == 500
-    assert await ShopWalletService.balance(db, Platform.BALE, 101) == 0
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.TELEGRAM, 101, bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value]
+        )
+        == 500
+    )
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 101, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 0
+    )
     assert len(db.session.scalars(select(ShopWalletEntry)).all()) == 1
 
     with pytest.raises(StoreCreditRejected):
@@ -145,11 +160,19 @@ async def test_wallet_idempotency_and_platform_isolation(db):
 @pytest.mark.asyncio
 async def test_first_purchase_referral_reward_requires_provider_receipt(db):
     """Award a sponsor only once after a matching verified IRR payment."""
-    inviter = ShopIdentity(platform="bale", platform_user_id=501)
-    referee = ShopIdentity(platform="bale", platform_user_id=502)
+    inviter = ShopIdentity(
+        platform="bale", platform_user_id=501, bot_id=TEST_BOT_IDS["bale"]
+    )
+    referee = ShopIdentity(
+        platform="bale", platform_user_id=502, bot_id=TEST_BOT_IDS["bale"]
+    )
     product = Product(
-        sku="REWARD", name="محصول تست", description="توضیح",
-        price=1000, stock_quantity=5, is_published=True,
+        sku="REWARD",
+        name="محصول تست",
+        description="توضیح",
+        price=1000,
+        stock_quantity=5,
+        is_published=True,
     )
     db.session.add_all([inviter, referee, product])
     db.session.add(
@@ -160,10 +183,19 @@ async def test_first_purchase_referral_reward_requires_provider_receipt(db):
     )
     db.session.commit()
 
-    code = await ShopReferralService.code(db, Platform.BALE, 501)
-    assert await ShopReferralService.claim(
-        db, platform=Platform.BALE, user_id=502, code=code
-    ) == "✅ کد معرفی برای اولین خرید شما ثبت شد."
+    code = await ShopReferralService.code(
+        db, Platform.BALE, 501, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+    )
+    assert (
+        await ShopReferralService.claim(
+            db,
+            platform=Platform.BALE,
+            user_id=502,
+            code=code,
+            bot_id=TEST_BOT_IDS[(Platform.BALE).value],
+        )
+        == "✅ کد معرفی برای اولین خرید شما ثبت شد."
+    )
 
     payload = uuid4().hex
     order = ShopOrder(
@@ -181,25 +213,41 @@ async def test_first_purchase_referral_reward_requires_provider_receipt(db):
         payment_currency="IRR",
         payment_amount=1000,
         paid_at=datetime.now(timezone.utc),
+        bot_id=TEST_BOT_IDS["bale"],
     )
     db.add(order)
     await db.commit()
 
     # An order's mutable paid status is not sufficient evidence.
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 0
-    assert await ShopWalletService.balance(db, Platform.BALE, 501) == 0
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 501, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 0
+    )
 
     db.add(
         ShopPaymentAttempt(
-            order_id=order.id, platform="bale", provider="bale_wallet",
-            currency="IRR", amount=1000, payload=payload,
+            order_id=order.id,
+            platform="bale",
+            provider="bale_wallet",
+            currency="IRR",
+            amount=1000,
+            payload=payload,
             status="paid",
+            bot_id=TEST_BOT_IDS["bale"],
         )
     )
     await db.commit()
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 100
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 0
-    assert await ShopWalletService.balance(db, Platform.BALE, 501) == 100
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 501, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 100
+    )
     rewards = db.session.scalars(select(ShopReferralReward)).all()
     assert len(rewards) == 1
     assert rewards[0].bonus_irr == 100

@@ -32,10 +32,6 @@ def main() -> int:
     """Delegate normal lifecycle commands and retire untracked receiver changes."""
     from scripts import codespace_setup as setup
     command = sys.argv[1] if len(sys.argv) > 1 else "info"
-    if command in {"connect", "disconnect", "apply-bot-mode"}:
-        print("Use Dashboard > Bot connections. Stage and explicitly apply a tracked change there.")
-        print("No webhook was changed by this command.")
-        return 1
     if command in {"init", "start", "config"}:
         if not setup.ENV_FILE.exists():
             if command == "init":

@@ -20,7 +20,7 @@ from models.shop_engagement import (
     ShopCampaignAudit,
     ShopCampaignDelivery,
 )
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot
+from models.shop_multibot import ShopBot
 from services.shop_broadcast_scope import ready_registry_bot, registry_dispatch_enabled
 from services.shop_campaigns import (
     CampaignRejected,
@@ -70,28 +70,15 @@ async def delivery_counts(session: AsyncSession, campaign_id: int) -> dict[str, 
 
 async def _business_media_ready(session: AsyncSession, campaign: ShopCampaign) -> int:
     """Fail before any paid send if this Bale bot lacks a required file ID."""
-    token = config.BALE_BOT_TOKEN
-    bot_id = LEGACY_BOT_IDS["bale"]
-    if campaign.bot_id is not None and campaign.bot_id not in LEGACY_BOT_IDS.values():
-        from services.shop_bot_secrets import resolve_active_token
+    from services.shop_bot_secrets import resolve_active_token
 
-        bot = await session.scalar(
-            ready_registry_bot(
-                bot_id=campaign.bot_id,
-                store_id=campaign.store_id,
-            )
-        )
-        if bot is None or bot.platform != "bale":
-            raise CampaignRejected("بات بله مقصد آماده ارسال نیست.")
-        bot_id = bot.id
-        token = await session.run_sync(
-            lambda sync: resolve_active_token(
-                sync,
-                bot_id=bot_id,
-            )
-        )
-    if not token:
-        raise CampaignRejected("توکن بله تنظیم نشده است.")
+    bot = await _dispatch_bot(session, campaign)
+    if bot.platform != "bale":
+        raise CampaignRejected("بات بله مقصد آماده ارسال نیست.")
+    bot_id = bot.id
+    token = await session.run_sync(
+        lambda sync: resolve_active_token(sync, bot_id=bot_id)
+    )
     attachments = await ShopCampaignService._attachments(session, campaign)
     fingerprint = bot_fingerprint(token)
     from dashboard.media_storage import safe_media_path
@@ -126,29 +113,18 @@ async def _business_media_ready(session: AsyncSession, campaign: ShopCampaign) -
 async def _dispatch_bot(
     session: AsyncSession,
     campaign: ShopCampaign,
-) -> ShopBot | None:
-    """Reject an unavailable Registry runtime while preserving legacy defaults."""
-    registry_owned = (
-        campaign.bot_id is not None and campaign.bot_id not in LEGACY_BOT_IDS.values()
-    )
-    if registry_owned:
-        if not registry_dispatch_enabled():
-            raise CampaignRejected(
-                "ارسال Broadcast این بات تا فعال شدن Worker اختصاصی آن "
-                "مجاز نیست؛ گیرندگان و مجوزها محفوظ می‌مانند."
-            )
-        bot = await session.scalar(
-            ready_registry_bot(
-                bot_id=campaign.bot_id,
-                store_id=campaign.store_id,
-            )
-        )
-        if bot is None or campaign.audience not in ("all", bot.platform):
-            raise CampaignRejected("بات یا فروشگاه مقصد آماده ارسال نیست.")
-        return bot
-    if campaign.store_id != DEFAULT_STORE_ID:
-        raise CampaignRejected("مالکیت فروشگاه کمپین معتبر نیست.")
-    return None
+) -> ShopBot:
+    """Require a ready receiver and the exact registered campaign owner."""
+    if not campaign.bot_id:
+        raise CampaignRejected("بات مقصد کمپین را انتخاب کنید.")
+    if not registry_dispatch_enabled():
+        raise CampaignRejected("ارسال کمپین این بات هنوز فعال نشده است.")
+    bot = await session.scalar(ready_registry_bot(
+        bot_id=campaign.bot_id, store_id=campaign.store_id,
+    ))
+    if bot is None or campaign.audience not in ("all", bot.platform):
+        raise CampaignRejected("بات یا فروشگاه مقصد آماده ارسال نیست.")
+    return bot
 
 
 class BroadcastControl:
@@ -184,7 +160,6 @@ class BroadcastControl:
             raise CampaignRejected("کمپین باید قبلاً تأیید شده باشد.")
         require_campaign_scope(campaign)
         bot = await _dispatch_bot(session, campaign)
-        registry_owned = bot is not None
         if bale_mode not in ("standard", "business"):
             raise CampaignRejected("روش ارسال بله معتبر نیست.")
         attachments = await ShopCampaignService._attachments(session, campaign)
@@ -208,8 +183,6 @@ class BroadcastControl:
             .group_by(ShopIdentity.platform)
         )
         recipients = {platform: int(total) for platform, total in result.all()}
-        # An old campaign can legitimately address both legacy bots, but
-        # every recipient must still own the matching delivery ledger row.
         mismatched = await session.scalar(
             select(func.count())
             .select_from(ShopCampaignDelivery)
@@ -225,35 +198,13 @@ class BroadcastControl:
                         if campaign.audience != "all"
                         else false()
                     )
-                    | (
-                        ShopIdentity.platform != bot.platform
-                        if bot is not None
-                        else (
-                            (
-                                (ShopIdentity.platform == "telegram")
-                                & (ShopIdentity.bot_id != LEGACY_BOT_IDS["telegram"])
-                            )
-                            | (
-                                (ShopIdentity.platform == "bale")
-                                & (ShopIdentity.bot_id != LEGACY_BOT_IDS["bale"])
-                            )
-                        )
-                    )
-                    | (
-                        ShopIdentity.bot_id != campaign.bot_id
-                        if campaign.bot_id is not None
-                        else false()
-                    )
+                    | (ShopIdentity.platform != bot.platform)
+                    | (ShopIdentity.bot_id != campaign.bot_id)
                 ),
             )
         )
         if mismatched:
             raise CampaignRejected("مالکیت گیرندگان کمپین با بات مجاز مطابقت ندارد.")
-        if not registry_owned and recipients.get("telegram") and not config.TOKEN:
-            raise CampaignRejected("اتصال تلگرام پیکربندی نشده است.")
-        if not registry_owned and recipients.get("bale") and not config.BALE_BOT_TOKEN:
-            raise CampaignRejected("اتصال بله پیکربندی نشده است.")
-
         if bale_mode == "business":
             if (
                 not recipients.get("bale")

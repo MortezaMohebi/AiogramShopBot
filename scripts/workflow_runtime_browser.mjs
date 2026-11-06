@@ -77,7 +77,6 @@ function requireLabEnvironment(env) {
     POSTGRES_DB: "shop_codespace",
     POSTGRES_USER: "shop_codespace",
     DB_HOST: "postgres",
-    WEBHOOK_HOST: "https://disabled.invalid",
     NEXT_ADMIN_BRIDGE_ENABLED: "true",
     SHOP_CAMPAIGN_DISPATCH_ENABLED: "false",
     SHOP_BROADCAST_WORKER_ENABLED: "false",
@@ -86,9 +85,7 @@ function requireLabEnvironment(env) {
     TELEGRAM_STARS_CHECKOUT_ENABLED: "false",
     TELEGRAM_FIAT_CHECKOUT_ENABLED: "false",
     BALE_WALLET_CHECKOUT_ENABLED: "false",
-    CRYPTO_FORWARDING_MODE: "false",
     SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR: "0",
-    BALE_BROADCAST_PREPARE_CHAT_ID: "0",
   };
   for (const [key, value] of Object.entries(exact)) {
     requireSafe(env[key] === value, "unsafe_lab_environment");
@@ -112,6 +109,9 @@ function requireLabEnvironment(env) {
   }
   for (const key of [
     "TOKEN",
+    "TELEGRAM_BOT_TOKEN",
+    "LIVE_TELEGRAM_TOKEN",
+    "LIVE_BALE_TOKEN",
     "BALE_BOT_TOKEN",
     "BALE_WALLET_PROVIDER_TOKEN",
     "TELEGRAM_FIAT_PROVIDER_TOKEN",
@@ -122,9 +122,13 @@ function requireLabEnvironment(env) {
     requireSafe(!env[key]?.trim(), "provider_credential_present");
     requireSafe(!process.env[key]?.trim(), "host_provider_credential_present");
   }
-  for (const key of ["NEXT_ADMIN_BRIDGE_SECRET", "JWT_SECRET_KEY"]) {
+  for (const key of ["NEXT_ADMIN_BRIDGE_SECRET", "NEXT_ADMIN_SESSION_SECRET"]) {
     requireSafe(env[key]?.length >= 32, "lab_secret_missing");
   }
+  requireSafe(
+    /^[A-Za-z0-9_-]{43}=$/.test(env.SHOP_SECURITY_ENCRYPTION_KEY ?? ""),
+    "lab_encryption_key_missing",
+  );
   requireSafe(env.LIVE_ADMIN_PASSWORD?.length >= 16, "lab_password_missing");
   for (const [key, value] of Object.entries({
     SHOP_RUNTIME_QA: "1",

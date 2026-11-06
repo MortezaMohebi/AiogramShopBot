@@ -12,7 +12,6 @@ from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, Integer, String, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from sqladmin import ModelView
 
 from models.base import Base
 
@@ -53,27 +52,3 @@ class ShopStaff(Base):
     def __repr__(self) -> str:
         """Use the login name for staff autocomplete."""
         return self.username
-
-
-class ShopStaffAdmin(ModelView, model=ShopStaff):
-    """Read-only staff register; password changes use controlled CLI operations."""
-
-    name = "مدیر سیستم"
-    name_plural = "مدیران و سطح دسترسی"
-    category = "تنظیمات"
-    icon = "fa-solid fa-user-shield"
-    column_list = [
-        ShopStaff.username, ShopStaff.role, ShopStaff.is_active,
-        ShopStaff.created_at,
-    ]
-    column_searchable_list = [ShopStaff.username]
-    column_labels = {
-        ShopStaff.username: "نام کاربری",
-        ShopStaff.role: "نقش",
-        ShopStaff.is_active: "فعال",
-        ShopStaff.session_version: "نسخه نشست",
-    }
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False

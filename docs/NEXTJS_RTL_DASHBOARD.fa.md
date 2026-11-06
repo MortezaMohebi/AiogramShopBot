@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # شاخه مستقل مهاجرت داشبورد به Next.js
 
 **Branch:** `feat/nextjs-rtl-dashboard-20261103`

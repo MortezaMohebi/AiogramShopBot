@@ -1,0 +1,16 @@
+{
+  "client_connections_closed": 5,
+  "cross_store_start_rejected": true,
+  "isolated_bots": 3,
+  "missing_registry_transport_left_queue_untouched": true,
+  "operations_pause_during_rate_wait": true,
+  "opt_out_skipped": 1,
+  "providers": "native-fakes-only",
+  "public_runtime_flags_unchanged": true,
+  "real_postgresql_rate_slots": 8,
+  "result": "passed",
+  "sent": 3,
+  "simultaneous_workers": 2,
+  "synthetic_receivers_paused": 3,
+  "unknown_quarantined_without_retry": 1
+}

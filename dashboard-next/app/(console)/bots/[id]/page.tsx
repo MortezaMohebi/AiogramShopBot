@@ -60,7 +60,7 @@ const errors: Record<string, string> = {
   invalid_operation_state: "وضعیت فعلی ربات برای عملیات مجاز نیست.",
   configuration_changed: "نسخهٔ تنظیمات تغییر کرده است؛ صفحه را دوباره بارگذاری کنید.",
   duplicate_provider_bot: "این حساب پیام‌رسان قبلاً برای ربات دیگری ثبت شده است.",
-  duplicate_bot_credential: "این Token قبلاً برای ربات دیگری یا ربات قدیمی ثبت شده است.",
+  duplicate_bot_credential: "این Token قبلاً برای ربات دیگری ثبت شده است.",
   bot_identity_mismatch: "شناسهٔ پیام‌رسان با ربات ثبت‌شده مطابقت ندارد.",
   invalid_bot_token_format: "ساختار Token با نوع پیام‌رسان انتخاب‌شده سازگار نیست.",
   invalid_support_url: "آدرس پشتیبانی باید HTTPS عمومی و بدون نام کاربری یا رمز باشد.",
@@ -70,7 +70,6 @@ const errors: Record<string, string> = {
   provider_state_unavailable: "getMe در دسترس نبود؛ شبکه یا Token ربات را بررسی کنید.",
   bot_secret_key_unavailable: "کلید رمزنگاری محرمانهٔ سرور موجود نیست.",
   bot_secret_unreadable: "Token ذخیره‌شده قابل خواندن نیست؛ تنظیمات کلید محرمانهٔ سرور را بررسی کنید.",
-  legacy_bot_credential_locked: "Token ربات قدیمی در تنظیمات سرور مدیریت می‌شود و از این پنل تغییر نمی‌کند.",
   mfa_enrollment_required: "ابتدا MFA حساب مدیر را فعال کنید.",
   bot_credential_stage_requires_draft: "فقط ربات پیش‌نویس می‌تواند Token جدید ثبت کند.",
   permission_denied: "حساب فعلی اجازهٔ این عملیات را ندارد.",
@@ -108,7 +107,7 @@ export default async function BotDetailPage({
       `/bot-catalog/bots/${id}/audit?page=1`,
     ),
     adminFetch<BotReceiverSnapshot>(`/bot-registry/${id}/receiver`),
-    adminFetch<RelayWorkersSnapshot>("/relay-workers"),
+    adminFetch<RelayWorkersSnapshot>(`/bot-registry/${id}/relay-workers`),
     adminFetch<BotRelaySnapshot>(`/bot-registry/${id}/relay-routes`),
     adminFetch<BotCommercePolicy>(`/bot-registry/${id}/commerce`),
     adminFetch<BotPaymentList>(`/bot-registry/${id}/payment-accounts`),
@@ -116,15 +115,13 @@ export default async function BotDetailPage({
     adminFetch<CheckoutPolicy>(`/bot-registry/${id}/checkout-policy`),
   ]);
   const { bot, health, events, state_events } = detail;
-  const legacy = bot.runtime_owner === "legacy";
   const pending = bot.credentials.find(item => item.state === "staged");
   const active = bot.operations.desired_state === "active";
   const receiverActive = receiver.configured && receiver.state === "active";
-  const mayChangeState = legacy || (receiverActive && health.runtime_ready);
+  const mayChangeState = receiverActive && health.runtime_ready;
   return <div className="space-y-6">
     <div className="flex flex-wrap gap-2">
       <Button asChild variant="outline" size="sm"><Link href="/bots">بازگشت به ربات‌ها</Link></Button>
-      <Button asChild variant="outline" size="sm"><Link href="/bot-connections">زیرساخت اتصال</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/account">تأیید مجدد هویت</Link></Button>
     </div>
     <PageHeading title={bot.name} description={`شناسهٔ داخلی: ${bot.slug} · ${botPlatformLabel(bot.platform)} · نسخهٔ تنظیمات ${bot.version}`} />
@@ -141,10 +138,9 @@ export default async function BotDetailPage({
     <div className="grid gap-3 sm:grid-cols-3">
       <Card><CardContent className="space-y-2 pt-5">
         <p className="text-xs text-muted-foreground">وضعیت جاری</p>
-        <Badge tone={active && (legacy || receiverActive) ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge>
+        <Badge tone={active && receiverActive ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge>
         <p className="text-xs leading-6 text-muted-foreground">
-          {legacy ? "کنترل فروش فعال است؛ رسیدگی به تسویه‌های قبلی ادامه دارد." :
-            receiverActive ? "دریافت پیام این ربات فعال است." :
+          {receiverActive ? "دریافت پیام این ربات فعال است." :
             "دریافت پیام این ربات فعال نیست و فروش آن متوقف است."}
         </p>
       </CardContent></Card>
@@ -156,9 +152,7 @@ export default async function BotDetailPage({
       </CardContent></Card>
       <Card><CardContent className="space-y-2 pt-5">
         <p className="text-xs text-muted-foreground">دریافت پیام</p>
-        <p className="font-semibold">{legacy
-          ? (health.receiver_status.includes("paused") ? "اتصال قدیمی — فروش متوقف" : "اتصال قدیمی")
-          : receiverActive ? `فعال — ${receiver.mode === "polling" ? "Polling" : "Webhook"}`
+        <p className="font-semibold">{receiverActive ? `فعال — ${receiver.mode === "polling" ? "Polling" : "Webhook"}`
           : receiver.configured ? ({ staged: "ثبت اولیه", applying: "در حال اعمال تغییر", active: "فعال", paused: "متوقف", disabled: "غیرفعال", needs_review: "نتیجه نامشخص؛ نیازمند بررسی" } as const)[receiver.state] : "هنوز راه‌اندازی نشده"}</p>
         <p className="text-xs text-muted-foreground">آخرین Update مشاهده‌شده: {date(health.received_last_at)}</p>
       </CardContent></Card>
@@ -207,8 +201,7 @@ export default async function BotDetailPage({
                 placeholder="https://example.com/support" />
             </label>
             <p className="text-xs leading-6 text-muted-foreground">
-              تنظیمات پیام خوش‌آمد و پشتیبانی برای دو ربات Legacy اکنون اعمال می‌شوند.
-              برای ربات‌های پیش‌نویس، این متن‌ها پس از فعال‌سازی استفاده می‌شوند.
+              پیام خوش‌آمد و پشتیبانی پس از فعال‌سازی دریافت پیام این ربات استفاده می‌شوند.
             </p>
             <Button type="submit">ذخیرهٔ مشخصات این ربات</Button>
           </form>
@@ -252,9 +245,7 @@ export default async function BotDetailPage({
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="size-5" /> Token و تأیید هویت ربات</CardTitle></CardHeader>
       <CardContent className="space-y-5">
         <p className="text-sm leading-7">Token ذخیره‌شده قابل نمایش نیست. تأیید getMe فقط هویت ربات را بررسی می‌کند و آن را فعال نمی‌کند.</p>
-        {legacy ? <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-          Token ربات قدیمی در تنظیمات سرور مدیریت می‌شود و از این صفحه قابل تغییر نیست.
-        </div> : bot.status === "draft" ? <form action={stageBotCredential} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        {bot.status === "draft" ? <form action={stageBotCredential} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <input type="hidden" name="id" value={bot.id} />
           <label className="block space-y-2 text-sm">Token ربات پیش‌نویس
             <Input type="password" name="token" dir="ltr" minLength={24} maxLength={512}
@@ -270,10 +261,10 @@ export default async function BotDetailPage({
             </tr></thead>
             <tbody>{bot.credentials.map(credential => <tr key={credential.version} className="border-b">
               <td className="p-3">{credential.version}</td>
-              <td className="p-3">{credential.source === "environment" ? "تنظیمات سرور" : "ثبت‌شده در پنل"} · {({ staged: "در انتظار تأیید", active: "فعال", revoked: "لغوشده", retiring: "در حال جایگزینی" } as Record<string, string>)[credential.state] ?? credential.state}</td>
+              <td className="p-3">ثبت‌شده در پنل · {({ staged: "در انتظار تأیید", active: "فعال", revoked: "لغوشده", retiring: "در حال جایگزینی" } as Record<string, string>)[credential.state] ?? credential.state}</td>
               <td className="p-3 text-xs">{credential.verified_at ? `تأییدشده: ${date(credential.verified_at)}` : "هنوز تأیید نشده"}</td>
               <td className="flex flex-wrap gap-2 p-3">
-                {(credential.state === "staged" || (legacy && credential.state === "active"))
+                {credential.state === "staged"
                   ? <form action={verifyBotCredential}>
                     <input type="hidden" name="id" value={bot.id} />
                     <input type="hidden" name="version" value={credential.version} />
@@ -289,7 +280,7 @@ export default async function BotDetailPage({
           </table>
           {!bot.credentials.length ? <p className="py-5 text-center text-sm text-muted-foreground">هنوز Token ثبت نشده است.</p> : null}
         </div>
-        {pending && !legacy ? <p className="text-xs text-muted-foreground">نسخهٔ در انتظار تأیید: {pending.version} · آخرین تأیید: {date(pending.verified_at)}</p> : null}
+        {pending ? <p className="text-xs text-muted-foreground">نسخهٔ در انتظار تأیید: {pending.version} · آخرین تأیید: {date(pending.verified_at)}</p> : null}
       </CardContent>
     </Card>
 
@@ -362,7 +353,7 @@ export default async function BotDetailPage({
           <p>آخرین پیام دریافتی: {date(health.received_last_at)}</p>
           <p>درحال پردازش در یک ساعت: {health.processing_last_hour}</p>
           <p>نیازمند بررسی در یک ساعت: {health.needs_review_last_hour}</p>
-          <p>آمادگی دریافت پیام: <strong>{health.runtime_ready ? (legacy ? "اتصال قدیمی" : "فعال") : "هنوز متصل نشده"}</strong></p>
+          <p>آمادگی دریافت پیام: <strong>{health.runtime_ready ? "فعال" : "هنوز متصل نشده"}</strong></p>
           <p className="text-xs leading-7 text-muted-foreground">تعداد پیام کم به معنای قطع اتصال ربات نیست. برای تأیید هویت زنده از getMe در بخش Token استفاده کنید.</p>
         </CardContent>
       </Card>

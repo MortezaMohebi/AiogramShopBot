@@ -33,7 +33,7 @@ export default async function StoresPage({
   const checkoutPolicies = await Promise.all(stores.map(item =>
     adminFetch<CheckoutPolicy>(`/stores/${item.id}/checkout-policy`),
   ));
-  const note = query.error === "legacy_credit_requires_reconciliation"
+  const note = query.error === "identity_credit_requires_reconciliation"
     ? "برای فعال‌سازی اعتبار مشترک، ابتدا ماندهٔ تمام حساب‌های قبلی باید با اسناد مالی و رضایت مشتری تطبیق داده شود."
     : query.error === "reauth" ? "تأیید مجدد رمز و MFA لازم است."
     : query.error ? "ثبت سیاست انجام نشد؛ نسخه یا مجوزها را بررسی کنید."

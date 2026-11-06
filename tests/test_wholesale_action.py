@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import event, func, select
 
 from models.shop_action import ShopActionAuthorization, ShopActionExecution
-from models.shop_multibot import LEGACY_BOT_IDS
+from tests.schema_support import TEST_BOT_IDS
 from models.shop_wholesale import ShopWholesaleApplication
 from models.shop_workflow_runtime import WorkflowUpload
 from services.shop_actions.approvals import issue_authorization
@@ -268,7 +268,7 @@ async def test_changed_form_cannot_reuse_the_customer_confirmation(buyer):
 @pytest.mark.parametrize(
     "changes",
     [
-        {"bot_id": LEGACY_BOT_IDS["bale"]},
+        {"bot_id": TEST_BOT_IDS["bale"]},
         {"store_id": "00000000-0000-4000-8000-000000000888"},
         {"customer_id": 999},
         {"user_id": 999},

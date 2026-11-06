@@ -16,7 +16,6 @@ interface Props {
 
 /** Explicitly separate staging a receiver from changing the live provider. */
 export function BotReceiverPanel({ bot, receiver, pending }: Props) {
-  if (bot.runtime_owner === "legacy") return null;
   const isDraft = bot.status === "draft";
   const canStage = isDraft && (!receiver.configured || receiver.state === "staged");
   const canActivate = isDraft && receiver.state === "staged" &&

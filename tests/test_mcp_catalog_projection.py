@@ -17,11 +17,9 @@ async def test_search_v2_renders_only_visible_real_products(buyer):
     """New text is derived from the same page; a denied product stays absent."""
     session, principal = buyer
     first, second = seed(session)
-    session.add(
-        ShopBotProductRule(
-            bot_id=principal.bot_id, product_id=second.id, effect="deny"
-        )
-    )
+    grant = await session.get(ShopBotProductRule, (principal.bot_id, second.id))
+    assert grant is not None and grant.effect == "allow"
+    grant.effect = "deny"
     await session.commit()
     result = await invoke(
         session,

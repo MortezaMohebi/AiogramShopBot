@@ -1,6 +1,6 @@
 """Private, signed FastAPI bridge for the separate Next.js dashboard.
 
-The bridge does not replace the current SQLAdmin panel. Requests are signed
+The bridge exposes only the authenticated administration API. Requests are signed
 by Next.js on the server; browsers never receive the bridge secret or staff
 session version. Every call revalidates the active database staff role.
 """
@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from db import session_maker
 from models.shop_content import (
-    Product, ProductMedia, Testimonial, ShopCategory, ShopIdentity, ShopOrder, ShopSettings,
+    Product, ProductMedia, Testimonial, ShopCategory, ShopIdentity, ShopOrder,
 )
 from models.shop_checkout import (
     ShopOrderLine, ShopCartItem, ShopShippingMethod, ShopCoupon,
@@ -44,7 +44,7 @@ from models.shop_product_visibility import ShopProductVisibility
 from services.shop_sequence import next_display_position
 from services.shop_store_context import StoreContext, current_context
 from services.shop_uom import validate_product_units
-from models.shop_multibot import DEFAULT_STORE_ID, ShopBot, ShopStore
+from models.shop_multibot import ShopBot, ShopStore
 from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
 from services.shop_broadcast_control import (
@@ -349,13 +349,13 @@ def public_field_values(row: ShopProductVisibility | None) -> dict[str, bool]:
 
 
 class CampaignPayload(BaseModel):
-    """An unsent draft with an explicit Registry target or legacy audience."""
+    """An unsent draft with an explicit Registry sender."""
 
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=3000)
     audience: Literal["all", "telegram", "bale"] = "all"
-    bot_id: UUID | None = None
+    bot_id: UUID
 
 
 class CampaignStart(BaseModel):
@@ -378,7 +378,7 @@ class SettingsPayload(BaseModel):
 
 @router.post("/auth/login")
 async def login(payload: LoginPayload, staff: Staff, session: Db) -> dict:
-    """Authenticate with the same Argon2 staff accounts as SQLAdmin."""
+    """Authenticate with the database-backed Argon2 staff accounts."""
     if staff is not None:
         raise HTTPException(status_code=400, detail="Unexpected session")
     username = payload.username.strip().casefold()
@@ -501,8 +501,11 @@ async def create_category(
     payload: CategoryPayload, staff: Staff, session: Db
 ) -> dict:
     """Create a database-backed category, never hardcode navigation content."""
-    require_staff(staff, "content")
+    member = require_staff(staff, "content")
+    scope = admin_store_context(member)
+    require_store_access(scope, scope.current_store_id, write=True)
     fields = payload.model_dump()
+    fields["store_id"] = scope.current_store_id
     fields["position"] = await session.run_sync(
         lambda sync: next_display_position(sync, ShopCategory)
     )
@@ -530,7 +533,7 @@ async def edit_category(
     ).with_for_update())
     if record is None:
         raise HTTPException(status_code=404, detail="Category not found")
-    # Map ownership denial before the mounted legacy app starts a response.
+    # Map ownership denial before the mounted business app starts a response.
     require_store_access(scope, record.store_id, write=True)
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is None:
@@ -580,8 +583,11 @@ async def products(
 @router.get("/products/{product_id}")
 async def product(product_id: int, staff: Staff, session: Db) -> dict:
     """Read a single product for the editable dashboard form."""
-    require_staff(staff, "content")
-    item = await session.get(Product, product_id)
+    member = require_staff(staff, "content")
+    scope = admin_store_context(member)
+    item = await session.scalar(select(Product).where(
+        Product.id == product_id, Product.store_id.in_(scope.active_store_ids),
+    ))
     if item is None:
         raise HTTPException(status_code=404, detail="Product not found")
     visibility = await session.get(ShopProductVisibility, product_id)
@@ -611,17 +617,16 @@ async def create_product(
     payload: ProductPayload, staff: Staff, session: Db
 ) -> dict:
     """Create a product with a unique SKU and safe unpublished default."""
-    require_staff(staff, "content")
+    member = require_staff(staff, "content")
     fields = payload.model_dump()
     visibility = {name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS}
     # Keep historic NOT NULL and UNIQUE constraints without forcing the
     # merchant to invent an SKU for every new product.
     fields["sku"] = fields["sku"].strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     fields["description"] = fields["description"].strip()
-    scope = current_context()
-    if scope is not None:
-        scope.require(scope.current_store_id, write=True)
-    store_id = scope.current_store_id if scope else DEFAULT_STORE_ID
+    scope = admin_store_context(member)
+    require_store_access(scope, scope.current_store_id, write=True)
+    store_id = scope.current_store_id
     fields["store_id"] = store_id
     fields["uom_id"], fields["purchase_uom_id"] = await validate_product_units(
         session, store_id=store_id,
@@ -821,7 +826,7 @@ async def customers(staff: Staff, session: Db, page: int = 1) -> dict:
 
 
 def admin_store_context(staff: ShopStaff | None = None) -> StoreContext:
-    """Require the verified device Store scope rather than legacy defaults."""
+    """Require the verified device Store scope for every Store-bound operation."""
     scope = current_context()
     if scope is None or (staff is not None and scope.staff_id != staff.id):
         raise HTTPException(status_code=403, detail="store_access_denied")
@@ -831,7 +836,7 @@ def admin_store_context(staff: ShopStaff | None = None) -> StoreContext:
 def require_store_access(
     scope: StoreContext, store_id: str, *, write: bool = False,
 ) -> None:
-    """Map Store denial before a mounted legacy app starts its response."""
+    """Map Store denial before a mounted business app starts its response."""
     try:
         scope.require(store_id, write=write)
     except SecurityRejected as error:
@@ -878,7 +883,6 @@ async def campaign_bot_options(staff: Staff, session: Db) -> dict:
     return {
         "store_id": scope.current_store_id,
         "store_name": store.name if store else scope.current_store.name,
-        "legacy_available": active and scope.current_store_id == DEFAULT_STORE_ID,
         "bots": [
             {"id": bot.id, "name": bot.name, "platform": bot.platform}
             for bot in bots
@@ -953,22 +957,16 @@ async def create_campaign(
     store = await session.get(ShopStore, scope.current_store_id)
     if store is None or store.state != "active":
         raise HTTPException(status_code=409, detail="store_not_active")
-    bot_id = str(payload.bot_id) if payload.bot_id is not None else None
-    if bot_id is None:
-        # Only the original Store may intentionally retain a dual-platform
-        # legacy audience. Registry campaigns never infer a bot or token.
-        if store.id != DEFAULT_STORE_ID:
-            raise HTTPException(status_code=422, detail="campaign_bot_required")
-    else:
-        bot = await session.scalar(select(ShopBot).where(
-            ShopBot.id == bot_id, ShopBot.store_id == store.id,
-        ))
-        if bot is None:
-            raise HTTPException(status_code=404, detail="bot_not_found")
-        if bot.runtime_owner != "registry" or bot.status != "active":
-            raise HTTPException(status_code=409, detail="bot_not_active")
-        if payload.audience not in {"all", bot.platform}:
-            raise HTTPException(status_code=422, detail="invalid_campaign_audience")
+    bot_id = str(payload.bot_id)
+    bot = await session.scalar(select(ShopBot).where(
+        ShopBot.id == bot_id, ShopBot.store_id == store.id,
+    ))
+    if bot is None:
+        raise HTTPException(status_code=404, detail="bot_not_found")
+    if bot.runtime_owner != "registry" or bot.status != "active":
+        raise HTTPException(status_code=409, detail="bot_not_active")
+    if payload.audience not in {"all", bot.platform}:
+        raise HTTPException(status_code=422, detail="invalid_campaign_audience")
     item = ShopCampaign(
         title=payload.title, text=payload.text, audience=payload.audience,
         store_id=store.id, bot_id=bot_id, status="draft",
@@ -1017,14 +1015,9 @@ async def start_campaign(
 @router.get("/settings")
 async def settings(staff: Staff, session: Db) -> dict:
     """Return editable brand and help text without exposing bot tokens."""
-    require_staff(staff, "superadmin")
-    scope = current_context()
-    current_id = scope.current_store_id if scope else DEFAULT_STORE_ID
-    row = (
-        await session.get(ShopSettings, 1)
-        if current_id == DEFAULT_STORE_ID
-        else await session.get(ShopStoreSettings, current_id)
-    )
+    member = require_staff(staff, "superadmin")
+    scope = admin_store_context(member)
+    row = await session.get(ShopStoreSettings, scope.current_store_id)
     return {
         "brand_name": row.brand_name if row else "",
         "welcome_message": row.welcome_message if row else "",
@@ -1038,19 +1031,15 @@ async def change_settings(
     payload: SettingsPayload, staff: Staff, session: Db
 ) -> dict:
     """Write merchant text settings; never allow application environment edits."""
-    require_staff(staff, "superadmin")
-    scope = current_context()
-    current_id = scope.current_store_id if scope else DEFAULT_STORE_ID
-    if current_id == DEFAULT_STORE_ID:
-        row = await session.get(ShopSettings, 1)
-        if row is None:
-            row = ShopSettings(id=1)
-            session.add(row)
-    else:
-        row = await session.get(ShopStoreSettings, current_id)
-        if row is None:
-            row = ShopStoreSettings(store_id=current_id)
-            session.add(row)
+    member = require_staff(staff, "superadmin")
+    scope = admin_store_context(member)
+    require_store_access(scope, scope.current_store_id, write=True)
+    row = await session.scalar(select(ShopStoreSettings).where(
+        ShopStoreSettings.store_id == scope.current_store_id,
+    ).with_for_update())
+    if row is None:
+        row = ShopStoreSettings(store_id=scope.current_store_id)
+        session.add(row)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, key, value)
     await session.commit()
@@ -1112,9 +1101,6 @@ async def capabilities(staff: Staff) -> dict:
         "max_paid_calls": config.SHOP_BROADCAST_MAX_PAID_CALLS,
         "wallet_adjustment_limit_irr": str(config.SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR),
         "telegram_stars_refunds_enabled": config.TELEGRAM_STARS_REFUNDS_ENABLED,
-        "bale_prepare_ready": bool(
-            config.BALE_BOT_TOKEN and config.BALE_BROADCAST_PREPARE_CHAT_ID > 0
-        ),
         "media_photo_max_bytes": 10_000_000,
         "media_other_max_bytes": 50_000_000,
     }
@@ -1251,6 +1237,8 @@ async def wallets(staff: Staff, session: Db) -> dict:
         ShopWalletAccount.customer_id,
         ShopWalletAccount.scope,
         ShopWalletAccount.store_id,
+        ShopIdentity.id,
+        ShopIdentity.bot_id,
     ).outerjoin(
         ShopIdentity, ShopIdentity.id == ShopWalletAccount.identity_id,
     )
@@ -1270,7 +1258,8 @@ async def wallets(staff: Staff, session: Db) -> dict:
         "platform": platform or "store",
         "user_id": str(user_id) if user_id is not None else f"Customer #{customer_id}",
         "scope": credit_scope, "store_id": store_id,
-    } for balance, platform, user_id, customer_id, credit_scope, store_id in result.all()]
+        "identity_id": identity_id, "bot_id": bot_id,
+    } for balance, platform, user_id, customer_id, credit_scope, store_id, identity_id, bot_id in result.all()]
     count = int(await session.scalar(count_query) or 0)
     return {"items": accounts, "total": count}
 
@@ -1403,9 +1392,12 @@ async def add_shipping(
     payload: ShippingPayload, staff: Staff, session: Db
 ) -> dict:
     """Create an active or inactive checkout shipping option via the database."""
-    require_staff(staff, "sales")
+    member = require_staff(staff, "sales")
+    scope = admin_store_context(member)
+    require_store_access(scope, scope.current_store_id, write=True)
     item = ShopShippingMethod(**{
         **payload.model_dump(), "price_irr": payload.price_irr,
+        "store_id": scope.current_store_id,
     })
     session.add(item)
     try:
@@ -1458,8 +1450,10 @@ async def add_coupon(
     payload: CouponPayload, staff: Staff, session: Db
 ) -> dict:
     """Create only a merchant-funded coupon with default unused counter."""
-    require_staff(staff, "marketing")
-    item = ShopCoupon(**normalize_coupon(payload))
+    member = require_staff(staff, "marketing")
+    scope = admin_store_context(member)
+    require_store_access(scope, scope.current_store_id, write=True)
+    item = ShopCoupon(store_id=scope.current_store_id, **normalize_coupon(payload))
     session.add(item)
     try:
         await session.commit()
@@ -1498,213 +1492,3 @@ async def edit_coupon(
 from dashboard.next_operations import router as next_operations_router  # noqa: E402
 
 router.include_router(next_operations_router)
-
-
-@router.get("/bot-connections")
-async def bot_connections(staff: Staff, session: Db) -> dict:
-    """Expose actual Bot API deployment modes without secrets or side effects.
-
-    Configuration is server-owned, so the dashboard cannot silently move a
-    webhook to a malicious external destination or start a second poller.
-    """
-    require_staff(staff, "superadmin")
-    await session.execute(text("SELECT 1"))
-
-    import os
-    from redis.asyncio import Redis
-
-    pending_mode = None
-    try:
-        cache = Redis(
-            host=config.REDIS_HOST,
-            password=config.REDIS_PASSWORD,
-            decode_responses=True,
-            socket_connect_timeout=2,
-        )
-        try:
-            pending_mode = await cache.get("shop:pending:telegram:update_mode")
-        finally:
-            await cache.aclose()
-    except Exception:
-        # Do not hide the actual deployment mode if Redis is unavailable.
-        pending_mode = None
-
-    from urllib.parse import urlsplit
-
-    provider_origin = config.WEBHOOK_HOST
-    if provider_origin:
-        parsed = urlsplit(provider_origin)
-        provider_origin = f"{parsed.scheme}://{parsed.netloc}"
-
-    return {
-        "database": "connected",
-        "telegram": {
-            "configured": bool(config.TOKEN),
-            "update_mode": config.TELEGRAM_UPDATE_MODE,
-            "pending_update_mode": pending_mode,
-            "api_transport": config.TELEGRAM_API_MODE,
-            "webhook_url": (
-                config.WEBHOOK_URL if config.TELEGRAM_UPDATE_MODE == "webhook"
-                else None
-            ),
-            "worker_configured": bool(config.TELEGRAM_WORKER_URL),
-            "proxy_configured": bool(config.TELEGRAM_PROXY_URL),
-            "supported_update_modes": ["webhook", "getUpdates"],
-        },
-        "bale": {
-            "configured": bool(config.BALE_BOT_TOKEN),
-            "update_mode": "webhook",
-            # Never expose Bale's secret path or provider token to the UI.
-            "webhook_url_label": (
-                f"{provider_origin}/webhooks/bale/[private-secret]"
-                if provider_origin and config.BALE_BOT_TOKEN
-                else None
-            ),
-            "supported_update_modes": ["webhook"],
-        },
-        "runtime_note": (
-            "Transport mode and host are deployment settings. "
-            "Changing them requires an explicit controlled restart; "
-            "saving storefront text does not alter provider webhooks."
-        ),
-    }
-
-
-class TelegramModeRequest(BaseModel):
-    """Explicitly stage a mode switch; no implicit provider mutation."""
-
-    model_config = ConfigDict(extra="forbid")
-    mode: Literal["webhook", "polling"]
-    confirmation: str
-
-
-@router.post("/bot-connections/telegram-mode-request")
-async def request_telegram_mode(
-    payload: TelegramModeRequest, staff: Staff,
-) -> dict:
-    """Stage the mode for supervised Codespaces activation after a restart.
-
-    A Telegram webhook and getUpdates cannot receive updates concurrently.
-    Never call deleteWebhook or launch a second poller from a web request.
-    """
-    require_staff(staff, "superadmin")
-
-    import os
-    if (
-        os.environ.get("CODESPACE_FRESH_SCHEMA") != "true"
-        or os.environ.get("POSTGRES_DB") != "shop_codespace"
-    ):
-        raise HTTPException(
-            status_code=403, detail="Controlled activation unavailable"
-        )
-    if payload.confirmation != "STAGE_TELEGRAM_MODE":
-        raise HTTPException(
-            status_code=422, detail="Explicit confirmation required"
-        )
-
-    from redis.asyncio import Redis
-
-    cache = Redis(
-        host=config.REDIS_HOST, password=config.REDIS_PASSWORD,
-        decode_responses=True, socket_connect_timeout=2,
-    )
-    try:
-        await cache.set("shop:pending:telegram:update_mode", payload.mode)
-    finally:
-        await cache.aclose()
-    return {
-        "ok": True,
-        "pending_update_mode": payload.mode,
-        "activation": "codespace_restart_required",
-    }
-
-
-@router.get("/bot-connections/probe")
-async def bot_connection_probe(staff: Staff, request: Request) -> dict:
-    """Check provider getMe/getWebhookInfo without modifying any webhook.
-
-    Provider failures are represented as statuses instead of crashing
-    the complete administration dashboard.
-    """
-    require_staff(staff, "superadmin")
-    import asyncio
-
-    from aiohttp import ClientSession, ClientTimeout
-    from channels.bale import BaleTransport
-    from utils.telegram import create_bot, create_telegram_session
-
-    telegram: dict = {"status": "not_configured"}
-    bale: dict = {"status": "not_configured"}
-
-    if config.TOKEN:
-        telegram_bot = getattr(request.app.state, "telegram_bot", None)
-        owns_session = False
-        try:
-            if telegram_bot is None:
-                # Isolated lab has no live receiver; a temporary session is
-                # used only for this read-only probe.
-                telegram_bot = create_bot(
-                    config.TOKEN, create_telegram_session(),
-                )
-                owns_session = True
-            info = await asyncio.wait_for(
-                telegram_bot.get_webhook_info(), timeout=8
-            )
-            account = await asyncio.wait_for(
-                telegram_bot.get_me(), timeout=8
-            )
-            telegram = {
-                "status": "connected",
-                "username": account.username,
-                "pending_updates": info.pending_update_count or 0,
-                "webhook_matches": (
-                    info.url == config.WEBHOOK_URL
-                    if config.TELEGRAM_UPDATE_MODE == "webhook"
-                    else not bool(info.url)
-                ),
-                "provider_mode": (
-                    "webhook" if info.url else "getUpdates"
-                ),
-            }
-        except Exception:
-            telegram = {"status": "unavailable"}
-        finally:
-            # The in-process managed Bot belongs to the receiver and MUST
-            # never be closed by a dashboard health probe.
-            if owns_session and telegram_bot is not None:
-                await telegram_bot.session.close()
-
-    if config.BALE_BOT_TOKEN:
-        try:
-            async with ClientSession(
-                timeout=ClientTimeout(total=8),
-                trust_env=False,
-            ) as http:
-                transport = BaleTransport(config.BALE_BOT_TOKEN, http)
-                identity = await transport._call("getMe", {})
-                bale = {
-                    "status": "connected",
-                    "username": (
-                        identity.get("username")
-                        if isinstance(identity, dict)
-                        else None
-                    ),
-                }
-                try:
-                    info = await transport._call("getWebhookInfo", {})
-                except Exception:
-                    bale["webhook_status"] = "unsupported_or_unavailable"
-                else:
-                    expected = (
-                        f"{config.WEBHOOK_HOST}/webhooks/bale/"
-                        f"{config.BALE_WEBHOOK_SECRET}"
-                    )
-                    bale["webhook_status"] = (
-                        "matching" if isinstance(info, dict)
-                        and info.get("url") == expected
-                        else "different"
-                    )
-        except Exception:
-            bale = {"status": "unavailable"}
-
-    return {"telegram": telegram, "bale": bale}

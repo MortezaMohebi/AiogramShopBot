@@ -1,6 +1,6 @@
 """One-time referral attribution and optional merchant-funded IRR rewards.
 
-Referrals never credit external Bale balances or the legacy crypto wallet.
+Referrals never credit external Bale balances or cryptocurrency wallets.
 Policy defaults to disabled. Only a verified first paid IRR transaction can
 earn credit, and the ledger and reward record commit in one transaction.
 """
@@ -23,7 +23,7 @@ from models.shop_engagement import (
     ShopReferralReward,
 )
 from services.shop_wallet import ShopWalletService
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id
 from services.shop_channel_features import get_features
 from services.shop_payment_rails import rail_enabled
 
@@ -44,6 +44,7 @@ class ShopReferralService:
         *, bot_id: str | None = None,
     ) -> str:
         """Return or create an owner's unique referral code on demand."""
+        bot_id = require_bot_id(bot_id)
         identity = await ShopWalletService.find_identity(
             session, platform, user_id, bot_id=bot_id,
         )
@@ -77,6 +78,7 @@ class ShopReferralService:
         bot_id: str | None = None,
     ) -> str:
         """Accept only an unambiguous first-purchase, same-platform invite."""
+        bot_id = require_bot_id(bot_id)
         policy = await session.get(ShopReferralPolicy, 1)
         if policy is None or not policy.is_enabled or policy.percent <= 0:
             raise ReferralRejected("برنامه معرفی مشتری فعال نیست.")
@@ -117,7 +119,7 @@ class ShopReferralService:
             )
         previous_purchase = await session.scalar(
             select(ShopOrder.id).where(
-                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopOrder.bot_id == bot_id,
                 ShopOrder.platform == platform.value,
                 ShopOrder.platform_user_id == user_id,
                 ShopOrder.status.in_(

@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 from dashboard.admin_control_api import StaffUpdate, change_staff
 from services.shop_admin_security import SecurityRejected
 from dashboard.next_operations import (
-    BaleMediaPrepareDecision,
     MediaPatch,
     OrderReviewDecision,
     ReferralPolicyPatch,
@@ -26,11 +25,10 @@ from dashboard.next_operations import (
     WalletAdjustment,
     bounded_number,
     positive_id,
-    prepare_bale_broadcast_media,
     review_unpaid_order,
     upload_media,
 )
-from models.base import Base
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
 from models.shop_checkout import ShopCoupon, ShopOrderLine, ShopOrderReviewAudit
 from models.shop_content import Product, ShopCategory, ShopOrder
 from models.shop_staff import ShopStaff
@@ -69,20 +67,10 @@ class OfflineDB:
 def db():
     """Create isolated tables for admin actions without external services."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ShopCategory.__table__,
-            Product.__table__,
-            ShopCoupon.__table__,
-            ShopOrder.__table__,
-            ShopOrderLine.__table__,
-            ShopOrderReviewAudit.__table__,
-            ShopStaff.__table__,
-            ShopStaffState.__table__,
-        ],
-    )
+    create_shop_schema(engine)
     with Session(engine) as session:
+        seed_registry(session)
+        session.commit()
         yield OfflineDB(session)
     engine.dispose()
 
@@ -104,7 +92,7 @@ def test_sensitive_payload_validation() -> None:
     """Reject malformed paid controls, approval flags and media metadata."""
     with pytest.raises(ValidationError):
         WalletAdjustment.model_validate({
-            "platform": "bale", "user_id": 5, "amount_irr": 0,
+            "identity_id": 5, "amount_irr": 0,
             "direction": "credit", "reason": "Valid reason 12 letters",
             "operation_id": str(uuid4()), "confirmation": "CREDIT_CONFIRMED",
         })
@@ -122,7 +110,7 @@ def test_sensitive_payload_validation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_upload_and_bale_prepare_reject_unprivileged_role() -> None:
+async def test_upload_rejects_unprivileged_role() -> None:
     """Neither a signed HMAC nor an allowed path confers marketing powers."""
     with pytest.raises(HTTPException) as denied:
         await upload_media(
@@ -131,13 +119,6 @@ async def test_upload_and_bale_prepare_reject_unprivileged_role() -> None:
         )
     assert denied.value.status_code == 403
 
-    with pytest.raises(HTTPException) as denied:
-        await prepare_bale_broadcast_media(
-            1, BaleMediaPrepareDecision(confirmation="PREPARE_BALE_MEDIA"),
-            request=object(), staff=SimpleNamespace(role="sales"),
-            session=object(),
-        )
-    assert denied.value.status_code == 403
 
 
 def _order(db: OfflineDB, *, stock: int, published: bool = True) -> ShopOrder:
@@ -149,6 +130,7 @@ def _order(db: OfflineDB, *, stock: int, published: bool = True) -> ShopOrder:
     db.add(product)
     db.session.flush()
     order = ShopOrder(
+        bot_id=TEST_BOT_IDS["bale"],
         platform="bale", platform_user_id=42, chat_id=42,
         product_id=product.id, product_name_snapshot=product.name,
         quantity=2, unit_price_irr=1000, total_irr=2000,

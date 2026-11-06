@@ -6,7 +6,7 @@ not browser mocks or provider API integrations.
 
 from __future__ import annotations
 
-from tests.schema_support import create_shop_schema, seed_legacy_registry
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS, test_bot_context
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -18,8 +18,7 @@ from sqlalchemy.orm import Session
 from channels.contracts import InboundEvent, Platform
 from models.base import Base
 from models.shop_admin_control import AdminEvent, AdminProfile, AdminSession
-from models.shop_channel_features import ShopChannelFeature
-from models.shop_content import ShopSettings
+from models.shop_store_commerce import ShopBotCommercePolicy
 from models.shop_staff import ShopStaff
 from models.shop_staff_security import (
     ShopPasswordPolicy,
@@ -52,7 +51,7 @@ def db():
                 role="viewer", is_active=True, session_version=1,
             ),
         ])
-        seed_legacy_registry(session)
+        seed_registry(session)
         session.commit()
         yield session
     engine.dispose()
@@ -188,34 +187,33 @@ class _FeatureDb:
 
 def test_cart_and_credit_toggles_are_independent_by_platform(db: Session):
     """Bale may disable shopping while Telegram stays fully functional."""
-    db.add(ShopChannelFeature(
-        platform="bale", cart_enabled=False,
-        store_credit_enabled=False,
-        store_credit_label="اعتبار بله",
-    ))
+    policy = db.get(ShopBotCommercePolicy, TEST_BOT_IDS["bale"])
+    policy.cart_enabled = False
+    policy.credit_enabled = False
+    policy.credit_label = "اعتبار بله"
     db.commit()
     adapter = _FeatureDb(db)
-    bale = asyncio.run(get_features(adapter, "bale"))
-    telegram = asyncio.run(get_features(adapter, "telegram"))
+    bale = asyncio.run(get_features(adapter, "bale", bot_id=TEST_BOT_IDS["bale"]))
+    telegram = asyncio.run(get_features(adapter, "telegram", bot_id=TEST_BOT_IDS["telegram"]))
     assert not bale.cart_enabled and not bale.store_credit_enabled
     assert telegram.cart_enabled and telegram.store_credit_enabled
 
-    cart = asyncio.run(ShopCartFlow().reply(
+    cart = asyncio.run(ShopCartFlow(bot_context=test_bot_context("bale")).reply(
         InboundEvent(platform=Platform.BALE, chat_id=5, user_id=5, text="/cart"),
         adapter,
     ))
     assert cart is not None and "غیرفعال" in cart.text
-    wallet = asyncio.run(ShopEngagementFlow().reply(
+    wallet = asyncio.run(ShopEngagementFlow(bot_context=test_bot_context("bale")).reply(
         InboundEvent(platform=Platform.BALE, chat_id=5, user_id=5, text="/wallet"),
         adapter,
     ))
     assert wallet is not None and "غیرفعال" in wallet.text
-    home = asyncio.run(CatalogFlow()._home(adapter, "bale"))
+    home = asyncio.run(CatalogFlow(bot_context=test_bot_context("bale"))._home(adapter, "bale"))
     assert all(
         action.callback_data != "shop:cart"
         for row in home.rows for action in row
     )
-    telegram_home = asyncio.run(CatalogFlow()._home(adapter, "telegram"))
+    telegram_home = asyncio.run(CatalogFlow(bot_context=test_bot_context("telegram"))._home(adapter, "telegram"))
     assert any(
         action.callback_data == "shop:cart"
         for row in telegram_home.rows for action in row

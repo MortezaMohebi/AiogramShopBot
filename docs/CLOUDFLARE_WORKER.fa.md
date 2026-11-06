@@ -1,125 +1,61 @@
-# اتصال Telegram Bot API با Cloudflare Worker
+# Relay تلگرام برای بات‌های Registry
 
-این قابلیت **اختیاری** است و به بله وابستگی ندارد. برای ساخت Worker از نمونه آزمایشی
-کاربر الهام گرفته شده، ولی نسخه این مخزن یک Relay دارای احراز هویت است و Open Proxy نیست.
+این Worker فقط درخواست‌های Telegram Bot API و دانلود فایل تلگرام را به میزبان ثابت `api.telegram.org` می‌فرستد. هر درخواست باید UUID همان بات، نسخهٔ کلید و کلید مستقل همان بات را داشته باشد. توکن تلگرام داخل مسیر نیز باید با هش ثبت‌شده برای همان UUID تطبیق کند.
 
-## سه حالت API تلگرام
+هر مسیر Relay در بخش Relay Worker Pool پنل به یک بات ثبت‌شده متصل می‌شود. تنظیمات سراسری توکن بات یا کلید Relay مسیر ارسال را تعیین نمی‌کنند. بله از این Worker استفاده نمی‌کند.
 
-| Mode | نحوه اتصال |
-|---|---|
-| `direct` | Aiogram مستقیماً به `api.telegram.org` متصل می‌شود |
-| `http_proxy` | از `TELEGRAM_PROXY_URL` به عنوان HTTP/SOCKS Proxy استفاده می‌کند |
-| `cloudflare_worker` | درخواست‌های API و دانلود فایل از Worker قابل‌تنظیم عبور می‌کنند |
+## آماده‌سازی Worker
 
-متدهای Bot API در Worker Hard-coded نیستند؛ مسیرهای مجاز `/bot<TOKEN>/<METHOD>` و
-`/file/bot<TOKEN>/<PATH>` به شکل داینامیک به **فقط** `api.telegram.org` ارسال می‌شوند.
-آپلود با `multipart/form-data` و دانلود فایل‌ها به‌صورت Stream انجام می‌شود.
-هیچ Cache یا CORS عمومی برای پاسخ‌های دارای اطلاعات ربات فعال نیست.
+فایل تنظیمات در `cloudflare/telegram-relay/wrangler.toml` قرار دارد. نام Worker را انتخاب کنید و Origin عمومی آن را در `TELEGRAM_WORKER_ALLOWED_ORIGINS` سرور مجاز کنید. Origin باید HTTPS باشد و مسیر، Query، Fragment یا نام کاربری نداشته باشد.
 
-## راه‌اندازی Worker
+برای هر بات، ابتدا در پنل یک مسیر و کلید مستقل بسازید. سپس Secret سمت Worker با نام `RELAY_CLIENTS_JSON` را با همین UUID، هش SHA-256 توکن تلگرام و نسخه‌های مجاز کلید آماده کنید:
 
-ابتدا در یک حساب Cloudflare Worker بسازید. سورس این Worker در
-`cloudflare/telegram-relay/src/index.mjs` موجود است؛ راه دیگر نصب Wrangler و اجرای:
+```json
+{
+  "00000000-0000-4000-8000-000000000101": {
+    "token_sha256": "<64 lowercase hexadecimal characters>",
+    "keys": {"1": "<independent random relay key>"},
+    "rps": 5,
+    "max_inflight": 10
+  }
+}
+```
+
+مقادیر بالا الگو هستند. هیچ توکن یا کلید واقعی را در Git، فایل عمومی یا خروجی دستور ثبت نکنید. کلید باید ۳۲ تا ۲۵۶ نویسهٔ چاپ‌پذیر ASCII داشته باشد.
+
+Secret را از ورودی محرمانهٔ Wrangler ثبت کنید:
 
 ```bash
-cd cloudflare/telegram-relay
-npx wrangler login
-npx wrangler secret put RELAY_SHARED_SECRET
-npx wrangler deploy
+npx wrangler secret put RELAY_CLIENTS_JSON
 ```
 
-مقدار `RELAY_SHARED_SECRET` را با Secret تصادفی حداقل ۳۲ کاراکتری ایجاد کنید.
-برای ساخت امن در محیط خودتان می‌توانید از
-`python -c "import secrets; print(secrets.token_urlsafe(48))"` استفاده کنید.
-**Secret و Token ربات را در Git، گفتگو یا متن مستندات قرار ندهید.**
+Binding مربوط به `RELAY_QUOTA` و مهاجرت Durable Object در فایل Wrangler الزامی‌اند. محدودیت‌های سراسری `RELAY_GLOBAL_RPS` و `RELAY_GLOBAL_INFLIGHT` نیز باید تنظیم شوند. نبود رجیستری کلیدها یا سهمیه، درخواست را پیش از تماس با تلگرام متوقف می‌کند.
 
-گزینهٔ `wrangler.toml` یک نام نمونه دارد؛ نام Worker و دامنه‌اش قابل تغییر است.
-آدرس Worker می‌تواند `*.workers.dev` یا دامنه اختصاصی HTTPS باشد؛ کد Python
-فقط از طریق `TELEGRAM_WORKER_URL` آن را می‌شناسد و به دامنه خاصی وابسته نیست.
-آدرس باید **Origin بدون مسیر** باشد.
+## تأیید و فعال‌سازی
 
-## تنظیمات ربات در VPS
+پس از استقرار Worker و آماده‌سازی Secret، مسیر همان بات را در پنل تأیید کنید. سرور یک درخواست خواندنی `getMe` از مسیر پیشنهادی می‌فرستد؛ شناسهٔ برگشتی باید دقیقاً شناسهٔ تأییدشدهٔ بات باشد. تغییر هم‌زمان نسخه، خطای شبکه یا اختلاف شناسه باعث فعال‌شدن مسیر نمی‌شود.
 
-```env
-TELEGRAM_API_MODE=cloudflare_worker
-TELEGRAM_WORKER_URL=https://your-worker.your-account.workers.dev
-TELEGRAM_WORKER_SECRET=<SAME_SECRET_AS_CLOUDFLARE>
-# Optional: polling requires no publicly accessible Telegram webhook
-TELEGRAM_UPDATE_MODE=polling
-TELEGRAM_PROXY_URL=
-```
+فعال‌سازی مسیر Relay به‌تنهایی Receiver را فعال نمی‌کند. Webhook یا Polling هر بات در کنترل‌های Registry همان بات مدیریت می‌شود. هر بات می‌تواند چند مسیر اولویت‌بندی‌شده با کلیدهای جدا داشته باشد.
 
-برای حالت مستقیم:
-```env
-TELEGRAM_API_MODE=direct
-TELEGRAM_UPDATE_MODE=webhook
-```
+## قرارداد درخواست
 
-برای SOCKS/HTTP Proxy:
-```env
-TELEGRAM_API_MODE=http_proxy
-TELEGRAM_PROXY_URL=socks5://127.0.0.1:1080
-```
+هدرهای الزامی عبارت‌اند از:
 
-**تفاوت API Mode و Update Mode:**
+| هدر | مقدار |
+| --- | --- |
+| `X-Relay-Bot-ID` | UUID بات ثبت‌شده |
+| `X-Relay-Version` | نسخهٔ مثبت کلید مجاز |
+| `X-Relay-Key` | کلید مستقل همان بات و نسخه |
 
-- `TELEGRAM_API_MODE` مسیر ارتباط خروجی Aiogram با Bot API است.
-- `TELEGRAM_UPDATE_MODE=webhook` یعنی پیام‌ها مستقیماً از Telegram به `WEBHOOK_URL`
-  سرور می‌رسند. Cloudflare Worker این مسیر را خودکار تغییر نمی‌دهد و سرور همچنان
-  به HTTPS عمومی قابل دسترس نیاز دارد.
-- `TELEGRAM_UPDATE_MODE=polling` یعنی دریافت پیام‌ها نیز از طریق
-  `getUpdates` روی **همان API Mode** انجام می‌شود. برای یک VPS که فقط
-  اتصال خروجی به Worker دارد، معمولاً انتخاب ساده‌تری است.
-- به دلیل انحصاری بودن روش‌های دریافت Telegram، در Polling ابتدا Webhook
-  قبلی با `deleteWebhook` حذف می‌شود.
-- حالت Legacy `MULTIBOT=true` فعلاً فقط Webhook را پشتیبانی می‌کند.
+Worker هدرهای احراز هویت را پیش از ارسال به تلگرام حذف می‌کند. بدنهٔ multipart و فایل‌ها به‌صورت جریان عبور می‌کنند؛ Redirect دنبال نمی‌شود و پاسخ‌ها Cache نمی‌شوند. سهمیهٔ هم‌زمانی تا پایان جریان پاسخ نگه داشته می‌شود.
 
-بله همچنان از `BaleTransport` و Webhook مستقل خودش استفاده می‌کند. اگر بله
-از همین VPS ارائه می‌شود، endpoint بله باید از شبکه بله قابل دسترس باشد.
+درخواست‌های تغییردهنده مانند ارسال پیام پس از خطای مبهم روی مسیر دیگری تکرار نمی‌شوند. بررسی وضعیت چنین ارسال‌هایی باید از رسید ثبت‌شده انجام شود. تغییر کلید نیز فقط با ثبت نسخهٔ جدید در Secret و تأیید مسیر همان بات انجام می‌شود.
 
-## مرزهای امنیتی
+## بررسی محلی
 
-- Worker **تنها** به `https://api.telegram.org` درخواست می‌زند؛ آدرس Host
-  یا URL دلخواه کاربر نمی‌تواند مقصد را تغییر دهد.
-- متدهای HTTP و مسیرها محدود هستند: `GET/POST` برای API، فقط `GET` برای فایل.
-- همه درخواست‌ها نیازمند هدر `X-Telegram-Relay-Key` با Secret مستقل از Bot Token هستند.
-- Secret در Cloudflare Secrets و در متغیر محیطی سرور نگهداری می‌شود؛
-  به Telegram، CDNهای دیگر یا درخواست‌های دانلود خارجی ارسال نمی‌شود.
-- Redirectهای خارجی Follow نمی‌شوند؛ Worker خطای امن و بدون Token برمی‌گرداند.
-- هنگام Deploy، Worker logs و Reverse Proxy logs باید فاقد Bot Token در URL باشند.
-- در حالت Production، ارتباط VPS با HTTPS Worker را تست کنید؛ ممکن است دامنه
-  `workers.dev` در بعضی شبکه‌ها قابل دسترس نباشد. دامنه اختصاصی راه‌حل قطعی
-  برای همه مسیرهای شبکه نیست.
-- Worker جلوی سوءاستفاده از API در صورت افشای کلید یا Bot Token را به‌تنهایی
-  نمی‌گیرد؛ Rate Limit، Rotation و مانیتورینگ باید مستقل اجرا شوند.
-- هنگام تغییر `TELEGRAM_WORKER_URL` یا Mode، متغیرهای محیطی را اصلاح و
-  Bot Service را Restart کنید؛ **تغییر سورس یا Deploy جدید ربات لازم نیست**.
-
-## بررسی بدون توکن واقعی
+این دستورها فقط Fake Provider و دادهٔ موقت را اجرا می‌کنند:
 
 ```bash
-cd cloudflare/telegram-relay
-node --test test/relay.test.mjs
-cd ../..
-pytest -q tests/test_telegram_worker_session.py
+node --test cloudflare/telegram-relay/test/*.test.mjs
+python -m pytest tests/test_telegram_worker_session.py tests/test_relay_pool_offline.py
 ```
-
-در نهایت لازم است روی VPS واقعی یک آزمایش اتصال `getMe` و `getUpdates` یا
-`setWebhook` انجام شود. این تست‌ها را بدون توکن آزمایشی معتبر نمی‌توان PASS کرد.
-
-
-## مدیریت از پنل Next.js (جدید)
-
-برای تغییر مسیر خروجی **بدون ویرایش دستی `TELEGRAM_API_MODE` در هر تغییر**،
-پس از تعیین مقصدهای مجاز در Deployment به
-**اتصال ربات‌ها → مسیر API تلگرام** بروید. Direct، HTTP/SOCKS5 Proxy و
-Cloudflare Worker از جریان ثبت پیشنهاد، تست `getMe` و تأیید رمز/MFA
-پشتیبانی می‌کنند. وضعیت موفق در PostgreSQL رمزنگاری‌شده می‌ماند و پس از
-Restart بارگذاری می‌شود. Broadcast Worker نیز نسخهٔ تأییدشده را دریافت می‌کند.
-
-جزئیات امنیت، Allowlist، Recovery، Rollback و تست‌های پذیرش:
-[`docs/TELEGRAM_TRANSPORT_DASHBOARD.fa.md`](./TELEGRAM_TRANSPORT_DASHBOARD.fa.md).
-
-از این مسیر هیچ Token یا مقدار `RELAY_SHARED_SECRET` در GitHub،
-پاسخ GET، لاگ یا Query String ثبت نکنید. مواردی مانند تغییر Token
-یا ایجاد Worker در Cloudflare همچنان نیازمند مجوزها و تنظیمات مستقل‌اند.

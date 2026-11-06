@@ -1,14 +1,14 @@
 """Explicit ASGI composition for the revocable administration control plane.
 
-The original business app is mounted unchanged. Only authentication/account
-routes are replaced. Internal mutations retain the existing HMAC verifier;
+The signed business API and authenticated provider routes share one session
+and Store authorization boundary. Internal mutations retain the existing
+HMAC verifier;
 all authenticated internal requests additionally need a server-side session.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import re
 from contextlib import asynccontextmanager
 
@@ -23,12 +23,10 @@ from services.shop_admin_security import (
 )
 from services import shop_admin_security as security
 from services.shop_store_context import bind_context, resolve_context
-from models.shop_multibot import DEFAULT_STORE_ID
+from models.shop_multibot import DEFAULT_STORE_ID, ShopBot
+from sqlalchemy import select
 from dashboard.admin_control_api import router
 from dashboard.customer_crm_api import router as customer_router
-from dashboard.bot_profile_api import router as bot_profile_router
-from dashboard.payment_rails_api import router as payment_rails_router
-from dashboard.telegram_transport_api import router as telegram_transport_router
 from dashboard.shop_multibot_api import router as multibot_foundation_router
 from dashboard.shop_multibot_management_api import router as multibot_management_router
 from dashboard.shop_bot_catalog_api import router as bot_catalog_router
@@ -62,8 +60,6 @@ def permission_for(path: str, method: str) -> str | None:
         return "dashboard.read"
     if resource in {"auth", "account", "capabilities", "overview"}:
         return "account.manage_self" if resource in {"auth", "account"} else "dashboard.read"
-    if resource == "telegram-transport" and path.endswith("/apply"):
-        return "bots.apply"
     if resource == "relay-workers" and path.endswith("/state"):
         return "bots.apply"
     if resource == "bot-registry" and "/relay-routes/" in path and path.endswith(
@@ -93,9 +89,6 @@ def permission_for(path: str, method: str) -> str | None:
         "refunds": "finance.read" if method == "GET" else "refund.execute",
         "settings": "settings.manage",
         "referral-policy": "settings.manage",
-        "channel-features": "settings.manage",
-        "bot-profiles": "bots.read" if method == "GET" else "bots.configure",
-        "payment-rails": "settings.manage",
         "stores": "bots.read" if method == "GET" else "bots.configure",
         "bot-registry": (
             "bots.apply"
@@ -118,17 +111,13 @@ def permission_for(path: str, method: str) -> str | None:
         ),
         "digital-deliveries": "orders.read",
         "payment-accounts": "bots.read" if method == "GET" else "bots.apply",
-        "telegram-transport": "bots.read" if method == "GET" else "bots.configure",
         "customer-retention": "audit.read",
         "staff": "staff.manage",
-        "broadcast": "broadcast.approve",
         "campaigns": (
             "broadcast.approve"
             if path.endswith(("/start", "/approve"))
             else "campaigns.manage"
         ),
-        "bot-connections": "bots.read" if method == "GET" else "bots.configure",
-        "connection-changes": "bots.read" if method == "GET" else "bots.configure",
     }.get(resource)
 
 
@@ -136,7 +125,7 @@ def store_scoped_campaign_route(path: str, method: str) -> bool:
     """Allow guarded campaign routes and their read-only capability metadata.
 
     In particular, a campaign upload must not widen unrelated upload targets,
-    private media previews or the external legacy Bale preparation endpoint.
+    private media previews or the external provider preparation endpoints.
     """
     route = path.removeprefix(PREFIX)
     if method == "GET":
@@ -177,43 +166,22 @@ def session_proof(token: str, bridge_signature: str, secret: str) -> str:
     return hmac.new(secret.encode(), ("session-v1\n" + bridge_signature + "\n" + token).encode(), hashlib.sha256).hexdigest()
 
 
-def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
-    """Wrap the original app without mutating its routes or dependencies."""
+def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
+    """Compose secure admin routes around a base-owned Registry lifecycle.
+
+    ``live_receivers`` remains accepted for isolated integration callers;
+    receiver ownership belongs exclusively to the supplied base lifespan.
+    """
+    if live_receivers:
+        raise ValueError("The base application must own Registry receivers")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        supervisor = None
-        multi_supervisor = None
-        # Legacy startup must not silently register/delete provider webhooks.
-        # The supervised controller now owns all receiver-mode transitions.
-        original_mode = config.TELEGRAM_UPDATE_MODE
-        if live_receivers:
-            os.environ["CODESPACE_MANUAL_WEBHOOK"] = "true"
-            config.TELEGRAM_UPDATE_MODE = "webhook"
-        try:
-            async with legacy.router.lifespan_context(legacy):
-                config.TELEGRAM_UPDATE_MODE = original_mode
-                try:
-                    if live_receivers:
-                        from services.shop_connection_runtime import ConnectionSupervisor
-
-                        supervisor = ConnectionSupervisor(legacy)
-                        await supervisor.start()
-                        if config.MULTIBOT_V2_RUNTIME_ENABLED:
-                            from services.shop_multibot_supervisor import MultiBotSupervisor
-
-                            multi_supervisor = MultiBotSupervisor(legacy)
-                            await multi_supervisor.start()
-                    yield
-                finally:
-                    if multi_supervisor is not None:
-                        await multi_supervisor.close()
-                    if supervisor:
-                        await supervisor.close()
-        finally:
-            config.TELEGRAM_UPDATE_MODE = original_mode
+        async with base.router.lifespan_context(base):
+            yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-    app.state = legacy.state
+    app.state = base.state
 
     @app.exception_handler(SecurityRejected)
     async def security_error(_request: Request, error: SecurityRejected):
@@ -223,9 +191,17 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     @app.middleware("http")
     async def session_boundary(request: Request, call_next):
         path = request.url.path
-        # The old password-only SQLAdmin must not bypass MFA/session revocation.
-        if path == "/admin" or path.startswith("/admin/"):
-            return JSONResponse({"detail": "Use the Next.js administration panel"}, status_code=404)
+        # Retired administration routes cannot bypass MFA/session revocation.
+        retired = {
+            "bot-connections", "bot-profiles", "connection-changes",
+            "telegram-transport", "channel-features", "payment-rails", "broadcast",
+        }
+        resource = path.removeprefix(PREFIX + "/").split("/")[0]
+        if (
+            path == "/admin" or path.startswith("/admin/")
+            or (path.startswith(PREFIX + "/") and resource in retired)
+        ):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
         if not path.startswith(PREFIX + "/") or path in {PREFIX + "/auth/login", PREFIX + "/auth/redeem"}:
             return await call_next(request)
         try:
@@ -275,7 +251,7 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 permission = permission_for(path, request.method)
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
-                if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/channel-features") or path.startswith(PREFIX + "/bot-profiles") or path.startswith(PREFIX + "/payment-rails") or path.startswith(PREFIX + "/telegram-transport") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or (path.startswith(PREFIX + "/products/") and path.endswith(("/digital-file", "/digital-licenses"))) or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
+                if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or (path.startswith(PREFIX + "/products/") and path.endswith(("/digital-file", "/digital-licenses"))) or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     require_recent(row)
                 request.state.admin_session_id = row.id
                 # Only session-authenticated requests can acquire StoreContext.
@@ -288,6 +264,22 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         db, staff_id=staff.id, session_id=row.id,
                     )
                     request.state.store_context = scope
+                    if resource == "bot-registry":
+                        target = path.removeprefix(
+                            PREFIX + "/bot-registry/",
+                        ).split("/")[0]
+                        if re.fullmatch(r"[0-9a-fA-F-]{36}", target):
+                            bot = await db.scalar(select(ShopBot).where(
+                                ShopBot.id == target.lower(),
+                                ShopBot.store_id.in_(scope.active_store_ids),
+                                ShopBot.runtime_owner == "registry",
+                            ))
+                            if bot is None:
+                                raise SecurityRejected("bot_not_found", 404)
+                            scope.require(
+                                bot.store_id,
+                                write=request.method not in {"GET", "HEAD"},
+                            )
                     multi_safe = {
                         "store-context",
                         "staff",
@@ -310,12 +302,13 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "fulfillments",
                         "customer-notifications",
                         "digital-deliveries",
+                        "wallets",
                         "workflows",
                         "actions",
                         "workflow-runtime",
                         "mcp",
                     }
-                    # Read-only legacy views have explicit Store joins and
+                    # Read-only financial views have explicit Store joins and
                     # may aggregate safely. Mutation handlers stay unavailable
                     # in a multi-Store selection until independently audited.
                     if request.method == "GET":
@@ -378,12 +371,9 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
             return JSONResponse({"detail": code}, status_code=error.status_code,
                                 headers={"Cache-Control": "no-store"})
 
-    # Explicit top-level routes win before the legacy fallback mount.
+    # Explicit top-level routes win before the base application mount.
     app.include_router(router)
     app.include_router(customer_router)
-    app.include_router(bot_profile_router)
-    app.include_router(payment_rails_router)
-    app.include_router(telegram_transport_router)
     app.include_router(multibot_foundation_router)
     app.include_router(multibot_management_router)
     app.include_router(bot_catalog_router)
@@ -407,5 +397,5 @@ def create_app(legacy: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(digital_router)
     # Public provider callbacks are authenticated by opaque route credentials.
     app.include_router(multi_webhook_router)
-    app.mount("/", legacy)
+    app.mount("/", base)
     return app

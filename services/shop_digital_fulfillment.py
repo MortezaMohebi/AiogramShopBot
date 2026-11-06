@@ -190,8 +190,7 @@ async def _preflight(
         and order.chat_id == row.chat_id
         and bot.store_id == row.store_id
         and (
-            bot.runtime_owner == "legacy" and bot.status == "legacy"
-            or bot.runtime_owner == "registry" and bot.status == "active"
+            bot.runtime_owner == "registry" and bot.status == "active"
         )
     )
     paid = bool(order and _paid_in_ledger(order, receipt))

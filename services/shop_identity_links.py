@@ -13,16 +13,14 @@ import secrets
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_content import ShopIdentity
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id, require_registry_bot
 from services import shop_admin_security as security
 from services.shop_store_commerce import link_confirmed_identities
-from models.shop_customer_links import (
-    ShopCustomerIdentityLink, ShopCustomerLinkRequest,
-)
+from models.shop_customer_links import ShopCustomerLinkRequest
 from services.shop_admin_security import clock, utc
 
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
@@ -33,23 +31,15 @@ class LinkRejected(ValueError):
     """Safe user-facing refusal, without raw secrets or SQL content."""
 
 
-async def _linked(db: AsyncSession, identity_id: int) -> bool:
-    """Deny linking an identity already associated with a different provider."""
-    return await db.scalar(select(ShopCustomerIdentityLink.id).where(
-        or_(
-            ShopCustomerIdentityLink.source_id == identity_id,
-            ShopCustomerIdentityLink.target_id == identity_id,
-        )
-    )) is not None
-
-
 async def begin(
     db: AsyncSession, *, platform: str, user_id: int,
     bot_id: str | None = None,
 ) -> str:
     """Start from one verified platform identity; issue a 256-bit secret."""
+    bot_id = require_bot_id(bot_id)
+    await require_registry_bot(db, bot_id, platform)
     identity = await db.scalar(select(ShopIdentity).where(
-        ShopIdentity.bot_id == (bot_id or legacy_id(platform)),
+        ShopIdentity.bot_id == bot_id,
         ShopIdentity.platform == platform,
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
@@ -99,11 +89,13 @@ async def claim(
     bot_id: str | None = None,
 ) -> None:
     """Prove control of the second provider and await source confirmation."""
+    bot_id = require_bot_id(bot_id)
+    await require_registry_bot(db, bot_id, platform)
     item = await _request(db, token)
     if item.state != "pending":
         raise LinkRejected("درخواست قبلاً ثبت شده؛ تأیید حساب اول لازم است.")
     target = await db.scalar(select(ShopIdentity).where(
-        ShopIdentity.bot_id == (bot_id or legacy_id(platform)),
+        ShopIdentity.bot_id == bot_id,
         ShopIdentity.platform == platform,
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
@@ -124,12 +116,14 @@ async def approve(
     bot_id: str | None = None,
 ) -> None:
     """Require a fresh command from the initiating provider to finalize."""
+    bot_id = require_bot_id(bot_id)
+    await require_registry_bot(db, bot_id, platform)
     item = await _request(db, token)
     if item.state != "awaiting_confirmation" or item.target_id is None:
         raise LinkRejected("ابتدا کد را در پیام‌رسان دوم وارد کنید.")
     source = await db.scalar(select(ShopIdentity).where(
         ShopIdentity.id == item.source_id,
-        ShopIdentity.bot_id == (bot_id or legacy_id(platform)),
+        ShopIdentity.bot_id == bot_id,
         ShopIdentity.platform == platform,
         ShopIdentity.platform_user_id == user_id,
     ).with_for_update())
@@ -150,12 +144,6 @@ async def approve(
         raise LinkRejected(
             "اشتراک حساب نیازمند بررسی مالکیت یا ماندهٔ اعتبار است."
         ) from None
-    # Preserve the original one-to-one link for older CRM readers only;
-    # the new immutable Store link event supports arbitrarily many accounts.
-    if not await _linked(db, source.id) and not await _linked(db, target.id):
-        db.add(ShopCustomerIdentityLink(
-            source_id=source.id, target_id=target.id, approved_at=clock(),
-        ))
     item.state = "confirmed"
     await db.commit()
 
@@ -165,11 +153,13 @@ async def cancel(
     bot_id: str | None = None,
 ) -> None:
     """Allow only the first platform account to cancel a pending challenge."""
+    bot_id = require_bot_id(bot_id)
+    await require_registry_bot(db, bot_id, platform)
     item = await _request(db, token)
     owner = await db.get(ShopIdentity, item.source_id)
     if (
         owner is None or owner.platform != platform
-        or owner.bot_id != (bot_id or legacy_id(platform))
+        or owner.bot_id != bot_id
         or owner.platform_user_id != user_id
     ):
         raise LinkRejected("فقط حساب آغازکننده می‌تواند درخواست را لغو کند.")

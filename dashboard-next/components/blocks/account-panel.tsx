@@ -223,7 +223,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         <p className="text-xs text-muted-foreground">تغییر نام کاربری نیازمند رمز فعلی و MFA است. پس از تغییر، تمام دستگاه‌ها خارج خواهند شد.</p>
         <label className="block space-y-2 text-sm">نام کاربری جدید
           <Input name="username" dir="ltr" minLength={3} maxLength={80}
-            pattern="[a-z0-9][a-z0-9_.-]{2,79}" required disabled={busy}
+            pattern="[a-z0-9][a-z0-9_.\-]{2,79}" required disabled={busy}
             autoCapitalize="none" autoCorrect="off" />
         </label>
         <ProofFields factor={initial.mfa_enabled} disabled={busy} />

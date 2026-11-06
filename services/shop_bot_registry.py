@@ -1,8 +1,8 @@
 """Transactional Store/Bot Registry operations without provider network calls.
 
 New bots are always draft with no live dispatcher or payment permissions.
-The current two bots are adopted under immutable legacy IDs; neither the
-existing settings nor financial records are altered by this service.
+Credentials, catalog access and receivers require explicit per-bot setup;
+registration never inherits a platform-wide runtime or payment credential.
 """
 
 from __future__ import annotations
@@ -180,6 +180,5 @@ def registry_snapshot(
         "total_bots": total,
         "page": page,
         "page_size": page_size,
-        "default_store_id": DEFAULT_STORE_ID,
-        "runtime_migration_complete": False,
+        "default_store_id": scope.current_store_id if scope is not None else DEFAULT_STORE_ID,
     }

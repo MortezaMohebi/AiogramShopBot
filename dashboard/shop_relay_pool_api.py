@@ -19,6 +19,7 @@ from dashboard.admin_control_api import (
 )
 from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
+from models.shop_multibot import ShopBot
 from services import shop_admin_security as security
 from services import shop_relay_pool as pool
 
@@ -124,6 +125,23 @@ async def read_bot_routes(
     """List only the selected bot's allowed Worker relationships."""
     require(staff, "bots.read")
     return await pool.list_bot_routes(db, str(bot_id))
+
+
+@router.get("/bot-registry/{bot_id}/relay-workers")
+async def bot_worker_choices(
+    bot_id: UUID, staff: Actor, db: Db,
+) -> dict:
+    """Read shared Worker choices after validating this bot's Store access.
+
+    The signed session boundary authorizes the active Store and bot before
+    dispatch. Route counts belong only to that bot's Store; credentials and
+    assignments in other Stores never appear in this selection response.
+    """
+    require(staff, "bots.read")
+    bot = await db.get(ShopBot, str(bot_id))
+    if bot is None:
+        raise security.SecurityRejected("bot_not_found", 404)
+    return await pool.list_workers(db, store_id=bot.store_id)
 
 
 @router.post("/bot-registry/{bot_id}/relay-routes")

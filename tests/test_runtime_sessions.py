@@ -105,7 +105,7 @@ async def test_duplicate_inbound_does_not_repeat_transition_or_prompt(
 
 
 @pytest.mark.asyncio
-async def test_kill_switch_hands_inputs_to_legacy_without_deleting_run(
+async def test_kill_switch_hands_inputs_to_commerce_without_deleting_run(
     buyer, monkeypatch
 ):
     """Disabling Runtime never consumes a customer's input or destroys pinned state."""
@@ -224,7 +224,7 @@ async def test_cancel_during_action_wait_is_immediate_not_lost_in_queue(
 
 
 @pytest.mark.asyncio
-async def test_terminal_slot_does_not_capture_future_legacy_text(buyer, monkeypatch):
+async def test_terminal_slot_does_not_capture_future_commerce_text(buyer, monkeypatch):
     """A finished Workflow must release ordinary messages back to the old storefront."""
     db, p = buyer
     await setup_runtime(db, p, monkeypatch)
@@ -262,7 +262,7 @@ async def test_existing_customer_entry_does_not_enroll_new_user_into_eligibility
     result = await handle(
         db, context=p.bot, event=inbound(1, "/wholesale", "command"), was_existing=False
     )
-    assert result["handled"] is False
+    assert result == {"handled": True, "status": "eligibility_rejected"}
     assert await db.scalar(select(func.count()).select_from(WorkflowRun)) == 0
 
 
@@ -402,3 +402,85 @@ async def test_locked_slot_refresh_prevents_two_active_runs_after_overlapping_st
     assert len(active) == 1
     slot = await db.scalar(select(RuntimeSlot))
     assert slot.run_id == active[0].id and slot.next_sequence == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry_kind", ["command", "menu", "start", "internal", "admin_test"])
+async def test_persisted_retired_fallback_cannot_execute_or_reach_commerce(
+    buyer, monkeypatch, entry_kind,
+):
+    """Unclean stored bindings cannot resurrect execution or the old fallback policy."""
+    db, principal = buyer
+    await setup_runtime(db, principal, monkeypatch)
+    binding = await db.scalar(select(RuntimeBinding))
+    binding.kind = entry_kind
+    binding.fallback = "legacy"
+    binding.eligibility = "existing_customer"
+    await db.commit()
+    if entry_kind == "menu":
+        event = inbound(1, "", "callback").model_copy(update={"callback": "wfe:wholesale"})
+    elif entry_kind == "start":
+        event = inbound(1, "/start wholesale", "command")
+    elif entry_kind in {"internal", "admin_test"}:
+        event = inbound(1, "wholesale", "internal")
+    else:
+        event = inbound(1, "/wholesale", "command")
+    result = await handle(
+        db, context=principal.bot, event=event,
+        origin=entry_kind if entry_kind in {"internal", "admin_test"} else "customer",
+        was_existing=False,
+    )
+    assert result == {"handled": True, "status": "entry_unavailable"}
+    assert await db.scalar(select(func.count()).select_from(WorkflowRun)) == 0
+    assert await db.scalar(select(func.count()).select_from(WorkflowOutbox)) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retirement", ["kind", "fallback"])
+@pytest.mark.parametrize("text,kind", [("/restart", "command"), ("Alice", "text")])
+async def test_persisted_retired_binding_cannot_restart_or_advance_existing_run(
+    buyer, monkeypatch, retirement, text, kind,
+):
+    """Pinned runs cannot retain authority through a retired stored entry contract."""
+    db, principal = buyer
+    await setup_runtime(db, principal, monkeypatch)
+    await handle(db, context=principal.bot, event=inbound(1, "/wholesale", "command"))
+    binding = await db.scalar(select(RuntimeBinding))
+    run = await db.scalar(select(WorkflowRun))
+    before_node = run.node_id
+    before_messages = await db.scalar(select(func.count()).select_from(WorkflowOutbox))
+    if retirement == "kind":
+        binding.kind = "legacy_bridge"
+    else:
+        binding.fallback = "legacy"
+    await db.commit()
+    result = await handle(db, context=principal.bot, event=inbound(2, text, kind))
+    assert result == {"handled": True, "status": "entry_unavailable", "run_id": run.id}
+    assert run.status == "failed" and run.error_code == "runtime_entry_unavailable"
+    assert run.node_id == before_node
+    assert await db.scalar(select(func.count()).select_from(WorkflowRun)) == 1
+    assert await db.scalar(select(func.count()).select_from(WorkflowOutbox)) == before_messages
+
+
+@pytest.mark.asyncio
+async def test_entry_retirement_after_inbox_commit_cannot_start_a_run(buyer, monkeypatch):
+    """Selection before durable acceptance never substitutes for execution-time authority."""
+    from services.shop_runtime import sessions
+
+    db, principal = buyer
+    await setup_runtime(db, principal, monkeypatch)
+    consume = sessions._consume
+
+    async def retire_before_consume(database, context, event, **kwargs):
+        """Retire the exact selected record at the Inbox persistence boundary."""
+        kwargs["binding"].fallback = "legacy"
+        await database.commit()
+        return await consume(database, context, event, **kwargs)
+
+    monkeypatch.setattr(sessions, "_consume", retire_before_consume)
+    result = await handle(
+        db, context=principal.bot, event=inbound(1, "/wholesale", "command"),
+    )
+    assert result == {"handled": True, "status": "entry_unavailable"}
+    assert await db.scalar(select(func.count()).select_from(WorkflowRun)) == 0
+    assert await db.scalar(select(func.count()).select_from(WorkflowOutbox)) == 0

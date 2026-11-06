@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from models.shop_delivery import ShopRemoteFile
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id
 
 
 def bot_fingerprint(token: str) -> str:
@@ -27,12 +27,13 @@ async def cached_file_id(
     bot_id: str | None = None,
 ) -> str | None:
     """Read a remote file id belonging only to the specified bot namespace."""
+    bot_id = require_bot_id(bot_id)
     from db import session_maker
 
     async with session_maker() as session:
         result = await session.scalar(
             select(ShopRemoteFile.remote_file_id).where(
-                ShopRemoteFile.bot_id == (bot_id or legacy_id(platform)),
+                ShopRemoteFile.bot_id == bot_id,
                 ShopRemoteFile.platform == platform,
                 ShopRemoteFile.bot_fingerprint == bot_key,
                 ShopRemoteFile.storage_key == storage_key,
@@ -52,13 +53,14 @@ async def remember_file_id(
     bot_id: str | None = None,
 ) -> None:
     """Cache only a confirmed provider file id with PostgreSQL conflict safety."""
+    bot_id = require_bot_id(bot_id)
     if not isinstance(file_id, str) or not 1 <= len(file_id) <= 4096:
         raise ValueError("Bot API did not return a usable file_id.")
     from db import session_maker
 
     values = {
         "platform": platform,
-        "bot_id": bot_id or legacy_id(platform),
+        "bot_id": bot_id,
         "bot_fingerprint": bot_key,
         "storage_key": storage_key,
         "delivery_kind": kind,

@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # بررسی‌های لازم پیش از Merge
 
 - [x] Fork و مجوز Write در GitHub تأیید شد.

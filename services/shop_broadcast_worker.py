@@ -29,8 +29,7 @@ from models.shop_engagement import (
     ShopCampaign,
     ShopCampaignDelivery,
 )
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot
-from services.shop_bot_operations import legacy_state
+from models.shop_multibot import ShopBot
 from services.shop_broadcast_control import (
     _business_media_ready,
     delivery_counts,
@@ -38,7 +37,6 @@ from services.shop_broadcast_control import (
 )
 from services.shop_broadcast_rate import reserve_message_slot
 from services.shop_broadcast_scope import (
-    ready_legacy_bot,
     ready_registry_bot,
     registry_dispatch_enabled,
 )
@@ -152,20 +150,12 @@ class BroadcastWorker:
     def __init__(
         self,
         *,
-        telegram: TelegramTransport | None,
-        bale_session,
-        telegram_transport_sync: Callable[[], Awaitable[None]] | None = None,
         registry_transport_factory: Callable[
             [ClaimedRecipient], AbstractAsyncContextManager[CampaignTransport]
         ]
         | None = None,
     ) -> None:
-        """Reuse legacy clients and optionally allow explicit Registry transports."""
-        self.telegram = telegram
-        self.bale_session = bale_session
-        self.telegram_transport_sync = telegram_transport_sync
-        # No factory means this instance remains a legacy-token worker even
-        # when another deployment has enabled Registry campaign controls.
+        """Use only per-bot authenticated Registry transports."""
         self.registry_transport_factory = registry_transport_factory
         self.worker_id = secrets.token_hex(16)
 
@@ -258,41 +248,12 @@ class BroadcastWorker:
         from db import session_maker
 
         async with session_maker() as session:
-            # Registry-only deployments need not have either legacy token or
-            # profile. Do not consult legacy policy for unavailable clients.
-            available_platforms = [
-                platform
-                for platform in ("telegram", "bale")
-                if (
-                    self.telegram is not None
-                    if platform == "telegram"
-                    else self.bale_session is not None
-                )
-                if (await legacy_state(session, platform)).state == "active"
-                if await session.scalar(ready_legacy_bot(platform)) is not None
-            ]
             registry_enabled = (
                 registry_dispatch_enabled()
                 and self.registry_transport_factory is not None
             )
-            if not available_platforms and not registry_enabled:
+            if not registry_enabled:
                 return None
-
-            legacy_owner = (
-                or_(
-                    false(),
-                    *(
-                        (ShopIdentity.platform == platform)
-                        & (ShopIdentity.bot_id == LEGACY_BOT_IDS[platform])
-                        for platform in available_platforms
-                    ),
-                )
-                & (ShopCampaign.store_id == DEFAULT_STORE_ID)
-                & (
-                    ShopCampaign.bot_id.is_(None)
-                    | (ShopCampaign.bot_id == ShopIdentity.bot_id)
-                )
-            )
             registry_owner = (
                 (ShopCampaign.bot_id == ShopIdentity.bot_id)
                 & ready_registry_bot(
@@ -315,7 +276,7 @@ class BroadcastWorker:
                     ShopCampaign.audience == "all",
                     ShopCampaign.audience == ShopIdentity.platform,
                 ),
-                or_(legacy_owner, registry_owner),
+                registry_owner,
             )
             active = await session.scalar(
                 select(ShopCampaign)
@@ -357,8 +318,7 @@ class BroadcastWorker:
             if pair is None:
                 return None
             delivery, identity = pair
-            is_registry = identity.bot_id not in LEGACY_BOT_IDS.values()
-            bot = await session.get(ShopBot, identity.bot_id) if is_registry else None
+            bot = await session.get(ShopBot, identity.bot_id)
             # A revoked opt-in is terminal before any factory sees the claim.
             skip_reason = (
                 "consent_revoked"
@@ -426,32 +386,21 @@ class BroadcastWorker:
                 and campaign.bale_mode == claim.bale_mode
                 and campaign.audience in ("all", claim.platform.value)
             )
-            if claim.bot_id in LEGACY_BOT_IDS.values():
-                operations = await legacy_state(session, claim.platform.value)
-                bot = await session.scalar(ready_legacy_bot(claim.platform.value))
-                runtime_allowed = (
-                    operations.state == "active"
-                    and bot is not None
-                    and claim.bot_id == LEGACY_BOT_IDS[claim.platform.value]
-                    and claim.store_id == DEFAULT_STORE_ID
-                    and campaign.bot_id in (None, claim.bot_id)
+            bot = await session.scalar(
+                ready_registry_bot(
+                    bot_id=claim.bot_id,
+                    store_id=claim.store_id,
                 )
-            else:
-                bot = await session.scalar(
-                    ready_registry_bot(
-                        bot_id=claim.bot_id,
-                        store_id=claim.store_id,
-                    )
-                )
-                runtime_allowed = (
-                    registry_dispatch_enabled()
-                    and self.registry_transport_factory is not None
-                    and bot is not None
-                    and bot.platform == claim.platform.value
-                    and bot.credential_version == claim.credential_version
-                    and bot.provider_bot_id == claim.provider_bot_id
-                    and campaign.bot_id == claim.bot_id
-                )
+            )
+            runtime_allowed = (
+                registry_dispatch_enabled()
+                and self.registry_transport_factory is not None
+                and bot is not None
+                and bot.platform == claim.platform.value
+                and bot.credential_version == claim.credential_version
+                and bot.provider_bot_id == claim.provider_bot_id
+                and campaign.bot_id == claim.bot_id
+            )
             return (
                 config.SHOP_BROADCAST_WORKER_ENABLED
                 and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
@@ -607,46 +556,18 @@ class BroadcastWorker:
         self,
         claim: ClaimedRecipient,
     ) -> AsyncIterator[CampaignTransport]:
-        """Never substitute a legacy token for a claimed Registry bot."""
-        if claim.bot_id not in LEGACY_BOT_IDS.values():
+        """Open only the exact claimed bot credential and reject scope changes."""
+        if not registry_dispatch_enabled() or self.registry_transport_factory is None:
+            raise CampaignRejected("Registry broadcast transport is disabled.")
+        async with self.registry_transport_factory(claim) as outbound:
             if (
-                not registry_dispatch_enabled()
-                or self.registry_transport_factory is None
+                outbound.bot_id != claim.bot_id
+                or outbound.platform != claim.platform
+                or outbound.credential_version != claim.credential_version
+                or getattr(outbound.transport, "bot_id", None) != claim.bot_id
             ):
-                raise CampaignRejected("Registry broadcast transport is disabled.")
-            async with self.registry_transport_factory(claim) as outbound:
-                if (
-                    outbound.bot_id != claim.bot_id
-                    or outbound.platform != claim.platform
-                    or outbound.credential_version != claim.credential_version
-                    or getattr(outbound.transport, "bot_id", None) != claim.bot_id
-                ):
-                    raise CampaignRejected("Registry transport ownership mismatch.")
-                yield outbound
-            return
-        if claim.bot_id != LEGACY_BOT_IDS.get(claim.platform.value):
-            raise CampaignRejected("Legacy transport ownership mismatch.")
-        if claim.platform == Platform.TELEGRAM:
-            if self.telegram is None:
-                raise CampaignRejected("Telegram transport is unavailable.")
-            token = self.telegram.bot.token
-            transport = self.telegram
-        else:
-            if not config.BALE_BOT_TOKEN or self.bale_session is None:
-                raise CampaignRejected("Bale transport is unavailable.")
-            token = config.BALE_BOT_TOKEN
-            transport = BaleTransport(
-                token,
-                self.bale_session,
-                business_mode=claim.bale_mode == "business",
-            )
-        yield CampaignTransport(
-            bot_id=claim.bot_id,
-            platform=claim.platform,
-            credential_version=None,
-            token=token,
-            transport=transport,
-        )
+                raise CampaignRejected("Registry transport ownership mismatch.")
+            yield outbound
 
     async def _send_one(
         self,
@@ -683,13 +604,6 @@ class BroadcastWorker:
         """Recheck ownership and consent around every durable pacing wait."""
         all_steps = (None, *attachments)
         for step in all_steps:
-            if (
-                claim.platform == Platform.TELEGRAM
-                and claim.bot_id in LEGACY_BOT_IDS.values()
-                and self.telegram_transport_sync is not None
-            ):
-                # Fail closed before any external delivery using stale config.
-                await self.telegram_transport_sync()
             allowed, progress = await self._step_allowed(claim)
             if not allowed:
                 await self._complete(
@@ -706,14 +620,6 @@ class BroadcastWorker:
                 user_id=claim.user_id,
                 bale_mode=claim.bale_mode,
             )
-            if (
-                claim.platform == Platform.TELEGRAM
-                and claim.bot_id in LEGACY_BOT_IDS.values()
-                and self.telegram_transport_sync is not None
-            ):
-                # A rate-limit wait may have outlived a successful switch.
-                # Re-read the committed route immediately before each send.
-                await self.telegram_transport_sync()
             allowed, progress = await self._step_allowed(claim)
             if not allowed:
                 await self._complete(
@@ -755,9 +661,6 @@ class BroadcastWorker:
         ):
             return False
 
-        if self.telegram is not None and self.telegram_transport_sync is not None:
-            # Validate the committed transport before claiming any recipient.
-            await self.telegram_transport_sync()
         claim = await self._claim_one()
         if claim is None:
             return False

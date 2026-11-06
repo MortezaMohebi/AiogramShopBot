@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # فاز ۵ — اعتبار داخلی، معرفی مشتری، اعلان، گزارش و کنترل نقش‌ها
 
 **وضعیت: کدنویسی ثبت‌شده در Draft PR؛ اجرای واقعی و دیباگ عمداً به مرحله نهایی موکول شده است.**

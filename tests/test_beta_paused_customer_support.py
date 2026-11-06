@@ -17,7 +17,8 @@ from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_customer_support import ShopSupportMessage, ShopSupportTicket
 from models.shop_multibot import ShopStore
 from models.shop_staff import ShopStaff
-from services.shop_bot_context import resolve_legacy_bot_context
+from services.shop_bot_context import resolve_bot_context
+from tests.schema_support import TEST_BOT_IDS
 from services.shop_customer_support import CustomerSupportFlow
 from services.shop_identity import register_customer
 from services.shop_multibot_dispatch import dispatch
@@ -58,7 +59,10 @@ class NativeClient:
 
 async def account(db, platform):
     """Resolve an actual registered customer and trusted provider context."""
-    context = await resolve_legacy_bot_context(db, authenticated_platform=platform)
+    context = await resolve_bot_context(
+        db, authenticated_bot_id=TEST_BOT_IDS[platform.value],
+        authenticated_platform=platform,
+    )
     identity = await register_customer(
         db, bot_id=context.bot_id, platform=platform, platform_user_id=101,
     )

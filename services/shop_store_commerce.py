@@ -136,7 +136,7 @@ async def set_store_policy(
     db: AsyncSession, *, store_id: str, actor_id: int,
     expected_version: int, cart_scope: str, credit_scope: str,
 ) -> StoreSharingPolicy:
-    """Change opt-in sharing only if legacy balances can remain accessible."""
+    """Change opt-in sharing only if identity balances can remain accessible."""
     if cart_scope not in {"bot", "customer"} or credit_scope not in {
         "identity", "customer",
     }:
@@ -167,7 +167,7 @@ async def set_store_policy(
         ))
         if remaining:
             raise security.SecurityRejected(
-                "legacy_credit_requires_reconciliation", 409,
+                "identity_credit_requires_reconciliation", 409,
             )
     row.cart_scope = cart_scope
     row.credit_scope = credit_scope

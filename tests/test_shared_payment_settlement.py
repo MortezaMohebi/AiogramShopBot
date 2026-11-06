@@ -6,7 +6,10 @@ a live database. Real provider callbacks are covered only by later live QA.
 
 from __future__ import annotations
 
-from tests.schema_support import create_shop_schema, seed_test_units
+from tests.schema_support import (
+    create_shop_schema, seed_test_units, seed_registry, TEST_BOT_IDS,
+    test_bot_context, allow_test_catalog,
+)
 
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -27,7 +30,7 @@ from models.shop_content import Product, ShopCategory, ShopOrder
 from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+    DEFAULT_STORE_ID, ShopBot, ShopStore,
 )
 from models.shop_staff import ShopStaff
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
@@ -92,14 +95,7 @@ def db(monkeypatch):
             id=DEFAULT_STORE_ID, slug="default",
             name="Existing shop", state="active",
         ))
-        session.add_all([
-            ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID,
-                slug=f"legacy-{platform}", name=f"Legacy {platform}",
-                platform=platform, status="legacy", runtime_owner="legacy",
-                version=1, credential_version=1,
-            ) for platform, bot_id in LEGACY_BOT_IDS.items()
-        ])
+        seed_registry(session)
         session.commit()
         seed_test_units(session)
         yield OfflineDB(session)
@@ -170,6 +166,7 @@ def make_order(db, platform: Platform, *, digital=False, coupon=False):
         shipping_method_snapshot=None if digital else "پست",
         coupon_id=discount.id if discount else None,
         coupon_code_snapshot=discount.code if discount else None,
+        bot_id=TEST_BOT_IDS[platform.value],
     )
     db.add(order)
     db.session.flush()
@@ -185,6 +182,7 @@ def make_order(db, platform: Platform, *, digital=False, coupon=False):
             total_irr=subtotal,
         )
     )
+    allow_test_catalog(db.session)
     db.session.commit()
     return order, product, discount
 
@@ -200,6 +198,7 @@ async def begin(db, platform: Platform, order):
         telegram_fiat_enabled=True,
         telegram_stars_enabled=True,
         telegram_minor_multiplier=100,
+        bot_id=TEST_BOT_IDS[(platform).value],
     )
 
 
@@ -219,15 +218,24 @@ async def test_bale_rial_payment_and_double_receipt_are_idempotent(db):
         payload=plan.payload,
         currency="IRR",
         amount=plan.amount,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert ok and reason is None
-    assert not (await ShopPaymentService.precheckout(
-        db, platform=Platform.BALE, payer_id=102,
-        payload=plan.payload, currency="IRR", amount=plan.amount,
-    ))[0]
+    assert not (
+        await ShopPaymentService.precheckout(
+            db,
+            platform=Platform.BALE,
+            payer_id=102,
+            payload=plan.payload,
+            currency="IRR",
+            amount=plan.amount,
+            bot_id=TEST_BOT_IDS[(Platform.BALE).value],
+        )
+    )[0]
 
     attrs = {
         "platform": Platform.BALE,
+        "bot_id": TEST_BOT_IDS["bale"],
         "payer_id": 101,
         "chat_id": 101,
         "payload": plan.payload,
@@ -261,10 +269,15 @@ async def test_unavailable_inventory_creates_refund_review_not_partial_sale(db):
     db.session.commit()
     stored, changed = await ShopPaymentService.settle(
         db,
-        platform=Platform.BALE, payer_id=101, chat_id=101,
-        payload=plan.payload, currency="IRR", amount=plan.amount,
+        platform=Platform.BALE,
+        payer_id=101,
+        chat_id=101,
+        payload=plan.payload,
+        currency="IRR",
+        amount=plan.amount,
         charge_id="tx-paid-but-out-of-stock",
         provider_charge_id="reference",
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert changed and stored.status == "paid_unfulfilled"
     assert product.stock_quantity == 1
@@ -295,10 +308,15 @@ async def test_telegram_physical_invoice_uses_confirmed_minor_factor(db):
     order, _, _ = make_order(db, Platform.TELEGRAM)
     with pytest.raises(PaymentRejected):
         await ShopPaymentService.begin(
-            db, platform=Platform.TELEGRAM, platform_user_id=101,
-            order_id=order.id, bale_enabled=False,
-            telegram_fiat_enabled=True, telegram_stars_enabled=False,
+            db,
+            platform=Platform.TELEGRAM,
+            platform_user_id=101,
+            order_id=order.id,
+            bale_enabled=False,
+            telegram_fiat_enabled=True,
+            telegram_stars_enabled=False,
             telegram_minor_multiplier=0,
+            bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
         )
     plan = await begin(db, Platform.TELEGRAM, order)
     assert plan.currency == "IRR"
@@ -311,13 +329,24 @@ async def test_manual_refund_records_proof_without_automatic_restock(db):
     order, product, _ = make_order(db, Platform.BALE)
     plan = await begin(db, Platform.BALE, order)
     await ShopPaymentService.settle(
-        db, platform=Platform.BALE, payer_id=101, chat_id=101,
-        payload=plan.payload, currency="IRR", amount=plan.amount,
-        charge_id="bale-transaction", provider_charge_id="bale-receipt",
+        db,
+        platform=Platform.BALE,
+        payer_id=101,
+        chat_id=101,
+        payload=plan.payload,
+        currency="IRR",
+        amount=plan.amount,
+        charge_id="bale-transaction",
+        provider_charge_id="bale-receipt",
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     case = await ShopRefundService.request(
-        db, platform=Platform.BALE, payer_id=101, order_id=order.id,
+        db,
+        platform=Platform.BALE,
+        payer_id=101,
+        order_id=order.id,
         reason="درخواست مشتری",
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert case.status == "requested"
     with pytest.raises(PaymentRejected):
@@ -354,13 +383,23 @@ async def test_stars_refund_calls_provider_only_once(db):
     plan = await begin(db, Platform.TELEGRAM, order)
     await ShopPaymentService.settle(
         db,
-        platform=Platform.TELEGRAM, payer_id=101, chat_id=101,
-        payload=plan.payload, currency="XTR", amount=plan.amount,
-        charge_id="stars-receipt-001", provider_charge_id=None,
+        platform=Platform.TELEGRAM,
+        payer_id=101,
+        chat_id=101,
+        payload=plan.payload,
+        currency="XTR",
+        amount=plan.amount,
+        charge_id="stars-receipt-001",
+        provider_charge_id=None,
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     case = await ShopRefundService.request(
-        db, platform=Platform.TELEGRAM, payer_id=101,
-        order_id=order.id, reason="درخواست مشتری",
+        db,
+        platform=Platform.TELEGRAM,
+        payer_id=101,
+        order_id=order.id,
+        reason="درخواست مشتری",
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     bot = FakeStarsBot()
     with pytest.raises(PaymentRejected):
@@ -379,3 +418,44 @@ async def test_stars_refund_calls_provider_only_once(db):
             db, case_id=case.id, bot=bot, enabled=True, reviewer="admin",
         )
     assert len(bot.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_receipt_store_mismatch_cannot_authorize_or_settle_payment(db):
+    """A matching bot and payload cannot rescue a foreign Store ledger row."""
+    order, product, _ = make_order(db, Platform.BALE)
+    plan = await begin(db, Platform.BALE, order)
+    foreign = ShopStore(
+        id=str(uuid4()), slug="foreign-ledger", name="Foreign", state="active",
+    )
+    db.add(foreign)
+    db.session.flush()
+    attempt = db.session.get(ShopPaymentAttempt, plan.attempt_id)
+    attempt.store_id = foreign.id
+    db.session.commit()
+
+    allowed, _ = await ShopPaymentService.precheckout(
+        db,
+        platform=Platform.BALE,
+        bot_id=TEST_BOT_IDS["bale"],
+        payer_id=101,
+        payload=plan.payload,
+        currency=plan.currency,
+        amount=plan.amount,
+    )
+    assert allowed is False
+    with pytest.raises(PaymentRejected):
+        await ShopPaymentService.settle(
+            db,
+            platform=Platform.BALE,
+            bot_id=TEST_BOT_IDS["bale"],
+            payer_id=101,
+            chat_id=101,
+            payload=plan.payload,
+            currency=plan.currency,
+            amount=plan.amount,
+            charge_id="foreign-ledger-charge",
+            provider_charge_id="provider-ref",
+        )
+    assert order.status == "pending_payment"
+    assert product.stock_quantity == 3

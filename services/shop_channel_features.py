@@ -1,7 +1,6 @@
 """Effective channel capabilities with independent per-bot policy overrides.
 
-Legacy provider-wide settings are retained for the two original bots. Newly
-registered bots default to DENY until an authorized operator configures
+Registered bots default to DENY until an authorized operator configures
 each feature in the bot's registry; platform-wide flags never grant access.
 """
 
@@ -11,8 +10,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.shop_channel_features import ShopChannelFeature
-from models.shop_multibot import LEGACY_BOT_IDS, ShopBot
+from models.shop_scope import require_registry_bot
 from models.shop_store_commerce import ShopBotCommercePolicy
 
 PLATFORMS = ("telegram", "bale")
@@ -32,25 +30,14 @@ async def get_features(
     session: AsyncSession, platform: str, *,
     bot_id: str | None = None,
 ) -> ChannelFeatures:
-    """Require explicit authorization for registered bots; preserve legacy."""
+    """Require authenticated Registry ownership and explicit feature grants."""
     if platform not in PLATFORMS:
         raise ValueError("Unsupported provider")
-    owner = bot_id or LEGACY_BOT_IDS[platform]
-    bot = await session.get(ShopBot, owner)
-    if bot is None or bot.platform != platform:
-        raise ValueError("Authenticated bot identity is invalid.")
-    legacy = bot.runtime_owner == "legacy"
-    inherited = await session.get(ShopChannelFeature, platform)
-    policy = await session.get(ShopBotCommercePolicy, owner)
-    if legacy:
-        cart = inherited.cart_enabled if inherited else True
-        credit = inherited.store_credit_enabled if inherited else True
-        label = inherited.store_credit_label if inherited else "اعتبار فروشگاه"
-    else:
-        # A legacy platform-wide setting is never inherited automatically.
-        cart = False
-        credit = False
-        label = "اعتبار فروشگاه"
+    bot = await require_registry_bot(session, bot_id, platform)
+    policy = await session.get(ShopBotCommercePolicy, bot.id)
+    cart = False
+    credit = False
+    label = "اعتبار فروشگاه"
     if policy:
         if policy.cart_enabled is not None:
             cart = policy.cart_enabled

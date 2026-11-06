@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # نقشه راه اجرایی Fork
 
 معنی وضعیت‌ها: `DONE` = کد Merge/تست‌شده؛ `IN PROGRESS` = پیاده‌سازی ناقص؛ `PLANNED` = نیازمند توسعه و تست. وجود یک مدل یا رابط در شاخه توسعه به معنی آمادگی Production نیست.

@@ -29,7 +29,7 @@ function BindingSummary({
         {`${item.kind}:${item.key} → ${item.node_id}`}
       </RuntimeId>
     </p>
-    <p>اولویت {item.priority} · {item.enabled ? "فعال" : "غیرفعال"} · {item.eligibility === "all" ? "همهٔ مشتریان" : "مشتری موجود"} · جایگزین {item.fallback === "legacy" ? "مسیر قبلی ربات" : "بدون پاسخ"}</p>
+    <p>اولویت {item.priority} · {item.enabled ? "فعال" : "غیرفعال"} · {item.eligibility === "all" ? "همهٔ مشتریان" : "مشتری موجود"} · جایگزین بدون پاسخ</p>
   </div>)}
 </div>;
 }
@@ -196,7 +196,7 @@ function ReviewForm({
                   priority: 0,
                   enabled: true,
                   eligibility: "all",
-                  fallback: "legacy",
+                  fallback: "ignore",
                   version_policy: "active_publication"
                 };else delete next[key];
                 return next;
@@ -233,17 +233,7 @@ function ReviewForm({
                 eligibility: value as BindingSpec["eligibility"]
               })} />
         </Field>
-        <Field label="مسیر جایگزین">
-          <Select label={`جایگزین ${entry.key} در ${bot.name}`} value={chosen.fallback} options={[{
-                value: "legacy",
-                label: "مسیر قبلی ربات"
-              }, {
-                value: "ignore",
-                label: "بدون پاسخ"
-              }]} onChange={value => update(key, {
-                fallback: value as BindingSpec["fallback"]
-              })} />
-        </Field>
+        <p className="text-xs text-muted-foreground">ورودی بدون تطبیق، پاسخی ارسال نمی‌کند.</p>
         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={chosen.enabled} onChange={e => update(key, {
                 enabled: e.target.checked
               })} />ورودی فعال باشد</label>

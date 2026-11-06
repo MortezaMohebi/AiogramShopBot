@@ -1,6 +1,6 @@
 """Additive staff lifecycle status, separate from authentication credentials.
 
-The legacy ShopStaff.is_active remains the security source of truth for login.
+ShopStaff.is_active remains the security source of truth for login.
 This companion table explains whether a disabled account is suspended or
 permanently disabled without changing the existing production staff schema.
 """

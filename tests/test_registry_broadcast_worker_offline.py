@@ -26,8 +26,6 @@ from models.shop_engagement import (
     ShopCampaignMedia,
 )
 from models.shop_multibot import (
-    DEFAULT_STORE_ID,
-    LEGACY_BOT_IDS,
     ShopBot,
     ShopBotCredential,
     ShopStore,
@@ -89,8 +87,8 @@ def registry(monkeypatch):
     )
     # Registry sending must work without accidentally requiring legacy tokens
     # or enabling any payment rail.
-    monkeypatch.setattr(config, "TOKEN", "")
-    monkeypatch.setattr(config, "BALE_BOT_TOKEN", "")
+    monkeypatch.setattr(config, "TOKEN", "", raising=False)
+    monkeypatch.setattr(config, "BALE_BOT_TOKEN", "", raising=False)
     monkeypatch.setenv(
         "SHOP_BOT_SECRET_KEY", "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
     )
@@ -278,8 +276,6 @@ async def test_registry_campaign_drains_via_its_own_bot_without_payment_flags(
     for campaign in campaigns:
         await start(registry, campaign)
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=fake_factory(registry, sent),
     )
     for _ in range(3):
@@ -431,8 +427,6 @@ async def test_paid_registry_bale_preflight_uses_only_its_own_file_namespace(
     )
     sent = []
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=fake_factory(registry, sent),
     )
     assert await worker.process_next() is True
@@ -584,8 +578,6 @@ async def test_consent_change_while_reserving_paid_budget_stops_the_send(
     )
     sent = []
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=fake_factory(registry, sent),
     )
     reserve = worker._paid_reservation
@@ -648,8 +640,6 @@ async def test_registry_claim_remains_queued_when_runtime_is_not_permitted(
     session.commit()
     sent = []
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=fake_factory(registry, sent),
     )
     assert await worker.process_next() is False
@@ -662,7 +652,7 @@ async def test_default_worker_leaves_registry_outbox_untouched(registry):
     """A global flag cannot turn a legacy-only worker into a Registry sender."""
     campaign = draft(registry, registry.bots[0])
     await start(registry, campaign)
-    worker = BroadcastWorker(telegram=None, bale_session=None)
+    worker = BroadcastWorker()
     assert await worker.process_next() is False
     assert registry.db.session.scalar(select(ShopCampaignDelivery.status)) == "queued"
 
@@ -694,8 +684,6 @@ async def test_scoped_claim_is_revalidated_after_pacing_wait(
     await start(registry, campaign)
     sent = []
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=fake_factory(registry, sent),
     )
 
@@ -743,16 +731,12 @@ async def test_uncertain_registry_send_is_quarantined_and_never_retried(registry
     sent = []
     factory = fake_factory(registry, sent, fail=True)
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=factory,
     )
     assert await worker.process_next() is True
     assert campaign.status == "paused"
     assert registry.db.session.scalar(select(ShopCampaignDelivery.status)) == "unknown"
     restarted = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=factory,
     )
     assert await restarted.process_next() is False
@@ -780,8 +764,6 @@ async def test_registry_partial_delivery_is_quarantined_after_pause(registry):
         registry.db.session.commit()
 
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=fake_factory(
             registry,
             sent,
@@ -805,76 +787,6 @@ async def test_registry_partial_delivery_is_quarantined_after_pause(registry):
     assert delivery.completed_steps == 1
     assert campaign.status == "paused"
     assert len(sent) == 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("changed", ["runtime_owner", "store"])
-async def test_legacy_credentials_do_not_override_registry_or_store_ownership(
-    registry,
-    changed,
-):
-    """Immutable legacy IDs alone do not grant permission to a legacy token."""
-    store = ShopStore(
-        id=DEFAULT_STORE_ID,
-        slug="legacy",
-        name="Legacy Store",
-        state="paused" if changed == "store" else "active",
-    )
-    bot_id = LEGACY_BOT_IDS["telegram"]
-    registry.db.add(store)
-    registry.db.add(
-        ShopBot(
-            id=bot_id,
-            store_id=store.id,
-            slug="legacy",
-            name="Legacy bot",
-            platform="telegram",
-            credential_version=1,
-            runtime_owner="registry" if changed == "runtime_owner" else "legacy",
-            status="active" if changed == "runtime_owner" else "legacy",
-        )
-    )
-    registry.db.add(ShopBotOperations(bot_id=bot_id, desired_state="active"))
-    identity = ShopIdentity(
-        store_id=store.id,
-        bot_id=bot_id,
-        platform="telegram",
-        platform_user_id=444,
-        allow_announcements=True,
-    )
-    campaign = ShopCampaign(
-        store_id=store.id,
-        title="Legacy",
-        text="Announcement",
-        audience="telegram",
-        status="sending",
-    )
-    registry.db.add(identity)
-    registry.db.add(campaign)
-    registry.db.session.flush()
-    registry.db.add(
-        ShopCampaignDelivery(
-            campaign_id=campaign.id,
-            identity_id=identity.id,
-            bot_id=bot_id,
-        )
-    )
-    registry.db.session.commit()
-    sent = []
-
-    class LegacyTransport:
-        """Record whether the default worker attempted to use a legacy token."""
-
-        bot = SimpleNamespace(token="444444:" + "L" * 32)
-
-        async def send(self, chat_id, reply):
-            """Simulate the forbidden legacy delivery without external calls."""
-            sent.append((chat_id, reply.text))
-
-    worker = BroadcastWorker(telegram=LegacyTransport(), bale_session=None)
-    assert await worker.process_next() is False
-    assert sent == []
-    assert registry.db.session.scalar(select(ShopCampaignDelivery.status)) == "queued"
 
 
 @pytest.mark.asyncio
@@ -913,8 +825,6 @@ async def test_cli_factory_resolves_exact_encrypted_credential_and_closes_client
         approved_paid_calls=1 if business else 0,
     )
     worker = BroadcastWorker(
-        telegram=None,
-        bale_session=None,
         registry_transport_factory=registry_transport,
     )
     claim = await worker._claim_one()
@@ -1013,7 +923,6 @@ async def test_campaign_rechecks_effective_restrictions_at_every_send_boundary(
             monkeypatch.setattr("services.shop_broadcast_worker.reserve_message_slot", reserve)
     sent = []
     worker = BroadcastWorker(
-        telegram=None, bale_session=None,
         registry_transport_factory=fake_factory(registry, sent),
     )
     assert await worker.process_next()

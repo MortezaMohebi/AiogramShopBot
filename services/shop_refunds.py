@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import Platform
 from models.shop_content import ShopOrder
 from models.shop_digital_delivery import ShopDigitalDelivery
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id, require_registry_bot
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_payments import PaymentRejected
 
@@ -39,12 +39,14 @@ class ShopRefundService:
         bot_id: str | None = None,
     ) -> ShopRefundCase:
         """Open one provider-reconciliation case without issuing any refund."""
+        bot_id = require_bot_id(bot_id)
+        await require_registry_bot(session, bot_id, platform.value)
         if not 1 <= len(reason.strip()) <= 1000:
             raise PaymentRejected("دلیل درخواست بازپرداخت نامعتبر است.")
         order = await session.scalar(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
-                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopOrder.bot_id == bot_id,
                 ShopOrder.platform == platform.value,
                 ShopOrder.platform_user_id == payer_id,
             ).with_for_update()
@@ -62,7 +64,7 @@ class ShopRefundService:
             return existing
         case = ShopRefundCase(
             order_id=order.id,
-            actor=f"{bot_id or legacy_id(platform.value)}:{payer_id}",
+            actor=f"{bot_id}:{payer_id}",
             reason=reason.strip(),
             status="requested",
         )

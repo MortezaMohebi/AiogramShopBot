@@ -46,7 +46,7 @@ def _utc(value: datetime) -> datetime:
 
 
 def stock_event_alert_id(event_key: str) -> int | None:
-    """Read a bounded stock owner from legacy or generation-specific keys."""
+    """Read a bounded stock owner from unversioned or generation-specific keys."""
     match = _STOCK_EVENT.fullmatch(event_key)
     if match is None:
         return None
@@ -254,7 +254,8 @@ async def prepare_stock_alerts(
         Product.is_published.is_(True),
         Product.stock_quantity > 0,
         ShopBot.store_id == store_id,
-        ShopBot.status.in_(("active", "legacy")),
+        ShopBot.status == "active",
+        ShopBot.runtime_owner == "registry",
     ).order_by(ShopStockAlert.id).limit(limit).with_for_update(
         skip_locked=True,
     ))).all()

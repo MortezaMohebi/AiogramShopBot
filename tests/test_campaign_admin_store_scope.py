@@ -212,6 +212,7 @@ def campaign_app(monkeypatch, tmp_path):
         legacy.include_router(next_operations.router, prefix=control.PREFIX)
         legacy.dependency_overrides[next_api.database] = database
         app = control.create_app(legacy)
+        app.dependency_overrides[next_api.database] = database
         yield CampaignFixture(db, app, legacy, token, session_id)
     engine.dispose()
 
@@ -233,7 +234,7 @@ async def test_bot_options_are_redacted_current_store_choices(campaign_app):
     response = await campaign_app.request("GET", "/campaigns/bots")
     assert response.status_code == 200, response.text
     assert response.json() == {
-        "store_id": STORE_A, "store_name": "a-store", "legacy_available": False,
+        "store_id": STORE_A, "store_name": "a-store",
         "bots": [{"id": BOT_A, "name": "0001", "platform": "telegram"}],
     }
 
@@ -243,7 +244,6 @@ async def test_bot_options_are_redacted_current_store_choices(campaign_app):
     ({"bot_id": BOT_B}, 404, "bot_not_found"),
     ({"bot_id": BOT_DRAFT}, 409, "bot_not_active"),
     ({"audience": "bale"}, 422, "invalid_campaign_audience"),
-    ({"bot_id": None}, 422, "campaign_bot_required"),
 ])
 async def test_invalid_registry_target_never_creates_draft(
     campaign_app, changes, status, detail,
@@ -259,22 +259,21 @@ async def test_invalid_registry_target_never_creates_draft(
 
 
 @pytest.mark.asyncio
-async def test_legacy_omission_is_limited_to_default_store(campaign_app):
-    """Existing default-Store drafts keep their explicit legacy compatibility."""
+async def test_campaign_requires_bot_even_in_default_store(campaign_app):
+    """No Store can infer an environment-owned sender from an omitted Bot."""
     campaign_app.select_store(DEFAULT_STORE_ID)
     response = await campaign_app.request("POST", "/campaigns", payload={
         "title": "عنوان", "text": "اعلان", "audience": "bale",
     })
-    assert response.status_code == 201, response.text
-    row = campaign_app.db.get(ShopCampaign, response.json()["id"])
-    assert (row.store_id, row.bot_id, row.audience) == (DEFAULT_STORE_ID, None, "bale")
+    assert response.status_code == 422, response.text
+    assert campaign_app.db.scalar(select(ShopCampaign.id)) is None
 
 
 @pytest.mark.asyncio
 async def test_campaign_create_requires_trusted_store_context(campaign_app):
     """A signed staff header alone must not infer default ownership."""
     response = await campaign_app.request("POST", "/campaigns", wrapped=False,
-                                          payload={"title": "عنوان", "text": "اعلان"})
+                                          payload={"title": "عنوان", "text": "اعلان", "bot_id": BOT_A})
     assert response.status_code == 403, response.text
     assert campaign_app.db.scalar(select(ShopCampaign.id)) is None
 
@@ -393,7 +392,6 @@ async def test_registry_start_capability_requires_every_send_switch(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("method", "path"), [
-    ("POST", "/broadcast/prepare/1"),
     ("POST", "/campaigns/1/media"),
     ("GET", "/campaigns/1/export"),
     ("POST", "/campaigns/1/dispatch"),
@@ -495,23 +493,216 @@ async def test_campaign_media_cannot_cross_current_or_allowed_store(
 
 
 @pytest.mark.asyncio
-async def test_registry_campaign_cannot_use_legacy_bale_preparation(
+@pytest.mark.parametrize("path", [
+    "/bot-connections", "/bot-profiles", "/connection-changes",
+    "/telegram-transport", "/channel-features", "/payment-rails",
+    "/broadcast/prepare/1",
+])
+async def test_retired_global_controls_have_no_active_route(campaign_app, path):
+    """A signed session cannot revive retired environment-owned controls."""
+    response = await campaign_app.request("POST", path, payload={})
+    assert response.status_code == 404, response.text
+
+
+@pytest.mark.asyncio
+async def test_wallet_adjustment_uses_exact_current_store_identity(
     campaign_app, monkeypatch,
 ):
-    """A Registry target can never fall back to the global Bale transport."""
-    campaign_app.select_store(DEFAULT_STORE_ID)
-    row = ShopCampaign(
-        store_id=DEFAULT_STORE_ID, bot_id=BOT_A, title="Test", text="Test",
-    )
-    campaign_app.db.add(row)
+    """Equal provider IDs in separate bots cannot redirect an admin credit."""
+    from uuid import uuid4
+
+    from models.shop_admin_control import AdminProfile
+    from models.shop_engagement import ShopWalletAccount, ShopWalletEntry
+    from models.shop_store_commerce import ShopBotCommercePolicy
+
+    campaign_app.db.get(ShopStaff, 7).role = "finance"
+    campaign_app.db.add(AdminProfile(
+        staff_id=7, mfa_secret="offline-enrolled", recovery_hashes="[]",
+    ))
+    identities = []
+    for store_id, bot_id in ((STORE_A, BOT_A), (STORE_B, BOT_B)):
+        identity = ShopIdentity(
+            store_id=store_id, bot_id=bot_id, platform="telegram",
+            platform_user_id=12345,
+        )
+        campaign_app.db.add(identity)
+        campaign_app.db.flush()
+        campaign_app.db.add(ShopWalletAccount(
+            store_id=store_id, bot_id=bot_id, identity_id=identity.id,
+            scope="identity", balance_irr=0,
+        ))
+        campaign_app.db.add(ShopBotCommercePolicy(
+            bot_id=bot_id, credit_enabled=True,
+        ))
+        identities.append(identity)
     campaign_app.db.commit()
-    monkeypatch.setattr(config, "BALE_BOT_TOKEN", "offline-token")
-    monkeypatch.setattr(config, "BALE_BROADCAST_PREPARE_CHAT_ID", 100)
+    monkeypatch.setattr(config, "SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR", 1000)
+    options = await campaign_app.request("GET", "/wallets/identities")
+    assert options.status_code == 200, options.text
+    assert [item["id"] for item in options.json()] == [identities[0].id]
+    payload = {
+        "identity_id": identities[0].id, "amount_irr": 100,
+        "direction": "credit", "reason": "Documented offline adjustment",
+        "operation_id": str(uuid4()), "confirmation": "CREDIT_CONFIRMED",
+    }
+    response = await campaign_app.request("POST", "/wallets/adjust", payload=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] is True
+    repeated = await campaign_app.request("POST", "/wallets/adjust", payload=payload)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["created"] is False
+    assert repeated.json()["entry_id"] == response.json()["entry_id"]
+    foreign = await campaign_app.request("POST", "/wallets/adjust", payload={
+        **payload, "identity_id": identities[1].id, "operation_id": str(uuid4()),
+    })
+    assert foreign.status_code == 404, foreign.text
+    balances = campaign_app.db.scalars(select(ShopWalletAccount).order_by(
+        ShopWalletAccount.identity_id,
+    )).all()
+    assert [account.balance_irr for account in balances] == [100, 0]
+    assert len(campaign_app.db.scalars(select(ShopWalletEntry)).all()) == 1
+    obsolete = await campaign_app.request("POST", "/wallets/adjust", payload={
+        **payload, "platform": "telegram", "user_id": 12345,
+    })
+    assert obsolete.status_code == 422, obsolete.text
+
+
+@pytest.mark.asyncio
+async def test_branding_is_scoped_to_selected_store_including_default(campaign_app):
+    """The default Store uses the same isolated settings table as every Store."""
+    from models.shop_admin_control import AdminProfile
+    from models.shop_store_commerce import ShopStoreSettings
+
+    campaign_app.db.get(ShopStaff, 7).role = "superadmin"
+    campaign_app.db.add(AdminProfile(
+        staff_id=7, mfa_secret="offline-enrolled", recovery_hashes="[]",
+    ))
+    campaign_app.db.commit()
+    for store_id, brand in ((STORE_A, "فروشگاه اول"), (DEFAULT_STORE_ID, "فروشگاه اصلی")):
+        campaign_app.select_store(store_id)
+        saved = await campaign_app.request("PATCH", "/settings", payload={
+            "brand_name": brand, "faq_text": "پرسش‌های همین فروشگاه",
+        })
+        assert saved.status_code == 200, saved.text
+        read = await campaign_app.request("GET", "/settings")
+        assert read.status_code == 200, read.text
+        assert read.json()["brand_name"] == brand
+    assert campaign_app.db.get(ShopStoreSettings, STORE_A).brand_name == "فروشگاه اول"
+    assert campaign_app.db.get(ShopStoreSettings, DEFAULT_STORE_ID).brand_name == "فروشگاه اصلی"
+    unsigned_scope = await campaign_app.request("GET", "/settings", wrapped=False)
+    assert unsigned_scope.status_code == 403, unsigned_scope.text
+
+
+@pytest.mark.asyncio
+async def test_nondefault_store_catalog_candidates_use_actual_owners(campaign_app):
+    """Nondefault catalog controls expose their own rows and deny other Stores."""
+    from models.shop_admin_control import AdminProfile
+    from models.shop_content import Product
+    from models.shop_uom import default_unit_id
+    from services.shop_uom import seed_store_units
+
+    campaign_app.db.get(ShopStaff, 7).role = "superadmin"
+    campaign_app.db.add(AdminProfile(
+        staff_id=7, mfa_secret="offline-enrolled", recovery_hashes="[]",
+    ))
+    products = []
+    for store_id in (STORE_A, STORE_B):
+        seed_store_units(campaign_app.db, store_id)
+        product = Product(
+            store_id=store_id, sku="same-store-sku", name="Catalog product",
+            description="Fixture", price=100, uom_id=default_unit_id(store_id),
+        )
+        campaign_app.db.add(product)
+        products.append(product)
+    campaign_app.db.commit()
+    choices = await campaign_app.request("GET", f"/bot-catalog/bots/{BOT_A}")
+    assert choices.status_code == 200, choices.text
+    assert choices.json()["policy_ready"] is True
+    assert [item["id"] for item in choices.json()["items"]] == [products[0].id]
+    assert choices.json()["default_effect"] == "deny"
+    bots = await campaign_app.request("GET", f"/bot-catalog/products/{products[0].id}")
+    assert bots.status_code == 200, bots.text
+    assert {item["id"] for item in bots.json()["bots"]} == {BOT_A, BOT_DRAFT}
+    denied = await campaign_app.request(
+        "POST", f"/bot-catalog/bots/{BOT_B}/rules", payload={
+            "expected_version": 1, "kind": "product",
+            "target_ids": [products[1].id], "effect": "allow",
+        },
+    )
+    assert denied.status_code == 409, denied.text
+    campaign_app.select_store(STORE_A)
+    hidden = await campaign_app.request("GET", f"/bot-catalog/bots/{BOT_B}")
+    assert hidden.status_code == 404, hidden.text
+
+
+@pytest.mark.asyncio
+async def test_customer_case_uses_canonical_same_store_membership(campaign_app):
+    """Verified customer membership never merges equal numeric provider IDs."""
+    from uuid import uuid4
+
+    from models.shop_store_commerce import ShopStoreCustomer
+
+    campaign_app.db.get(ShopStaff, 7).role = "sales"
+    bale = ShopBot(
+        id=str(uuid4()), store_id=STORE_A, slug="bale-peer", name="Bale peer",
+        platform="bale", status="active", runtime_owner="registry",
+    )
+    owner = ShopStoreCustomer(store_id=STORE_A)
+    other = ShopStoreCustomer(store_id=STORE_B)
+    campaign_app.db.add_all([bale, owner, other])
+    campaign_app.db.flush()
+    identities = [
+        ShopIdentity(store_id=STORE_A, bot_id=BOT_A, customer_id=owner.id,
+                     platform="telegram", platform_user_id=555),
+        ShopIdentity(store_id=STORE_A, bot_id=bale.id, customer_id=owner.id,
+                     platform="bale", platform_user_id=777),
+        ShopIdentity(store_id=STORE_B, bot_id=BOT_B, customer_id=other.id,
+                     platform="telegram", platform_user_id=555),
+    ]
+    campaign_app.db.add_all(identities)
+    campaign_app.db.commit()
+    read = await campaign_app.request("GET", f"/customers/{identities[0].id}")
+    assert read.status_code == 200, read.text
+    assert {item["id"] for item in read.json()["verified_identities"]} == {
+        identities[0].id, identities[1].id,
+    }
+    assert read.json()["verified_other_platform"] == {
+        "id": identities[1].id, "platform": "bale", "user_id": "777",
+        "approved_at": None,
+    }
+    campaign_app.select_store(STORE_A)
+    hidden = await campaign_app.request("GET", f"/customers/{identities[2].id}")
+    assert hidden.status_code == 404, hidden.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("suffix", ["", "/health", "/receiver"])
+async def test_cached_bot_cannot_bypass_active_store_scope(campaign_app, suffix):
+    """Cached bot rows remain hidden before metadata or provider control runs."""
+    from models.shop_admin_control import AdminProfile
+
+    campaign_app.db.get(ShopStaff, 7).role = "superadmin"
+    campaign_app.db.add(AdminProfile(
+        staff_id=7, mfa_secret="offline-enrolled", recovery_hashes="[]",
+    ))
+    assert campaign_app.db.get(ShopBot, BOT_B) is not None
+    campaign_app.select_store(STORE_A)
+    response = await campaign_app.request("GET", f"/bot-registry/{BOT_B}{suffix}")
+    assert response.status_code == 404, response.text
+
+
+@pytest.mark.asyncio
+async def test_selected_other_store_bot_write_requires_switch(campaign_app):
+    """A multi-Store read selection never authorizes another Store's Bot write."""
+    from models.shop_admin_control import AdminProfile
+
+    campaign_app.db.get(ShopStaff, 7).role = "superadmin"
+    campaign_app.db.add(AdminProfile(
+        staff_id=7, mfa_secret="offline-enrolled", recovery_hashes="[]",
+    ))
+    campaign_app.db.commit()
     response = await campaign_app.request(
-        "POST", f"/broadcast/prepare/{row.id}",
-        payload={"confirmation": "PREPARE_BALE_MEDIA"},
+        "POST", f"/bot-registry/{BOT_B}/credentials/stage", payload={"token": "unused"},
     )
     assert response.status_code == 409, response.text
-    assert response.json()["detail"] == (
-        "Registry campaigns require per-bot media preparation"
-    )
+    assert response.json()["detail"] == "store_switch_required"

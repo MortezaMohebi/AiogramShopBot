@@ -1,6 +1,6 @@
 """Store-owned customers, configurable commerce policies and payment accounts.
 
-Platform identities, native provider balances and legacy credit ledgers remain
+Platform identities, native provider balances and Store credit ledgers remain
 independent until a verified customer link and an explicit financial cutover.
 All new payment accounts are disabled by default and never expose credentials.
 """
@@ -19,7 +19,7 @@ from models.base import Base
 
 
 class ShopStoreSettings(Base):
-    """One optional brand/content configuration per nonlegacy Store."""
+    """One optional brand/content configuration per Store."""
 
     __tablename__ = "shop_store_settings"
 

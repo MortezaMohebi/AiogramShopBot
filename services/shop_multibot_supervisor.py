@@ -42,7 +42,7 @@ class MultiBotSupervisor:
     """Manage up to a deployment-bounded number of active independent bots."""
 
     def __init__(self, app) -> None:
-        """Bind the legacy FastAPI application without changing its routes."""
+        """Bind the Registry FastAPI application without changing its routes."""
         self.app = app
         self.lease = None
         self.lease_pid = None
@@ -226,7 +226,7 @@ class MultiBotSupervisor:
     async def _process(
         self, bot_id: str, *, update_id: int, payload: Mapping,
     ) -> dict:
-        """Offer durable Runtime input before claiming legacy at-most-once work."""
+        """Offer durable Runtime input before claiming commerce at-most-once work."""
         context, token, _, _ = await self._identity(bot_id)
         runtime = await try_ingress(context, payload)
         if runtime.get("handled"):

@@ -11,13 +11,13 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 import config
-from models.base import Base
 from models.shop_content import ShopIdentity
-from models.shop_customer_crm import ShopCustomerProfile
 from models.shop_engagement import (
     ShopCampaign, ShopCampaignDelivery, ShopCampaignMedia,
 )
+from models.shop_multibot import DEFAULT_STORE_ID
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
+from tests.schema_support import TEST_BOT_IDS, create_shop_schema, seed_registry
 
 
 class AsyncDb:
@@ -35,13 +35,17 @@ class AsyncDb:
         """Read one scalar value."""
         return self.session.scalar(statement)
 
+    async def get(self, model, key):
+        """Read the explicitly selected campaign bot and Store."""
+        return self.session.get(model, key)
+
     async def commit(self):
         """Commit the isolated test transaction."""
         self.session.commit()
 
 
-@pytest.fixture
-def shop(tmp_path, monkeypatch):
+@pytest.fixture(params=["telegram", "bale"])
+def shop(tmp_path, monkeypatch, request):
     """Create two opted-in identities and an original campaign image."""
     monkeypatch.setattr(config, "SHOP_MEDIA_ROOT", str(tmp_path))
     key = "a" * 32 + ".png"
@@ -49,26 +53,25 @@ def shop(tmp_path, monkeypatch):
     (tmp_path / key).write_bytes(original)
 
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ShopIdentity.__table__, ShopCampaign.__table__,
-            ShopCustomerProfile.__table__,
-            ShopCampaignMedia.__table__, ShopCampaignDelivery.__table__,
-        ],
-    )
+    create_shop_schema(engine)
+    platform = request.param
+    bot_id = TEST_BOT_IDS[platform]
     with Session(engine, expire_on_commit=False) as session:
+        seed_registry(session)
         session.add_all([
             ShopIdentity(
-                platform="telegram", platform_user_id=101,
+                bot_id=bot_id, store_id=DEFAULT_STORE_ID,
+                platform=platform, platform_user_id=101,
                 allow_announcements=True, is_blocked=False,
             ),
             ShopIdentity(
-                platform="bale", platform_user_id=202,
+                bot_id=bot_id, store_id=DEFAULT_STORE_ID,
+                platform=platform, platform_user_id=202,
                 allow_announcements=True, is_blocked=False,
             ),
         ])
         campaign = ShopCampaign(
+            bot_id=bot_id, store_id=DEFAULT_STORE_ID,
             title="رسانه", text="محتوای فروشگاه",
             audience="all", status="draft",
         )

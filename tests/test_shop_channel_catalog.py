@@ -1,6 +1,9 @@
 """Contract and catalog tests without a real Telegram or Bale token."""
 
-from tests.schema_support import create_shop_schema, seed_test_units
+from tests.schema_support import (
+    create_shop_schema, seed_test_units, seed_registry, TEST_BOT_IDS,
+    test_bot_context, allow_test_catalog,
+)
 
 import pytest
 from sqlalchemy import create_engine
@@ -9,14 +12,13 @@ from sqlalchemy.orm import Session
 from channels.contracts import InboundEvent, Platform, normalize_update
 from models.base import Base
 from models.shop_content import (
-    Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
+    Product, ProductMedia, ShopCategory, Testimonial,
 )
 from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_channel_features import ShopChannelFeature
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+    DEFAULT_STORE_ID, ShopBot, ShopStore,
 )
 from models.shop_staff import ShopStaff
 from services.shop_channel_catalog import CatalogFlow
@@ -56,14 +58,7 @@ def session():
             id=DEFAULT_STORE_ID, slug="default",
             name="Existing catalog", state="active",
         ))
-        db.add_all([
-            ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID,
-                slug=f"legacy-{platform}", name=f"Legacy {platform}",
-                platform=platform, status="legacy", runtime_owner="legacy",
-                version=1, credential_version=1,
-            ) for platform, bot_id in LEGACY_BOT_IDS.items()
-        ])
+        seed_registry(db)
         db.commit()
         seed_test_units(db)
         yield db
@@ -98,8 +93,9 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
             ),
         ]
     )
+    allow_test_catalog(session)
     session.commit()
-    flow = CatalogFlow()
+    flow = CatalogFlow(bot_context=test_bot_context(platform))
     reply = await flow.reply(
         event(platform, text="/catalog"), AsyncSessionProxy(session)
     )
@@ -129,8 +125,9 @@ async def test_only_approved_testimonials_render(session, platform):
         Testimonial(product_id=product.id, text="واقعی", is_approved=True),
         Testimonial(product_id=product.id, text="مخفی", is_approved=False),
     ])
+    allow_test_catalog(session)
     session.commit()
-    response = await CatalogFlow().reply(
+    response = await CatalogFlow(bot_context=test_bot_context(platform)).reply(
         event(platform, callback=f"shop:reviews:{product.id}:0"),
         AsyncSessionProxy(session),
     )
@@ -199,8 +196,9 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
             ),
         ]
     )
+    allow_test_catalog(session)
     session.commit()
-    flow = CatalogFlow()
+    flow = CatalogFlow(bot_context=test_bot_context(platform))
     proxy = AsyncSessionProxy(session)
     start = await flow.reply(event(platform, text="/catalog"), proxy)
     assert start.rows[0][0].label == "محصولات مراقبتی"

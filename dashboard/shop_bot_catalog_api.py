@@ -15,12 +15,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.next_api import database, signed_staff
+from dashboard.next_api import (
+    admin_store_context, database, require_store_access, signed_staff,
+)
 from models.shop_bot_catalog_acl import (
     ShopBotCatalogAudit, ShopBotProductRule,
 )
 from models.shop_content import Product
-from models.shop_multibot import DEFAULT_STORE_ID, ShopBot
+from models.shop_multibot import ShopBot
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 from services import shop_bot_catalog_acl as catalog_acl
@@ -76,6 +78,35 @@ def _page(page: int, page_size: int) -> tuple[int, int]:
     return (page - 1) * page_size, page_size
 
 
+async def scoped_bot(
+    db: AsyncSession, bot_id: str, *, write: bool = False,
+) -> ShopBot:
+    """Prove the bot owner even when the ORM identity map already has it."""
+    scope = admin_store_context()
+    row = await db.scalar(select(ShopBot).where(
+        ShopBot.id == bot_id, ShopBot.store_id.in_(scope.active_store_ids),
+        ShopBot.runtime_owner == "registry",
+    ))
+    if row is None:
+        raise security.SecurityRejected("bot_not_found", 404)
+    require_store_access(scope, row.store_id, write=write)
+    return row
+
+
+async def scoped_product(
+    db: AsyncSession, product_id: int, *, write: bool = False,
+) -> Product:
+    """Authorize the actual Product Store before exposing or changing ACLs."""
+    scope = admin_store_context()
+    row = await db.scalar(select(Product).where(
+        Product.id == product_id, Product.store_id.in_(scope.active_store_ids),
+    ))
+    if row is None:
+        raise security.SecurityRejected("catalog_target_not_found", 404)
+    require_store_access(scope, row.store_id, write=write)
+    return row
+
+
 @router.get("/bot-catalog/bots/{bot_id}")
 async def bot_catalog_policy(
     bot_id: UUID, staff: Staff, db: Db,
@@ -87,18 +118,12 @@ async def bot_catalog_policy(
     offset, limit = _page(page, page_size)
     if len(q) > 100:
         raise security.SecurityRejected("invalid_request", 422)
-    bot = await db.get(ShopBot, str(bot_id))
-    if bot is None:
-        raise security.SecurityRejected("bot_not_found", 404)
-    if bot.store_id != DEFAULT_STORE_ID:
-        return {
-            "bot_id": bot.id, "kind": kind, "default_effect": "deny",
-            "policy_ready": False, "items": [], "total": 0,
-            "page": page, "page_size": page_size,
-        }
+    bot = await scoped_bot(db, str(bot_id))
     model, target_model, id_key = catalog_acl.RULE_OBJECTS[kind]
-    base = select(target_model)
-    count_stmt = select(func.count()).select_from(target_model)
+    base = select(target_model).where(target_model.store_id == bot.store_id)
+    count_stmt = select(func.count()).select_from(target_model).where(
+        target_model.store_id == bot.store_id,
+    )
     if q.strip():
         needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         criterion = target_model.name.ilike(f"%{needle}%", escape="\\")
@@ -129,9 +154,7 @@ async def bot_catalog_policy(
     return {
         "bot_id": bot.id,
         "kind": kind,
-        "default_effect": (
-            "allow" if preview_scope.default_allow else "deny"
-        ),
+        "default_effect": "deny",
         "policy_ready": preview_scope.available,
         "items": [{
             "id": row.id, "name": row.name,
@@ -152,6 +175,7 @@ async def change_bot_rules(
 ) -> dict:
     """Apply allow/deny/inherit in one atomic row-locked operation."""
     actor = require(staff, "bots.configure")
+    await scoped_bot(db, str(bot_id), write=True)
     changed = await db.run_sync(lambda sync: catalog_acl.update_bot_rules(
         sync, bot_id=str(bot_id), actor_id=actor.id,
         expected_version=payload.expected_version,
@@ -172,12 +196,12 @@ async def product_bot_policy(
     offset, limit = _page(page, page_size)
     if len(q) > 100 or product_id <= 0:
         raise security.SecurityRejected("invalid_request", 422)
-    product = await db.get(Product, product_id)
-    if product is None:
-        raise security.SecurityRejected("catalog_target_not_found", 404)
-    bots_stmt = select(ShopBot).where(ShopBot.store_id == DEFAULT_STORE_ID)
+    product = await scoped_product(db, product_id)
+    bots_stmt = select(ShopBot).where(
+        ShopBot.store_id == product.store_id, ShopBot.runtime_owner == "registry",
+    )
     count_stmt = select(func.count()).select_from(ShopBot).where(
-        ShopBot.store_id == DEFAULT_STORE_ID,
+        ShopBot.store_id == product.store_id, ShopBot.runtime_owner == "registry",
     )
     if q.strip():
         needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -203,9 +227,7 @@ async def product_bot_policy(
             "status": bot.status,
             "version": bot.version,
             "effect": existing.get(bot.id, "inherit"),
-            "default_effect": (
-                "allow" if bot.runtime_owner == "legacy" else "deny"
-            ),
+            "default_effect": "deny",
         } for bot in bots],
         "total": total, "page": page, "page_size": page_size,
     }
@@ -218,6 +240,9 @@ async def change_product_bot_rules(
 ) -> dict:
     """Save M2M product entitlements for selected bots without touching others."""
     actor = require(staff, "bots.configure")
+    await scoped_product(db, product_id, write=True)
+    for item in payload.assignments:
+        await scoped_bot(db, str(item.bot_id), write=True)
     changed = await db.run_sync(
         lambda sync: catalog_acl.update_product_bot_rules(
             sync, product_id=product_id, actor_id=actor.id,
@@ -238,6 +263,7 @@ async def bot_catalog_audit(
     """Expose bounded immutable rule change history to authorized staff."""
     require(staff, "bots.read")
     offset, limit = _page(page, 30)
+    await scoped_bot(db, str(bot_id))
     rows = (await db.scalars(select(ShopBotCatalogAudit).where(
         ShopBotCatalogAudit.bot_id == str(bot_id),
     ).order_by(

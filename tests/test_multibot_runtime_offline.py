@@ -316,10 +316,11 @@ def test_webhook_url_rejects_private_or_insecure_origin(monkeypatch) -> None:
         webhook_url(binding_id, "short")
 
 
-def test_legacy_broadcast_cannot_send_registry_campaign(monkeypatch) -> None:
-    """Never hand a registry-owned campaign to the legacy-token worker."""
+def test_registry_broadcast_requires_explicit_deployment_permission(monkeypatch) -> None:
+    """An unapproved Registry broadcast cannot claim recipients or contact providers."""
     monkeypatch.setattr(config, "SHOP_CAMPAIGN_DISPATCH_ENABLED", True)
     monkeypatch.setattr(config, "SHOP_BROADCAST_WORKER_ENABLED", True)
+    monkeypatch.setattr(config, "SHOP_BROADCAST_REGISTRY_ENABLED", False, raising=False)
     campaign = ShopCampaign(
         id=101,
         bot_id=BOT_A,
@@ -336,7 +337,8 @@ def test_legacy_broadcast_cannot_send_registry_campaign(monkeypatch) -> None:
             """Return the registry campaign to the policy gate."""
             return campaign
 
-    with pytest.raises(CampaignRejected, match="Worker"):
+    with pytest.raises(CampaignRejected, match="هنوز فعال نشده"):
+        # The gate must precede any recipient lookup or transport creation.
         asyncio.run(
             BroadcastControl.start(
                 FakeDb(), campaign_id=101, actor="offline-test",

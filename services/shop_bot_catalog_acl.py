@@ -2,7 +2,7 @@
 
 Precedence: unpublished product -> deny; explicit product deny -> deny;
 explicit product allow -> allow; category deny -> deny; category allow ->
-allow; otherwise legacy bots allow and new registry bots deny.
+allow; otherwise every Registry bot denies access.
 
 Both catalog pagination and payment/cart paths use this same SQL expression,
 so stale callbacks cannot bypass a hidden product's permissions.
@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
-from sqlalchemy import and_, false, literal, not_, or_, select
+from sqlalchemy import and_, false, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ from models.shop_bot_catalog_acl import (
 from models.shop_content import Product, ShopCategory
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopBotRegistryEvent, ShopStore,
+    ShopBot, ShopBotRegistryEvent, ShopStore,
 )
 from services import shop_admin_security as security
 
@@ -42,16 +42,7 @@ class CatalogScope:
 
     bot_id: str
     store_id: str
-    default_allow: bool
     available: bool
-
-
-def legacy_bot_id(platform: str) -> str:
-    """Map only authenticated legacy Telegram/Bale adapters to immutable IDs."""
-    bot_id = LEGACY_BOT_IDS.get(platform)
-    if bot_id is None:
-        raise security.SecurityRejected("invalid_bot_platform", 422)
-    return bot_id
 
 
 async def resolve_scope(
@@ -61,35 +52,22 @@ async def resolve_scope(
     bot = await db.get(ShopBot, bot_id)
     if bot is None:
         raise security.SecurityRejected("bot_not_found", 404)
+    if bot.runtime_owner != "registry":
+        raise security.SecurityRejected("invalid_bot_runtime", 409)
     store = await db.get(ShopStore, bot.store_id)
     # Any active Store may serve its own catalog. Owner equality is
     # enforced on Product rows by permitted_product_clause().
     available = bool(store is not None and store.state == "active")
     if not preview:
-        available = available and (
-            (bot.status == "legacy" and bot.runtime_owner == "legacy")
-            or (bot.status == "active" and bot.runtime_owner == "registry")
-        )
+        available = available and bot.status == "active"
         policy = await db.get(ShopBotOperations, bot.id)
         if policy is not None and policy.desired_state != "active":
             available = False
     return CatalogScope(
         bot_id=bot.id,
         store_id=bot.store_id,
-        default_allow=(
-            bot.status == "legacy" and bot.runtime_owner == "legacy"
-        ),
         available=available,
     )
-
-
-async def resolve_legacy_scope(db: AsyncSession, platform: str) -> CatalogScope:
-    """Resolve the actual legacy bot, never infer it from callback parameters."""
-    bot_id = legacy_bot_id(platform)
-    scope = await resolve_scope(db, bot_id=bot_id)
-    if not scope.default_allow:
-        raise security.SecurityRejected("invalid_bot_runtime", 409)
-    return scope
 
 
 def permitted_product_clause(scope: CatalogScope):
@@ -133,7 +111,7 @@ def permitted_product_clause(scope: CatalogScope):
             product_allow,
             and_(
                 not_(category_deny),
-                or_(category_allow, literal(scope.default_allow)),
+                category_allow,
             ),
         ),
     )
@@ -170,23 +148,6 @@ async def lock_bot_catalog_policy(
         raise security.SecurityRejected("bot_not_found", 404)
 
 
-async def lock_legacy_catalog_policy(
-    db: AsyncSession, platform: str,
-) -> None:
-    """Serialize final order/payment creation against ACL policy edits.
-
-    All administrative rule updates lock the ShopBot row first. Locking the
-    same row in the transaction that creates an order or invoice ensures the
-    policy cannot be changed between the final eligibility check and commit.
-    """
-    bot_id = legacy_bot_id(platform)
-    existing = await db.scalar(select(ShopBot.id).where(
-        ShopBot.id == bot_id,
-    ).with_for_update())
-    if existing is None:
-        raise security.SecurityRejected("bot_not_found", 404)
-
-
 async def allowed_for_bot(
     db: AsyncSession, bot_id: str, product_ids: list[int] | set[int],
 ) -> bool:
@@ -197,18 +158,6 @@ async def allowed_for_bot(
     scope = await resolve_scope(db, bot_id=bot_id)
     permitted = await visible_product_ids(db, scope, identifiers)
     return permitted == identifiers
-
-
-async def allowed_for_legacy(
-    db: AsyncSession, platform: str, product_ids: list[int] | set[int],
-) -> bool:
-    """Deny a cart or invoice when any line no longer belongs to this bot."""
-    identifiers = set(product_ids)
-    if not identifiers:
-        return False
-    scope = await resolve_legacy_scope(db, platform)
-    authorized = await visible_product_ids(db, scope, identifiers)
-    return identifiers == authorized
 
 
 def _check_rule_request(
@@ -234,6 +183,8 @@ def _check_bot(db: Session, bot_id: str, expected_version: int | None) -> ShopBo
     ).with_for_update())
     if bot is None:
         raise security.SecurityRejected("bot_not_found", 404)
+    if bot.runtime_owner != "registry":
+        raise security.SecurityRejected("invalid_bot_runtime", 409)
     store = db.get(ShopStore, bot.store_id)
     if store is None or store.state != "active":
         raise security.SecurityRejected("store_not_active", 409)

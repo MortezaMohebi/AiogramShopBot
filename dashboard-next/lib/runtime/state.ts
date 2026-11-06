@@ -75,7 +75,7 @@ export function publicationCanActivate(preview: PublicationPreview, approved: bo
   return canPublish && approved && preview.ready && Date.parse(preview.expires_at) > now;
 }
 export function validBindingChoices(definition: Definition, bots: BotChoice[]) {
-  return bots.filter(bot => ["active", "legacy"].includes(bot.status) && definition.target_platforms.includes(bot.platform) && (definition.assignment.mode === "all_eligible" || definition.assignment.bot_ids.includes(bot.id))).flatMap(bot => definition.entry_points.map(entry => ({
+  return bots.filter(bot => bot.status === "active" && definition.target_platforms.includes(bot.platform) && (definition.assignment.mode === "all_eligible" || definition.assignment.bot_ids.includes(bot.id))).flatMap(bot => definition.entry_points.map(entry => ({
     bot,
     entry
   })));

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_ENV = {
@@ -16,10 +18,9 @@ BASE_ENV = {
     "POSTGRES_DB": "shop_codespace",
     "POSTGRES_USER": "shop_codespace",
     "DB_HOST": "postgres",
-    "WEBHOOK_HOST": "https://disabled.invalid",
     "NEXT_ADMIN_BRIDGE_ENABLED": "true",
+    "SHOP_SECURITY_ENCRYPTION_KEY": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
     "NEXT_ADMIN_BRIDGE_SECRET": "synthetic-test-bridge-key-" + "a" * 40,
-    "JWT_SECRET_KEY": "synthetic-test-session-key-" + "b" * 40,
     "SHOP_CAMPAIGN_DISPATCH_ENABLED": "false",
     "SHOP_BROADCAST_WORKER_ENABLED": "false",
     "BALE_BROADCAST_PAID_ENABLED": "false",
@@ -27,9 +28,7 @@ BASE_ENV = {
     "TELEGRAM_STARS_CHECKOUT_ENABLED": "false",
     "TELEGRAM_FIAT_CHECKOUT_ENABLED": "false",
     "BALE_WALLET_CHECKOUT_ENABLED": "false",
-    "CRYPTO_FORWARDING_MODE": "false",
     "SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR": "0",
-    "BALE_BROADCAST_PREPARE_CHAT_ID": "0",
     "SHOP_WORKFLOW_QA": "1",
     "SHOP_ACTION_QA": "1",
     "SHOP_RUNTIME_QA": "1",
@@ -120,10 +119,39 @@ class RuntimeAcceptanceGuardTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.assert_guarded(changes)
 
+    def test_runner_binding_payloads_match_the_current_registry_contract(self):
+        """The executable's real payload factory remains accepted by publication validation."""
+        from services.shop_runtime.contracts import BindingSpec
+
+        source = ROOT / "scripts" / "workflow_runtime_e2e.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        harness = next(node for node in tree.body if (
+            isinstance(node, ast.ClassDef) and node.name == "Harness"
+        ))
+        factory = next(node for node in harness.body if (
+            isinstance(node, ast.FunctionDef) and node.name == "bindings"
+        ))
+        namespace = {}
+        exec(compile(ast.Module(body=[factory], type_ignores=[]), str(source), "exec"), namespace)
+        fixture = SimpleNamespace(fixture={"bots": {
+            "telegram": "00000000-0000-4000-8000-000000000101",
+            "bale": "00000000-0000-4000-8000-000000000102",
+        }})
+        payloads = namespace["bindings"](fixture)
+        self.assertEqual(len(payloads), 4)
+        for payload in payloads:
+            with self.subTest(kind=payload["kind"], bot_id=payload["bot_id"]):
+                binding = BindingSpec.model_validate(payload)
+                self.assertEqual(binding.fallback, "ignore")
+                self.assertIn(binding.kind, {"command", "start"})
+
     def test_provider_credentials_are_refused(self):
         """Reject any real credential even when every lab/runtime flag is correct."""
         for name in (
             "TOKEN",
+            "TELEGRAM_BOT_TOKEN",
+            "LIVE_TELEGRAM_TOKEN",
+            "LIVE_BALE_TOKEN",
             "BALE_BOT_TOKEN",
             "BALE_WALLET_PROVIDER_TOKEN",
             "TELEGRAM_FIAT_PROVIDER_TOKEN",

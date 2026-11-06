@@ -352,21 +352,22 @@ async def readiness(db, *, actor, scope, workflow_id, revision, bindings):
             bot is None
             or bot.store_id != head.store_id
             or bot.platform not in definition.target_platforms
-            or bot.status not in {"active", "legacy"}
+            or bot.status != "active"
+            or bot.runtime_owner != "registry"
             or (
                 definition.assignment.mode == "selected"
                 and bot.id not in definition.assignment.bot_ids
             )
         ):
             raise RuntimeRejected("runtime_bot_unavailable", 422)
-        if item.kind in {"admin_test", "legacy_bridge"} and item.node_id not in {
+        if item.kind in {"admin_test"} and item.node_id not in {
             e.node_id for e in definition.entry_points
         }:
             raise RuntimeRejected("runtime_entry_not_declared", 422)
         if item.node_id not in nodes:
             raise RuntimeRejected("runtime_entry_node_missing", 422)
         if (
-            item.kind not in {"legacy_bridge", "admin_test"}
+            item.kind not in {"admin_test"}
             and (item.kind, item.key, item.node_id) not in declared
         ):
             raise RuntimeRejected("runtime_entry_not_declared", 422)

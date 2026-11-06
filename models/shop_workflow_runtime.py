@@ -92,7 +92,7 @@ class RuntimeBinding(Owned, Base):
     priority: Mapped[int] = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     eligibility: Mapped[str] = mapped_column(String(24), default="all")
-    fallback: Mapped[str] = mapped_column(String(12), default="legacy")
+    fallback: Mapped[str] = mapped_column(String(12), default="ignore")
     version: Mapped[int] = mapped_column(Integer, default=1)
     __table_args__ = (
         UniqueConstraint("bot_id", "kind", "key"),

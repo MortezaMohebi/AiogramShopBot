@@ -117,6 +117,20 @@ async def _slot(db, context, user_id):
     return row
 
 
+_SUPPORTED_ENTRY_KINDS = frozenset({"command", "menu", "start", "internal", "admin_test"})
+
+
+def _supported_binding(binding, *, store_id: str, bot_id: str) -> bool:
+    """Reject unclean persisted contracts independently of schema cleanup."""
+    return bool(
+        binding is not None
+        and binding.store_id == store_id
+        and binding.bot_id == bot_id
+        and binding.kind in _SUPPORTED_ENTRY_KINDS
+        and binding.fallback == "ignore"
+    )
+
+
 async def entry(db, context, event, *, origin="customer"):
     """Resolve declared stable keys only; input never supplies a node or version."""
     kind, key = None, None
@@ -133,7 +147,6 @@ async def entry(db, context, event, *, origin="customer"):
         kind, key = "menu", event.callback[4:]
     elif event.kind == "internal" and origin in {
         "internal",
-        "legacy_bridge",
         "admin_test",
     }:
         kind, key = origin if origin != "internal" else "internal", event.text
@@ -142,7 +155,7 @@ async def entry(db, context, event, *, origin="customer"):
     # Routing reads a committed pointer; the resulting Run pins its immutable
     # publication. Locking this parent before the customer slot would invert
     # the FK key-share/slot lock order after the durable Inbox commit.
-    return await db.scalar(
+    binding = await db.scalar(
         select(RuntimeBinding)
         .where(
             RuntimeBinding.store_id == context.store_id,
@@ -152,7 +165,13 @@ async def entry(db, context, event, *, origin="customer"):
             RuntimeBinding.enabled.is_(True),
         )
         .order_by(RuntimeBinding.priority.desc(), RuntimeBinding.id)
+        .execution_options(populate_existing=True)
     )
+    if binding is not None and not _supported_binding(
+        binding, store_id=context.store_id, bot_id=context.bot_id,
+    ):
+        raise RuntimeRejected("runtime_entry_unavailable")
+    return binding
 
 
 class InvalidStoredRun(RuntimeRejected):
@@ -360,7 +379,7 @@ async def persist(db, run, machine):
                     "command": button.get("command"),
                 }
             )
-        if payload.get("kind") == "legacy_menu":
+        if payload.get("kind") == "shop_menu":
             from services.shop_customer_menu import effective_menu
 
             rows = await effective_menu(
@@ -372,10 +391,10 @@ async def persist(db, run, machine):
                 for b in row
             ]
             payload["kind"] = "text"
-            payload["legacy_menu"] = True
+            payload["shop_menu"] = True
         payload["buttons"] = buttons
         payload["interactive"] = (
-            (bool(buttons) and not payload.get("legacy_menu", False))
+            (bool(buttons) and not payload.get("shop_menu", False))
             or payload.get("request_contact", False)
             or machine.nodes[intent["node_id"]].type.startswith("ask_")
         )
@@ -559,6 +578,21 @@ async def _consume(
     db, context, event, *, slot, inbox, binding, principal, file_verifier=None
 ):
     """Advance one input under the customer slot and Run locks."""
+    if binding is not None:
+        # The durable Inbox commit separates selection from execution. Recheck
+        # persisted authority after that boundary before creating any new Run.
+        binding = await db.scalar(select(RuntimeBinding).where(
+            RuntimeBinding.id == binding.id,
+        ).execution_options(populate_existing=True))
+        if not _supported_binding(
+            binding, store_id=context.store_id, bot_id=context.bot_id,
+        ) or not binding.enabled:
+            inbox.status, inbox.payload, inbox.error_code = (
+                "rejected", {}, "runtime_entry_unavailable",
+            )
+            return await finish_input(db, inbox, {
+                "handled": True, "status": "entry_unavailable",
+            })
     run = (
         await db.scalar(
             select(WorkflowRun)
@@ -582,14 +616,20 @@ async def _consume(
         inbox.payload = {}
         inbox.error_code = "runtime_input_stale"
         return await finish_input(db, inbox, {"handled": True, "status": "input_stale"})
-    if run is not None and event.kind == "command" and event.text == "/restart":
-        candidate = await db.get(RuntimeBinding, run.binding_id)
-        if (
-            candidate
-            and candidate.enabled
-            and candidate.store_id == run.store_id
-            and candidate.bot_id == run.bot_id
-        ):
+    if run is not None:
+        candidate = await db.scalar(select(RuntimeBinding).where(
+            RuntimeBinding.id == run.binding_id,
+        ).execution_options(populate_existing=True))
+        if not _supported_binding(candidate, store_id=run.store_id, bot_id=run.bot_id):
+            # A pinned publication cannot retain authority through a retired entry.
+            await quarantine_run(db, run, "runtime_entry_unavailable")
+            inbox.status, inbox.payload, inbox.error_code = (
+                "rejected", {}, "runtime_entry_unavailable",
+            )
+            return await finish_input(db, inbox, {
+                "handled": True, "status": "entry_unavailable", "run_id": run.id,
+            })
+        if event.kind == "command" and event.text == "/restart" and candidate.enabled:
             binding = candidate
 
     if run and security.utc(run.expires_at) <= security.clock():
@@ -816,7 +856,7 @@ async def handle(
     was_existing=True,
     resume_pending=False,
 ):
-    """Accept Runtime-owned input before legacy receipt claims; return False for fallback."""
+    """Accept Runtime-owned input before commerce receipt claims; return False for fallback."""
     if context.platform.value != event.platform:
         raise RuntimeRejected("runtime_platform_mismatch", 403)
     duplicate = await db.scalar(
@@ -832,7 +872,12 @@ async def handle(
     principal = await customer_principal(
         db, verified_bot=context, platform_user_id=event.user_id
     )
-    binding = await entry(db, context, event, origin=origin)
+    try:
+        binding = await entry(db, context, event, origin=origin)
+    except RuntimeRejected as error:
+        if error.code != "runtime_entry_unavailable":
+            raise
+        return {"handled": True, "status": "entry_unavailable"}
     if duplicate is not None:
         was_existing = duplicate.was_existing
     if (
@@ -841,7 +886,7 @@ async def handle(
         and not was_existing
     ):
         return {
-            "handled": binding.fallback == "ignore",
+            "handled": True,
             "status": "eligibility_rejected",
         }
     existing = await db.scalar(
@@ -869,7 +914,7 @@ async def handle(
             )
         return {"handled": False}
     slot = await _slot(db, context, event.user_id)
-    # Preserve legacy navigation/payment callbacks and commands even during an active Run.
+    # Preserve commerce navigation/payment callbacks and commands even during an active Run.
     navigation = (
         event.kind == "callback" and not event.callback.startswith(("wf:", "wfe:"))
     ) or (

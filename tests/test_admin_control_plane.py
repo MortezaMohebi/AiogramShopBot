@@ -105,24 +105,6 @@ def test_totp_rfc_vector_and_recovery_are_single_use(monkeypatch):
             sec.verify_second_factor(db, profile, recovery[0], now=now)
 
 
-def test_connection_changes_are_idempotent_and_state_guarded():
-    sec = security()
-    from models.shop_admin_control import ConnectionChange
-    from services.shop_connection_control import stage_change, transition
-    engine = create_engine('sqlite:///:memory:')
-    create_shop_schema(engine)
-    with Session(engine) as db:
-        first = stage_change(db, actor_id=1, platform='telegram', current_mode='webhook', requested_mode='polling', key='00000000-0000-4000-8000-000000000001')
-        same = stage_change(db, actor_id=1, platform='telegram', current_mode='webhook', requested_mode='polling', key='00000000-0000-4000-8000-000000000001')
-        assert first.id == same.id
-        assert first.state == 'pending'
-        transition(db, first, 'queued', actor_id=1)
-        transition(db, first, 'applying', actor_id=1)
-        transition(db, first, 'succeeded', actor_id=1)
-        db.commit()
-        with pytest.raises(sec.SecurityRejected):
-            transition(db, first, 'queued', actor_id=1)
-        assert db.scalars(select(ConnectionChange)).all() == [first]
 
 
 def test_revoke_others_preserves_current_session_and_records_event():
@@ -223,32 +205,6 @@ def test_mfa_expiry_and_recovery_secrets_are_not_stored(monkeypatch):
             sec.verify_second_factor(db, profile, sec.totp(secret, next_time.timestamp()), now=next_time)
 
 
-def test_connection_conflicts_cancellation_and_unknown_reconciliation():
-    sec = security()
-    from services.shop_connection_control import stage_change, transition
-    from models.shop_admin_control import ConnectionConfig
-    engine = create_engine('sqlite:///:memory:')
-    create_shop_schema(engine)
-    with Session(engine) as db:
-        first = stage_change(db, actor_id=1, platform='bale', current_mode='webhook', requested_mode='polling', key='00000000-0000-4000-8000-000000000002')
-        with pytest.raises(sec.SecurityRejected):
-            stage_change(db, actor_id=1, platform='bale', current_mode='webhook', requested_mode='webhook', key=first.idempotency_key)
-        with pytest.raises(sec.SecurityRejected):
-            stage_change(db, actor_id=2, platform='bale', current_mode='webhook', requested_mode='webhook', key='00000000-0000-4000-8000-000000000003')
-        transition(db, first, 'queued', actor_id=1)
-        transition(db, first, 'applying', actor_id=1)
-        transition(db, first, 'needs_review', actor_id=1, error_code='timeout')
-        with pytest.raises(sec.SecurityRejected):
-            transition(db, first, 'queued', actor_id=1)
-        first.verification_only = True
-        transition(db, first, 'queued', actor_id=1)
-        transition(db, first, 'applying', actor_id=1)
-        transition(db, first, 'succeeded', actor_id=1)
-        assert db.get(ConnectionConfig, 'bale').mode == 'polling'
-        assert db.get(ConnectionConfig, 'bale').version == 2
-        second = stage_change(db, actor_id=1, platform='bale', current_mode='polling', requested_mode='webhook', key='00000000-0000-4000-8000-000000000004')
-        transition(db, second, 'cancelled', actor_id=1)
-        assert db.get(ConnectionConfig, 'bale').mode == 'polling'
 
 
 def test_additive_bootstrap_preserves_existing_tables():

@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "project": "telegram-bale-codespace",
+  "services": [
+    {
+      "service": "app",
+      "state": "stopped",
+      "data_volumes": "preserved"
+    },
+    {
+      "service": "dashboard",
+      "state": "stopped",
+      "data_volumes": "preserved"
+    },
+    {
+      "service": "webhook-gateway",
+      "state": "stopped",
+      "data_volumes": "preserved"
+    }
+  ]
+}

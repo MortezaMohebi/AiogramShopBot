@@ -11,7 +11,8 @@ import { adminFetch, currentStaff } from "@/lib/bridge";
 import { formatIrr, statusLabel } from "@/lib/utils";
 import { formatOrderAmount } from "@/lib/order-money";
 
-type Wallet = { user_id: string; platform: string; balance_irr: string };
+type Wallet = { identity_id: number | null; bot_id: string | null; user_id: string; platform: string; balance_irr: string };
+type WalletIdentity = { id: number; platform: string; user_id: string; bot_name: string };
 type Refund = {
   id: number; order_id: number; platform: string; provider: string;
   amount_irr: string; reason: string; status: string;
@@ -32,8 +33,9 @@ type Params = Promise<{ saved?: string; error?: string }>;
 export default async function FinancePage({ searchParams }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (!["superadmin", "finance"].includes(staff.role)) notFound();
-  const [wallets, refunds, ledger, capabilities, params] = await Promise.all([
+  const [wallets, identities, refunds, ledger, capabilities, params] = await Promise.all([
     adminFetch<{items: Wallet[]; total: number}>("/wallets"),
+    adminFetch<WalletIdentity[]>("/wallets/identities"),
     adminFetch<Refund[]>("/refunds"),
     adminFetch<Ledger[]>("/wallets/ledger"),
     adminFetch<Capabilities>("/capabilities"),
@@ -52,7 +54,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
             <p className="text-xs text-muted-foreground">{wallets.total} حساب · ۱۰۰ حساب اخیر</p>
             <div className="max-h-80 space-y-2 overflow-y-auto">
               {wallets.items.map((item) => (
-                <div key={item.platform + item.user_id} className="flex items-center justify-between gap-3 border-b border-border py-2 text-sm">
+                <div key={`${item.bot_id}:${item.identity_id}:${item.user_id}`} className="flex items-center justify-between gap-3 border-b border-border py-2 text-sm">
                   <span>{item.platform === "bale" ? "بله" : "تلگرام"} · <span dir="ltr">{item.user_id}</span></span>
                   <span>{formatIrr(item.balance_irr)}</span>
                 </div>
@@ -68,13 +70,13 @@ export default async function FinancePage({ searchParams }: { searchParams: Para
               <form action={adjustWallet} className="space-y-3">
                 <input type="hidden" name="operation_id" value={randomUUID()} />
                 <p className="text-xs text-muted-foreground">سقف مجاز هر عملیات: {formatIrr(capabilities.wallet_adjustment_limit_irr)}.</p>
-                <label className="block space-y-1 text-sm">پیام‌رسان
-                  <select name="platform" className="h-10 w-full rounded-md border border-input bg-background px-3">
-                    <option value="bale">بله</option><option value="telegram">تلگرام</option>
+                <label className="block space-y-1 text-sm">حساب مشتری در ربات
+                  <select name="identity_id" required defaultValue="" className="h-10 w-full rounded-md border border-input bg-background px-3">
+                    <option value="" disabled>حساب را انتخاب کنید</option>
+                    {identities.map(item => (
+                      <option key={item.id} value={String(item.id)}>{item.bot_name} · {item.platform === "bale" ? "بله" : "تلگرام"} · {item.user_id}</option>
+                    ))}
                   </select>
-                </label>
-                <label className="block space-y-1 text-sm">شناسه عددی کاربر
-                  <Input name="user_id" type="number" min={1} required />
                 </label>
                 <label className="block space-y-1 text-sm">نوع
                   <select name="direction" className="h-10 w-full rounded-md border border-input bg-background px-3">

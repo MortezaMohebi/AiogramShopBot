@@ -16,7 +16,7 @@ from channels.contracts import (
     BotReply, InboundEvent, InlineAction, MediaAttachment, Platform,
 )
 from models.shop_content import (
-    Product, ProductMedia, ShopCategory, ShopSettings, Testimonial,
+    Product, ProductMedia, ShopCategory, Testimonial,
 )
 from services.shop_money import format_rials
 from models.shop_product_visibility import ShopProductVisibility
@@ -24,13 +24,11 @@ from services.shop_presentation import product_message
 from models.shop_uom import ShopUom
 from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
-    CatalogScope, legacy_bot_id, permitted_product_clause, resolve_scope,
+    CatalogScope, permitted_product_clause, resolve_scope,
 )
 from services.shop_bot_context import BotContext
 from services.shop_admin_security import SecurityRejected
-from models.shop_multibot import LEGACY_BOT_IDS
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_multibot import DEFAULT_STORE_ID
 from models.shop_store_commerce import ShopStoreSettings
 
 _PAGE_SIZE = 6
@@ -64,25 +62,22 @@ class CatalogFlow:
         self, currency_label: str = "ریال", display_unit: str = "IRR",
         *, bot_context: BotContext | None = None,
     ) -> None:
-        """Bind optional trusted BotContext without a client-supplied bot ID."""
+        """Bind a trusted BotContext without a client-supplied bot ID."""
         self.currency_label = currency_label
         self.display_unit = display_unit
-        # Future receivers supply only contexts resolved after authentication.
+        # Receivers supply only contexts resolved after authentication.
         self.bot_context = bot_context
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
     ) -> BotReply | None:
         """Resolve recognized commands or buttons; ignore other bot features."""
-        if self.bot_context is not None and (
-            self.bot_context.platform != event.platform
-        ):
+        if self.bot_context is None:
+            raise ValueError("An authenticated bot context is required.")
+        if self.bot_context.platform != event.platform:
             raise SecurityRejected("bot_identity_mismatch", 403)
         scope = await resolve_scope(
-            session, bot_id=(
-                self.bot_context.bot_id if self.bot_context
-                else legacy_bot_id(event.platform.value)
-            ),
+            session, bot_id=self.bot_context.bot_id,
         )
         if event.callback_data is not None:
             data = event.callback_data
@@ -140,19 +135,11 @@ class CatalogFlow:
 
     async def _home(self, session: AsyncSession, platform: str) -> BotReply:
         """Build a small fixed menu, with all business copy from settings."""
-        store_id = (
-            self.bot_context.store_id if self.bot_context
-            else DEFAULT_STORE_ID
-        )
-        settings = (
-            await session.get(ShopSettings, 1)
-            if store_id == DEFAULT_STORE_ID
-            else await session.get(ShopStoreSettings, store_id)
-        )
+        store_id = self.bot_context.store_id
+        settings = await session.get(ShopStoreSettings, store_id)
         per_bot = await session.get(
             ShopBotOperations,
-            self.bot_context.bot_id if self.bot_context
-            else LEGACY_BOT_IDS[platform],
+            self.bot_context.bot_id,
         )
         welcome = (
             per_bot.welcome_message
@@ -165,10 +152,7 @@ class CatalogFlow:
 
         # The current Bot's Store owns the default layout. A Bot override may
         # only reorder/disable known actions, never bypass payment/cart ACL.
-        owner = (
-            self.bot_context.bot_id if self.bot_context
-            else LEGACY_BOT_IDS[platform]
-        )
+        owner = self.bot_context.bot_id
         rows = await effective_menu(
             session, bot_id=owner, platform=Platform(platform),
         )
@@ -178,19 +162,11 @@ class CatalogFlow:
         self, session: AsyncSession, *, key: str, platform: str
     ) -> BotReply:
         """Read help and support information from editable admin settings."""
-        store_id = (
-            self.bot_context.store_id if self.bot_context
-            else DEFAULT_STORE_ID
-        )
-        settings = (
-            await session.get(ShopSettings, 1)
-            if store_id == DEFAULT_STORE_ID
-            else await session.get(ShopStoreSettings, store_id)
-        )
+        store_id = self.bot_context.store_id
+        settings = await session.get(ShopStoreSettings, store_id)
         per_bot = await session.get(
             ShopBotOperations,
-            self.bot_context.bot_id if self.bot_context
-            else LEGACY_BOT_IDS[platform],
+            self.bot_context.bot_id,
         )
         if key == "faq":
             body = settings.faq_text if settings else None
@@ -363,10 +339,7 @@ class CatalogFlow:
         )
         features = await get_features(
             session, platform,
-            bot_id=(
-                self.bot_context.bot_id if self.bot_context
-                else LEGACY_BOT_IDS[platform]
-            ),
+            bot_id=self.bot_context.bot_id,
         )
         rows = []
         if features.cart_enabled:

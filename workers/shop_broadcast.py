@@ -11,16 +11,11 @@ import asyncio
 import logging
 import signal
 
-from aiohttp import ClientSession, ClientTimeout
 
 import config
-from channels.telegram import TelegramTransport
 from db import create_db_and_tables, engine
 from services.shop_broadcast_scope import registry_dispatch_enabled
 from services.shop_broadcast_worker import BroadcastWorker, registry_transport
-from services.shop_telegram_transport_control import sync_broadcast_session
-from utils.telegram import create_bot, create_telegram_session
-from utils.telegram_rotating_session import RotatingTelegramSession
 
 LOG = logging.getLogger(__name__)
 
@@ -36,31 +31,7 @@ async def main() -> None:
     # Never let an old schema silently truncate paid budgets or recipient
     # receipts. The API process uses the same Alembic-head validation.
     await create_db_and_tables()
-    telegram_bot = (
-        create_bot(
-            config.TOKEN,
-            RotatingTelegramSession(create_telegram_session()),
-        )
-        if config.TOKEN
-        else None
-    )
-    if telegram_bot is not None:
-        # An authenticated getMe probe is required before the worker can
-        # switch to a new committed proxy/Worker route.
-        await sync_broadcast_session(telegram_bot)
-    bale_session = (
-        ClientSession(timeout=ClientTimeout(total=120))
-        if config.BALE_BOT_TOKEN
-        else None
-    )
     runner = BroadcastWorker(
-        telegram=(TelegramTransport(telegram_bot) if telegram_bot else None),
-        bale_session=bale_session,
-        telegram_transport_sync=(
-            (lambda: sync_broadcast_session(telegram_bot))
-            if telegram_bot is not None
-            else None
-        ),
         registry_transport_factory=(
             registry_transport if registry_dispatch_enabled() else None
         ),
@@ -81,10 +52,6 @@ async def main() -> None:
             await task
         except asyncio.CancelledError:
             pass
-        if bale_session is not None:
-            await bale_session.close()
-        if telegram_bot is not None:
-            await telegram_bot.session.close()
         await engine.dispose()
 
 

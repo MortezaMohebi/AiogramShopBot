@@ -24,7 +24,7 @@ from services.shop_payment_rails import rail_enabled
 from services.shop_bot_catalog_acl import (
     allowed_for_bot, lock_bot_catalog_policy,
 )
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id, require_registry_bot
 from services.shop_money import MAX_RIALS, to_rials
 from services.shop_checkout_policy import legal_credit_for_items
 from services.shop_store_commerce import policy_for
@@ -43,11 +43,13 @@ class ShopWalletService:
         *, bot_id: str | None = None,
     ) -> ShopIdentity | None:
         """Find the exact messaging identity; never merge numeric IDs."""
+        bot_id = require_bot_id(bot_id)
+        await require_registry_bot(session, bot_id, platform.value)
         if type(user_id) is not int or user_id <= 0:
             return None
         return await session.scalar(
             select(ShopIdentity).where(
-                ShopIdentity.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopIdentity.bot_id == bot_id,
                 ShopIdentity.platform == platform.value,
                 ShopIdentity.platform_user_id == user_id,
             )
@@ -58,7 +60,7 @@ class ShopWalletService:
         session: AsyncSession, identity_id: int,
         *, forced_account_id: int | None = None,
     ) -> ShopWalletAccount:
-        """Lock the effective Customer or legacy identity credit account.
+        """Lock the effective Customer or bot identity credit account.
 
         The only way to select a shared wallet is an explicit Store policy
         and a verified customer_id. No native Bale/Telegram provider balance
@@ -144,6 +146,7 @@ class ShopWalletService:
         *, bot_id: str | None = None,
     ) -> int:
         """Return only this Store's effective internal merchant credit."""
+        bot_id = require_bot_id(bot_id)
         identity = await ShopWalletService.find_identity(
             session, platform, user_id, bot_id=bot_id,
         )
@@ -252,10 +255,12 @@ class ShopWalletService:
         No external Bot API or crypto provider is involved. Insufficient
         balance, invalid coupon or unavailable stock leaves the order unpaid.
         """
+        bot_id = require_bot_id(bot_id)
+        await require_registry_bot(session, bot_id, platform.value)
         result = await session.execute(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
-                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopOrder.bot_id == bot_id,
                 ShopOrder.platform == platform.value,
                 ShopOrder.platform_user_id == user_id,
             ).with_for_update()
@@ -267,7 +272,7 @@ class ShopWalletService:
             return order, False
         features = await get_features(
             session, platform.value,
-            bot_id=bot_id or legacy_id(platform.value),
+            bot_id=bot_id,
         )
         if not features.store_credit_enabled:
             raise StoreCreditRejected(
@@ -275,7 +280,7 @@ class ShopWalletService:
             )
         if not await rail_enabled(
             session, platform.value, "store_credit",
-            bot_id=bot_id or legacy_id(platform.value),
+            bot_id=bot_id,
         ):
             raise StoreCreditRejected(
                 "این روش پرداخت با اعتبار داخلی غیرفعال است."
@@ -309,10 +314,10 @@ class ShopWalletService:
         pairs = result.all()
         if pairs:
             await lock_bot_catalog_policy(
-                session, bot_id or legacy_id(platform.value),
+                session, bot_id,
             )
         if not pairs or not await allowed_for_bot(
-            session, bot_id or legacy_id(platform.value),
+            session, bot_id,
             [product.id for _, product in pairs],
         ):
             raise StoreCreditRejected(
@@ -394,7 +399,7 @@ class ShopWalletService:
             delta_irr=-amount,
             operation_key=f"store-credit-pay-order:{order.id}",
             reason=f"Payment for order #{order.id}",
-            actor=f"{bot_id or legacy_id(platform.value)}:{user_id}",
+            actor=f"{bot_id}:{user_id}",
         )
         for line, product in pairs:
             product.stock_quantity -= line.quantity
@@ -405,7 +410,7 @@ class ShopWalletService:
             ShopPaymentAttempt(
                 store_id=order.store_id,
                 order_id=order.id,
-                bot_id=bot_id or legacy_id(platform.value),
+                bot_id=bot_id,
                 platform=platform.value,
                 provider="store_credit",
                 currency="IRR",

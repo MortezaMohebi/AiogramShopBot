@@ -81,11 +81,11 @@ async def paused_customer_reply(
 ) -> BotReply | None:
     """Serve one exact after-sale route without entering shopping handlers.
 
-    Legacy and Registry receivers call this only after their effective
+    Registry receivers call this only after their effective
     operation gate permits paused/maintenance service. Disabled/revoked
     contexts and unrelated free text never gain a prefix-based bypass.
     """
-    if context.status not in {"active", "legacy", "paused", "maintenance"}:
+    if context.status not in {"active", "paused", "maintenance"}:
         return None
     route = await _paused_service_route(db, context, event)
     if route is None:

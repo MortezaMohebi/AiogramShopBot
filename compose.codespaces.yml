@@ -2,29 +2,19 @@
 name: telegram-bale-codespace
 x-backend-env: &backend-env
   RUNTIME_ENVIRONMENT: "PROD"
-  WEBHOOK_HOST: "${LIVE_WEBHOOK_BASE:?Run setup init}"
-  WEBHOOK_PATH: "/hooks/telegram"
-  WEBHOOK_SECRET_TOKEN: "${LIVE_TELEGRAM_WEBHOOK_SECRET:?Run setup}"
-  CODESPACE_MANUAL_WEBHOOK: "true"
   CODESPACE_FRESH_SCHEMA: "true"
+  MULTIBOT_V2_RUNTIME_ENABLED: "false"
+  SHOP_RELAY_POOL_ENABLED: "false"
+  SHOP_WORKFLOW_RUNTIME_ENABLED: "${LIVE_WORKFLOW_RUNTIME_ENABLED:-false}"
+  SHOP_WORKFLOW_RUNTIME_KILL_SWITCH: "${LIVE_WORKFLOW_RUNTIME_KILL_SWITCH:-false}"
+  MULTIBOT_WEBHOOK_BASE_URL: "${LIVE_WEBHOOK_BASE:?Run setup init}"
   SHOP_SECURITY_ENCRYPTION_KEY: "${LIVE_SECURITY_ENCRYPTION_KEY:?Run setup config to initialize security}"
-  TELEGRAM_UPDATE_MODE: "${LIVE_TELEGRAM_UPDATE_MODE:-webhook}"
-  TELEGRAM_API_MODE: "${LIVE_TELEGRAM_API_MODE:-direct}"
-  TELEGRAM_WORKER_URL: "${LIVE_TELEGRAM_WORKER_URL:-}"
-  TELEGRAM_WORKER_SECRET: "${LIVE_TELEGRAM_WORKER_SECRET:-}"
-  TELEGRAM_PROXY_URL: "${LIVE_TELEGRAM_PROXY_URL:-}"
   # Approved outbound destinations; updates via the dashboard are limited to
   # these allowlists to prevent leaking the Bot token to unknown relays.
   TELEGRAM_PROXY_ALLOWED_ENDPOINTS: "${LIVE_TELEGRAM_PROXY_ALLOWED_ENDPOINTS:-}"
   TELEGRAM_WORKER_ALLOWED_ORIGINS: "${LIVE_TELEGRAM_WORKER_ALLOWED_ORIGINS:-}"
-  TOKEN: "${LIVE_TELEGRAM_TOKEN:?Configure Telegram token}"
-  BALE_BOT_TOKEN: "${LIVE_BALE_TOKEN:?Configure Bale token}"
-  BALE_WEBHOOK_SECRET: "${LIVE_BALE_WEBHOOK_SECRET:?Run setup}"
-  BALE_WALLET_PROVIDER_TOKEN: "${LIVE_BALE_PAYMENT_TOKEN:-}"
   WEBAPP_HOST: "0.0.0.0"
   WEBAPP_PORT: "5000"
-  ADMIN_ID_LIST: ""
-  DEFAULT_MEDIA_FILE_ID: "${LIVE_DEFAULT_MEDIA_FILE_ID:-}"
   POSTGRES_USER: "shop_codespace"
   POSTGRES_PASSWORD: "${LIVE_POSTGRES_PASSWORD:?Run setup}"
   POSTGRES_DB: "shop_codespace"
@@ -36,7 +26,6 @@ x-backend-env: &backend-env
   DB_SQL_ECHO: "false"
   REDIS_HOST: "redis"
   REDIS_PASSWORD: "${LIVE_REDIS_PASSWORD:?Run setup}"
-  JWT_SECRET_KEY: "${LIVE_JWT_SECRET:?Run setup}"
   NEXT_ADMIN_BRIDGE_ENABLED: "true"
   NEXT_ADMIN_BRIDGE_SECRET: "${LIVE_BRIDGE_SECRET:?Run setup}"
   SHOP_MEDIA_ROOT: "/bot/media_data"
@@ -44,7 +33,6 @@ x-backend-env: &backend-env
   SHOP_ADMIN_SECURE_COOKIES: "true"
   SHOP_DISPLAY_UNIT: "IRR"
   SHOP_CURRENCY_LABEL: "ریال"
-  CURRENCY: "USD"
   TELEGRAM_FIAT_CHECKOUT_ENABLED: "false"
   TELEGRAM_STARS_CHECKOUT_ENABLED: "false"
   TELEGRAM_STARS_REFUNDS_ENABLED: "false"
@@ -52,13 +40,9 @@ x-backend-env: &backend-env
   SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR: "0"
   BALE_BROADCAST_MODE: "standard"
   BALE_BROADCAST_PAID_ENABLED: "false"
-  BALE_BROADCAST_PREPARE_CHAT_ID: "0"
   SHOP_CAMPAIGN_DISPATCH_ENABLED: "false"
   SHOP_BROADCAST_WORKER_ENABLED: "false"
   SHOP_BROADCAST_MAX_PAID_CALLS: "0"
-  CRYPTO_FORWARDING_MODE: "false"
-  MULTIBOT: "false"
-  SUPPORT_LINK: ""
 x-backend-service: &backend-service
   image: telegram-bale-codespace-backend:local
   build: {context: ., dockerfile: Dockerfile.codespaces}
@@ -100,7 +84,7 @@ services:
       <<: *backend-env
       LIVE_ADMIN_PASSWORD: "${LIVE_ADMIN_PASSWORD:?Initialize admin password}"
     depends_on: {postgres: {condition: service_healthy}}
-    # Adds the five new security tables; never deletes existing business data.
+    # Initializes a fresh Store schema and staff account; creates zero bots.
     command: ["python", "-m", "scripts.security_bootstrap"]
     restart: "no"
   app:
@@ -161,6 +145,16 @@ services:
       timeout: 5s
       retries: 12
     restart: unless-stopped
+  # One shared queue drainer; disabled Runtime exits cleanly without activation.
+  runtime-worker:
+    <<: *backend-service
+    depends_on:
+      app: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes: ["codespace_media:/bot/media_data"]
+    command: ["python", "-m", "shop_workflow_runtime"]
+    restart: on-failure
   broadcast-worker:
     <<: *backend-service
     profiles: ["broadcast"]
@@ -176,14 +170,6 @@ services:
   pytest:
     <<: *backend-service
     profiles: ["qa"]
-    environment:
-      <<: *backend-env
-      TOKEN: ""
-      BALE_BOT_TOKEN: ""
-      BALE_WEBHOOK_SECRET: ""
-      BALE_WALLET_PROVIDER_TOKEN: ""
-      TELEGRAM_FIAT_PROVIDER_TOKEN: ""
-      TELEGRAM_WORKER_SECRET: ""
     command: ["python", "-m", "pytest", "-q", "tests"]
     depends_on: {postgres: {condition: service_healthy}}
     restart: "no"

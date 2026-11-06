@@ -1,402 +1,47 @@
-# راه‌اندازی واقعی Telegram + Bale + Next.js در GitHub Codespaces
+# راه‌اندازی Registry در Codespaces
 
-این نسخه از **شاخهٔ** `feat/codespaces-live-stack-20261103` و فایل
-`compose.codespaces.yml` استفاده می‌کند. برخلاف محیط تست Mock،
-**همان `run.py`، Handlerهای تلگرام و بله، FastAPI، SQLAlchemy، PostgreSQL 18،
-Redis و پنل Next.js** اجرا می‌شوند. ارتباط واقعی Bot API برقرار می‌شود،
-اما فعال‌سازی پرداخت یا Broadcast پولی بخشی از این راه‌اندازی نیست.
-
-## ساخت دیتابیس جدید بدون Migration
-
-چون این Codespace دیتابیس خالی دارد، **هیچ Migration تاریخی لازم نیست**.
-سرویس `bootstrap` همهٔ جدول‌های اصلی و مشترک تلگرام/بله را با
-`Base.metadata.create_all()` مستقیماً از مدل‌های SQLAlchemy می‌سازد و
-بعد حساب مدیر `shopadmin` را ایجاد می‌کند.
-
-- Migrationهای قدیمی SQLite اجرا یا `stamp` نمی‌شوند.
-- اجرای دوباره، جدول‌های کامل را فقط بررسی می‌کند و اطلاعات را نگه می‌دارد.
-- اگر جدول‌های ناقص یا دادهٔ غیرمنتظره پیدا شود، Bootstrap متوقف می‌شود؛
-  پاک‌سازی خودکار انجام نمی‌شود.
-- این روش فقط برای `shop_codespace` و
-  `CODESPACE_FRESH_SCHEMA=true` مجاز است. محیط Production همچنان
-  به Alembic نیاز دارد.
-- `create_all()` جدول موجود را Upgrade نمی‌کند؛ در توسعه‌های آینده
-  برای تغییر ساختار باید دیتابیس آزمایش را آگاهانه بازسازی یا
-  Migration مناسب طراحی کنیم.
-
-اگر اولین تلاش Alembic جدول ناقصی ایجاد کرده باشد و **مطمئن هستی هیچ
-داده‌ای در این Codespace وجود ندارد**، پس از دیدن خطای Bootstrap می‌توانی
-از `bash scripts/setup_codespace.sh reset --yes` استفاده کنی و بعد
-`start` را اجرا کنی. این دستور Volumeهای اختصاصی Codespace را
-برای همیشه حذف می‌کند، بنابراین آن را بدون نیاز واقعی اجرا نکن.
-
-## ۱. ساخت Codespace
-
-۱. در GitHub مخزن `MortezaMohebi/AiogramShopBot` را باز کن.
-۲. شاخهٔ `feat/codespaces-live-stack-20261103` را انتخاب کن.
-۳. از **Code → Codespaces → Create codespace on branch** وارد محیط شو.
-۴. ترجیحاً دستگاه **۴ هسته / ۱۶ گیگابایت RAM** یا بیشتر را انتخاب کن.
-   در Codespace کوچک‌تر (۲ هسته/۸ گیگابایت)، Setup تصاویر Python و Next.js
-   را **ترتیبی** می‌سازد و Image Python بین Bot و Migration مشترک است؛
-   سرعت پایین‌تر است ولی مصرف هم‌زمان حافظه محدود می‌شود.
-۵. مطمئن شو Docker Compose V2 فعال است: `docker compose version`.
-
-فایل `.devcontainer/devcontainer.json` پایتون ۳٫۱۲، Docker-in-Docker
-و Forward Portهای ۳۰۰۰ و ۸۰۸۰ را آماده می‌کند. در اولین ساخت ممکن است
-دریافت Imageها و Dependencyها به اینترنت نیاز داشته باشد.
-
-## ۲. توکن‌های واقعی (ترجیحاً بات‌های اختصاصی تست)
-
-در Telegram از `@BotFather` و در Bale از `@botfather` توکن یک
-ربات دریافت کن. بهتر است هر دو **بات تازهٔ تست** باشند؛ زیرا ثبت
-Webhook جدید برای باتی که هم‌اکنون در Production فعال است، مسیر دریافت
-آپدیت‌های همان بات را به Codespace منتقل خواهد کرد.
-
-بهترین روش ذخیره‌سازی، GitHub **Settings → Codespaces → Secrets** است؛
-دو Secret با نام‌های دقیق `TELEGRAM_BOT_TOKEN` و `BALE_BOT_TOKEN`
-ایجاد کن و دسترسی مخزن را بده. Codespaces را پس از اضافه‌کردن Secretها
-Restart کن. اگر Secret تعریف نکردی، دستور `init` هر دو را از طریق
-ورودی مخفی ترمینال درخواست می‌کند.
-
-**توکن را داخل Git Commit، Pull Request، پیام ChatGPT، Screenshot یا
-`.env` اصلی قرار نده.** ابزار setup، Secretها را فقط در
-`.codespaces/live.env` با مجوز فایل ۶۰۰ نگهداری می‌کند؛ این پوشه
-در Git و Docker Build نادیده گرفته می‌شود.
-
-## ۳. نصب و اجرای Docker Compose
-
-در ترمینال همان Codespace:
+ورودی برنامه `scripts.secure_app:app` است. Dashboard، PostgreSQL، Redis و یک Receiver Pool مشترک اجرا می‌شوند. هر ربات باید از صفحهٔ «مدیریت ربات‌ها» ثبت و تأیید شود؛ نصب تازه هیچ ربات یا Credential پیش‌فرضی ایجاد نمی‌کند.
 
 ```bash
-git checkout feat/codespaces-live-stack-20261103
-
-# راه‌اندازی تعاملی، گرفتن هر دو Token و تولید Secretها/رمز مدیریت.
 bash scripts/setup_codespace.sh init
-
-# چک کردن Compose بدون اجرای سرویس
-bash scripts/setup_codespace.sh config
-
-# Build، PostgreSQL، ایجاد مستقیم جدول‌ها با SQLAlchemy، Redis، Bot و Next.js
-bash scripts/setup_codespace.sh start
-
-# دستور مدیریت Visibility پورت‌ها (یا تنظیم دستی در PORTS)
-bash scripts/setup_codespace.sh ports
-
-# بررسی اتصال API هر دو پیام‌رسان بدون ارسال پیام
-bash scripts/setup_codespace.sh doctor
-
-# اختیاری: محصولات نمایشی واقعی در دیتابیس برای /catalog
-bash scripts/setup_codespace.sh demo
-
-# ثبت Webhookها، با تأیید صریح REGISTER
-bash scripts/setup_codespace.sh connect
-```
-
-**پنل مدیریتی**:
-
-```text
-https://<CODESPACE_NAME>-3000.<GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN>/login
-```
-
-این URL با متغیرهای واقعی Codespace محاسبه و در خروجی `init`
-نمایش داده می‌شود. برای مشاهده آدرس نیاز به حدس زدن نام Codespace نیست.
-
-## ۴. تنظیم پورت‌ها، مهم‌ترین مرحله
-
-در زبانه **PORTS** در محیط Codespace:
-
-| پورت | Visibility | کاربرد |
-|---|---|---|
-| `3000` | **Private** | داشبورد Next.js، Login، Upload، Finance، Staff |
-| `8080` | **Public** | تنها ورودی Webhook تلگرام و بله |
-| `5000` | **Expose داخلی Docker** | FastAPI، بدون نشر در Codespaces |
-| `5432` / `6379` | **داخلی Docker** | PostgreSQL و Redis |
-
-دستور معادل با GitHub CLI:
-
-```bash
-gh codespace ports visibility 8080:public 3000:private -c "$CODESPACE_NAME"
-```
-
-برای پورت ۸۰۸۰ در تنظیمات Ports پروتکل داخلی را **HTTP** بگذار؛
-آدرس عمومی Forward‌شده توسط خود GitHub با **HTTPS** ارائه می‌شود.
-اگر پورت Public را روی **HTTPS protocol** داخلی تنظیم کنی،
-GitHub ممکن است Visibility آن را به Private تغییر دهد.
-
-**دقت امنیتی:** هرگز پورت ۳۰۰۰، ۵۰۰۰، ۵۴۳۲ یا ۶۳۷۹ را Public نکن.
-Gateway با Nginx فقط `POST /hooks/telegram` و
-`POST /webhooks/bale/{secret}` را به Backend می‌فرستد.
-آدرس‌های `/admin`، `/internal/admin/v1` و پرداخت‌ها از Gateway
-عمومی قابل‌دسترسی نیستند.
-
-## ۵. احراز هویت داشبورد و رمز اولیه
-
-setup به‌شکل امن یک حساب واقعی با Role = `superadmin` می‌سازد.
-
-```text
-Username: shopadmin
-Password: a different cryptographically random password per Codespace
-```
-
-رمز قابل حدس/پیش‌فرض وجود ندارد. هنگام `init` رمز اولیه یک‌بار
-در ترمینال خصوصی تو نمایش داده می‌شود؛ برای دیدن دوباره در همان
-Codespace:
-
-```bash
-bash scripts/setup_codespace.sh credentials
-```
-
-**اگر رمز اولیه را در پیام یا لاگ مشترک منتشر کرده‌ای و هنوز حساب
-مدیر در دیتابیس ساخته نشده است**، قبل از اجرای `start` این دستور را بزن:
-
-```bash
-bash scripts/setup_codespace.sh new-bootstrap-password
-```
-
-این دستور یک رمز جدید در فایل خصوصی تولید می‌کند و رمز قبلی را
-برای ایجاد حساب تازه بی‌اعتبار می‌سازد. اگر حساب `shopadmin` قبلاً
-در PostgreSQL ساخته شده باشد، این فرمان Hash آن را تغییر نمی‌دهد؛
-در آن حالت از صفحه `/staff` پسورد را تغییر بده.
-
-**چرا رمز روی صفحه Login یا Dashboard نشان داده نمی‌شود؟** هر بازدیدکننده
-نباید بتواند رمز مدیر را ببیند. Password واقعی در PostgreSQL به‌شکل
-Hash Argon2 ذخیره می‌شود؛ داشبورد پس از ورود به `/staff` اجازهٔ
-تغییر رمز و مدیریت نقش را دارد. اگر رمز را بعداً از داخل پنل تغییر
-دهی، مقدار ذخیره‌شدهٔ اولیه در فایل setup دیگر معتبر نیست. رمز فعلی
-از Hash قابل بازیابی نیست.
-
-## ۶. اتصال واقعی تلگرام و بله
-
-در `start` بات اصلی راه‌اندازی و با API Telegram احراز هویت می‌شود؛
-اما در حالت Codespaces **هیچ Webhook موجودی خودکار جایگزین یا حذف
-نمی‌شود**. دستور `doctor` فراخوانی‌های `getMe` و بررسی وضعیت
-Webhook را انجام می‌دهد.
-
-`connect`، بعد از تأیید، آدرس‌های زیر را در پیام‌رسان‌ها ثبت می‌کند:
-
-```text
-Telegram:
-https://<CODESPACE_NAME>-8080.<domain>/hooks/telegram
-
-Bale:
-https://<CODESPACE_NAME>-8080.<domain>/webhooks/bale/<random-secret>
-```
-
-Telegram از هدر `X-Telegram-Bot-Api-Secret-Token` استفاده می‌کند
-و بله از مسیر دارای Secret تصادفی. در Gateway لاگ دسترسی (حاوی
-مسیر Secret بله) خاموش است. آپدیت‌ها بر اساس هویت هر بات و
-`update_id` به‌شکل Idempotent در PostgreSQL ثبت می‌شوند.
-
-**در صورت شکستِ ثبت بله پس از موفقیت تلگرام:** ممکن است Telegram
-Webhook قبلاً روی Codespace ثبت شده باشد؛ این را با `doctor`
-بررسی کن و برای برگرداندن وضعیت از `disconnect` استفاده کن.
-هیچ عملیات چندارائه‌دهنده‌ای به‌طور مصنوعی Atomic فرض نمی‌شود.
-
-در این مرحله، **دریافت و پاسخ دادن به پیام واقعی** پس از ثبت Webhook
-قابل آزمایش است. به هر بات در گفتگوی خصوصی `/start` یا
-`/catalog` بفرست. فروشگاه مشترک از همان مدل‌های جدید استفاده می‌کند. برای مشاهدهٔ دو کالای
-منتشرشدهٔ نمونه، دستور اختیاری `demo` را قبل از تست اجرا کن؛ این دستور
-هیچ دریافت‌کننده، پرداخت یا Broadcast مصنوعی نمی‌سازد.
-برای تلگرام اگر عکس پروفایل/Media ID نداری، صفحهٔ شروع از پاسخ متنی
-استفاده می‌کند؛ برخی منوهای تصویری قدیمی به تصویر معتبر نیاز دارند.
-
-### مسیر جایگزین تلگرام از ایران
-
-`TELEGRAM_API_MODE` با مقدار `direct` شروع می‌شود. اگر در Codespace
-یا شبکهٔ مقصد اتصال مستقیم Telegram API ناموفق بود، Transport فعلی
-پروژه همچنین `http_proxy` و `cloudflare_worker` را پشتیبانی می‌کند.
-پس از بررسی تنظیمات پروکسی/Worker و Secret اختصاصی، در فایل خصوصی
-`.codespaces/live.env` مقادیر زیر را به تناسب تنظیم کن:
-
-```dotenv
-LIVE_TELEGRAM_API_MODE=cloudflare_worker
-LIVE_TELEGRAM_WORKER_URL=https://YOUR-EXISTING-WORKER-DOMAIN
-LIVE_TELEGRAM_WORKER_SECRET=YOUR-RELAY-SECRET
-LIVE_TELEGRAM_PROXY_URL=
-```
-
-فایل را در Git Commit نکن. سپس `start` و `doctor` را تکرار کن.
-API بله از `https://tapi.bale.ai` مستقل از پروکسی تلگرام است.
-
-## ۷. تست‌ها و محدودهٔ ایمنی
-
-```bash
-# اجرای Python regression tests بدون ارسال پیام واقعی
-bash scripts/setup_codespace.sh test
-
-# مشاهدهٔ سرویس‌ها و وضعیت سلامت
-bash scripts/setup_codespace.sh status
-
-# دیدن لاگ Backend و Next.js، بدون چاپ کردن Tokenها
-bash scripts/setup_codespace.sh logs
-```
-
-`compose.codespaces.yml` سرویس‌های زیر را دارد: PostgreSQL 18،
-Redis، Bootstrap مستقیم ساختار از مدل‌های SQLAlchemy، Backend اصلی، Dashboard، Nginx Gateway، Pytest و
-**Broadcast Worker اختیاری** در Profile `broadcast`.
-
-در راه‌اندازی اولیه فلگ‌های زیر خاموش هستند:
-`SHOP_BROADCAST_WORKER_ENABLED`، `SHOP_CAMPAIGN_DISPATCH_ENABLED`،
-`BALE_BROADCAST_PAID_ENABLED`، `BALE_WALLET_CHECKOUT_ENABLED`،
-`TELEGRAM_STARS_CHECKOUT_ENABLED` و Refund. در نتیجه تست ارتباط
-و پیام عادی، برخلاف تسویهٔ واقعی، هزینه یا ارسال انبوه ایجاد نمی‌کند.
-از فعال‌سازی پرداخت و ارسال پولی تا تست Provider واقعی و تأیید
-مستقل خودداری کن.
-
-فایل‌های عکس برای هر دو پیام‌رسان از محدودیت محافظه‌کارانهٔ
-۱۰ MB و سایر فایل‌ها تا ۵۰ MB تبعیت می‌کنند. درگاه Nginx عمومی
-فقط برای JSON آپدیت است؛ آپلود ۵۰ MB از **پورت خصوصی ۳۰۰۰**
-و مسیر Next.js انجام می‌شود.
-
-## ۸. توقف، تغییر Webhook و وضعیت Codespace
-
-```bash
-# پیش از توقف، Webhookهایی که هنوز به همین Codespace اشاره دارند
-# را با تأیید صریح قطع کن.
-bash scripts/setup_codespace.sh disconnect
-
-# سرویس‌ها را با حفظ PostgreSQL و فایل‌های تست خاموش کن.
-bash scripts/setup_codespace.sh stop
-
-# فقط اگر می‌خواهی همهٔ Volumeهای اختصاصی این Codespace حذف شوند:
-bash scripts/setup_codespace.sh reset --yes
-```
-
-در برخی نسخه‌های API بله، `getWebhookInfo` وجود ندارد؛ در این
-صورت قطع خودکار Webhook بله به‌خاطر خطر حذف Webhook سرور دیگری
-انجام نمی‌شود و باید تنظیمات آن بات را دستی بررسی کنی.
-
-GitHub Codespaces ممکن است پس از Restart یا Recreate، پورت Public
-را دوباره Private کند. پس از هر Restart، Visibility پورت‌ها و
-`doctor` را کنترل کن. اگر نام Codespace تغییر کند، به‌جای تغییر
-بی‌صدا درگاه یک بات واقعی، محیط مجزا را به‌طور آگاهانه راه‌اندازی کن.
-
-**وضعیت پذیرش:** فایل Docker و اسکریپت‌ها در GitHub پیاده‌سازی
-شده‌اند اما در این جلسه دسترسی اجرایی به Docker Codespace تو وجود
-نداشته و `docker compose up`، ساخت ساختار دیتابیس، Build و تست
-پیام‌رسان هنوز اجرا نشده‌اند. تا PASS شدن چرخهٔ تست/دیباگ،
-این شاخه برای Production تأیید نمی‌شود.
-
-
-## عیب‌یابی Build در Codespaces کوچک
-
-اگر `start` به خطای `failed to execute bake: exit status 1` رسید، تا
-زمان مشخص‌شدن خطا سراغ `ports` یا `connect` نرو. ابتدا کد جدید را
-بگیر و فقط Dashboard را با خروجی کامل بساز:
-
-```bash
-git pull --ff-only origin feat/codespaces-live-stack-20261103
-bash scripts/setup_codespace.sh build-dashboard
-```
-
-این فرمان `COMPOSE_BAKE=false` و `BUILDKIT_PROGRESS=plain` را اعمال می‌کند.
-در Dockerfile جدید، `typecheck`، `lint` و `next build` سه مرحلهٔ
-جداگانه‌اند؛ خطای هر مرحله از هم تفکیک می‌شود. در فضای Codespaces کوچک،
-سقف Heap هر Node process برابر ۲ GiB در مرحلهٔ Build قرار داده شده است.
-هیچ بررسی امنیتی یا TypeScript برای عبور از Build غیرفعال نشده است.
-
-اگر Build موفق شد:
-
-```bash
 bash scripts/setup_codespace.sh start
 bash scripts/setup_codespace.sh status
-```
-
-اگر شکست خورد، فقط **آخرین خطای خروجی Build** را ارسال کن؛ مقادیر
-`.codespaces/live.env`، رمز مدیر یا توکن‌های پیام‌رسان را کپی نکن.
-
-
-## راه‌اندازی Gateway و پورت Webhook در Codespaces
-
-برای هر دو پیام‌رسان تنها یک درگاه عمومی، **8080**، کافی است.
-Codespaces اتصال خارجی HTTPS را خاتمه می‌دهد و Nginx داخلی
-در Docker روی HTTP:8080 گوش می‌دهد. پورت Dashboard یعنی **3000**
-باید Private باشد. FastAPI و PostgreSQL/Redis هیچ Port عمومی ندارند.
-
-اگر خروجی `start` نشان داد که `webhook-gateway` Unhealthy است، اول
-خود Gateway را بررسی کن؛ عمومی‌کردن پورت مشکل سلامت Nginx را حل
-نمی‌کند:
-
-```bash
-git pull --ff-only origin feat/codespaces-live-stack-20261103
-bash scripts/setup_codespace.sh start
-bash scripts/setup_codespace.sh status
-
-docker compose --env-file .codespaces/live.env \
-  -f compose.codespaces.yml logs --tail=80 webhook-gateway
-
-curl -i http://127.0.0.1:8080/_edge/health
-```
-
-خروجی درست Healthcheck، HTTP 200 و بدنه `ready` است. Nginx روی
-UID/GID غیرروت 101:101 و بدون Linux Capability اجرا می‌شود؛
-برای این کار مسیرهای موقت به `/tmp` انتقال یافته‌اند.
-
-وقتی Gateway سالم شد، در تب **PORTS**، در صورت نبودن پورت
-`8080` گزینه **Add Port** را بزن، شماره `8080` را اضافه کن، سپس
-روی آن راست‌کلیک کن و **Port Visibility → Public** را انتخاب کن.
-پروتکل Forwarding داخلی HTTP باشد؛ Codespaces دامنهٔ خارجی را
-با HTTPS ارائه می‌کند. پورت `3000` را Private نگه دار.
-
-**قبل از موفق‌شدن Healthcheck و عمومی‌بودن پورت 8080،
-دستور `connect` را اجرا نکن.** پس از آماده‌شدن Gateway،
-`doctor` و سپس `connect` را اجرا کن.
-
-
-## رفع 403 Forbidden در ورود داشبورد (Codespaces Reverse Proxy)
-
-در نسخهٔ اولیه، فرم Login با POST معمولی به
-`/api/auth/login` ارسال می‌شد. بررسی سخت‌گیرانهٔ
-`Origin === NEXT_ADMIN_PUBLIC_ORIGIN` می‌توانست قبل از
-بررسی رمز عبور درخواست را رد کند و صفحهٔ خام
-`Forbidden` نشان دهد. برخی مرورگرها/پروکسی‌ها هدر `Origin`
-را حذف می‌کنند یا مقدار `null` می‌فرستند.
-
-اکنون Login از یک Challenge تصادفی کوتاه‌مدت استفاده می‌کند:
-Browser ابتدا از `GET /api/auth/challenge` یک مقدار امن
-دریافت می‌کند؛ سرور یک Cookie اختصاصیِ
-`HttpOnly`، `Secure` و `SameSite=Strict` تنظیم می‌کند؛ سپس
-درخواست `POST /api/auth/login` با یک Header اختصاصی همان مقدار
-را ارائه می‌دهد. سرور این دو را با مقایسهٔ ثابت‌زمان بررسی می‌کند.
-درخواست‌های Cross-Site همچنان رد می‌شوند.
-
-خطاها به‌صورت فارسی در خود فرم نمایش داده می‌شوند:
-رمز اشتباه (401)، محدودیت تلاش (429)، سرویس خارج از دسترس (503)،
-عدم تطابق Challenge (403) و اختلال شبکه. دیگر صفحهٔ خام
-`Forbidden` برای ورود عادی نمایش داده نمی‌شود؛
-فرم قدیمیِ موجود در Tabهای باز نیز به صفحهٔ ورود برگردانده می‌شود.
-
-بعد از گرفتن تغییرات GitHub:
-
-```bash
-git pull --ff-only origin feat/codespaces-live-stack-20261103
-
-# فقط داشبورد را بساز؛ بدون تماس با Telegram/Bale
-bash scripts/setup_codespace.sh build-dashboard
-
-# اجرای مجدد سرویس‌ها با حفظ PostgreSQL و رسانه‌ها
-bash scripts/setup_codespace.sh start
-
-# آزمون واقعی HTTP روی localhost، با حساب ساختگی و بدون رمز واقعی
 bash scripts/setup_codespace.sh auth-smoke
 ```
 
-خروجی موفق `auth-smoke` باید سه PASS داشته باشد:
-عدم پذیرش POST بدون Challenge، ایجاد Cookie و توکن امنیتی،
-و عبور موفق درخواست دارای Challenge از Proxy تا FastAPI
-(پاسخ 401 برای حساب کاملاً ساختگی نتیجهٔ درست این تست است).
+`init` تنظیمات خصوصی محیط و کلیدهای مستقل ایجاد می‌کند. Token پیام‌رسان در Setup یا Codespaces Secrets تعریف نمی‌شود. حساب مدیر تازه باید ورود عادی و ثبت MFA را کامل کند؛ اجرای دوبارهٔ Setup رمز یا MFA حساب موجود را عوض نمی‌کند.
 
-سپس در مرورگر، صفحهٔ `/login` را **Hard Refresh** کن و با
-رمز فعلی `shopadmin` وارد شو. اگر رمز قبلاً در چت/لاگ
-منتشر شده، پس از ورود آن را از `/staff` تغییر بده.
-رمز یا مقدار Cookie را در خروجی‌های اشتراکی منتشر نکن.
+در بخش **Ports**، پورت Dashboard را باز کنید. Dashboard و API داخلی Private می‌مانند. پورت Gateway فقط برای دریافت پیام از Provider لازم است؛ Public کردن آن و ثبت Webhook دو اقدام جدا هستند. راه‌اندازی محیط به‌تنهایی هیچ Webhook یا Workflow مشتری را فعال نمی‌کند.
 
-اگر مشکل ادامه داشت، نتیجهٔ `auth-smoke`، وضعیت
-`bash scripts/setup_codespace.sh status` و
-لاگ‌های Sanitized داشبورد را ارسال کن. مقدار فایل
-`.codespaces/live.env` محرمانه است.
+## ثبت ربات
 
-**توجه:** اصلاح Login محافظت CSRF را حذف نمی‌کند و سیاست مستقلِ
-`connect` برای خصوصی‌بودن پورت `3000` را تغییر نمی‌دهد.
-تا زمانی که پورت داشبورد Public باشد، ثبت Webhook واقعی با
-`connect` طبق سیاست فعلی مسدود می‌ماند.
+۱. در Dashboard، Store فعال را انتخاب کنید و به «مدیریت ربات‌ها» بروید.
+۲. یک Draft برای Telegram یا Bale ایجاد کنید.
+۳. پس از احراز هویت مجدد، Token همان ربات را Stage و هویت Provider را Verify کنید.
+۴. سیاست محصولات، قابلیت‌های خرید و Receiver همان ربات را بررسی کنید.
+۵. فعال‌سازی Receiver و انتشار Workflow را فقط با تأیید هدف و نسخهٔ مشخص انجام دهید.
+
+Tokenها رمزگذاری می‌شوند و در پاسخ API یا گزارش‌ها نمایش داده نمی‌شوند. Receiver فقط مسیر `POST /webhooks/v2/{binding_id}/{route_secret}` را استفاده می‌کند؛ Token بخشی از URL نیست. مسیرهای قدیمی Telegram/Bale و پنل SQLAdmin وجود ندارند.
+
+## Schema تازه و پاک‌سازی
+
+Bootstrap فقط در دیتابیس اختصاصی و محافظت‌شدهٔ Codespaces مجاز است. Schema از مدل‌های فعلی ساخته می‌شود؛ Migrationهای تاریخی SQLite روی دیتابیس تازه اجرا نمی‌شوند. اجرای مجدد باید Store، UoM و دسترسی مدیر را حفظ کند و ربات نسازد.
+
+برای محیط قدیمی، ابتدا Backup بگیرید و Dry Run را در Container همان محیط اجرا کنید:
+
+```bash
+python -m scripts.legacy_schema_cleanup
+python -m scripts.legacy_schema_cleanup --apply
+```
+
+Apply فقط با Guardهای دیتابیس اختصاصی انجام می‌شود. عملیات از فهرست ثابت جدول‌های بازنشسته استفاده می‌کند و `CASCADE` ندارد. وجود Foreign Key ناشناخته، تنظیمات متعارض یا Link مشتری تبدیل‌نشده باعث توقف کامل Transaction می‌شود. اطلاعات فعلی حساب مدیریت، MFA، Store، سفارش‌ها و رسیدها حذف نمی‌شوند.
+
+برای توقف و مشاهدهٔ وضعیت:
+
+```bash
+bash scripts/setup_codespace.sh status
+bash scripts/setup_codespace.sh logs
+bash scripts/setup_codespace.sh stop
+```
+
+`reset --yes` مخصوص محیط آزمایشی دورریختنی است و جایگزین Cleanup یا Migration دیتابیس دارای اطلاعات نیست. جزئیات قرارداد در [Registry-only retirement](REGISTRY_ONLY_RETIREMENT.md) ثبت شده است.

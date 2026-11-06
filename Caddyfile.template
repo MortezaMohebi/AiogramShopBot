@@ -1,15 +1,17 @@
-{SERVER_IP_ADDRESS}.sslip.io {
-
-    log {
-        output stdout
-        level INFO
-    }
-
+# Optional webhook-only edge. Keep the dashboard on its private HTTPS origin.
+{$WEBHOOK_DOMAIN} {
     encode gzip zstd
-
     request_body {
-        max_size 2MB
+        max_size 256000
     }
-
-    reverse_proxy /* AiogramShopBot:5000
+    @registry {
+        method POST
+        path_regexp registry ^/webhooks/v2/[0-9a-f-]{36}/[A-Za-z0-9_-]{43}$
+    }
+    handle @registry {
+        reverse_proxy bot:5000
+    }
+    handle {
+        respond 404
+    }
 }

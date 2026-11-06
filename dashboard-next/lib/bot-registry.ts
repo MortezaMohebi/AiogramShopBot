@@ -3,7 +3,7 @@
 export type BotPlatform = "telegram" | "bale";
 export type BotDesiredState = "active" | "paused" | "maintenance" | "disabled";
 export type BotRegistryStatus =
-  | "draft" | "legacy" | "active" | "paused" | "maintenance" | "disabled";
+  | "draft" | "active" | "paused" | "maintenance" | "disabled";
 
 export interface StoreRecord {
   id: string;
@@ -14,7 +14,7 @@ export interface StoreRecord {
 
 export interface BotCredentialStatus {
   version: number;
-  source: "environment" | "encrypted";
+  source: "encrypted";
   state: "staged" | "active" | "revoked";
   created_at: string | null;
   has_secret: boolean;
@@ -44,7 +44,7 @@ export interface BotRecord {
   provider_bot_id: string | null;
   provider_username: string | null;
   status: BotRegistryStatus;
-  runtime_owner: "legacy" | "registry";
+  runtime_owner: "registry";
   version: number;
   credential_version: number | null;
   credentials: BotCredentialStatus[];
@@ -56,7 +56,6 @@ export interface BotRegistrySnapshot {
   stores: StoreRecord[];
   bots: BotRecord[];
   default_store_id: string;
-  runtime_migration_complete: boolean;
   total_bots: number;
   page: number;
   page_size: number;
@@ -64,7 +63,7 @@ export interface BotRegistrySnapshot {
 
 export interface BotHealthSnapshot {
   bot_id: string;
-  runtime_owner: "legacy" | "registry";
+  runtime_owner: "registry";
   runtime_ready: boolean;
   desired_state: BotDesiredState;
   provider_api: "not_probed";
@@ -116,22 +115,11 @@ export function botPlatformLabel(platform: BotPlatform): string {
 }
 
 export function botRuntimeLabel(bot: BotRecord): string {
-  if (bot.runtime_owner === "registry" && bot.status === "draft") {
-    return "پیش‌نویس — دریافت پیام فعال نیست";
-  }
-  const state = bot.operations.desired_state;
-  if (bot.runtime_owner === "registry") {
-    return ({
-      active: "فعال — اتصال مستقل",
-      paused: "متوقف — تسویه محفوظ",
-      maintenance: "نگهداری — تسویه محفوظ",
-      disabled: "غیرفعال — تسویه محفوظ",
-    } as const)[state];
-  }
+  if (bot.status === "draft") return "پیش‌نویس — دریافت پیام فعال نیست";
   return ({
-    active: "فعال — اتصال قدیمی",
-    paused: "متوقف؛ تسویه‌ها محفوظ‌اند",
-    maintenance: "حالت نگهداری",
-    disabled: "غیرفعال؛ رسیدهای قبلی محفوظ‌اند",
-  } as const)[state];
+    active: "فعال — اتصال مستقل",
+    paused: "متوقف — تسویه محفوظ",
+    maintenance: "نگهداری — تسویه محفوظ",
+    disabled: "غیرفعال — تسویه محفوظ",
+  } as const)[bot.operations.desired_state];
 }

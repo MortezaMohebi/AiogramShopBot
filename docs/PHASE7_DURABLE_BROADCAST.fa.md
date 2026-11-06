@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # فاز ۷ — Broadcast خودکار با صف پایدار و محدودیت نرخ Telegram/Bale
 
 **وضعیت:** SOURCE-IMPLEMENTED / NOT LIVE-TESTED. این فاز روی Draft PR نوشته شده؛

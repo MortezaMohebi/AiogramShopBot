@@ -134,16 +134,23 @@ def _safe_route(
     }
 
 
-async def list_workers(db: AsyncSession) -> dict:
-    """List all registered relay endpoints with safe assignment counts."""
+async def list_workers(
+    db: AsyncSession, *, store_id: str | None = None,
+) -> dict:
+    """List shared endpoints, optionally counting only one authorized Store."""
     rows = (await db.scalars(
         select(ShopRelayWorker).order_by(ShopRelayWorker.name).limit(500)
     )).all()
+    assignments = select(
+        ShopBotRelayRoute.worker_id,
+        func.count(ShopBotRelayRoute.bot_id),
+    )
+    if store_id is not None:
+        assignments = assignments.where(ShopBotRelayRoute.bot_id.in_(
+            select(ShopBot.id).where(ShopBot.store_id == store_id),
+        ))
     counts = (await db.execute(
-        select(
-            ShopBotRelayRoute.worker_id,
-            func.count(ShopBotRelayRoute.bot_id),
-        ).group_by(ShopBotRelayRoute.worker_id)
+        assignments.group_by(ShopBotRelayRoute.worker_id)
     )).all()
     mapped = dict(counts)
     return {

@@ -1,7 +1,7 @@
 """Store-credit ledger, referrals and campaigns shared by Telegram and Bale.
 
-Store credit belongs to this shop only. It is NOT the user's native Bale wallet
-balance, nor can it be exchanged with the Telegram legacy crypto wallet.
+Store credit belongs to this shop and remains independent of the customer's
+native provider wallet balance.
 """
 
 from __future__ import annotations
@@ -13,10 +13,8 @@ from sqlalchemy import (
     String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqladmin import ModelView
 
 from models.base import Base
-from models.shop_scope import legacy_bot_default
 from models.shop_multibot import DEFAULT_STORE_ID
 
 
@@ -42,7 +40,7 @@ class ShopWalletAccount(Base):
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=True, unique=True,
     )
-    # Immutable verified scope; legacy reads remain compatible during cutover.
+    # Immutable Bot ownership comes from the authenticated runtime context.
     bot_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
         index=True,
@@ -84,7 +82,7 @@ class ShopWalletEntry(Base):
         ForeignKey("shop_wallet_accounts.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    # Immutable verified scope; legacy reads remain compatible during cutover.
+    # Immutable Bot ownership comes from the authenticated runtime context.
     bot_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
         index=True,
@@ -119,7 +117,7 @@ class ShopReferralProfile(Base):
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False, unique=True,
     )
-    # Immutable verified scope; legacy reads remain compatible during cutover.
+    # Immutable Bot ownership comes from the authenticated runtime context.
     bot_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
         index=True,
@@ -144,7 +142,7 @@ class ShopReferralAttribution(Base):
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    # Immutable verified scope; legacy reads remain compatible during cutover.
+    # Immutable Bot ownership comes from the authenticated runtime context.
     bot_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
         index=True,
@@ -215,7 +213,7 @@ class ShopReferralReward(Base):
         ForeignKey("shop_orders.id", ondelete="RESTRICT"),
         nullable=False, unique=True,
     )
-    # Immutable verified scope; legacy reads remain compatible during cutover.
+    # Immutable Bot ownership comes from the authenticated runtime context.
     bot_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
         index=True,
@@ -343,7 +341,7 @@ class ShopCampaignDelivery(Base):
         ForeignKey("shop_identities.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    # Immutable verified scope; legacy reads remain compatible during cutover.
+    # Immutable Bot ownership comes from the authenticated runtime context.
     bot_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
         index=True,
@@ -369,127 +367,6 @@ class ShopCampaignDelivery(Base):
     )
 
 
-class ShopWalletAccountAdmin(ModelView, model=ShopWalletAccount):
-    """View balances; adjustments require audited finance tools."""
-
-    name = "حساب اعتبار"
-    name_plural = "موجودی اعتبار داخلی"
-    category = "مالی"
-    column_list = [
-        ShopWalletAccount.identity_id, ShopWalletAccount.balance_irr,
-        ShopWalletAccount.created_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-
-
-class ShopWalletEntryAdmin(ModelView, model=ShopWalletEntry):
-    """Inspect immutable credit, debit and referral entries."""
-
-    name = "گردش اعتبار"
-    name_plural = "دفترکل اعتبار"
-    category = "مالی"
-    column_list = [
-        ShopWalletEntry.operation_key, ShopWalletEntry.account_id,
-        ShopWalletEntry.delta_irr, ShopWalletEntry.balance_after_irr,
-        ShopWalletEntry.reason, ShopWalletEntry.created_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
-
-
-class ShopReferralPolicyAdmin(ModelView, model=ShopReferralPolicy):
-    """Only finance staff may enable merchant-funded referral rewards."""
-
-    name = "سیاست معرفی"
-    name_plural = "تنظیمات مالی معرفی مشتری"
-    category = "مالی"
-    form_columns = [
-        ShopReferralPolicy.is_enabled, ShopReferralPolicy.percent,
-        ShopReferralPolicy.min_order_irr, ShopReferralPolicy.max_bonus_irr,
-    ]
-    can_delete = False
-
-
-class ShopReferralProfileAdmin(ModelView, model=ShopReferralProfile):
-    """Read referral codes without exposing unrelated wallet credentials."""
-
-    name = "کد معرفی"
-    name_plural = "کدهای معرفی"
-    category = "بازاریابی"
-    column_list = [
-        ShopReferralProfile.identity_id, ShopReferralProfile.code,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-
-
-class ShopReferralRewardAdmin(ModelView, model=ShopReferralReward):
-    """View only fully recorded IRR rewards."""
-
-    name = "پاداش معرفی"
-    name_plural = "پاداش‌های معرفی"
-    category = "بازاریابی"
-    can_create = False
-    can_edit = False
-    can_delete = False
-
-
-class ShopCampaignAdmin(ModelView, model=ShopCampaign):
-    """Create an unsent draft; approval is performed in a separate CSRF view."""
-
-    name = "کمپین"
-    name_plural = "ارسال اطلاعیه به مشتریان"
-    category = "بازاریابی"
-    column_list = [
-        ShopCampaign.id, ShopCampaign.title, ShopCampaign.audience,
-        ShopCampaign.status, ShopCampaign.created_at,
-    ]
-    form_columns = [
-        ShopCampaign.title, ShopCampaign.text, ShopCampaign.audience,
-    ]
-    can_create = True
-    can_edit = False
-    can_delete = False
-    can_export = False
-
-
-class ShopCampaignMediaAdmin(ModelView, model=ShopCampaignMedia):
-    """Inspect uploaded attachments; only the guarded uploader may create."""
-
-    name = "رسانه کمپین"
-    name_plural = "فایل‌های کمپین‌های Broadcast"
-    category = "بازاریابی"
-    column_list = [
-        ShopCampaignMedia.campaign_id, ShopCampaignMedia.original_filename,
-        ShopCampaignMedia.kind, ShopCampaignMedia.size_bytes,
-        ShopCampaignMedia.position,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
-
-
-class ShopCampaignDeliveryAdmin(ModelView, model=ShopCampaignDelivery):
-    """Inspect delivery receipts without retry or deletion controls."""
-
-    name = "رسید ارسال"
-    name_plural = "وضعیت ارسال اطلاعیه‌ها"
-    category = "بازاریابی"
-    column_list = [
-        ShopCampaignDelivery.campaign_id, ShopCampaignDelivery.identity_id,
-        ShopCampaignDelivery.status, ShopCampaignDelivery.sent_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
-
 class ShopBroadcastRateSlot(Base):
     """Durable global-bot and per-chat send pacing across worker processes."""
 
@@ -499,7 +376,7 @@ class ShopBroadcastRateSlot(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     # Recipient ID zero reserves a global bot slot; positive IDs are chats.
@@ -544,40 +421,6 @@ class ShopCampaignAudit(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-
-class ShopCampaignAuditAdmin(ModelView, model=ShopCampaignAudit):
-    """Show marketing decisions without permitting edits to the audit trail."""
-
-    name = "سوابق کمپین"
-    name_plural = "سوابق مدیریت Broadcast"
-    category = "بازاریابی"
-    column_list = [
-        ShopCampaignAudit.campaign_id, ShopCampaignAudit.delivery_id,
-        ShopCampaignAudit.actor, ShopCampaignAudit.action,
-        ShopCampaignAudit.previous_status, ShopCampaignAudit.new_status,
-        ShopCampaignAudit.created_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
-
-
-class ShopBroadcastRateSlotAdmin(ModelView, model=ShopBroadcastRateSlot):
-    """Inspect global/per-recipient rate reservations as read-only metadata."""
-
-    name = "سهمیه ارسال"
-    name_plural = "کنترل نرخ ارسال"
-    category = "بازاریابی"
-    column_list = [
-        ShopBroadcastRateSlot.platform,
-        ShopBroadcastRateSlot.recipient_id,
-        ShopBroadcastRateSlot.next_send_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
 
 class ShopBroadcastWorkerHeartbeat(Base):
     """Heartbeat from a shared worker process for admin liveness reporting."""

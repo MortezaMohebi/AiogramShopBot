@@ -6,7 +6,10 @@ No Telegram/Bale credential, real payment, file upload or network is needed.
 
 from __future__ import annotations
 
-from tests.schema_support import create_shop_schema, seed_test_units
+from tests.schema_support import (
+    create_shop_schema, seed_test_units, seed_registry, seed_customer,
+    TEST_BOT_IDS, test_bot_context,
+)
 
 from contextlib import asynccontextmanager
 
@@ -24,15 +27,14 @@ from models.shop_bot_catalog_acl import (
     ShopBotProductRule, ShopBotCategoryRule, ShopBotCatalogAudit,
 )
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_channel_features import ShopChannelFeature
 from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopCoupon, ShopOrderLine, ShopShippingMethod,
 )
 from models.shop_content import (
-    Product, ProductMedia, ShopCategory, ShopOrder, ShopSettings, Testimonial,
+    Product, ProductMedia, ShopCategory, ShopOrder, Testimonial,
 )
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopBotRegistryEvent, ShopStore,
+    DEFAULT_STORE_ID, ShopBot, ShopBotRegistryEvent, ShopStore,
 )
 from models.shop_payment import ShopPaymentAttempt
 from models.shop_product_visibility import ShopProductVisibility
@@ -108,14 +110,7 @@ def db():
             id=DEFAULT_STORE_ID, slug="default",
             name="Existing store", state="active",
         ))
-        session.add_all([
-            ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID,
-                slug=f"legacy-{platform}", name=f"Legacy {platform}",
-                platform=platform, status="legacy",
-                runtime_owner="legacy", credential_version=1, version=1,
-            ) for platform, bot_id in LEGACY_BOT_IDS.items()
-        ])
+        seed_registry(session)
         session.add(ShopBot(
             id=str(uuid4()), store_id=DEFAULT_STORE_ID,
             slug="new-bale-storefront", name="New Bale Storefront",
@@ -148,6 +143,13 @@ def db():
         ])
         session.commit()
         seed_test_units(session)
+        seed_customer(session, Platform.TELEGRAM, 889)
+        for bot_id in TEST_BOT_IDS.values():
+            for category_id in (10, 20):
+                session.add(ShopBotCategoryRule(
+                    bot_id=bot_id, category_id=category_id, effect="allow",
+                ))
+        session.commit()
         yield session
     engine.dispose()
 
@@ -164,13 +166,13 @@ async def preview(db: Session, bot_id: str) -> set[int]:
 def new_bot(db: Session) -> ShopBot:
     """Return the only registry-owned draft bot."""
     return db.scalar(select(ShopBot).where(
-        ShopBot.runtime_owner == "registry",
+        ShopBot.status == "draft",
     ))
 
 
-def test_existing_legacy_catalog_preserved_new_bots_default_deny(db):
-    """Published products remain visible to old bots; drafts inherit DENY."""
-    for bot_id in LEGACY_BOT_IDS.values():
+def test_explicit_catalog_grants_preserved_new_bots_default_deny(db):
+    """Explicit category grants expose published products; drafts inherit DENY."""
+    for bot_id in TEST_BOT_IDS.values():
         assert asyncio.run(preview(db, bot_id)) == {100, 101, 200}
     draft = new_bot(db)
     assert asyncio.run(preview(db, draft.id)) == set()
@@ -215,13 +217,17 @@ def test_product_allow_overrides_category_deny_but_not_unpublished(db):
     assert asyncio.run(preview(db, bot_id)) == {200}
 
 
-def test_legacy_denials_are_provider_specific_and_inherit_restores(db):
-    """A Telegram Deny cannot hide Bale product; Inherit restores legacy."""
-    telegram = LEGACY_BOT_IDS["telegram"]
-    bale = LEGACY_BOT_IDS["bale"]
+def test_denials_are_bot_specific_and_inherit_restores_category_allow(db):
+    """A Telegram Deny cannot hide Bale products; Inherit restores category Allow."""
+    telegram = TEST_BOT_IDS["telegram"]
+    bale = TEST_BOT_IDS["bale"]
     acl.update_bot_rules(
-        db, bot_id=telegram, actor_id=1, expected_version=1,
-        object_type="product", target_ids=[100],
+        db,
+        bot_id=telegram,
+        actor_id=1,
+        expected_version=1,
+        object_type="product",
+        target_ids=[100],
         effect="deny",
     )
     db.commit()
@@ -245,7 +251,7 @@ def test_legacy_denials_are_provider_specific_and_inherit_restores(db):
 def test_atomic_product_many2many_and_stale_version_rejected(db):
     """One product can be denied by Telegram but allowed by a new Bale bot."""
     assignments = [
-        (LEGACY_BOT_IDS["telegram"], "deny", 1),
+        (TEST_BOT_IDS["telegram"], "deny", 1),
         (new_bot(db).id, "allow", 1),
     ]
     changed = acl.update_product_bot_rules(
@@ -254,13 +260,16 @@ def test_atomic_product_many2many_and_stale_version_rejected(db):
     )
     db.commit()
     assert changed == 2
-    assert 200 not in asyncio.run(preview(db, LEGACY_BOT_IDS["telegram"]))
+    assert 200 not in asyncio.run(preview(db, TEST_BOT_IDS["telegram"]))
     assert 200 in asyncio.run(preview(db, new_bot(db).id))
     with pytest.raises(security.SecurityRejected) as refused:
         acl.update_bot_rules(
-            db, bot_id=LEGACY_BOT_IDS["telegram"],
-            actor_id=1, expected_version=1,
-            object_type="product", target_ids=[100],
+            db,
+            bot_id=TEST_BOT_IDS["telegram"],
+            actor_id=1,
+            expected_version=1,
+            object_type="product",
+            target_ids=[100],
             effect="allow",
         )
     assert refused.value.code == "configuration_changed"
@@ -268,11 +277,14 @@ def test_atomic_product_many2many_and_stale_version_rejected(db):
 
 def test_paused_bot_and_unavailable_other_store_fail_closed(db):
     """Neither a paused bot nor a nonisolated store can sell shared products."""
-    legacy_id = LEGACY_BOT_IDS["telegram"]
-    db.add(ShopBotOperations(
-        bot_id=legacy_id, desired_state="paused",
-        environment="staging",
-    ))
+    owner_id = TEST_BOT_IDS["telegram"]
+    db.add(
+        ShopBotOperations(
+            bot_id=owner_id,
+            desired_state="paused",
+            environment="staging",
+        )
+    )
     other = ShopStore(
         id=str(uuid4()), slug="second-store", name="Unready", state="paused",
     )
@@ -285,7 +297,7 @@ def test_paused_bot_and_unavailable_other_store_fail_closed(db):
     db.add(other_bot)
     db.commit()
     assert not asyncio.run(
-        acl.resolve_legacy_scope(AsyncDb(db), "telegram"),
+        acl.resolve_scope(AsyncDb(db), bot_id=owner_id),
     ).available
     assert asyncio.run(preview(db, other_bot.id)) == set()
     with pytest.raises(security.SecurityRejected) as refused:
@@ -299,13 +311,17 @@ def test_paused_bot_and_unavailable_other_store_fail_closed(db):
 def test_old_product_and_media_callbacks_are_denied(db):
     """A copied product/media/review callback cannot reveal a denied item."""
     acl.update_bot_rules(
-        db, bot_id=LEGACY_BOT_IDS["telegram"],
-        actor_id=1, expected_version=1, object_type="product",
-        target_ids=[100], effect="deny",
+        db,
+        bot_id=TEST_BOT_IDS["telegram"],
+        actor_id=1,
+        expected_version=1,
+        object_type="product",
+        target_ids=[100],
+        effect="deny",
     )
     db.commit()
     wrapper = AsyncDb(db)
-    flow = CatalogFlow()
+    flow = CatalogFlow(bot_context=test_bot_context(Platform.TELEGRAM))
     for callback in ("shop:item:100", "shop:files:100:0", "shop:reviews:100:0"):
         reply = asyncio.run(flow.reply(InboundEvent(
             platform=Platform.TELEGRAM, user_id=123, chat_id=123,
@@ -314,17 +330,27 @@ def test_old_product_and_media_callbacks_are_denied(db):
         assert reply is not None
         assert "Details Alpha" not in reply.text
         assert reply.attachments == ()
-    bale = asyncio.run(flow.reply(InboundEvent(
-        platform=Platform.BALE, user_id=123, chat_id=123,
-        callback_data="shop:item:100", callback_query_id="cb",
-    ), wrapper))
+    bale = asyncio.run(
+        CatalogFlow(
+            bot_context=test_bot_context(Platform.BALE),
+        ).reply(
+            InboundEvent(
+                platform=Platform.BALE,
+                user_id=123,
+                chat_id=123,
+                callback_data="shop:item:100",
+                callback_query_id="cb",
+            ),
+            wrapper,
+        )
+    )
     assert "Details Alpha" in bale.text
 
 
 def test_cart_rechecks_acl_before_new_checkout(db):
     """A hidden product cannot be bought using an old add/cart/place button."""
     wrapper = AsyncDb(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.TELEGRAM))
     user = 889
     add = InboundEvent(
         platform=Platform.TELEGRAM, user_id=user, chat_id=user,
@@ -333,9 +359,13 @@ def test_cart_rechecks_acl_before_new_checkout(db):
     added = asyncio.run(flow.reply(add, wrapper))
     assert "Product Alpha" in added.text
     acl.update_bot_rules(
-        db, bot_id=LEGACY_BOT_IDS["telegram"], actor_id=1,
-        expected_version=1, object_type="product",
-        target_ids=[100], effect="deny",
+        db,
+        bot_id=TEST_BOT_IDS["telegram"],
+        actor_id=1,
+        expected_version=1,
+        object_type="product",
+        target_ids=[100],
+        effect="deny",
     )
     db.commit()
     preview_reply = asyncio.run(flow.reply(InboundEvent(
@@ -355,14 +385,23 @@ def test_cart_rechecks_acl_before_new_checkout(db):
 def test_new_invoice_blocked_after_access_revocation(db):
     """New provider invoices are denied, while old paid receipts are unaffected."""
     order = ShopOrder(
-        platform="bale", platform_user_id=123,
-        chat_id=123, product_id=100,
+        platform="bale",
+        platform_user_id=123,
+        bot_id=TEST_BOT_IDS["bale"],
+        chat_id=123,
+        product_id=100,
         product_name_snapshot="Product Alpha",
-        quantity=1, unit_price_irr=1000, total_irr=1000,
-        provider="manual_review", status="approved_unpaid",
+        quantity=1,
+        unit_price_irr=1000,
+        total_irr=1000,
+        provider="manual_review",
+        status="approved_unpaid",
         invoice_payload="test-invoice-payload",
-        subtotal_irr=1000, discount_irr=0, shipping_irr=0,
-        shipping_address="Test address", shipping_method_snapshot="Courier",
+        subtotal_irr=1000,
+        discount_irr=0,
+        shipping_irr=0,
+        shipping_address="Test address",
+        shipping_method_snapshot="Courier",
     )
     db.add(order)
     db.flush()
@@ -373,19 +412,28 @@ def test_new_invoice_blocked_after_access_revocation(db):
     ))
     db.commit()
     acl.update_bot_rules(
-        db, bot_id=LEGACY_BOT_IDS["bale"], actor_id=1,
-        expected_version=1, object_type="product",
-        target_ids=[100], effect="deny",
+        db,
+        bot_id=TEST_BOT_IDS["bale"],
+        actor_id=1,
+        expected_version=1,
+        object_type="product",
+        target_ids=[100],
+        effect="deny",
     )
     db.commit()
 
     async def try_begin():
         """Attempt a real service invoice without any provider network call."""
         return await ShopPaymentService.begin(
-            AsyncDb(db), platform=Platform.BALE,
-            platform_user_id=123, order_id=order.id,
-            bale_enabled=True, telegram_fiat_enabled=False,
-            telegram_stars_enabled=False, telegram_minor_multiplier=1,
+            AsyncDb(db),
+            platform=Platform.BALE,
+            bot_id=TEST_BOT_IDS["bale"],
+            platform_user_id=123,
+            order_id=order.id,
+            bale_enabled=True,
+            telegram_fiat_enabled=False,
+            telegram_stars_enabled=False,
+            telegram_minor_multiplier=1,
         )
 
     with pytest.raises(PaymentRejected):
@@ -396,12 +444,16 @@ def test_new_invoice_blocked_after_access_revocation(db):
 def test_category_listing_hides_unauthorized_categories(db):
     """Category pages and stale category callbacks respect the same ACL."""
     acl.update_bot_rules(
-        db, bot_id=LEGACY_BOT_IDS["telegram"],
-        actor_id=1, expected_version=1,
-        object_type="category", target_ids=[10], effect="deny",
+        db,
+        bot_id=TEST_BOT_IDS["telegram"],
+        actor_id=1,
+        expected_version=1,
+        object_type="category",
+        target_ids=[10],
+        effect="deny",
     )
     db.commit()
-    flow = CatalogFlow()
+    flow = CatalogFlow(bot_context=test_bot_context(Platform.TELEGRAM))
     adapter = AsyncDb(db)
     listing = asyncio.run(flow.reply(InboundEvent(
         platform=Platform.TELEGRAM, chat_id=456, user_id=456,
@@ -427,10 +479,15 @@ def test_product_catalog_write_is_not_granted_to_content_role():
 
 def test_product_many2many_stale_version_is_rejected(db):
     """Product-side multi-bot edits cannot overwrite a newer bot policy."""
-    telegram = LEGACY_BOT_IDS["telegram"]
+    telegram = TEST_BOT_IDS["telegram"]
     acl.update_bot_rules(
-        db, bot_id=telegram, actor_id=1, expected_version=1,
-        object_type="product", target_ids=[100], effect="deny",
+        db,
+        bot_id=telegram,
+        actor_id=1,
+        expected_version=1,
+        object_type="product",
+        target_ids=[100],
+        effect="deny",
     )
     db.commit()
     with pytest.raises(security.SecurityRejected) as failed:

@@ -1,4 +1,4 @@
-"""Codespaces-only additive bot operation upgrade and idempotent legacy seed.
+"""Codespaces-only additive credential verification schema upgrade.
 
 The production path uses Alembic revision 20261103q001. This helper has a
 fixed allowlist of nullable columns, never resets a volume or alters any
@@ -46,18 +46,4 @@ async def upgrade_codespace_bot_operations(
         "ON shop_bot_credentials(token_fingerprint) "
         "WHERE token_fingerprint IS NOT NULL "
         "AND state IN ('staged','active')"
-    ))
-    # Keep current maintenance state as the effective Bot Registry state.
-    # Re-running the bootstrap never overwrites an operator decision.
-    await connection.execute(text(
-        "INSERT INTO shop_bot_operations "
-        "(bot_id, desired_state, owner_staff_id, environment) "
-        "SELECT b.id, "
-        "CASE WHEN COALESCE(p.maintenance_enabled, false) "
-        "THEN 'maintenance' ELSE 'active' END, "
-        "p.owner_staff_id, COALESCE(p.environment, 'staging') "
-        "FROM shop_bots b "
-        "LEFT JOIN shop_bot_profiles p ON p.platform = b.platform "
-        "WHERE b.runtime_owner = 'legacy' "
-        "ON CONFLICT (bot_id) DO NOTHING"
     ))

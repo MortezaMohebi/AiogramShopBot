@@ -29,7 +29,6 @@ from models.shop_checkout import (
 )
 from models.shop_content import Product, ShopIdentity, ShopOrder
 from models.shop_uom import ShopUom
-from models.shop_multibot import DEFAULT_STORE_ID
 from services.shop_store_commerce import policy_for
 from services.shop_money import MAX_RIALS, format_rials, to_rials
 from services.shop_channel_features import get_features
@@ -37,7 +36,7 @@ from services.shop_bot_catalog_acl import (
     allowed_for_bot, lock_bot_catalog_policy,
 )
 from services.shop_bot_context import BotContext
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id
 
 _PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
@@ -170,7 +169,7 @@ class ShopCartFlow:
     def _bot_id(self, platform: Platform) -> str:
         """Resolve the immutable owner of the current shopping context."""
         if self.bot_context is None:
-            return legacy_id(platform.value)
+            raise ValueError("An authenticated bot context is required.")
         if self.bot_context.platform != platform:
             raise CartRejected("هویت بات با درخواست مطابقت ندارد.")
         return self.bot_context.bot_id
@@ -265,15 +264,11 @@ class ShopCartFlow:
             ShopIdentity.platform == event.platform.value,
             ShopIdentity.platform_user_id == event.user_id,
         ))
-        store_id = (
-            self.bot_context.store_id if self.bot_context
-            else identity.store_id if identity else DEFAULT_STORE_ID
-        )
+        store_id = self.bot_context.store_id
         if identity is not None and identity.store_id != store_id:
             raise CartRejected("فروشگاه حساب با بات انتخاب‌شده مطابقت ندارد.")
-        if self.bot_context and self.bot_context.runtime_owner == "registry":
-            if identity is None or identity.customer_id is None:
-                raise CartRejected("ابتدا /start را در همین بات اجرا کنید.")
+        if identity is None or identity.customer_id is None:
+            raise CartRejected("ابتدا /start را در همین بات اجرا کنید.")
 
         sharing = (
             identity is not None and identity.customer_id is not None
@@ -361,7 +356,7 @@ class ShopCartFlow:
         action: str,
         product_id: int,
     ) -> BotReply:
-        """Preserve legacy UI commit/reply while sharing the business primitive."""
+        """Preserve UI commit/reply while sharing the business primitive."""
         await self.mutate_item(event, session, action, product_id)
         await session.commit()
         return await self._cart_reply(event, session)
@@ -414,11 +409,7 @@ class ShopCartFlow:
         ):
             raise CartRejected("این کالا در این بات قابل خرید نیست.")
         product = await session.get(Product, product_id)
-        owner = (
-            self.bot_context.store_id
-            if self.bot_context
-            else (cart.store_id if cart else DEFAULT_STORE_ID)
-        )
+        owner = self.bot_context.store_id
         if product is None or not product.is_published or product.store_id != owner:
             raise CartRejected("این کالا برای خرید موجود نیست.")
         new_quantity = quantity if action == "set" else current + quantity
@@ -500,9 +491,10 @@ class ShopCartFlow:
         return cart
 
     async def _quote(
-        self, cart: ShopCart, session: AsyncSession, *, bot_id: str | None = None,
+        self, cart: ShopCart, session: AsyncSession, *, bot_id: str,
     ) -> CartQuote:
         """Calculate current product prices and optional shipping and coupon."""
+        bot_id = require_bot_id(bot_id)
         result = await session.execute(
             select(ShopCartItem, Product)
             .join(Product, Product.id == ShopCartItem.product_id)
@@ -518,7 +510,7 @@ class ShopCartFlow:
         if any(product.store_id != cart.store_id for _, product in rows):
             raise CartRejected("کالای سبد به فروشگاه دیگری تعلق دارد.")
         if not await allowed_for_bot(
-            session, bot_id or cart.bot_id, [product.id for _, product in rows],
+            session, bot_id, [product.id for _, product in rows],
         ):
             raise CartRejected("یک یا چند کالای سبد دیگر در این بات مجاز نیستند.")
         lines: list[QuoteLine] = []
@@ -555,7 +547,7 @@ class ShopCartFlow:
         total = subtotal + shipping - discount
         from models.shop_multibot import ShopBot
 
-        owner = await session.get(ShopBot, bot_id or cart.bot_id)
+        owner = await session.get(ShopBot, bot_id)
         quote_platform_is_stars = bool(
             owner is not None and owner.platform == "telegram"
         )
@@ -794,10 +786,7 @@ class ShopCartFlow:
         requested_page: int = 0
     ) -> BotReply:
         """Paginate arbitrary administrator-defined shipping methods."""
-        store_id = (
-            self.bot_context.store_id if self.bot_context
-            else DEFAULT_STORE_ID
-        )
+        store_id = self.bot_context.store_id
         clause = (
             ShopShippingMethod.is_active.is_(True)
             & (ShopShippingMethod.store_id == store_id)
@@ -844,8 +833,7 @@ class ShopCartFlow:
         if (
             shipping is None or not shipping.is_active
             or shipping.store_id != (
-                self.bot_context.store_id if self.bot_context
-                else DEFAULT_STORE_ID
+                self.bot_context.store_id
             )
         ):
             raise CartRejected("روش ارسال فعلی غیرفعال است.")

@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from tests.schema_support import create_shop_schema, seed_legacy_registry
+from tests.schema_support import (
+    create_shop_schema, seed_registry, TEST_BOT_IDS, test_bot_context,
+    allow_test_catalog,
+)
 
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -18,7 +21,6 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from channels.contracts import Platform
-from dashboard.permissions import secure_model_view
 from models.base import Base
 from models.shop_checkout import ShopCoupon, ShopOrderLine
 from models.shop_content import Product, ShopCategory, ShopIdentity, ShopOrder
@@ -30,10 +32,8 @@ from models.shop_engagement import (
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_channel_features import ShopChannelFeature
-from models.shop_payment_rail import ShopPaymentRail
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+    DEFAULT_STORE_ID, ShopBot, ShopStore,
 )
 from models.shop_staff import ShopStaff
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
@@ -102,14 +102,7 @@ def db():
             id=DEFAULT_STORE_ID, slug="default",
             name="Existing shop", state="active",
         ))
-        session.add_all([
-            ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID,
-                slug=f"legacy-{platform}", name=f"Legacy {platform}",
-                platform=platform, status="legacy", runtime_owner="legacy",
-                version=1, credential_version=1,
-            ) for platform, bot_id in LEGACY_BOT_IDS.items()
-        ])
+        seed_registry(session)
         session.commit()
         yield OfflineDB(session)
     engine.dispose()
@@ -122,6 +115,7 @@ def identity(db, platform, user_id, consent=False, blocked=False):
         platform_user_id=user_id,
         allow_announcements=consent,
         is_blocked=blocked,
+        bot_id=TEST_BOT_IDS[platform.value],
     )
     db.add(owner)
     db.session.flush()
@@ -139,16 +133,23 @@ def product_and_order(db, platform, user_id, *, status="approved_unpaid"):
     db.add(product)
     db.session.flush()
     order = ShopOrder(
-        platform=platform.value, platform_user_id=user_id,
-        chat_id=user_id, product_id=product.id,
+        platform=platform.value,
+        platform_user_id=user_id,
+        chat_id=user_id,
+        product_id=product.id,
         product_name_snapshot=product.name,
-        quantity=1, unit_price_irr=1000, total_irr=1000,
-        subtotal_irr=1000, discount_irr=0, shipping_irr=0,
+        quantity=1,
+        unit_price_irr=1000,
+        total_irr=1000,
+        subtotal_irr=1000,
+        discount_irr=0,
+        shipping_irr=0,
         terms_version_snapshot="fixture-v1",
         terms_accepted_at=datetime.now(timezone.utc),
         status=status,
         provider="manual_review",
         invoice_payload=uuid4().hex,
+        bot_id=TEST_BOT_IDS[platform.value],
     )
     db.add(order)
     db.session.flush()
@@ -160,6 +161,7 @@ def product_and_order(db, platform, user_id, *, status="approved_unpaid"):
             unit_price_irr=1000, quantity=1, total_irr=1000,
         )
     )
+    allow_test_catalog(db.session)
     db.session.commit()
     return product, order
 
@@ -188,8 +190,18 @@ async def test_merchant_wallet_is_scoped_and_idempotent(db):
         actor="staff:1",
     )
     assert not changed and again.id == first.id
-    assert await ShopWalletService.balance(db, Platform.TELEGRAM, 101) == 4000
-    assert await ShopWalletService.balance(db, Platform.BALE, 101) == 0
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.TELEGRAM, 101, bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value]
+        )
+        == 4000
+    )
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 101, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 0
+    )
     with pytest.raises(StoreCreditRejected):
         await ShopWalletService.apply(
             db, identity_id=telegram_user.id,
@@ -211,27 +223,49 @@ async def test_store_credit_order_and_refund_do_not_restock(db):
     )
     await db.commit()
     paid, changed = await ShopWalletService.pay_order(
-        db, platform=Platform.BALE, user_id=202, order_id=order.id
+        db,
+        platform=Platform.BALE,
+        user_id=202,
+        order_id=order.id,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert changed and paid.status == "paid"
     assert product.stock_quantity == 4
-    assert await ShopWalletService.balance(db, Platform.BALE, 202) == 2000
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 202, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 2000
+    )
     duplicate, changed = await ShopWalletService.pay_order(
-        db, platform=Platform.BALE, user_id=202, order_id=order.id
+        db,
+        platform=Platform.BALE,
+        user_id=202,
+        order_id=order.id,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert duplicate.id == paid.id and not changed
     assert product.stock_quantity == 4
 
     case = await ShopRefundService.request(
-        db, platform=Platform.BALE, payer_id=202,
-        order_id=order.id, reason="درخواست برگشت اعتبار",
+        db,
+        platform=Platform.BALE,
+        payer_id=202,
+        order_id=order.id,
+        reason="درخواست برگشت اعتبار",
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     refunded = await ShopWalletService.refund_order(
         db, case_id=case.id, actor="staff:1"
     )
     assert refunded.status == "confirmed"
     assert order.status == "refunded"
-    assert await ShopWalletService.balance(db, Platform.BALE, 202) == 3000
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 202, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 3000
+    )
     assert product.stock_quantity == 4
     assert len(db.session.scalars(select(ShopWalletEntry)).all()) == 3
 
@@ -248,10 +282,16 @@ async def test_referral_award_requires_first_verified_irr_purchase(db):
         )
     )
     db.session.commit()
-    code = await ShopReferralService.code(db, Platform.TELEGRAM, 301)
+    code = await ShopReferralService.code(
+        db, Platform.TELEGRAM, 301, bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value]
+    )
     assert code.startswith("R-")
     response = await ShopReferralService.claim(
-        db, platform=Platform.TELEGRAM, user_id=302, code=code
+        db,
+        platform=Platform.TELEGRAM,
+        user_id=302,
+        code=code,
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     assert "ثبت شد" in response
 
@@ -267,12 +307,18 @@ async def test_referral_award_requires_first_verified_irr_purchase(db):
             amount=1000,
             payload=order.invoice_payload,
             status="paid",
+            bot_id=TEST_BOT_IDS["telegram"],
         )
     )
     db.session.commit()
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 100
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 0
-    assert await ShopWalletService.balance(db, Platform.TELEGRAM, 301) == 100
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.TELEGRAM, 301, bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value]
+        )
+        == 100
+    )
     assert len(db.session.scalars(select(ShopReferralReward)).all()) == 1
 
 
@@ -288,10 +334,16 @@ async def test_referral_rejects_cross_platform_self_invitation(db):
         )
     )
     db.session.commit()
-    code = await ShopReferralService.code(db, Platform.TELEGRAM, 401)
+    code = await ShopReferralService.code(
+        db, Platform.TELEGRAM, 401, bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value]
+    )
     with pytest.raises(ReferralRejected):
         await ShopReferralService.claim(
-            db, platform=Platform.BALE, user_id=401, code=code
+            db,
+            platform=Platform.BALE,
+            user_id=401,
+            code=code,
+            bot_id=TEST_BOT_IDS[(Platform.BALE).value],
         )
 
 
@@ -302,17 +354,23 @@ async def test_consent_campaign_snapshots_only_opted_in_accounts(db):
     identity(db, Platform.BALE, 502, consent=True)
     identity(db, Platform.TELEGRAM, 503, consent=False)
     identity(db, Platform.BALE, 504, consent=True, blocked=True)
-    campaign = ShopCampaign(
-        title="اطلاعیه آزمایشی", text="متن تست",
-        audience="all", status="draft",
-    )
-    db.add(campaign)
+    campaigns = [
+        ShopCampaign(
+            title="اطلاعیه آزمایشی", text="متن تست",
+            audience=platform, status="draft", bot_id=bot_id,
+        )
+        for platform, bot_id in TEST_BOT_IDS.items()
+    ]
+    db.session.add_all(campaigns)
     db.session.commit()
-    count = await ShopCampaignService.approve(
-        db, campaign_id=campaign.id, approver="staff:1"
-    )
-    assert count == 2
-    assert campaign.status == "approved"
+    counts = [
+        await ShopCampaignService.approve(
+            db, campaign_id=campaign.id, approver="staff:1",
+        )
+        for campaign in campaigns
+    ]
+    assert counts == [1, 1]
+    assert all(campaign.status == "approved" for campaign in campaigns)
     assert len(db.session.scalars(select(ShopCampaignDelivery)).all()) == 2
 
 
@@ -321,7 +379,10 @@ async def test_unsubscribe_after_approval_remains_effective(db):
     """An already queued recipient still has the right to unsubscribe."""
     person = identity(db, Platform.TELEGRAM, 601, consent=True)
     campaign = ShopCampaign(
-        title="اطلاعیه", text="متن", audience="telegram",
+        title="اطلاعیه",
+        text="متن",
+        audience="telegram",
+        bot_id=TEST_BOT_IDS["telegram"],
         status="draft",
     )
     db.add(campaign)
@@ -337,28 +398,15 @@ async def test_unsubscribe_after_approval_remains_effective(db):
     ) == "queued"
 
 
-def test_role_access_is_default_deny_for_finance_views():
-    """An authenticated content editor cannot change merchant credit."""
-    class FinanceView:
-        category = "مالی"
-
-    secure_model_view(FinanceView)
-    viewer = SimpleNamespace(
-        state=SimpleNamespace(shop_role="content")
-    )
-    accountant = SimpleNamespace(
-        state=SimpleNamespace(shop_role="finance")
-    )
-    assert not FinanceView().is_accessible(viewer)
-    assert FinanceView().is_accessible(accountant)
-
-
 @pytest.mark.asyncio
 async def test_marketing_snapshot_is_approved_only_once(db):
     """Approval cannot recreate recipients on a repeated request."""
     identity(db, Platform.TELEGRAM, 701, consent=True)
     campaign = ShopCampaign(
-        title="یکبار", text="متن", audience="telegram",
+        title="یکبار",
+        text="متن",
+        audience="telegram",
+        bot_id=TEST_BOT_IDS["telegram"],
         status="draft",
     )
     db.add(campaign)
@@ -389,4 +437,9 @@ async def test_referral_policy_off_disables_new_codes(db):
     order.payment_currency = "IRR"
     db.session.commit()
     assert await ShopReferralService.award_for_paid_order(db, order.id) == 0
-    assert await ShopWalletService.balance(db, Platform.BALE, 801) == 0
+    assert (
+        await ShopWalletService.balance(
+            db, Platform.BALE, 801, bot_id=TEST_BOT_IDS[(Platform.BALE).value]
+        )
+        == 0
+    )

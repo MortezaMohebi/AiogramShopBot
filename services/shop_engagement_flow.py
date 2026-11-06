@@ -19,7 +19,6 @@ from services.shop_money import format_rials
 from services.shop_referrals import ReferralRejected, ShopReferralService
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 from services.shop_bot_context import BotContext
-from models.shop_scope import legacy_id
 from services.shop_channel_features import get_features
 from services.shop_identity_links import LinkRejected, begin, claim, approve, cancel
 
@@ -47,7 +46,7 @@ class ShopEngagementFlow:
     def _bot_id(self, platform) -> str:
         """Get the verified bot's immutable identity."""
         if self.bot_context is None:
-            return legacy_id(platform.value)
+            raise ValueError("An authenticated bot context is required.")
         if self.bot_context.platform != platform:
             raise StoreCreditRejected("هویت پیام‌رسان معتبر نیست.")
         return self.bot_context.bot_id
