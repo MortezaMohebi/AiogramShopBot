@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Authenticated production Bots page renders without Legacy bots",
+    "Actual Store selection Server Action succeeds through Codespaces forwarded headers",
+    "Bots refresh succeeds after Server Action"
+  ],
+  "errors": []
+}
