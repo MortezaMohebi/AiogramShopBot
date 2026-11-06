@@ -1,0 +1,115 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "separate real PostgreSQL database and restricted gateway role",
+      "status": "PASS"
+    },
+    {
+      "name": "normal independent Native MFA and gateway dashboard login",
+      "status": "PASS"
+    },
+    {
+      "name": "human enrollment verifies exact Native consent before activation",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated MCP tool/resource/prompt and real catalog discovery",
+      "status": "PASS"
+    },
+    {
+      "name": "private signature replay and foreign Store requests fail closed",
+      "status": "PASS"
+    },
+    {
+      "name": "official Inspector performs an authenticated native profile call",
+      "status": "PASS"
+    },
+    {
+      "name": "MCP draft retry, altered retry and concurrent revision conflict",
+      "status": "PASS"
+    },
+    {
+      "name": "exact Change Set and product inquiry graph through real MCP",
+      "status": "PASS"
+    },
+    {
+      "name": "Runtime incompatibility is rejected and corrected through typed MCP",
+      "status": "PASS"
+    },
+    {
+      "name": "saved inquiry simulates on Telegram and Bale without commerce effects",
+      "status": "PASS"
+    },
+    {
+      "name": "real PostgreSQL prevents proposal tampering and unrelated human review",
+      "status": "PASS"
+    },
+    {
+      "name": "one controlled gateway decision automatically publishes after a worker crash",
+      "status": "PASS"
+    },
+    {
+      "name": "Fake Telegram/Bale Runtime consumes the actual published inquiry",
+      "status": "PASS"
+    },
+    {
+      "name": "public Runtime inspection excludes customer answers",
+      "status": "PASS"
+    },
+    {
+      "name": "Native-first revocation blocks disclosure and future work while preserving historical receipt",
+      "status": "PASS"
+    },
+    {
+      "name": "Gateway-first revocation stops public calls and Native withdrawal remains independent",
+      "status": "PASS"
+    },
+    {
+      "name": "actual browser sessions have no uncaught application errors",
+      "status": "PASS"
+    },
+    {
+      "name": "normal UI logout revokes both test browser sessions",
+      "status": "PASS"
+    }
+  ],
+  "database": "PostgreSQL",
+  "fake_providers_only": true,
+  "controlled_human_decisions": 1,
+  "native_commit": "e3b8bc7097617786799b4a84e19740c21d9a2f9c",
+  "gateway_manifest_sha256": "34739bad7f67a542740fc8511641f34e6a87ccc7cc4310e767743ee56413da00",
+  "protocol": "2026-07-28",
+  "discovered": {
+    "bot_tools": 45,
+    "catalog_products": 4
+  },
+  "last_tool_error": {
+    "tool": "context.get_profile",
+    "code": "CONNECTION_NOT_FOUND",
+    "details": {
+      "correlation_id": "7ca83ca8-0fe1-4da8-9504-cf90957b0278"
+    }
+  },
+  "inspector_version": "2.14.0",
+  "immutable_sqlstate": "P0001",
+  "virtual_expiry": {
+    "dispatch_claim": true,
+    "crashed_publication_leases": 1
+  },
+  "operation_id": "dbd437a6-3df4-45a5-a5a0-adc9db756116",
+  "publication_id": "e017f8ae-0df3-45af-afb2-5795ee4ffc5e",
+  "workflow_id": "120167cf-7ccf-4644-95b4-4f19ce1ac59e",
+  "runtime": {
+    "status": "PASS",
+    "platforms": [
+      "telegram",
+      "bale"
+    ],
+    "completed_runs": 2,
+    "action_receipts": 2,
+    "commerce_unchanged": true,
+    "duplicate_send_count": 0,
+    "denied_network_calls": 0
+  }
+}

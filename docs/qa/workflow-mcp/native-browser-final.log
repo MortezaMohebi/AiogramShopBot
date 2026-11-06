@@ -1,0 +1,7 @@
+PASS  dedicated PostgreSQL/API and matching bridge
+PASS  normal password and MFA login
+PASS  exact pending Native identity and explicit consent
+PASS  MCP BFF denies model-callable business approval routes
+PASS  malformed post-commit withdrawal stays unknown until exact read
+PASS  desktop/mobile light/dark Persian RTL without overflow
+PASS  no browser application error and authoritative withdrawn receipt
