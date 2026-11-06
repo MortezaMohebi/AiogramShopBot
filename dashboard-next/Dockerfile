@@ -24,6 +24,7 @@ ENV PORT=3000
 RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nextjs /app/THIRD_PARTY_NOTICES.txt ./THIRD_PARTY_NOTICES.txt
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
