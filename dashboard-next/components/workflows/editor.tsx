@@ -20,6 +20,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ActivityIndicator } from "@/components/ui/activity-indicator";
 import { Input } from "@/components/ui/input";
 import { Inspector } from "./inspector";
 import { WorkflowActions } from "./workflow-actions";
@@ -52,9 +53,8 @@ const WorkflowCanvas = dynamic(
     loading: () => (
       <div
         className="flex h-[620px] items-center justify-center rounded-xl border text-sm"
-        role="status"
       >
-        در حال آماده‌سازی نمودار…
+        <ActivityIndicator label="در حال آماده‌سازی نمودار…" />
       </div>
     ),
   },

@@ -1,9 +1,9 @@
 {
-  "status": "BLOCKED_BROWSER_ACCEPTANCE",
+  "status": "PENDING_FULL_DASHBOARD_ACCEPTANCE",
   "source_routes_audited": 54,
   "local": {
     "unit": {
-      "pass": 247,
+      "pass": 251,
       "fail": 0,
       "skipped": 0
     },
@@ -51,12 +51,24 @@
     "services_cleanup": "UNVERIFIED_AFTER_CONTROL_TIMEOUT",
     "pre_sweep_checks_passed": 7
   },
-  "current_blocker": "Codespace browser control reads, documentation retrieval and runtime reset each timed out. Independent local Chrome launch denied a required socket. No bypass attempted.",
+  "current_blocker": null,
   "recovery_changes": {
     "screenshot_caret": "initial",
     "client_readiness": "mounted control plus settled page; login password reveal assertion",
     "verified": "JavaScript syntax only; browser rerun pending"
   },
   "production_deployed": false,
-  "live_provider_operations": false
+  "live_provider_operations": false,
+  "prior_control_incident": "Prior Codespace control timeout resolved by a fresh browser tab; earlier full route-sweep renderer failure remains unresolved.",
+  "thinking_orbs": {
+    "version": "0.3.2",
+    "ui_checks": 14,
+    "captures": 62,
+    "status": "PASS",
+    "scope": "production loading components and offline login UI; not full authenticated dashboard acceptance",
+    "next_mcp": "PASS",
+    "react_mount": "PASS",
+    "fixture_cleanup": "PASS",
+    "runtime_exceptions": 0
+  }
 }

@@ -12,7 +12,7 @@ Copy classifications: essential labels retained, helpful operational consequence
 ## Changes
 
 - Focused login with existing username/password, MFA, configured CAPTCHA and challenge enforcement; password visibility, pending/error feedback and support-detail reference remain.
-- Existing semantic tokens and shared Input/Textarea/Button/PageHeading improved; no UI dependency added. Input boundaries and focus indicators have stronger contrast. Mobile text inputs use 16px to avoid focus zoom.
+- Existing semantic tokens and shared Input/Textarea/Button/PageHeading improved; one subsequently requested loading dependency is documented in `THINKING_ORBS_ACCEPTANCE.md`. Input boundaries and focus indicators have stronger contrast. Mobile text inputs use 16px to avoid focus zoom.
 - Native modal dialog reused by mobile navigation, store selection and category editing: focus containment, background inertness, Escape and focus restoration. Navigation grouped by user tasks with an in-page skip link.
 - Shorter Persian labels, specific CTAs, useful empty/filter states, visible form labels, mixed-direction identifiers, wrapping and table pagination boundaries.
 - Corrected misleading report period, product-access KPI and workflow-publication instructions.
@@ -23,7 +23,7 @@ Copy classifications: essential labels retained, helpful operational consequence
 
 | Check | Result |
 |---|---|
-| Dashboard unit suite | PASS — 247 tests, including receipt, account-feedback, Store-scope and CAPTCHA lifecycle regressions |
+| Dashboard unit suite | PASS — 251 tests, including receipt, account-feedback, Store-scope, CAPTCHA and loading-boundary regressions |
 | TypeScript | PASS |
 | ESLint | PASS |
 | Production build | PASS — final source snapshot, independent worktree dependencies |
@@ -62,15 +62,19 @@ Runtime investigation observed no cgroup OOM kill and no process-limit exhaustio
 
 The mobile-menu evidence theme label was also corrected: the harness explicitly applies light and dark before the corresponding captures. Unexpected console errors are collected separately from expected failed-login/permission responses.
 
-### Current environment blocker
+### Later scoped recheck: Thinking Orbs
+
+User requested adding `thinking-orbs`. It is pinned at 0.3.2 with the MIT notice retained. A fresh browser tab restored Codespace access. The orb integration passed a separate 14-check/62-capture matrix at five widths in both themes, including real-component loading fixtures and offline login pending/error UI. See `THINKING_ORBS_ACCEPTANCE.md`. This restores browser access and accepts that scope; the earlier full authenticated route sweep remains incomplete.
+
+### Prior environment incident
 
 During upload of the updated harness, browser control became unresponsive. A Codespace state read, packaged troubleshooting-documentation read, and runtime reset each timed out. The upload result could not be reconciled. This is a control-connection failure after restored authorization, not a new approval denial.
 
 Independent local-browser verification could not proceed: Chrome's launch aborted because creation of a required process-singleton socket was denied (`Operation not permitted`). No sandbox or access restriction was bypassed. Unit, TypeScript, ESLint and production-build checks all completed successfully on the final local application source.
 
-### Remaining acceptance
+### Remaining broader dashboard acceptance
 
-1. Restore the Codespace control connection and reconcile the harness upload before rerunning it. Verify source hashes against the published follow-up commit. Do not change production auth to compensate for a test-tool failure.
+1. Codespace access is restored for the orb recheck. Reconcile the full-dashboard harness upload before rerunning it. Verify source hashes against the published follow-up commit. Do not change production auth to compensate for a test-tool failure.
 2. Complete all 38 static routes and available detail routes, including workflow editor/settings/preview/versions and available product/staff details. The current first-level detail-link discovery may need recursive traversal. If a renderer crashes again, preserve its diagnostics; no failed case may be silently counted as passed.
 3. Complete settings save/reload/restore, reauthentication, original-Store retention dry-run, disabled/viewer restrictions, logout, expiration and activation errors. The harness is prepared; these checks are pending in the final run.
 4. Run offline SDK CAPTCHA layout/error tests for Turnstile, reCAPTCHA v2 and unavailable configuration at 320/390/1280px in both themes. The script blocks login POSTs; no real challenge or live verification is part of that layout test.

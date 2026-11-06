@@ -1,6 +1,7 @@
 "use client";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { AlertCircle, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
+import { ActivityIndicator } from "@/components/ui/activity-indicator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CaptchaChallenge, type CaptchaChallengeHandle } from "@/components/blocks/captcha-challenge";
@@ -77,7 +78,7 @@ export function LoginForm({ initialError, captcha }: Props) {
       <p id="second-factor-help" className="text-xs leading-6 text-muted-foreground">اگر فعال است، کد برنامهٔ احراز هویت یا کد بازیابی را وارد کنید.</p>
     </div>
     <CaptchaChallenge ref={captchaRef} config={captcha} />
-    <Button type="submit" size="lg" className="w-full" disabled={working || captcha.provider === "unavailable"}>{working ? <><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{phase === "security" ? "در حال بررسی…" : "در حال ورود…"}</> : "ورود"}</Button>
-    <span role="status" className="sr-only">{working ? "در حال ورود…" : ""}</span>
+    <Button type="submit" size="lg" className="w-full" disabled={working || captcha.provider === "unavailable"}>{working ? <ActivityIndicator onPrimary announce={false} state="connecting" label={phase === "security" ? "در حال بررسی…" : "در حال ورود…"} /> : "ورود"}</Button>
+    <span role="status" className="sr-only">{working ? (phase === "security" ? "در حال بررسی…" : "در حال ورود…") : ""}</span>
   </form>;
 }
