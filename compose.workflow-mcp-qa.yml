@@ -25,7 +25,9 @@ services:
     env_file: .codespaces/mcp-qa.env
     volumes: [mcp_pg:/var/lib/postgresql]
     ports: ['127.0.0.1:5485:5432']
-    networks: [private]
+    # Docker suppresses published ports on an internal-only network. The
+    # gateway test process uses this loopback binding from the Codespace host.
+    networks: [private, ingress]
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -U shop_codespace -d shop_codespace']
       interval: 2s

@@ -1,6 +1,9 @@
 {
   "gateway_base": "a12d65fa8a7304ddc0b7ad1e37fc5d68b0358ba4",
   "files": {
+    "apps/saas-gateway/assets/Vazirmatn.LICENSE": "e6f4ce7b6c830d5a25a4f8ac777c267cd7d3c180bc2a7150ca57cbb9b280c4b7",
+    "apps/saas-gateway/assets/vazirmatn-arabic-wght-normal.woff2": "84a382e46c30fb4f73d0e3800c16d0af15888e2731e57fa5f93e2c29a2c6a957",
+    "apps/saas-gateway/assets/vazirmatn-latin-wght-normal.woff2": "d29c041cd4294af893cf3c01dfab6d47202c667ab55d702f68782599918c651d",
     "apps/saas-gateway/package-lock.json": "cbc291c34caf9bbb15234be06e998b1f76109492ef54c8d131412adf28ddddf1",
     "apps/saas-gateway/package.json": "191f7f1d7f1044f93ce23014b8fa39da7fb86a569ff452ad8423e770248b362f",
     "apps/saas-gateway/src/acceptance-connection-scope.ts": "52bac2b8d1e38f996f9f87bc5581f957f9067e285982694002b869e56477c31e",
@@ -19,9 +22,9 @@
     "apps/saas-gateway/src/bot-workflow-catalog.ts": "ecdbc52a59dccf31b00673940a635b90bfd31bdce5dc081678830d1758b77bb9",
     "apps/saas-gateway/src/bot-workflow-client.ts": "bb4674184d85b2820ae6f8a30be61842322ebedf5f5686fd74efda25e0a2812e",
     "apps/saas-gateway/src/bot-workflow-config.ts": "971a9f221c98126a44f5938498e190af20d9464e2151fec04a64fc0ee3e3d453",
-    "apps/saas-gateway/src/bot-workflow-connections.ts": "b9ce141832f4d03f21510257d28c4aaa1a67d6682c50c49e21796450457928be",
+    "apps/saas-gateway/src/bot-workflow-connections.ts": "a97139654518587b9404384e4da379c256335dd6406c84202a22d0602cf8924f",
     "apps/saas-gateway/src/bot-workflow-contract.ts": "59d9d1c65f75bb4917cc45300ed92c72430bd67c6439086fefdb497d0e0fcef8",
-    "apps/saas-gateway/src/bot-workflow-tools.ts": "e8174a4578ee330cdb5608f82666ee36f1aeb420d9ea8645dfd0520d6160f43d",
+    "apps/saas-gateway/src/bot-workflow-tools.ts": "640aed6374201ea3c7f5872d3177766eff1fd2227b71a69f4b99eeab0d34afd2",
     "apps/saas-gateway/src/canonical-request.ts": "aba0a7e89c48921169516a206d979e286ec43acee6f7be6ced5b21651eb35b77",
     "apps/saas-gateway/src/compile-broker.ts": "28334153ecee9e5d9d623af6162543e200a7d26eee546c0c2635f390a36b4fba",
     "apps/saas-gateway/src/configure-gateway.ts": "2e1bcaf194efdf7a431321d94f5b99d19752f6131b81fec9af1f47f0b9ffa52e",
@@ -87,7 +90,7 @@
     "apps/saas-gateway/src/postgres.ts": "b71b83b84f27dc809e9af676fd2aae6a4437e887ab4d421e7b0a5f2e7bee443e",
     "apps/saas-gateway/src/provider-proof.ts": "e33074456f761100c7e0eb843580f508d7e7420e059153a92a4009090f87308c",
     "apps/saas-gateway/src/provider-store.ts": "4d078ff40ae8ebaadfd25d925101492e33cc946016c52c24ff725b2ffb151926",
-    "apps/saas-gateway/src/provider-worker.ts": "4eedccb38bca97d5d395d042da40f5332000646701a123642a98ff3ded3dad6b",
+    "apps/saas-gateway/src/provider-worker.ts": "58cb89af9b620878e35b676ab3c3e2130253bd4cee38f551b2362dd8de70a2b2",
     "apps/saas-gateway/src/provision-runtime-role.ts": "d7df8697055dec6bd15ac77a7dc1f8ea31ebfebdd04a86817b600b58d6e94ee6",
     "apps/saas-gateway/src/remote-media-orchestrator.ts": "b5f8afcf67bd89a5ac5f725a6f923b2caefa5ee7c27cfc13fe20d8ef8dd66a05",
     "apps/saas-gateway/src/remote-media.ts": "4336290d8dab529c7a0ca2620a6f3976f0be39ce04d2f5e9634679434d622a94",
@@ -127,6 +130,9 @@
     "apps/saas-gateway/src/workflow-store.ts": "d4f1b5959835fee59b24aa91dcbca89531bb56a3b9f9637b13253503a08b1ba2",
     "apps/saas-gateway/src/workflow-tools.ts": "985481cf30e0c3b591996852dee35d1390367bd0da4475af7bd48f7c99aa76ea",
     "apps/saas-gateway/src/workflow-widget.ts": "7cae75423158b2f9f58b13f4af130958ea67c540266db8eb97182d8c0df51580",
+    "contracts/wpmcp/approval-v1.json": "ff32b99ebe2053720e57f0114746e83408f5baefb26e3b07a3e535dfe774ae5b",
+    "contracts/wpmcp/bot-workflow-tools-v1.json": "76abb961310d6e36b7147f4560c03ed7612f3a432606328ff672a0c737730f23",
+    "contracts/wpmcp/delegation-v1.json": "1f205bd25d6dd952438269253035dbe4425ba1f4fc19c68f9acb5e5fa91411cd",
     "infra/postgres/migrations/0001_control_plane.down.sql": "b4558cdfe150d6937086ed2d7bf0899a65374ed42c1fafdb22772c6d5dc64694",
     "infra/postgres/migrations/0001_control_plane.up.sql": "cee95c00709f1e025064be15f6725891f415f28d7e26202ed5ff5b258db04f0c",
     "infra/postgres/migrations/0002_control_plane_hardening.down.sql": "ff928d94ed89a9cb036ca4bd8d100e58be7c6ff29d69865ee627de32b9e19a5b",
@@ -177,9 +183,6 @@
     "infra/postgres/migrations/0031_bot_provider_worker.up.sql": "93b858ed5bad705201a37a9ca254712f5181dd66956191825cf5b5ef4a806166",
     "infra/postgres/migrations/0032_provider_activity.up.sql": "fdc50f58c722e1c00f9269676db4341a25f600fd67e9fa1083956e9e771185e9",
     "infra/postgres/migrations/0033_provider_pairings.up.sql": "da8a28a2b230f006b45f0953bb42b48fb2c4e011c5d3010271972ab7970ea429",
-    "infra/postgres/migrations/0034_provider_limits.up.sql": "cc041ebeef5c5e1a86b22f70e08ec13eaf8d18cb414bd4d43ed5cce7544ec2f8",
-    "apps/saas-gateway/assets/Vazirmatn.LICENSE": "e6f4ce7b6c830d5a25a4f8ac777c267cd7d3c180bc2a7150ca57cbb9b280c4b7",
-    "apps/saas-gateway/assets/vazirmatn-arabic-wght-normal.woff2": "84a382e46c30fb4f73d0e3800c16d0af15888e2731e57fa5f93e2c29a2c6a957",
-    "apps/saas-gateway/assets/vazirmatn-latin-wght-normal.woff2": "d29c041cd4294af893cf3c01dfab6d47202c667ab55d702f68782599918c651d"
+    "infra/postgres/migrations/0034_provider_limits.up.sql": "cc041ebeef5c5e1a86b22f70e08ec13eaf8d18cb414bd4d43ed5cce7544ec2f8"
   }
 }

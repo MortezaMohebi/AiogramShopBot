@@ -17,7 +17,7 @@ const env = Object.fromEntries(readFileSync(".codespaces/mcp-qa.env", "utf8").tr
 assert.equal(env.SHOP_MCP_QA, "1");assert.equal(env.POSTGRES_DB, "shop_codespace");
 assert.equal(env.SHOP_FASTAPI_INTERNAL_URL, "http://127.0.0.1:8095");
 for (const key of ["TOKEN", "BALE_BOT_TOKEN", "BALE_WALLET_PROVIDER_TOKEN", "TELEGRAM_FIAT_PROVIDER_TOKEN"])
-  assert.equal(env[key], "");
+  if (env[key] !== "") throw Error("live_provider_credentials_not_allowed");
 const manifest = JSON.parse(readFileSync("docs/qa/workflow-mcp/gateway-runtime-manifest.json", "utf8"));
 for (const [path, expected] of Object.entries(manifest.files))
   assert.equal(createHash("sha256").update(readFileSync(root + "/" + path)).digest("hex"), expected, "gateway_checkpoint_mismatch");
@@ -31,10 +31,14 @@ const controlUrl = new URL("postgresql://127.0.0.1:5485/shop_codespace");
 controlUrl.username = env.POSTGRES_USER;controlUrl.password = env.POSTGRES_PASSWORD;
 const databaseName = "aiwb_workflow_mcp_" + randomUUID().replaceAll("-", "");
 const databaseUrl = new URL(controlUrl);databaseUrl.pathname = "/" + databaseName;
-let control, owner, pool, app, browser, nativeContext, gatewayContext, nativePage, gatewayPage;
+let control, owner, pool, app, browser, nativeContext, gatewayContext, nativePage, gatewayPage, dashboard;
 const workers = [];
-let current = "bootstrap", connectionId, grantId, saved, category, graph, captured, searchQuery;
+let current = "bootstrap", connectionId, grantId, saved, category, graph, captured, searchQuery, changeSetId, prepared;
+const browserErrors = [];
+evidence.native_commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+evidence.gateway_manifest_sha256 = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
 const installation = env.SHOP_MCP_INSTALLATION_ID;
+const command = "qa_inq_" + randomBytes(5).toString("hex");
 const subject = "mcp-qa-requester", clientId = "aiwb-local-client", token = randomBytes(36).toString("base64url");
 const workspaceId = randomUUID(), tenantId = randomUUID();
 const { ProviderStore } = await load("provider-store");
@@ -46,8 +50,11 @@ const { PostgresGatewayAdmission } = await load("gateway-admission");
 const { PostgresUsageMeter } = await load("usage-meter");
 const { DashboardRepository } = await load("dashboard-repository");
 const { PostgresOperationStore } = await load("postgres-operation-store");
+const { PostgresConnectionRepository } = await load("postgres-connection-store");
+const { LocalKekCredentialCipher } = await load("credential-envelope");
 const { registerDashboardRoutes } = await load("dashboard-routes");
 const { buildGatewayHttpApp, LocalTokenVerifier, MCP_PROTOCOL_VERSION, loadMigrationCatalog } = await load("index");
+evidence.protocol = MCP_PROTOCOL_VERSION;
 
 /** Only the named synthetic lab can run these fixed test helpers. */
 function docker(code, data = {}) {
@@ -59,12 +66,23 @@ data=json.loads(sys.stdin.read())
 `;
   try { return execFileSync("docker", ["compose", "-f", compose, "exec", "-T", "api", "python", "-c", prelude + code],
     { input: JSON.stringify(data), encoding: "utf8", timeout: 120000, stdio: ["pipe", "pipe", "pipe"] }).trim(); }
-  catch { throw new Error("guarded_lab_operation_failed"); }
+  catch (error) {
+    const detail = String(error.stderr ?? "");
+    writeFileSync(output + "/native-helper-error.log", detail, { mode: 0o600 });
+    const frames = [...detail.matchAll(/File "([^"]+)", line (\d+)/g)]
+      .map((match) => ({ file: match[1], line: Number(match[2]) }));
+    console.error("NATIVE_HELPER_FAILURE " + JSON.stringify({ frames }));
+    throw new Error("guarded_lab_operation_failed");
+  }
 }
 const fixture = JSON.parse(docker('from pathlib import Path\nprint(Path("/qa/workflow-mcp-fixture.json").read_text())'));
 async function check(name, run) {
   current = name;
-  try { await run();evidence.checks.push({ name, status: "PASS" });console.log("PASS  " + name); }
+  try {
+    const outcome = await run();const status = outcome?.status === "BLOCKED" ? "BLOCKED" : "PASS";
+    evidence.checks.push({ name, status, ...(outcome?.reason ? { reason: outcome.reason } : {}) });
+    console.log(status + "  " + name + (outcome?.reason ? ": " + outcome.reason : ""));
+  }
   catch (error) { evidence.checks.push({ name, status: "FAIL", reason: error.code ?? error.name });throw error; }
   finally { persist(); }
 }
@@ -80,11 +98,20 @@ async function rpc(method, params = {}, bearer = token) {
     "io.modelcontextprotocol/clientCapabilities": {},
   } } }), signal: AbortSignal.timeout(30000) });
   if (response.status === 401) return { unauthorized: true };
-  assert.equal(response.status, 200);return (await response.json());
+  if (response.status !== 200) {
+    evidence.http_error = { status: response.status, body: (await response.text()).slice(0, 2000) };
+    const error = new Error("mcp_http_rejected");error.code = "MCP_HTTP_" + response.status;throw error;
+  }
+  return (await response.json());
 }
 async function call(name, args = {}, expectError = false) {
   const response = await rpc("tools/call", { name: "bot." + name, arguments: { connection_id: connectionId, ...args } });
-  if (expectError) { assert(response.error || response.result?.isError);return response; }
+  if (expectError) {
+    const detail = response.result?.structuredContent;
+    evidence.last_tool_error = { tool: name, code: detail?.code ?? response.error?.code, details: detail?.details };
+    console.log("EXPECTED_REJECTION " + JSON.stringify(evidence.last_tool_error));
+    assert(response.error || response.result?.isError);return response;
+  }
   if (response.error || response.result?.isError) {
     const error = new Error("mcp_call_rejected");error.code = response.result?.structuredContent?.code ?? response.error?.code ?? "MCP_ERROR";throw error;
   }
@@ -109,6 +136,74 @@ asyncio.run(main())`, fixture));
   throw Error("fresh_mfa_unavailable");
 }
 const nativeArgs = (extra = {}) => ({ store_id: fixture.store_id, ...extra });
+
+/** The real enrollment UI proposes access; Native independently records consent. */
+async function enroll(scopes) {
+  await gatewayPage.goto(gatewayOrigin + "/dashboard/bot-connections?workspace=" + workspaceId);
+  await gatewayPage.locator('[name="display_name"]').fill("QA product inquiry");
+  await gatewayPage.locator('[name="client_id"]').fill(clientId);
+  await gatewayPage.locator('[name="store_ids"]').fill(fixture.store_id);
+  for (const input of await gatewayPage.locator('input[type="checkbox"]').all()) {
+    const name = await input.getAttribute("name");
+    await input.setChecked(!scopes || scopes.some((scope) => "scope_" + scope.replace(":", "_") === name));
+  }
+  await gatewayPage.getByRole("button", { name: "ساخت درخواست همین اتصال", exact: true }).click();
+  await gatewayPage.getByRole("heading", { name: "QA product inquiry", exact: true }).waitFor();
+  connectionId = new URL(gatewayPage.url()).pathname.split("/").at(-1);
+  const link = await gatewayPage.getByRole("link", { name: "بررسی همین درخواست در Native Studio", exact: true }).getAttribute("href");
+  assert.equal(new URL(link).origin, nativeOrigin);grantId = new URL(link).searchParams.get("pairing");
+  await nativePage.goto(link);await nativePage.getByRole("button", { name: "ثبت همین دسترسی اتصال", exact: true }).click();
+  await nativePage.getByText("دسترسی همین اتصال ثبت شد. ادامهٔ اتصال را در WPMCP بررسی کنید.", { exact: true }).waitFor();
+  await gatewayPage.getByRole("button", { name: "بررسی تأیید Native", exact: true }).click();
+  await gatewayPage.getByText("اتصال در Gateway ثبت شده", { exact: true }).waitFor();
+}
+
+/** Capture the actual dark-mode RTL management/review layout at both widths. */
+async function gatewayLayout(phase) {
+  for (const width of [390, 1280]) {
+    await gatewayPage.setViewportSize({ width, height: 900 });
+    const metrics = await gatewayPage.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth,
+      direction: getComputedStyle(document.documentElement).direction }));
+    assert.equal(metrics.direction, "rtl");assert(metrics.content <= metrics.width + 1);
+    await gatewayPage.screenshot({ path: output + "/gateway-" + phase + "-dark-" + width + ".png", fullPage: true });
+  }
+}
+
+async function withdrawNative() {
+  await nativePage.goto(nativeOrigin + "/account/mcp?grant=" + grantId);
+  await nativePage.getByRole("button", { name: "بررسی وضعیت همین اتصال", exact: true }).click();
+  await nativePage.getByRole("checkbox", { name: "لغو دسترسی همین اتصال را تأیید می‌کنم", exact: true }).check();
+  await nativePage.getByRole("button", { name: "لغو دسترسی همین اتصال", exact: true }).click();
+  await nativePage.getByText("دسترسی همین اتصال لغو شد. اثرهای ثبت‌شدهٔ قبلی برگردانده نمی‌شوند.", { exact: true }).waitFor();
+  await nativePage.getByRole("button", { name: "بررسی وضعیت همین اتصال", exact: true }).click();
+  await nativePage.getByText("رسید لغو همین دسترسی دریافت شد.", { exact: true }).waitFor();
+}
+
+async function revokeGateway() {
+  await gatewayPage.goto(gatewayOrigin + "/dashboard/bot-connections/" + connectionId + "?workspace=" + workspaceId);
+  await gatewayPage.locator('[name="confirm_revocation"]').check();
+  await gatewayPage.getByRole("button", { name: "لغو همین اتصال در Gateway", exact: true }).click();
+  await gatewayPage.getByText("اتصال در Gateway لغو شده", { exact: true }).waitFor();
+}
+
+/** Normal logout revokes test sessions instead of exhausting the lab's cap. */
+async function logoutBrowsers() {
+  if (nativePage && new URL(nativePage.url()).pathname !== "/login") {
+    await nativePage.setViewportSize({ width: 1280, height: 900 });
+    await nativePage.goto(nativeOrigin + "/dashboard");
+    if (new URL(nativePage.url()).pathname !== "/login") {
+      await nativePage.getByRole("button", { name: "خروج امن", exact: true }).click({ timeout: 10000 });
+      await nativePage.waitForURL("**/login", { timeout: 10000 });
+    }
+  }
+  if (gatewayPage && new URL(gatewayPage.url()).pathname !== "/dashboard/login") {
+    await gatewayPage.goto(gatewayOrigin + "/dashboard");
+    if (new URL(gatewayPage.url()).pathname !== "/dashboard/login") {
+      await gatewayPage.getByRole("button", { name: "خروج", exact: true }).click({ timeout: 10000 });
+      await gatewayPage.waitForURL("**/dashboard/login", { timeout: 10000 });
+    }
+  }
+}
 try {
   await check("separate real PostgreSQL database and restricted gateway role", async () => {
     control = new Client({ connectionString: controlUrl.href });await control.connect();
@@ -118,12 +213,17 @@ try {
     await owner.query("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='aiwb_app') THEN CREATE ROLE aiwb_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;END IF;END $$");
     for (const migration of await loadMigrationCatalog()) await owner.query(migration.sql);
     pool = new Pool({ connectionString: databaseUrl.href, max: 8, statement_timeout: 15000 });
-    const appPool = { query: async (sql, args) => {
-      const client = await pool.connect();try { await client.query("SET ROLE aiwb_app");return await client.query(sql, args); }
+    const connect = async () => {
+      const client = await pool.connect();
+      try { await client.query("SET ROLE aiwb_app");return client; }
+      catch (error) { client.release();throw error; }
+    };
+    const appPool = { connect, query: async (sql, args) => {
+      const client = await connect();try { return await client.query(sql, args); }
       finally { client.release(); }
     } };
     assert.equal((await appPool.query("SELECT current_user name")).rows[0].name, "aiwb_app");
-    const dashboard = new DashboardRepository(appPool), user = await dashboard.createIdentity({ issuer: "urn:aiwb:local", subject, displayName: "MCP QA" });
+    dashboard = new DashboardRepository(appPool);const user = await dashboard.createIdentity({ issuer: "urn:aiwb:local", subject, displayName: "MCP QA" });
     await owner.query("INSERT INTO aiwb.tenants(tenant_id,slug,display_name) VALUES($1,'mcp-qa','MCP QA')", [tenantId]);
     await owner.query("INSERT INTO aiwb.workspaces(workspace_id,tenant_id,slug,display_name) VALUES($1,$2,'workflow-qa','Workflow QA')", [workspaceId, tenantId]);
     await owner.query("INSERT INTO aiwb.memberships(tenant_id,workspace_id,user_id,role) VALUES($1,$2,$3,'owner')", [tenantId, workspaceId, user]);
@@ -136,13 +236,14 @@ try {
     const store = new ProviderStore(appPool), operations = new PostgresOperationStore(appPool);
     const service = new BotWorkflowService({ store, native, usage: new PostgresUsageMeter(appPool),
       admission: new PostgresGatewayAdmission(appPool), dashboardOrigin: gatewayOrigin });
+    const connections = new PostgresConnectionRepository(appPool, new LocalKekCredentialCipher(randomBytes(32)));
     const resource = new URL(gatewayOrigin + "/mcp");
-    app = buildGatewayHttpApp({ runtime: { connections: {}, botWorkflows: service, operations }, auth: {
+    app = buildGatewayHttpApp({ runtime: { connections, botWorkflows: service, operations }, auth: {
       mode: "local", expectedResource: resource, requiredScopes: ["aiwb:read"], verifier: new LocalTokenVerifier(token, resource, subject),
     } });
     registerDashboardRoutes(app, { auth: { mode: "local", baseUrl: new URL(gatewayOrigin + "/dashboard"), sessionKey: randomBytes(32),
       secureCookies: false, sessionTtlSeconds: 3600, accessToken: token, subject }, repository: dashboard,
-      connections: {}, operations, botWorkflows: service, botConnections: new BotWorkflowConnections({ store, native }) });
+      connections, operations, botWorkflows: service, botConnections: new BotWorkflowConnections({ store, native }) });
     await app.listen({ host: "127.0.0.1", port: 8096 });
   });
   const { chromium } = await import(pathToFileURL(process.env.WORKFLOW_PLAYWRIGHT_MODULE).href);
@@ -151,6 +252,7 @@ try {
   for (const context of [nativeContext, gatewayContext]) await context.route("**/*", (route) =>
     [nativeOrigin, gatewayOrigin].includes(new URL(route.request().url()).origin) ? route.continue() : route.abort());
   nativePage = await nativeContext.newPage();gatewayPage = await gatewayContext.newPage();
+  for (const page of [nativePage, gatewayPage]) page.on("pageerror", (error) => browserErrors.push(error.name));
   await check("normal independent Native MFA and gateway dashboard login", async () => {
     await nativePage.goto(nativeOrigin + "/studio/mcp");
     await nativePage.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
@@ -159,22 +261,10 @@ try {
     await nativePage.getByRole("button", { name: "ورود امن", exact: true }).click();await nativePage.waitForURL("**/dashboard");
     await gatewayPage.goto(gatewayOrigin + "/dashboard/login");await gatewayPage.getByLabel("توکن توسعه").fill(token);
     await gatewayPage.getByRole("button", { name: "ادامه", exact: true }).click();await gatewayPage.waitForURL(gatewayOrigin + "/dashboard");
+    await gatewayPage.getByRole("button", { name: "خروج", exact: true }).waitFor();
   });
   await check("human enrollment verifies exact Native consent before activation", async () => {
-    await gatewayPage.goto(gatewayOrigin + "/dashboard/bot-connections?workspace=" + workspaceId);
-    await gatewayPage.locator('[name="display_name"]').fill("QA product inquiry");
-    await gatewayPage.locator('[name="client_id"]').fill(clientId);
-    await gatewayPage.locator('[name="store_ids"]').fill(fixture.store_id);
-    for (const input of await gatewayPage.locator('input[type="checkbox"]').all()) await input.check();
-    await gatewayPage.getByRole("button", { name: "ساخت درخواست همین اتصال", exact: true }).click();
-    await gatewayPage.getByRole("heading", { name: "QA product inquiry", exact: true }).waitFor();
-    connectionId = new URL(gatewayPage.url()).pathname.split("/").at(-1);
-    const link = await gatewayPage.getByRole("link", { name: "بررسی همین درخواست در Native Studio", exact: true }).getAttribute("href");
-    assert.equal(new URL(link).origin, nativeOrigin);grantId = new URL(link).searchParams.get("pairing");
-    await nativePage.goto(link);await nativePage.getByRole("button", { name: "ثبت همین دسترسی اتصال", exact: true }).click();
-    await nativePage.getByText("دسترسی همین اتصال ثبت شد. ادامهٔ اتصال را در WPMCP بررسی کنید.", { exact: true }).waitFor();
-    await gatewayPage.getByRole("button", { name: "بررسی تأیید Native", exact: true }).click();
-    await gatewayPage.getByText("اتصال در Gateway ثبت شده", { exact: true }).waitFor();
+    await enroll();await gatewayLayout("connection");
   });
   await check("authenticated MCP tool/resource/prompt and real catalog discovery", async () => {
     assert.equal((await rpc("tools/list", {}, "wrong-token")).unauthorized, true);
@@ -198,15 +288,22 @@ try {
     evidence.discovered = { bot_tools: tools.filter((row) => row.name.startsWith("bot.")).length, catalog_products: products.items.length };
   });
   await check("private signature replay and foreign Store requests fail closed", async () => {
-    const previous = captured;const response = await fetch(previous.url, previous.options);assert.equal(response.status, 409);
+    const previous = captured;const response = await fetch(previous.url, previous.options);assert.equal(response.status, 401);
     await call("bots.list", { store_id: fixture.foreign_store_id }, true);
   });
   await check("official Inspector performs an authenticated native profile call", async () => {
-    const result = await promisify(execFile)("/workspaces/beta-qa-tools/inspector/node_modules/.bin/mcp-inspector", [
-      "--cli", gatewayOrigin + "/mcp", "--transport", "http", "--method", "tools/call",
+    let result;
+    try { result = await promisify(execFile)("/workspaces/beta-qa-tools/inspector/node_modules/.bin/mcp-inspector", [
+      "--cli", gatewayOrigin + "/mcp", "--transport", "http", "--protocol-era", "modern", "--quiet", "--method", "tools/call",
       "--tool-name", "bot.context.get_profile", "--tool-arg", "connection_id=" + connectionId,
       "--header", "Authorization: Bearer " + token,
-    ], { encoding: "utf8", timeout: 45000, maxBuffer: 4 * 1024 * 1024 });
+    ], { encoding: "utf8", timeout: 45000, maxBuffer: 4 * 1024 * 1024 }); }
+    catch (error) {
+      const detail = typeof error.stderr === "string" ? error.stderr : "";
+      if (detail.includes("Unsupported protocol version: 2025-11-25") && detail.includes(MCP_PROTOCOL_VERSION))
+        return { status: "BLOCKED", reason: "Inspector 2.14.0 requests 2025-11-25; gateway requires " + MCP_PROTOCOL_VERSION };
+      throw error;
+    }
     const value = JSON.parse(result.stdout);
     assert.equal((value.structuredContent ?? value.result?.structuredContent).data.native_staff_id, fixture.admin_id);
     evidence.inspector_version = readFileSync("/tmp/l4-inspector-version", "utf8").trim();
@@ -239,7 +336,7 @@ try {
       { id: "cancel", type: "cancel", config: { message: "استعلام لغو شد." } },
     ];
     graph = { schema_version: 1, target_platforms: ["telegram", "bale"], assignment: { mode: "selected", bot_ids: [fixture.bots.telegram, fixture.bots.bale] },
-      entry_points: [{ kind: "command", key: "inquiry", command: "inquiry", node_id: "start" }], nodes,
+      entry_points: [{ kind: "command", key: command, command, node_id: "start" }], nodes,
       edges: [["start", "question", "next"], ["question", "category", "next"], ["category", "search", "next"], ["search", "results", "success"],
         ["search", "cancel", "error"], ["search", "cancel", "unavailable"], ["search", "cancel", "retry"], ["search", "cancel", "pending_approval"],
         ["results", "phone", "next"], ["phone", "confirm", "next"], ["confirm", "end", "confirm"], ["confirm", "cancel", "cancel"]]
@@ -249,6 +346,7 @@ try {
     const proposal = await call("changes.create", nativeArgs({ workflow_id: saved.id, expected_revision: saved.revision,
       id: randomUUID(), operation_id: randomUUID(), definition: graph }));
     assert.equal(proposal.status, "draft");assert.equal(proposal.proposal.definition.nodes.length, nodes.length);
+    changeSetId = proposal.id;
     assert.notDeepEqual(proposal.base.definition, proposal.proposal.definition);
     await call("workflow.validate_change_set", nativeArgs({ change_set_id: proposal.id }));
     saved = await call("changes.apply", nativeArgs({ change_set_id: proposal.id, expected_version: proposal.version, operation_id: randomUUID() }));
@@ -258,7 +356,7 @@ try {
     const invalid = structuredClone(graph);invalid.nodes.find((node) => node.id === "category").config.choices_source = "simulation_products";
     saved = await call("workflow.replace_definition", nativeArgs({ workflow_id: saved.id, expected_revision: saved.revision,
       operation_id: randomUUID(), definition: invalid }));
-    const bindings = ["telegram", "bale"].map((platform) => ({ bot_id: fixture.bots[platform], kind: "command", key: "inquiry", node_id: "start" }));
+    const bindings = ["telegram", "bale"].map((platform) => ({ bot_id: fixture.bots[platform], kind: "command", key: command, node_id: "start" }));
     const rejected = await call("workflow.prepare_publish", nativeArgs({ workflow_id: saved.id, expected_revision: saved.revision,
       revision: saved.revision, operation_id: randomUUID(), bindings }), true);
     assert.match(JSON.stringify(rejected), /runtime_publication_not_ready/);
@@ -275,17 +373,52 @@ try {
       assert.equal(simulation.status, "completed");
     }
   });
-  await check("one controlled gateway decision automatically publishes after a worker crash", async () => {
-    const bindings = ["telegram", "bale"].map((platform) => ({ bot_id: fixture.bots[platform], kind: "command", key: "inquiry", node_id: "start" }));
-    const prepared = await call("workflow.prepare_publish", nativeArgs({ workflow_id: saved.id, revision: saved.revision,
+  await check("real PostgreSQL prevents proposal tampering and unrelated human review", async () => {
+    const immutable = JSON.parse(docker(`from sqlalchemy import update
+from db import session_maker,engine
+from models.shop_mcp import McpChangeSetRevision
+async def main():
+ async with session_maker() as db:
+  try:
+   await db.execute(update(McpChangeSetRevision).where(McpChangeSetRevision.change_set_id==data["id"]).values(proposal_json="{}"));await db.commit()
+   print(json.dumps({"rejected":False}))
+  except Exception as error:
+   await db.rollback();print(json.dumps({"rejected":"mcp_proposal_immutable" in str(error),"sqlstate":getattr(error.orig,"sqlstate",None)}))
+ await engine.dispose()
+asyncio.run(main())`, { id: changeSetId }));assert.equal(immutable.rejected, true);evidence.immutable_sqlstate = immutable.sqlstate;
+    const bindings = ["telegram", "bale"].map((platform) => ({ bot_id: fixture.bots[platform], kind: "command", key: command, node_id: "start" }));
+    prepared = await call("workflow.prepare_publish", nativeArgs({ workflow_id: saved.id, revision: saved.revision,
       expected_revision: saved.revision, operation_id: randomUUID(), bindings }));
     assert.equal(prepared.state, "PENDING_APPROVAL");
+    for (const foreignTenant of [false, true]) {
+      const otherSubject = "mcp-qa-reviewer-" + randomUUID(), otherUser = await dashboard.createIdentity({ issuer: "urn:aiwb:local", subject: otherSubject });
+      let reviewWorkspace = workspaceId;
+      if (foreignTenant) {
+        const otherTenant = randomUUID();reviewWorkspace = randomUUID();
+        await owner.query("INSERT INTO aiwb.tenants(tenant_id,slug,display_name) VALUES($1,$2,'Foreign QA')", [otherTenant, "foreign-" + otherTenant]);
+        await owner.query("INSERT INTO aiwb.workspaces(workspace_id,tenant_id,slug,display_name) VALUES($1,$2,'foreign-qa','Foreign QA')", [reviewWorkspace, otherTenant]);
+        await owner.query("INSERT INTO aiwb.memberships(tenant_id,workspace_id,user_id,role) VALUES($1,$2,$3,'owner')", [otherTenant, reviewWorkspace, otherUser]);
+      } else await owner.query("INSERT INTO aiwb.memberships(tenant_id,workspace_id,user_id,role) VALUES($1,$2,$3,'owner')", [tenantId, workspaceId, otherUser]);
+      const session = randomBytes(36).toString("base64url"), csrf = randomBytes(36).toString("base64url");
+      await dashboard.createSession(session, csrf, otherUser, { issuer: "urn:aiwb:local", subject: otherSubject }, new Date(Date.now() + 60000));
+      const cookie = "aiwb_dash_session=" + session + "; aiwb_dash_csrf=" + csrf;
+      const path = "/dashboard/approvals/" + prepared.approval_request_id;
+      const view = await fetch(gatewayOrigin + path + "?workspace=" + reviewWorkspace, { headers: { cookie }, redirect: "manual" });
+      assert.equal(view.status, 404);assert(!(await view.text()).includes("چه محصولی"));
+      await fetch(gatewayOrigin + path + "/decision", { method: "POST", headers: { cookie, origin: gatewayOrigin,
+        "content-type": "application/x-www-form-urlencoded" }, redirect: "manual", body: new URLSearchParams({ workspace_id: reviewWorkspace,
+        csrf_token: csrf, request_hash: "sha256:" + prepared.intent_sha256, decision: "approve" }) });
+      assert.equal((await owner.query("SELECT decision FROM aiwb.gateway_approval_requests WHERE approval_request_id=$1", [prepared.approval_request_id])).rows[0].decision, "PENDING");
+    }
+  });
+  await check("one controlled gateway decision automatically publishes after a worker crash", async () => {
     const crashMarker = output + "/worker-crash.json";
     const configPath = output + "/worker-private.json";
     writeFileSync(configPath, JSON.stringify({ mode: "isolated_workflow_mcp_qa", gatewayRoot: root, database: databaseUrl.href,
       installation, issuer: env.SHOP_MCP_GATEWAY_ISSUER, delegation: env.MCP_QA_DELEGATION_PRIVATE_KEY, approval: env.MCP_QA_APPROVAL_PRIVATE_KEY, crashMarker }), { mode: 0o600 });
     for (let i = 0; i < 2; i++) workers.push(spawn(process.execPath, [new URL("./workflow_mcp_gateway_worker.mjs", import.meta.url).pathname, configPath], { stdio: "ignore" }));
     await gatewayPage.goto(gatewayOrigin + new URL(prepared.review_url).pathname + "?workspace=" + workspaceId);
+    await gatewayLayout("approval");
     await gatewayPage.getByRole("button", { name: "بله، این درخواست را تأیید می‌کنم", exact: true }).click();evidence.controlled_human_decisions++;
     for (let i = 0; i < 200 && !existsSync(crashMarker); i++) await new Promise((resolve) => setTimeout(resolve, 100));
     assert(existsSync(crashMarker));
@@ -297,6 +430,11 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.equal(status.state, "SUCCEEDED");assert.equal(status.result_facts.reconciled, true);
+    // SIGKILL also abandons the crashed process's bounded admission lease.
+    // Advance only this run's publication capacity lease, as with its dispatch
+    // claim above, so later scenarios do not wait for the production TTL.
+    const expired = await owner.query("UPDATE aiwb.gateway_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE connection_id=$1 AND lease_id IN (SELECT lease_id FROM aiwb.provider_activity_leases WHERE kind='publication') AND expires_at>clock_timestamp()", [connectionId]);
+    evidence.virtual_expiry = { dispatch_claim: true, crashed_publication_leases: expired.rowCount };
     evidence.operation_id = prepared.operation_id;evidence.publication_id = status.result_facts.publication_id;evidence.workflow_id = saved.id;
     const decisions = await owner.query("SELECT count(*)::int n FROM aiwb.gateway_approval_requests WHERE decision='APPROVED'");assert.equal(decisions.rows[0].n, 1);
     const native = JSON.parse(docker(`from sqlalchemy import select,func
@@ -310,7 +448,7 @@ asyncio.run(main())`, { workflow_id: saved.id }));assert.equal(native.count, 1);
   await check("Fake Telegram/Bale Runtime consumes the actual published inquiry", async () => {
     const result = JSON.parse(docker(`from scripts.workflow_mcp_runtime_e2e import run
 print(json.dumps(asyncio.run(run(data))))`, { workflow_id: saved.id, publication_id: evidence.publication_id,
-      category: category.id, category_name: category.name, query: searchQuery }));
+      category: category.id, category_name: category.name, query: searchQuery, command }));
     assert.equal(result.status, "PASS");evidence.runtime = result;
   });
   await check("public Runtime inspection excludes customer answers", async () => {
@@ -320,11 +458,43 @@ print(json.dumps(asyncio.run(run(data))))`, { workflow_id: saved.id, publication
       assert(!JSON.stringify(result).includes("QA_PRIVATE"));assert(!JSON.stringify(result).includes("+98912"));
     }
   });
+  await check("Native-first revocation blocks disclosure and future work while preserving historical receipt", async () => {
+    const bindings = ["telegram", "bale"].map((platform) => ({ bot_id: fixture.bots[platform], kind: "command", key: command, node_id: "start" }));
+    const pending = await call("workflow.prepare_publish", nativeArgs({ workflow_id: saved.id, revision: saved.revision,
+      expected_revision: saved.revision, operation_id: randomUUID(), bindings }));
+    await withdrawNative();await call("context.get_profile", {}, true);
+    assert.equal((await gatewayContext.request.get(pending.review_url)).status(), 404);
+    await revokeGateway();await call("context.get_profile", {}, true);
+    const receipt = await rpc("tools/call", { name: "bot.operations.status", arguments: { operation_id: evidence.operation_id } });
+    assert.equal(receipt.result.structuredContent.data.state, "SUCCEEDED");
+  });
+  await check("Gateway-first revocation stops public calls and Native withdrawal remains independent", async () => {
+    await enroll(["workflow:read"]);await call("context.get_profile");
+    await revokeGateway();await call("context.get_profile", {}, true);await withdrawNative();
+    assert.equal((await owner.query("SELECT count(*)::int n FROM aiwb.gateway_approval_requests WHERE decision='APPROVED'")).rows[0].n, 1);
+  });
+  await check("actual browser sessions have no uncaught application errors", async () => assert.deepEqual(browserErrors, []));
+  await check("normal UI logout revokes both test browser sessions", logoutBrowsers);
   evidence.status = "PASS";
 } catch (error) {
   evidence.status = "FAIL";evidence.stage = current;evidence.reason = error.code ?? error.name;
+  if (typeof error.stderr === "string") {
+    evidence.client_stderr = error.stderr.replaceAll(token, "[redacted]").slice(-3000);
+    console.error(evidence.client_stderr);
+  }
+  evidence.failure_location = (error.stack ?? "").split("\n")
+    .filter((line) => /^\s+at .*workflow_mcp_gateway_e2e/.test(line)).slice(0, 3);
+  evidence.failure_views = {};
+  for (const [name, page] of [["native", nativePage], ["gateway", gatewayPage]]) if (page) {
+    await page.screenshot({ path: output + "/failure-" + name + ".png", fullPage: true });
+    evidence.failure_views[name] = { path: new URL(page.url()).pathname,
+      headings: await page.getByRole("heading").allTextContents(),
+      alerts: await page.getByRole("alert").allTextContents() };
+  }
   console.error("FAIL  " + current + ": " + evidence.reason);process.exitCode = 1;
+  console.error(JSON.stringify({ location: evidence.failure_location, views: evidence.failure_views }));
 } finally {
+  try { await logoutBrowsers(); } catch { evidence.cleanup_unconfirmed = true; }
   persist();writeFileSync("/tmp/l4-mcp-gateway-output", output, { mode: 0o600 });
   for (const worker of workers) if (worker.exitCode === null && worker.signalCode === null) worker.kill("SIGTERM");
   await nativeContext?.close();await gatewayContext?.close();await browser?.close();await app?.close();

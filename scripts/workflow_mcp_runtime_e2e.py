@@ -65,7 +65,7 @@ async def run(data: dict) -> dict:
             with harness.fence.install(), harness.providers():
                 for platform in ("telegram", "bale"):
                     case = await harness.new_case(platform, start=False)
-                    update = harness.raw(case, text_value="/inquiry")
+                    update = harness.raw(case, text_value="/" + data["command"])
                     answers = await asyncio.gather(
                         harness.offer(case, update),
                         harness.offer(case, deepcopy(update)),

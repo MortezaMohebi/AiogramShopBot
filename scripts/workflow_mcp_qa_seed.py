@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy import update
+
 from scripts.test_lab_safety import require_isolated_lab
 
 require_isolated_lab()
@@ -16,14 +18,27 @@ if os.environ.get("SHOP_MCP_QA") != "1" or not __debug__:
     raise RuntimeError("Dedicated MCP QA mode is required.")
 
 from db import engine, session_maker
+from models.shop_content import ShopCategory
 from scripts.beta_storefront_e2e import seed
 from services.shop_mcp.contracts import Delegation
 from services.shop_mcp.grants import prepare_pairing
 
 
+async def prepare_catalog(fixture: dict) -> None:
+    """Publish only this lab fixture's category for real catalog discovery."""
+    async with session_maker() as db:
+        await db.execute(
+            update(ShopCategory)
+            .where(ShopCategory.store_id == fixture["stores"][0])
+            .values(is_published=True)
+        )
+        await db.commit()
+
+
 async def main() -> None:
     """Seed synthetic Stores and one pending consent, never approve an effect."""
     fixture = await seed()
+    await prepare_catalog(fixture)
     instant = int(time.time())
     identity = {
         "v": 1,

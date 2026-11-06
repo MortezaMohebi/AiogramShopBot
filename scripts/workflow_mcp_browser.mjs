@@ -12,7 +12,7 @@ const env = Object.fromEntries(readFileSync(".codespaces/mcp-qa.env", "utf8").tr
 assert.equal(env.SHOP_MCP_QA, "1");assert.equal(env.SHOP_BETA_QA, "1");
 assert.equal(env.SHOP_FASTAPI_INTERNAL_URL, "http://127.0.0.1:8095");
 for (const key of ["TOKEN", "BALE_BOT_TOKEN", "BALE_WALLET_PROVIDER_TOKEN", "TELEGRAM_FIAT_PROVIDER_TOKEN"])
-  assert.equal(env[key], "");
+  if (env[key] !== "") throw Error("live_provider_credentials_not_allowed");
 mkdirSync(output, { recursive: true, mode: 0o700 });
 const evidence = { status: "RUNNING", origin: base, checks: [], screenshots: [], mutation_posts: 0 };
 const persist = () => writeFileSync(output + "/evidence.json", JSON.stringify(evidence, null, 2), { mode: 0o600 });
@@ -160,5 +160,15 @@ asyncio.run(main())`, fixture));
   evidence.status = "FAIL";evidence.stage = stage;evidence.reason = error.name;
   console.error("FAIL  " + stage + ": " + error.name);process.exitCode = 1;
 } finally {
+  if (page && new URL(page.url()).pathname !== "/login") {
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(base + "/dashboard");
+      if (new URL(page.url()).pathname !== "/login") {
+        await page.getByRole("button", { name: "خروج امن", exact: true }).click({ timeout: 10000 });
+        await page.waitForURL("**/login", { timeout: 10000 });
+      }
+    } catch { evidence.cleanup_unconfirmed = true; }
+  }
   persist();await context?.close();await browser?.close();
 }
