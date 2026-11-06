@@ -21,7 +21,9 @@ Explicit password proof remains supported for older dashboards during rollout. P
 | Owned PostgreSQL schema cleanup, both probes | PASS |
 | Real AccountPanel/Providers browser acceptance | PASS: 12 checks, 10 captures, both themes; 320/390/768/1440px, keyboard activation, setup/confirmation/recovery, stale proof and renewed proof |
 | Real owner MFA enrollment/reset | NOT RUN; remains an owner action |
-| Final ordinary QA service restart and Next MCP/React | PENDING |
+| Ordinary QA API/dashboard restart, PostgreSQL/Redis health | PASS; provider dispatch remains disabled |
+| Final Next MCP metadata/routes/compilation | PASS: server-only checks |
+| Final browser-connected Next errors/page metadata and React introspection | NOT RUN: agent-browser daemon IPC error; subsequent native preview reload blocked by browser URL policy. No browser workaround was attempted. |
 
 The browser uses a guarded synthetic account fixture and intercepted account endpoints. It made zero real authentication writes. Expected HTTP 403 responses for expired proof are recorded separately from unexpected console/runtime errors. Backend proof authorization is covered by real signed HTTP/database tests and is not inferred from browser stubs.
 
@@ -32,4 +34,4 @@ The browser uses a guarded synthetic account fixture and intercepted account end
 
 Acceptance snapshot: probe 2ab16c4 plus the single verified recovery-state line. The tested AccountPanel blob is `7272f4f7b1fd06c076270a060e8622371c8a77bf`. The final source commit contains those same tested bytes.
 
-Evidence will be retained in `docs/qa/mfa-recent-login/`. Existing broader dashboard acceptance remains Draft; this report is scoped to the requested enrollment UX. The assistant did not change any owner's password, MFA key or provider settings.
+Evidence is retained in `docs/qa/mfa-recent-login/`. The guarded fixture was removed and owned test browsers closed. Normal private QA services remain running. Existing broader dashboard acceptance remains Draft; this report is scoped to the requested enrollment UX. The assistant did not change any owner's password, MFA key or provider settings.

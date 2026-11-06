@@ -20,8 +20,9 @@
 - [x] Reproduce the reviewed Session/Profile lock inversion in an isolated PostgreSQL schema (SQLState 40P01); remove the owned schema afterward.
 - [x] Verify the corrected lock ordering against the same concurrent enrollment/session workload.
 - [x] Exercise fresh, expired and renewed proof UI in both themes, keyboard and 320/390/768/1440px layouts.
-- [ ] Remove temporary fixtures, restart only QA services, verify Next MCP/React and retain scoped evidence.
-- [ ] Update the Draft and Codespace to the final commit.
+- [x] Remove temporary fixtures and restart only QA services; verify PostgreSQL/Redis health and available Next MCP server checks.
+- [ ] Browser-connected final Next/React introspection: blocked by daemon IPC and native preview URL policy; do not use another browser to bypass the block.
+- [x] Publish verified source to the Draft and Codespace; retain acceptance evidence alongside it.
 
 ## Review decisions and ledger
 
