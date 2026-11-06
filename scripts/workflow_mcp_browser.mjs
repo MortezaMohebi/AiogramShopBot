@@ -74,7 +74,8 @@ try {
     const health = await fetch("http://127.0.0.1:8095/__lab/health");assert.equal(health.status, 200);
   });
   const { chromium } = await import(pathToFileURL(process.env.WORKFLOW_PLAYWRIGHT_MODULE).href);
-  browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  stage = "browser_launch";
+  browser = await chromium.launch({ headless: true, channel: "chromium", args: ["--no-sandbox"] });
   context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: "block", reducedMotion: "reduce" });
   await context.route("**/*", (route) => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   page = await context.newPage();page.setDefaultTimeout(30000);page.setDefaultNavigationTimeout(60000);
