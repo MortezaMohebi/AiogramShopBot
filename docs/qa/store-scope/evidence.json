@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Favicon serves an image without a 404",
+    "Stores renders only current selected Store B",
+    "Client navigation loads current Store payment accounts",
+    "Inactive stale Store query safely redirects",
+    "StoreSwitcher refreshes a real multi-Store session",
+    "Explicit selected Store A remains readable",
+    "Deselecting the queried Store resets it without a 403",
+    "Stores renders all and only actively selected policies",
+    "RTL light 390px",
+    "RTL light 1440px",
+    "RTL dark 390px",
+    "RTL dark 1440px",
+    "Repeated client navigation and Back preserve React rendering",
+    "Zero browser errors including conditional use warning",
+    "agent-browser React tree confirms the actual mounted StoreSwitcher"
+  ],
+  "errors": [],
+  "responses": [],
+  "scope": "real Next pages, signed API, isolated PostgreSQL fixtures; no live providers",
+  "get_compilation_issues": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"issues\":[]}"
+        }
+      ]
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  },
+  "get_errors": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"configErrors\":[],\"sessionErrors\":[]}"
+        }
+      ]
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  },
+  "get_page_metadata": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"sessions\":[{\"url\":\"/stores\",\"routerType\":\"app\",\"segments\":[{\"path\":\"app/(console)/layout.tsx\",\"type\":\"layout\",\"isBoundary\":false,\"isBuiltin\":false},{\"path\":\"app/layout.tsx\",\"type\":\"layout\",\"isBoundary\":false,\"isBuiltin\":false},{\"path\":\"app/(console)/error.tsx\",\"type\":\"boundary:error\",\"isBoundary\":true,\"isBuiltin\":false},{\"path\":\"app/(console)/loading.tsx\",\"type\":\"boundary:loading\",\"isBoundary\":true,\"isBuiltin\":false},{\"path\":\"app/error.tsx\",\"type\":\"boundary:error\",\"isBoundary\":true,\"isBuiltin\":false},{\"path\":\"app/global-error.tsx\",\"type\":\"boundary:global-error\",\"isBoundary\":true,\"isBuiltin\":false},{\"path\":\"app/not-found.tsx\",\"type\":\"boundary:not-found\",\"isBoundary\":true,\"isBuiltin\":false},{\"path\":\"app/(console)/stores/page.tsx\",\"type\":\"page\",\"isBoundary\":false,\"isBuiltin\":false}]}]}"
+        }
+      ]
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}
