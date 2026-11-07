@@ -23,7 +23,7 @@ from services.shop_cart import CartRejected, validate_coupon
 from services.shop_bot_catalog_acl import (
     allowed_for_bot, lock_bot_catalog_policy,
 )
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id, require_registry_bot
 from services.shop_money import MAX_RIALS, to_rials
 
 
@@ -93,11 +93,13 @@ class ShopPaymentService:
         The caller must commit the intent before calling the remote API.
         A repeated button press cannot issue a second invoice for this order.
         """
+        bot_id = require_bot_id(bot_id)
+        bot = await require_registry_bot(session, bot_id, platform.value)
         if type(order_id) is not int or order_id <= 0:
             raise PaymentRejected("شناسه سفارش معتبر نیست.")
         if type(platform_user_id) is not int or platform_user_id <= 0:
             raise PaymentRejected("خریدار معتبر نیست.")
-        owner = bot_id or legacy_id(platform.value)
+        owner = bot_id
         result = await session.execute(
             select(ShopOrder).where(
                 ShopOrder.id == order_id,
@@ -109,9 +111,7 @@ class ShopPaymentService:
         order = result.scalar_one_or_none()
         if order is None:
             raise PaymentRejected("سفارش متعلق به این حساب نیست.")
-        from models.shop_multibot import ShopBot
-        bot = await session.get(ShopBot, owner)
-        if bot is None or bot.platform != platform.value or bot.store_id != order.store_id:
+        if bot.store_id != order.store_id:
             raise PaymentRejected("مالکیت فروشگاه سفارش معتبر نیست.")
         if order.terms_accepted_at is None:
             raise PaymentRejected("شرایط فروش این سفارش تأیید نشده است.")
@@ -319,6 +319,8 @@ class ShopPaymentService:
         bot_id: str | None = None,
     ) -> tuple[bool, str | None]:
         """Validate immutable payment data before acknowledging the provider."""
+        bot_id = require_bot_id(bot_id)
+        bot = await require_registry_bot(session, bot_id, platform.value)
         if (
             type(payer_id) is not int or payer_id <= 0
             or not isinstance(payload, str)
@@ -330,8 +332,11 @@ class ShopPaymentService:
             .join(ShopOrder, ShopOrder.id == ShopPaymentAttempt.order_id)
             .where(
                 ShopPaymentAttempt.payload == payload,
-                ShopPaymentAttempt.bot_id == (bot_id or legacy_id(platform.value)),
-                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopPaymentAttempt.bot_id == bot_id,
+                ShopOrder.bot_id == bot_id,
+                ShopOrder.store_id == bot.store_id,
+                ShopPaymentAttempt.store_id == bot.store_id,
+                ShopOrder.platform == platform.value,
                 ShopPaymentAttempt.platform == platform.value,
             )
         )
@@ -362,7 +367,7 @@ class ShopPaymentService:
         } == {"physical", "digital"}:
             return False, "کالای فیزیکی و دیجیتال بله باید جدا سفارش داده شوند."
         if not pairs or not await allowed_for_bot(
-            session, bot_id or legacy_id(platform.value),
+            session, bot_id,
             [product.id for _, product in pairs],
         ):
             return False, "یک یا چند کالای سفارش در این بات غیرمجاز شده‌اند."
@@ -404,6 +409,8 @@ class ShopPaymentService:
         If any line/coupon is unavailable, record paid_unfulfilled instead of
         partially deducting stock or silently losing received money.
         """
+        bot_id = require_bot_id(bot_id)
+        bot = await require_registry_bot(session, bot_id, platform.value)
         if (
             type(payer_id) is not int or payer_id <= 0
             or type(chat_id) is not int or chat_id <= 0
@@ -425,8 +432,11 @@ class ShopPaymentService:
             .join(ShopOrder, ShopOrder.id == ShopPaymentAttempt.order_id)
             .where(
                 ShopPaymentAttempt.payload == payload,
-                ShopPaymentAttempt.bot_id == (bot_id or legacy_id(platform.value)),
-                ShopOrder.bot_id == (bot_id or legacy_id(platform.value)),
+                ShopPaymentAttempt.bot_id == bot_id,
+                ShopOrder.bot_id == bot_id,
+                ShopOrder.store_id == bot.store_id,
+                ShopPaymentAttempt.store_id == bot.store_id,
+                ShopOrder.platform == platform.value,
                 ShopPaymentAttempt.platform == platform.value,
             )
             .with_for_update(of=(ShopPaymentAttempt, ShopOrder))

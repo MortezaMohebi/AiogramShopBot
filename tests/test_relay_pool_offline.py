@@ -296,3 +296,67 @@ def test_failed_send_is_never_replayed_on_another_worker() -> None:
         await pool_session.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", ["identity", "network", "version"])
+def test_relay_activation_requires_proof_and_unchanged_configuration(
+    db, monkeypatch, failure,
+):
+    """Failed identity, network or revision proof cannot promote a staged key."""
+    from types import SimpleNamespace
+    import config
+
+    monkeypatch.setattr(config, "SHOP_RELAY_POOL_ENABLED", True)
+    closed = []
+
+    async def token_for_bot(_db, bot):
+        """Replace token retrieval while retaining production relay proof checks."""
+        assert bot.id == BOT_A
+        return "123456:" + "A" * 32
+
+    def client_for_bot(_token, session):
+        """Supply a fake getMe operation without any network connection."""
+        async def get_me():
+            """Return mismatched identity or race the exact reviewed revision."""
+            if failure == "network":
+                raise TimeoutError("Synthetic unavailable provider")
+            if failure == "version":
+                route = db.session.get(ShopBotRelayRoute, (BOT_A, worker_id))
+                route.version += 1
+                db.session.commit()
+            return SimpleNamespace(id=202 if failure == "identity" else 201)
+
+        async def close():
+            """Record cleanup for success and every failed proof."""
+            closed.append(True)
+
+        return SimpleNamespace(get_me=get_me, session=SimpleNamespace(close=close))
+
+    monkeypatch.setattr(pool, "_verified_bot_token", token_for_bot)
+    monkeypatch.setattr(pool, "create_bot", client_for_bot)
+
+    async def scenario():
+        """Keep route and credential transitions in the real disposable database."""
+        nonlocal worker_id
+        worker_id = await _worker(db, "proof-route", ORIGIN_A)
+        route = await pool.assign_route(
+            db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1,
+        )
+        credential = await pool.stage_credential(
+            db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_A, actor_id=1,
+        )
+        expected = {
+            "identity": "bot_identity_mismatch", "network": "relay_probe_failed",
+            "version": "configuration_changed",
+        }[failure]
+        with pytest.raises(security.SecurityRejected, match=expected):
+            await pool.activate_route(
+                db, bot_id=BOT_A, worker_id=worker_id, expected_version=route["version"],
+                credential_version=credential["version"], actor_id=1,
+            )
+        assert db.session.get(ShopBotRelayRoute, (BOT_A, worker_id)).status == "staged"
+        assert db.session.scalar(select(ShopRelayCredential)).state == "staged"
+
+    worker_id = None
+    asyncio.run(scenario())
+    assert closed == [True]

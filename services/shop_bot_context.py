@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
-from models.shop_multibot import LEGACY_BOT_IDS, ShopBot, ShopStore
+from models.shop_multibot import ShopBot, ShopStore
 from services.shop_admin_security import SecurityRejected
 
 
@@ -66,15 +66,12 @@ async def resolve_bot_context(
     if store is None or store.state != "active":
         raise SecurityRejected("store_not_active", 409)
     if not (
-        (bot.status == "legacy" and bot.runtime_owner == "legacy")
-        or (
-            bot.runtime_owner == "registry"
-            and bot.status in (
-                {"active", "paused", "maintenance", "disabled"}
-                if allow_settlement else {"active"}
-            )
-            and bot.credential_version is not None
+        bot.runtime_owner == "registry"
+        and bot.status in (
+            {"active", "paused", "maintenance", "disabled"}
+            if allow_settlement else {"active"}
         )
+        and bot.credential_version is not None
     ):
         raise SecurityRejected("bot_not_active", 409)
     return BotContext(
@@ -87,24 +84,3 @@ async def resolve_bot_context(
         credential_version=bot.credential_version,
         registry_version=bot.version,
     )
-
-
-async def resolve_legacy_bot_context(
-    db: AsyncSession, *, authenticated_platform: Platform,
-) -> BotContext:
-    """Bridge the two old receivers using immutable built-in bot IDs.
-
-    This is an opt-in compatibility helper for later runtime migration;
-    Phase 1 does not wire it into the existing update handlers.
-    """
-    bot_id = LEGACY_BOT_IDS.get(authenticated_platform.value)
-    if bot_id is None:
-        raise SecurityRejected("invalid_bot_platform", 422)
-    result = await resolve_bot_context(
-        db,
-        authenticated_bot_id=bot_id,
-        authenticated_platform=authenticated_platform,
-    )
-    if result.runtime_owner != "legacy":
-        raise SecurityRejected("invalid_bot_runtime", 409)
-    return result

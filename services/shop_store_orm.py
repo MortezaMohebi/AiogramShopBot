@@ -99,7 +99,7 @@ def require_current_store_for_writes(
             continue
         owner = getattr(item, "store_id", None)
         if item in session.new and not owner:
-            # Source models have a legacy default store ID. A new admin
+            # Some source models provide the default Store ID. A new admin
             # record MUST inherit the verified current Store instead.
             item.store_id = ctx.current_store_id
             owner = ctx.current_store_id

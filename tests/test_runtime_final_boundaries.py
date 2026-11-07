@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
-from models.shop_multibot import LEGACY_BOT_IDS
+from tests.schema_support import TEST_BOT_IDS, seed_customer
 from models.shop_workflow_runtime import (
     WorkflowEvent,
     WorkflowInbox,
@@ -159,16 +159,9 @@ async def test_reply_label_round_trip(buyer, monkeypatch, platform):
     """A normalized literal label resolves only an offered current server choice."""
     database, p = buyer
     if platform == "bale":
-        bot_id = LEGACY_BOT_IDS["bale"]
-        database.add(
-            ShopIdentity(
-                store_id=p.store_id,
-                customer_id=p.customer_id,
-                bot_id=bot_id,
-                platform=platform,
-                platform_user_id=101,
-            )
-        )
+        bot_id = TEST_BOT_IDS["bale"]
+        identity = seed_customer(database.session, "bale", 101)
+        identity.customer_id = p.customer_id
         await database.commit()
         bot = await resolve_bot_context(
             database, authenticated_bot_id=bot_id, authenticated_platform=Platform.BALE
@@ -444,7 +437,7 @@ async def test_registry_outcomes_route_distinct_ports_and_next_customer(
         registry = actions()
         monkeypatch.delitem(registry._specs, ("cart.get", "1.0.0"))
     elif failure == "disabled":
-        database.add(ShopBotCommercePolicy(bot_id=p.bot_id, cart_enabled=False))
+        (await database.get(ShopBotCommercePolicy, p.bot_id)).cart_enabled = False
     else:
         job.input = {"unexpected": "private-value"}
     from models.shop_workflow_runtime import RuntimeBinding
@@ -691,7 +684,7 @@ async def test_confirmed_cart_loses_availability_before_proof(
     )
     assert confirmed["status"] == "waiting_action"
 
-    database.add(ShopBotCommercePolicy(bot_id=principal.bot_id, cart_enabled=False))
+    (await database.get(ShopBotCommercePolicy, principal.bot_id)).cart_enabled = False
     await database.commit()
     if expired:
         after_consent = security.clock() + timedelta(minutes=6)

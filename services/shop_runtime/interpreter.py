@@ -388,7 +388,7 @@ class Machine:
         self.status, self.wait, self.action = "cancelled", None, None
         self.emit(
             "منوی فروشگاه" if menu else "فرایند لغو شد.",
-            kind="legacy_menu" if menu else "text",
+            kind="shop_menu" if menu else "text",
             buttons=[],
             notice=True,
         )

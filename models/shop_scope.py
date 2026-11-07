@@ -1,32 +1,39 @@
-"""Reliable defaults for legacy rows during the multi-bot cutover.
+"""Explicit Registry ownership validation for shared commerce records.
 
-Every business row must have a bot-specific owner, not just a Telegram/Bale
-platform name. This default is used only by untouched legacy ORM call sites;
-new multi-bot runtimes must provide bot_id from an authenticated BotContext.
+Transport authentication supplies bot IDs. A platform name or numeric user
+ID is never sufficient to select an owner for customer or financial data.
 """
 
 from __future__ import annotations
 
-from models.shop_multibot import LEGACY_BOT_IDS
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.shop_multibot import ShopBot
 
 
-def legacy_bot_default(context) -> str:
-    """Set a deterministic legacy owner based on the row's platform column.
+def require_bot_id(bot_id: str | None) -> str:
+    """Reject missing or malformed authenticated bot identifiers."""
+    if (
+        not isinstance(bot_id, str) or not bot_id.strip()
+        or bot_id != bot_id.strip()
+    ):
+        raise ValueError("An explicit authenticated bot ID is required.")
+    return bot_id
 
-    SQLAlchemy invokes this Python-side default when an older ORM call site
-    constructs a legacy business record without explicitly passing bot_id.
+
+async def require_registry_bot(
+    session: AsyncSession, bot_id: str | None, platform: str,
+) -> ShopBot:
+    """Validate Registry ownership without blocking receipt reconciliation.
+
+    Active receiver authentication is enforced at the transport boundary.
+    Paused or disabled bots must retain access to their existing settlements.
     """
-    parameters = context.get_current_parameters()
-    platform = parameters.get("platform")
-    try:
-        return LEGACY_BOT_IDS[platform]
-    except (KeyError, TypeError):
-        raise ValueError("A valid bot_id or legacy platform is required") from None
-
-
-def legacy_id(platform: str) -> str:
-    """Return the immutable legacy bot ID for a known provider."""
-    try:
-        return LEGACY_BOT_IDS[platform]
-    except KeyError:
-        raise ValueError("Unsupported legacy platform") from None
+    owner = require_bot_id(bot_id)
+    bot = await session.get(ShopBot, owner)
+    if (
+        bot is None or bot.platform != platform
+        or bot.runtime_owner != "registry"
+    ):
+        raise ValueError("Authenticated bot identity is invalid.")
+    return bot

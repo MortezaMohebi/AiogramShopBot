@@ -63,8 +63,7 @@ async def _preflight(
     ):
         return False
     active = (
-        (bot.status == "legacy" and bot.runtime_owner == "legacy")
-        or (
+        (
             bot.runtime_owner == "registry"
             and (
                 bot.status == "active"

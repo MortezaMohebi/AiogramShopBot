@@ -9,35 +9,8 @@
 import { authorizePool, reserveQuota, releaseQuota } from "./pool-auth.mjs";
 export { RelayQuota } from "./pool-auth.mjs";
 
-const AUTH_HEADER = "x-telegram-relay-key";
 const BOT_API_PATH = /^\/bot[0-9]+:[A-Za-z0-9_-]{20,}\/[A-Za-z][A-Za-z0-9_]*$/;
 const BOT_FILE_PATH = /^\/file\/bot[0-9]+:[A-Za-z0-9_-]{20,}\/.+$/;
-const ENCODER = new TextEncoder();
-
-/**
- * Compare SHA-256 digests in fixed time, without exposing raw secret values.
- *
- * @param {string | null} received - Authentication header supplied by caller.
- * @param {string} expected - Worker secret binding.
- * @returns {Promise<boolean>} True when the shared keys match.
- */
-async function authorized(received, expected) {
-  if (typeof received !== "string" || !received) {
-    return false;
-  }
-  const [first, second] = await Promise.all([
-    crypto.subtle.digest("SHA-256", ENCODER.encode(received)),
-    crypto.subtle.digest("SHA-256", ENCODER.encode(expected)),
-  ]);
-  const a = new Uint8Array(first);
-  const b = new Uint8Array(second);
-  let difference = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    difference |= a[i] ^ b[i];
-  }
-  return difference === 0;
-}
-
 /**
  * Return a generic, never-cacheable error without echoing credentials.
  *
@@ -60,22 +33,13 @@ function reject(status, message) {
  * Forward an authorized Bot API request to Telegram without buffering media.
  *
  * @param {Request} request - Inbound Worker request.
- * @param {{ RELAY_SHARED_SECRET: string }} env - Secret bindings.
+ * @param {object} env - Bot credential registry and mandatory quota bindings.
  * @returns {Promise<Response>} Upstream response or sanitized error.
  */
 async function handleRequest(request, env, ctx) {
-  const poolMode = env && Object.prototype.hasOwnProperty.call(
-    env, "RELAY_CLIENTS_JSON",
-  );
-  if (!poolMode) {
-    // Existing v1 deployment remains compatible until explicit migration.
-    if (!env || typeof env.RELAY_SHARED_SECRET !== "string"
-      || env.RELAY_SHARED_SECRET.length < 32) {
-      return reject(503, "Relay is not configured.");
-    }
-    if (!await authorized(request.headers.get(AUTH_HEADER), env.RELAY_SHARED_SECRET)) {
-      return reject(401, "Unauthorized.");
-    }
+  // The retired shared-key scheme cannot grant any forwarding permission.
+  if (request.headers.has("x-telegram-relay-key")) {
+    return reject(401, "Unauthorized.");
   }
 
   const incoming = new URL(request.url);
@@ -93,18 +57,14 @@ async function handleRequest(request, env, ctx) {
     return reject(405, "Method not allowed.");
   }
 
-  // A v2 Worker must have an authenticated per-bot mapping and a global
-  // Durable Object quota before it can issue ANY Telegram API request.
-  let reservation = null;
-  if (poolMode) {
-    const policy = await authorizePool(request, env, incoming.pathname);
-    if (!policy.ok) {
-      return reject(policy.status, "Relay authentication unavailable.");
-    }
-    reservation = await reserveQuota(env, policy);
-    if (!reservation.ok) {
-      return reject(reservation.status, "Relay quota unavailable.");
-    }
+  // Every request requires exact bot/key/token ownership and a durable quota.
+  const policy = await authorizePool(request, env, incoming.pathname);
+  if (!policy.ok) {
+    return reject(policy.status, "Relay authentication unavailable.");
+  }
+  let reservation = await reserveQuota(env, policy);
+  if (!reservation.ok) {
+    return reject(reservation.status, "Relay quota unavailable.");
   }
 
   // This is the only permitted upstream. The inbound Host and query never
@@ -114,7 +74,7 @@ async function handleRequest(request, env, ctx) {
   // Clone the original body (including multipart boundaries) as a stream.
   const outbound = new Request(upstream.toString(), request);
   for (const name of [
-    AUTH_HEADER,
+    "x-telegram-relay-key",
     "x-relay-bot-id",
     "x-relay-key",
     "x-relay-version",

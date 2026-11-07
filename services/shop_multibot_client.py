@@ -23,17 +23,13 @@ async def provider_client(
     platform: str, token: str, *, bot_id: str | None = None,
 ):
     """Yield one authenticated provider connection and always close it."""
+    if not isinstance(bot_id, str) or not bot_id:
+        raise ValueError("A registered bot ID is required for provider connections.")
     if platform == "telegram":
-        # An enabled pool never downgrades a registered bot to direct egress.
-        # Legacy bots retain their existing deployment-managed transport.
-        if bot_id is not None and config.SHOP_RELAY_POOL_ENABLED:
-            from models.shop_multibot import LEGACY_BOT_IDS
-            if bot_id not in LEGACY_BOT_IDS.values():
-                from services.shop_relay_routing import build_bot_relay_session
+        if config.SHOP_RELAY_POOL_ENABLED:
+            from services.shop_relay_routing import build_bot_relay_session
 
-                transport = await build_bot_relay_session(bot_id)
-            else:
-                transport = AiohttpSession()
+            transport = await build_bot_relay_session(bot_id)
         else:
             transport = AiohttpSession()
         bot = create_bot(token, transport)

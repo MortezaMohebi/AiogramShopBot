@@ -21,6 +21,5 @@ export interface Campaign {
 export interface CampaignBotOptions {
   store_id: string;
   store_name: string;
-  legacy_available: boolean;
   bots: Array<{ id: string; name: string; platform: "telegram" | "bale" }>;
 }

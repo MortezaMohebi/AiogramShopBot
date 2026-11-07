@@ -59,7 +59,7 @@ export interface Publication {
   retired: boolean;
   created_at: string;
 }
-export type EntryKind = "command" | "menu" | "start" | "internal" | "legacy_bridge" | "admin_test";
+export type EntryKind = "command" | "menu" | "start" | "internal" | "admin_test";
 export interface BindingSpec {
   bot_id: string;
   kind: EntryKind;
@@ -68,7 +68,7 @@ export interface BindingSpec {
   priority: number;
   enabled: boolean;
   eligibility: "all" | "existing_customer";
-  fallback: "legacy" | "ignore";
+  fallback: "ignore";
   version_policy: "active_publication";
 }
 export interface Binding extends Omit<BindingSpec, "version_policy"> {

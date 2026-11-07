@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { changeCampaign, reconcileDelivery, deleteCampaignMedia, prepareBaleMedia } from "@/app/(console)/campaigns/actions";
+import { changeCampaign, reconcileDelivery, deleteCampaignMedia } from "@/app/(console)/campaigns/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,11 +33,10 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
   if (!/^\d+$/.test(id)) notFound();
   const staff = await currentStaff();
   if (!["superadmin", "marketing"].includes(staff.role)) notFound();
-  const [campaigns, deliveries, media, capabilities] = await Promise.all([
+  const [campaigns, deliveries, media] = await Promise.all([
     adminFetch<Campaign[]>("/campaigns"),
     adminFetch<Delivery[]>(`/campaigns/${id}/deliveries`),
     adminFetch<{ can_edit: boolean; items: CampaignFile[] }>(`/campaigns/${id}/media`),
-    adminFetch<{bale_prepare_ready: boolean}>("/capabilities"),
   ]);
   const campaign = campaigns.find((item) => item.id === Number(id));
   if (!campaign) notFound();
@@ -52,7 +51,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
           <CardContent className="space-y-4">
             <Badge>{statusLabel(campaign.status)}</Badge>
             <p className="text-sm text-muted-foreground">فروشگاه: {campaign.store_name}</p>
-            <p className="text-sm text-muted-foreground">ربات: {campaign.bot_id ? `${campaign.bot_name ?? "ربات انتخاب‌شده"} (${campaign.bot_platform === "bale" ? "بله" : "تلگرام"})` : "ربات‌های قدیمی فروشگاه"}</p>
+            <p className="text-sm text-muted-foreground">ربات: {campaign.bot_id ? `${campaign.bot_name ?? "ربات انتخاب‌شده"} (${campaign.bot_platform === "bale" ? "بله" : "تلگرام"})` : "ربات در دسترس نیست"}</p>
             <p className="text-sm text-muted-foreground">درخواست‌های پولی رزروشده: {campaign.paid_calls_reserved} از {campaign.max_paid_calls}</p>
             {["approved", "sending", "paused", "needs_review"].includes(campaign.status) ? (
               <form action={changeCampaign} className="space-y-2">
@@ -99,19 +98,6 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
           </CardContent>
         </Card>
       </div>
-      {campaign.bot_id === null && capabilities.bale_prepare_ready && ["draft", "approved"].includes(campaign.status) && media.items.length > 0 ? (
-        <Card className="mt-6">
-          <CardHeader><CardTitle>آماده‌سازی رسانه برای بله</CardTitle></CardHeader>
-          <CardContent>
-            <p className="mb-3 text-sm text-muted-foreground">فایل‌ها به گفت‌وگوی خصوصی مدیر در بله ارسال می‌شوند. این کار کمپین را شروع نمی‌کند. اگر نتیجه نامشخص بود، پیش از تکرار وضعیت را بررسی کنید.</p>
-            <form action={prepareBaleMedia} className="flex flex-wrap items-center gap-3">
-              <input name="campaign_id" type="hidden" value={id} />
-              <Input name="confirmation" aria-label="عبارت تأیید عملیات" dir="ltr" placeholder="PREPARE_BALE_MEDIA" required className="max-w-60 text-xs" />
-              <Button type="submit" variant="secondary">آماده‌سازی فایل‌های بله در چت خصوصی</Button>
-            </form>
-          </CardContent>
-        </Card>
-      ) : null}
       <Card className="mt-6">
         <CardHeader><CardTitle>رسانه‌های کمپین</CardTitle></CardHeader>
         <CardContent className="space-y-4">

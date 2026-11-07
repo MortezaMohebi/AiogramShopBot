@@ -148,7 +148,7 @@ async def save_store_checkout(
             raise security.SecurityRejected("configuration_changed", 409)
         if await db.get(ShopStore, store_id) is None:
             raise security.SecurityRejected("store_not_found", 404)
-        row = ShopStoreCheckoutPolicy(store_id=store_id)
+        row = ShopStoreCheckoutPolicy(store_id=store_id, version=0)
         db.add(row)
     elif row.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
@@ -178,7 +178,7 @@ async def save_bot_checkout(
         if expected_version != 0:
             raise security.SecurityRejected("configuration_changed", 409)
         policy = ShopBotCheckoutPolicy(
-            bot_id=bot.id, store_id=bot.store_id,
+            bot_id=bot.id, store_id=bot.store_id, version=0,
         )
         db.add(policy)
     elif policy.version != expected_version:

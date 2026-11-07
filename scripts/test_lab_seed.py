@@ -12,7 +12,7 @@ import os
 
 from sqlalchemy import select
 
-from scripts.test_lab_app import require_isolated_lab
+from scripts.test_lab_safety import require_isolated_lab
 
 require_isolated_lab()
 
@@ -27,13 +27,25 @@ from models.shop_content import (  # noqa: E402
     ShopCategory,
     ShopIdentity,
     ShopOrder,
-    ShopSettings,
     Testimonial,
 )
 from models.shop_engagement import ShopCampaign  # noqa: E402
 from models.shop_staff import ShopStaff  # noqa: E402
+from models.shop_multibot import DEFAULT_STORE_ID, ShopStore, ShopBot  # noqa: E402
+from models.shop_store_commerce import (  # noqa: E402
+    ShopStoreSettings, ShopStoreCustomer, ShopBotCommercePolicy,
+)
+from models.shop_staff_store import ShopStaffStoreAccess  # noqa: E402
+from models.shop_bot_catalog_acl import ShopBotProductRule  # noqa: E402
+from services.shop_uom import seed_store_units  # noqa: E402
 from services.shop_wallet import ShopWalletService  # noqa: E402
 from utils.utils import hash_password  # noqa: E402
+
+
+LAB_BOT_IDS = {
+    "telegram": "00000000-0000-4000-8000-000000000201",
+    "bale": "00000000-0000-4000-8000-000000000202",
+}
 
 
 async def seed() -> None:
@@ -48,6 +60,27 @@ async def seed() -> None:
         ("labviewer", "viewer", "LAB_VIEWER_PASSWORD"),
     )
     async with session_maker() as session:
+        if await session.get(ShopStore, DEFAULT_STORE_ID) is None:
+            session.add(ShopStore(
+                id=DEFAULT_STORE_ID, slug="default", name="Isolated QA Store",
+                state="active",
+            ))
+            await session.flush()
+        await session.run_sync(lambda sync: seed_store_units(sync, DEFAULT_STORE_ID))
+        for platform, bot_id in LAB_BOT_IDS.items():
+            if await session.get(ShopBot, bot_id) is None:
+                session.add(ShopBot(
+                    id=bot_id, store_id=DEFAULT_STORE_ID,
+                    slug=f"lab-{platform}", name=f"Synthetic QA {platform}",
+                    platform=platform, status="draft", runtime_owner="registry",
+                    version=1,
+                ))
+                await session.flush()
+            if await session.get(ShopBotCommercePolicy, bot_id) is None:
+                session.add(ShopBotCommercePolicy(
+                    bot_id=bot_id, cart_enabled=False, credit_enabled=True,
+                    credit_label="Synthetic QA credit", version=1,
+                ))
         for username, role, password_name in credentials:
             password = os.environ.get(password_name, "")
             if len(password) < 14:
@@ -65,10 +98,23 @@ async def seed() -> None:
                 ))
         await session.flush()
 
-        settings = await session.get(ShopSettings, 1)
+        # Explicit membership preserves StoreContext and role capabilities.
+        for username, role, _password_name in credentials:
+            staff = await session.scalar(select(ShopStaff).where(
+                ShopStaff.username == username,
+            ))
+            key = (staff.id, DEFAULT_STORE_ID)
+            if await session.get(ShopStaffStoreAccess, key) is None:
+                session.add(ShopStaffStoreAccess(
+                    staff_id=staff.id, store_id=DEFAULT_STORE_ID,
+                    access_level="viewer" if role == "viewer" else "manager",
+                    is_active=True, changed_by=staff.id,
+                ))
+
+        settings = await session.get(ShopStoreSettings, DEFAULT_STORE_ID)
         if settings is None:
-            session.add(ShopSettings(
-                id=1,
+            session.add(ShopStoreSettings(
+                store_id=DEFAULT_STORE_ID,
                 brand_name="فروشگاه آزمایشی تلگرام و بله",
                 welcome_message="به محیط تست خوش آمدید؛ این یک خرید واقعی نیست.",
                 faq_text="پرداخت و ارسال واقعی در محیط آزمایشی غیرفعال هستند.",
@@ -76,11 +122,12 @@ async def seed() -> None:
             ))
 
         category = await session.scalar(
-            select(ShopCategory).where(ShopCategory.name == "محصولات نمونه تست")
+            select(ShopCategory).where(ShopCategory.store_id == DEFAULT_STORE_ID,
+                ShopCategory.name == "محصولات نمونه تست")
         )
         if category is None:
             category = ShopCategory(
-                name="محصولات نمونه تست",
+                store_id=DEFAULT_STORE_ID, name="محصولات نمونه تست",
                 position=1,
                 is_published=True,
             )
@@ -94,11 +141,13 @@ async def seed() -> None:
         products: dict[str, Product] = {}
         for sku, name, price, product_type in specs:
             record = await session.scalar(
-                select(Product).where(Product.sku == sku)
+                select(Product).where(
+                    Product.store_id == DEFAULT_STORE_ID, Product.sku == sku
+                )
             )
             if record is None:
                 record = Product(
-                    sku=sku,
+                    store_id=DEFAULT_STORE_ID, sku=sku,
                     category_id=category.id,
                     name=name,
                     description="دادهٔ ساختگی مخصوص تست داشبورد است.",
@@ -114,16 +163,27 @@ async def seed() -> None:
                 await session.flush()
             products[sku] = record
 
+        for bot_id in LAB_BOT_IDS.values():
+            for product in products.values():
+                if await session.get(ShopBotProductRule, (bot_id, product.id)) is None:
+                    session.add(ShopBotProductRule(
+                        bot_id=bot_id, product_id=product.id, effect="allow",
+                    ))
+
         for platform, opted_in in (("telegram", True), ("bale", False)):
             existing = await session.scalar(
                 select(ShopIdentity).where(
-                    ShopIdentity.platform == platform,
+                    ShopIdentity.bot_id == LAB_BOT_IDS[platform],
                     ShopIdentity.platform_user_id == 101001,
                 )
             )
             if existing is None:
+                customer = ShopStoreCustomer(store_id=DEFAULT_STORE_ID)
+                session.add(customer)
+                await session.flush()
                 session.add(ShopIdentity(
-                    platform=platform,
+                    store_id=DEFAULT_STORE_ID, bot_id=LAB_BOT_IDS[platform],
+                    customer_id=customer.id, platform=platform,
                     platform_user_id=101001,
                     username=f"lab_{platform}",
                     first_name="کاربر آزمایشی",
@@ -140,7 +200,7 @@ async def seed() -> None:
         ):
             identity = await session.scalar(
                 select(ShopIdentity).where(
-                    ShopIdentity.platform == platform,
+                    ShopIdentity.bot_id == LAB_BOT_IDS[platform],
                     ShopIdentity.platform_user_id == 101001,
                 )
             )
@@ -155,22 +215,24 @@ async def seed() -> None:
 
         shipping = await session.scalar(
             select(ShopShippingMethod)
-            .where(ShopShippingMethod.name == "ارسال آزمایشی")
+            .where(ShopShippingMethod.store_id == DEFAULT_STORE_ID,
+                   ShopShippingMethod.name == "ارسال آزمایشی")
         )
         if shipping is None:
             session.add(ShopShippingMethod(
-                name="ارسال آزمایشی",
+                store_id=DEFAULT_STORE_ID, name="ارسال آزمایشی",
                 price_irr=120_000,
                 position=1,
                 is_active=True,
             ))
 
         coupon = await session.scalar(
-            select(ShopCoupon).where(ShopCoupon.code == "LABTEST10")
+            select(ShopCoupon).where(ShopCoupon.store_id == DEFAULT_STORE_ID,
+                   ShopCoupon.code == "LABTEST10")
         )
         if coupon is None:
             session.add(ShopCoupon(
-                code="LABTEST10",
+                store_id=DEFAULT_STORE_ID, code="LABTEST10",
                 discount_type="percent",
                 value=10,
                 minimum_subtotal_irr=0,
@@ -181,12 +243,18 @@ async def seed() -> None:
 
         fixture_order = await session.scalar(
             select(ShopOrder).where(
+                ShopOrder.store_id == DEFAULT_STORE_ID,
                 ShopOrder.invoice_payload == "lab-manual-review-fixture"
             )
         )
         if fixture_order is None:
             product = products["LAB-PHYSICAL-001"]
             fixture_order = ShopOrder(
+                store_id=DEFAULT_STORE_ID, bot_id=LAB_BOT_IDS["bale"],
+                customer_id=(await session.scalar(select(ShopIdentity).where(
+                    ShopIdentity.bot_id == LAB_BOT_IDS["bale"],
+                    ShopIdentity.platform_user_id == 101001,
+                ))).customer_id,
                 platform="bale",
                 platform_user_id=101001,
                 chat_id=101001,
@@ -227,10 +295,12 @@ async def seed() -> None:
 
         campaign = await session.scalar(
             select(ShopCampaign)
-            .where(ShopCampaign.title == "کمپین پیش‌نویس آزمایشی")
+            .where(ShopCampaign.store_id == DEFAULT_STORE_ID,
+                   ShopCampaign.title == "کمپین پیش‌نویس آزمایشی")
         )
         if campaign is None:
             session.add(ShopCampaign(
+                store_id=DEFAULT_STORE_ID, bot_id=LAB_BOT_IDS["telegram"],
                 title="کمپین پیش‌نویس آزمایشی",
                 text="ارسال واقعی غیرفعال است.",
                 audience="all",

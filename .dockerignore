@@ -12,6 +12,10 @@ __pycache__/
 .pytest_cache/
 node_modules/
 .next/
+# The API build context also contains the separately built dashboard checkout.
+**/node_modules/
+**/.next*/
+**/.env*
 .git/
 
 # Never bake persisted production / local state into test or runtime images.

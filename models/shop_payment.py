@@ -1,7 +1,7 @@
 """Payment attempts and refund cases shared by Telegram and Bale.
 
 Financial records are append/transition-only. Administrators must not directly
-edit provider identifiers, paid amounts, or payment state through SQLAdmin.
+edit provider identifiers, paid amounts, or payment state directly.
 """
 
 from __future__ import annotations
@@ -20,10 +20,8 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from sqladmin import ModelView
 
 from models.base import Base
-from models.shop_scope import legacy_bot_default
 from models.shop_multibot import DEFAULT_STORE_ID
 
 
@@ -48,7 +46,7 @@ class ShopPaymentAttempt(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     provider: Mapped[str] = mapped_column(String(24), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
@@ -123,45 +121,3 @@ class ShopRefundCase(Base):
             name="ck_shop_refund_case_status",
         ),
     )
-
-
-class ShopPaymentAttemptAdmin(ModelView, model=ShopPaymentAttempt):
-    """Read-only provider invoice ledger with no money-changing controls."""
-
-    name = "تلاش پرداخت"
-    name_plural = "تلاش‌های پرداخت"
-    category = "مالی"
-    icon = "fa-solid fa-credit-card"
-    column_list = [
-        ShopPaymentAttempt.order_id,
-        ShopPaymentAttempt.platform,
-        ShopPaymentAttempt.provider,
-        ShopPaymentAttempt.currency,
-        ShopPaymentAttempt.amount,
-        ShopPaymentAttempt.status,
-        ShopPaymentAttempt.created_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
-
-
-class ShopRefundCaseAdmin(ModelView, model=ShopRefundCase):
-    """Track refund investigations; direct paid-state edits are forbidden."""
-
-    name = "پرونده بازپرداخت"
-    name_plural = "پرونده‌های بازپرداخت"
-    category = "مالی"
-    icon = "fa-solid fa-rotate-left"
-    column_list = [
-        ShopRefundCase.order_id,
-        ShopRefundCase.status,
-        ShopRefundCase.reason,
-        ShopRefundCase.created_at,
-        ShopRefundCase.resolved_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False

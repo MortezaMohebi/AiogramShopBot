@@ -149,6 +149,9 @@ async def probe() -> int:
 
     for path, status in status_codes.items():
         print(f"{'PASS' if status == 200 else 'FAIL'}  GET {path}: HTTP {status}")
+    if any(code == 428 for code in status_codes.values()):
+        print("Protected dashboard reads are gated: complete MFA enrollment in the private dashboard, then retry.")
+        return 1
     if any(code != 200 for code in status_codes.values()):
         print("Inspect app logs for the failing route; secrets were not printed.")
         return 1

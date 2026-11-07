@@ -11,7 +11,7 @@ function safeFailure(error: unknown): never {
   if (error.status === 401) redirect("/login?expired=1");
   if (error.status === 428) redirect("/stores?error=reauth");
   const allowed = new Set([
-    "configuration_changed", "legacy_credit_requires_reconciliation",
+    "configuration_changed", "identity_credit_requires_reconciliation",
     "invalid_store_sharing_policy", "invalid_credentials",
     "invalid_verification", "permission_denied",
   ]);

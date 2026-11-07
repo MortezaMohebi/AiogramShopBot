@@ -21,7 +21,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from models.shop_multibot import (
-    ENV_TOKEN_KEYS,
     ShopBot,
     ShopBotCredential,
     ShopBotRegistryEvent,
@@ -132,16 +131,12 @@ def stage_bot_token(
     bot = db.scalar(select(ShopBot).where(ShopBot.id == bot_id).with_for_update())
     if bot is None:
         raise SecurityRejected("bot_not_found", 404)
-    if bot.runtime_owner == "legacy":
-        raise SecurityRejected("legacy_bot_credential_locked", 409)
+    if bot.runtime_owner != "registry":
+        raise SecurityRejected("invalid_bot_runtime", 409)
     if bot.status != "draft":
         raise SecurityRejected("bot_credential_stage_requires_draft", 409)
     ciphertext = encrypt_for_bot(bot.id, bot.platform, token)
     fingerprint = fingerprint_token(bot.platform, token)
-    # A draft must never silently reuse the active legacy bot identity.
-    previous_env = os.environ.get(ENV_TOKEN_KEYS[bot.platform], "")
-    if previous_env and hmac.compare_digest(token, previous_env):
-        raise SecurityRejected("duplicate_bot_credential", 409)
     duplicate = db.scalar(select(ShopBotCredential.id).where(
         ShopBotCredential.token_fingerprint == fingerprint,
         ShopBotCredential.state.in_(("staged", "active")),
@@ -212,13 +207,8 @@ def resolve_active_token(db: Session, *, bot_id: str) -> str:
     """
     bot = db.get(ShopBot, bot_id)
     if bot is None or not (
-        (bot.runtime_owner == "legacy" and bot.status == "legacy")
-        or (
-            bot.runtime_owner == "registry"
-            and bot.status in {
-                "active", "paused", "maintenance", "disabled",
-            }
-        )
+        bot.runtime_owner == "registry"
+        and bot.status in {"active", "paused", "maintenance", "disabled"}
     ):
         raise SecurityRejected("bot_not_active", 409)
     if bot.credential_version is None:
@@ -230,16 +220,6 @@ def resolve_active_token(db: Session, *, bot_id: str) -> str:
     ))
     if row is None:
         raise SecurityRejected("bot_credential_missing", 409)
-    if row.source == "environment":
-        if (
-            bot.runtime_owner != "legacy"
-            or row.environment_key != ENV_TOKEN_KEYS.get(bot.platform)
-        ):
-            raise SecurityRejected("bot_secret_binding_mismatch", 409)
-        token = os.environ.get(row.environment_key, "")
-        if not _valid_token(token, bot.platform):
-            raise SecurityRejected("bot_secret_unavailable", 503)
-        return token
     if row.source != "encrypted" or not row.ciphertext:
         raise SecurityRejected("bot_secret_unavailable", 503)
     return decrypt_for_bot(bot.id, bot.platform, row.ciphertext)
@@ -255,7 +235,7 @@ def credential_status(db: Session, *, bot_id: str) -> list[dict]:
         "source": row.source,
         "state": row.state,
         "created_at": row.created_at.isoformat() if row.created_at else None,
-        "has_secret": bool(row.ciphertext or row.environment_key),
+        "has_secret": bool(row.ciphertext),
         "verified_at": (
             row.verified_at.isoformat() if row.verified_at else None
         ),

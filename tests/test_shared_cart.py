@@ -3,7 +3,10 @@
 No platform tokens, network, real payments or production DB are involved.
 """
 
-from tests.schema_support import create_shop_schema, seed_test_units
+from tests.schema_support import (
+    create_shop_schema, seed_test_units, seed_registry, TEST_BOT_IDS,
+    test_bot_context, allow_test_catalog, seed_customer,
+)
 
 import re
 
@@ -21,9 +24,8 @@ from models.shop_checkout import (
 from models.shop_content import Product, ShopCategory, ShopOrder
 from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_channel_features import ShopChannelFeature
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+    DEFAULT_STORE_ID, ShopBot, ShopStore,
 )
 from models.shop_staff import ShopStaff
 from services.shop_cart import ShopCartFlow, validate_coupon
@@ -90,14 +92,7 @@ def db():
             id=DEFAULT_STORE_ID, slug="default",
             name="Existing Store", state="active",
         ))
-        session.add_all([
-            ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID,
-                slug=f"legacy-{platform}", name=f"Legacy {platform}",
-                platform=platform, status="legacy", runtime_owner="legacy",
-                version=1, credential_version=1,
-            ) for platform, bot_id in LEGACY_BOT_IDS.items()
-        ])
+        seed_registry(session)
         session.commit()
         from models.shop_checkout_policy import ShopStoreCheckoutPolicy
         session.add(ShopStoreCheckoutPolicy(
@@ -106,6 +101,9 @@ def db():
         ))
         session.commit()
         seed_test_units(session)
+        seed_customer(session, Platform.TELEGRAM, 101)
+        seed_customer(session, Platform.BALE, 101)
+        session.commit()
         yield AsyncDatabase(session)
     engine.dispose()
 
@@ -137,6 +135,7 @@ def seed(db):
             minimum_subtotal_irr=0, is_active=True,
         ),
     ])
+    allow_test_catalog(db.session)
     db.session.commit()
     return first, second
 
@@ -146,7 +145,7 @@ def seed(db):
 async def test_cart_quote_shipping_coupon_and_order_are_common(db, platform):
     """Verify the same price, line snapshots and callback semantics for both."""
     first, second = seed(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(platform))
     await flow.reply(event(platform, callback=f"shop:add:{first.id}"), db)
     await flow.reply(event(platform, callback=f"shop:add:{first.id}"), db)
     await flow.reply(event(platform, callback=f"shop:add:{second.id}"), db)
@@ -192,9 +191,11 @@ async def test_cart_quote_shipping_coupon_and_order_are_common(db, platform):
 async def test_platform_identifiers_do_not_share_a_cart(db):
     """The same integer ID in Telegram and Bale is not one customer."""
     first, _ = seed(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     await flow.reply(event(Platform.BALE, callback=f"shop:add:{first.id}"), db)
-    telegram = await flow.reply(event(Platform.TELEGRAM, callback="shop:cart"), db)
+    telegram = await ShopCartFlow(
+        bot_context=test_bot_context(Platform.TELEGRAM),
+    ).reply(event(Platform.TELEGRAM, callback="shop:cart"), db)
     assert telegram.text == "سبد خرید خالی است."
     assert len(db.session.scalars(select(ShopCart)).all()) == 1
 
@@ -203,7 +204,7 @@ async def test_platform_identifiers_do_not_share_a_cart(db):
 async def test_out_of_stock_can_still_be_removed(db):
     """Stale stock must not make a customer's cart impossible to repair."""
     first, _ = seed(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     await flow.reply(event(Platform.BALE, callback=f"shop:add:{first.id}"), db)
     first.stock_quantity = 0
     db.session.commit()
@@ -219,7 +220,7 @@ async def test_out_of_stock_can_still_be_removed(db):
 async def test_address_and_shipping_are_required_for_physical_goods(db):
     """Never silently omit physical delivery information from order requests."""
     first, _ = seed(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.TELEGRAM))
     await flow.reply(event(Platform.TELEGRAM, callback=f"shop:add:{first.id}"), db)
     result = await flow.reply(
         event(Platform.TELEGRAM, callback="shop:checkout"), db
@@ -241,7 +242,7 @@ def test_percent_coupon_never_creates_zero_rial_invoice(db):
 async def test_order_history_and_cancellation_require_matching_platform(db):
     """Only the original Bale user can cancel an unpaid Bale request."""
     first, _ = seed(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     await flow.reply(event(Platform.BALE, callback=f"shop:add:{first.id}"), db)
     await flow.reply(event(Platform.BALE, callback="shop:address"), db)
     await flow.reply(
@@ -254,16 +255,14 @@ async def test_order_history_and_cancellation_require_matching_platform(db):
     place_callback = confirmation.rows[0][0].callback_data
     await flow.reply(event(Platform.BALE, callback=place_callback), db)
     order = db.session.scalars(select(ShopOrder)).one()
-    history = ShopOrdersFlow()
-    response = await history.reply(
-        event(Platform.BALE, callback="shop:orders"), db
-    )
+    history = ShopOrdersFlow(bot_context=test_bot_context(Platform.BALE))
+    response = await history.reply(event(Platform.BALE, callback="shop:orders"), db)
     assert "1 کالا" in response.text
     assert "در انتظار بررسی" in response.text
     cancellation = f"shop:cancelorder:{order.id}"
-    rejected = await history.reply(
-        event(Platform.TELEGRAM, callback=cancellation), db
-    )
+    rejected = await ShopOrdersFlow(
+        bot_context=test_bot_context(Platform.TELEGRAM),
+    ).reply(event(Platform.TELEGRAM, callback=cancellation), db)
     assert "یافت نشد" in rejected.text
     allowed = await history.reply(
         event(Platform.BALE, callback=cancellation), db
@@ -283,7 +282,7 @@ async def test_order_history_and_cancellation_require_matching_platform(db):
 async def test_coupon_expiry_has_recovery_action(db):
     """An invalidated coupon must remain removable without a developer."""
     first, _ = seed(db)
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.TELEGRAM))
     await flow.reply(event(Platform.TELEGRAM, callback=f"shop:add:{first.id}"), db)
     await flow.reply(event(Platform.TELEGRAM, callback="shop:coupon"), db)
     await flow.reply(event(Platform.TELEGRAM, text="SAVE10"), db)

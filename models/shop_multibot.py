@@ -1,8 +1,8 @@
-"""Non-destructive Store and Bot Registry for the future multi-bot runtime.
+"""Store-owned Bot Registry for authenticated multi-bot execution.
 
-The existing Telegram and Bale tables remain unchanged. Legacy bots are
-represented by deterministic identifiers but continue using the legacy runtime
-until a separately reviewed migration switches their dispatcher and payments.
+Historical ownership/status values remain representable so existing modern
+orders and customer records retain valid foreign keys during retirement.
+New bots and credentials are created explicitly by registry services.
 """
 
 from __future__ import annotations
@@ -29,23 +29,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base
 
 
-# Fixed names allow a repeatable, idempotent reconciliation of legacy rows.
+# The initial Store has a stable identity across idempotent initialization.
 DEFAULT_STORE_ID = str(uuid5(NAMESPACE_URL, "aiogramshopbot:store:default:v1"))
-LEGACY_TELEGRAM_BOT_ID = str(
-    uuid5(NAMESPACE_URL, "aiogramshopbot:bot:legacy:telegram:v1")
-)
-LEGACY_BALE_BOT_ID = str(
-    uuid5(NAMESPACE_URL, "aiogramshopbot:bot:legacy:bale:v1")
-)
-LEGACY_BOT_IDS = {
-    "telegram": LEGACY_TELEGRAM_BOT_ID,
-    "bale": LEGACY_BALE_BOT_ID,
-}
-ENV_TOKEN_KEYS = {"telegram": "TOKEN", "bale": "BALE_BOT_TOKEN"}
+
 
 
 class ShopStore(Base):
-    """One centrally managed shop, initially backed by the existing catalog."""
+    """One centrally managed Store owning catalog and customer records."""
 
     __tablename__ = "shop_stores"
 
@@ -89,7 +79,7 @@ class ShopBot(Base):
     status: Mapped[str] = mapped_column(
         String(18), nullable=False, default="draft", server_default="draft",
     )
-    # A legacy bot is registered but NOT yet handled by the new dispatcher.
+    # Historical ownership remains representable for existing foreign keys.
     runtime_owner: Mapped[str] = mapped_column(
         String(12), nullable=False, default="registry",
         server_default="registry",

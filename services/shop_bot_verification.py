@@ -1,7 +1,6 @@
 """Prove bot ownership using provider getMe without activating any receiver.
 
-A verification uses only the bot-specific staged secret or the already-bound
-legacy deployment credential. It never registers webhooks, sends messages,
+A verification uses only the bot-specific encrypted staged secret. It never registers webhooks, sends messages,
 fetches updates, starts polling, or returns a token to the dashboard.
 """
 
@@ -16,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.shop_bot_profile import ShopBotProfile
 from models.shop_multibot import (
     ShopBot,
     ShopBotCredential,
@@ -39,9 +37,10 @@ async def provider_get_me(
 ) -> ProviderBotIdentity:
     """Query a provider once, with a hard timeout and no message side effects."""
     if platform == "telegram":
-        from utils.telegram import create_bot, create_telegram_session
+        from aiogram.client.session.aiohttp import AiohttpSession
+        from utils.telegram import create_bot
 
-        session = create_telegram_session()
+        session = AiohttpSession()
         try:
             bot = create_bot(token, session)
             identity = await asyncio.wait_for(bot.get_me(), timeout=12)
@@ -71,17 +70,9 @@ async def provider_get_me(
 
 def _get_token(db, bot: ShopBot, credential: ShopBotCredential) -> str:
     """Resolve the exact selected version, never an arbitrary client secret."""
-    if bot.runtime_owner == "legacy":
-        if (
-            bot.status != "legacy"
-            or credential.source != "environment"
-            or credential.state != "active"
-            or credential.version != bot.credential_version
-        ):
-            raise security.SecurityRejected("invalid_credential_state", 409)
-        return vault.resolve_active_token(db, bot_id=bot.id)
     if (
-        bot.status != "draft" or credential.source != "encrypted"
+        bot.runtime_owner != "registry" or bot.status != "draft"
+        or credential.source != "encrypted"
         or credential.state != "staged" or not credential.ciphertext
     ):
         raise security.SecurityRejected("invalid_credential_state", 409)
@@ -116,13 +107,12 @@ async def verify_bot(
     ))
     if selected is None:
         raise security.SecurityRejected("invalid_credential_state", 409)
-    if bot.runtime_owner != "legacy":
-        latest = await db.scalar(select(ShopBotCredential.version).where(
-            ShopBotCredential.bot_id == bot.id,
-            ShopBotCredential.state == "staged",
-        ).order_by(ShopBotCredential.version.desc()).limit(1))
-        if latest != credential_version:
-            raise security.SecurityRejected("invalid_credential_state", 409)
+    latest = await db.scalar(select(ShopBotCredential.version).where(
+        ShopBotCredential.bot_id == bot.id,
+        ShopBotCredential.state == "staged",
+    ).order_by(ShopBotCredential.version.desc()).limit(1))
+    if latest != credential_version:
+        raise security.SecurityRejected("invalid_credential_state", 409)
 
     token = await db.run_sync(
         lambda sync: _get_token(sync, bot, selected)
@@ -168,7 +158,7 @@ async def verify_bot(
         or latest_credential.version != credential_version
     ):
         raise security.SecurityRejected("configuration_changed", 409)
-    if locked.runtime_owner != "legacy" and (
+    if locked.runtime_owner != "registry" or (
         latest_credential.state != "staged" or locked.status != "draft"
     ):
         raise security.SecurityRejected("invalid_credential_state", 409)
@@ -183,20 +173,6 @@ async def verify_bot(
     ).limit(1))
     if conflict is not None:
         raise security.SecurityRejected("duplicate_provider_bot", 409)
-
-    if locked.runtime_owner == "legacy":
-        # Preserve the metadata consumed by the original dual-bot dashboard.
-        profile = await db.scalar(select(ShopBotProfile).where(
-            ShopBotProfile.platform == locked.platform,
-        ).with_for_update())
-        if profile is not None:
-            if profile.provider_bot_id is not None and (
-                profile.provider_bot_id != identity.bot_id
-            ):
-                raise security.SecurityRejected("bot_identity_mismatch", 409)
-            profile.provider_bot_id = identity.bot_id
-            profile.provider_username = identity.username
-            profile.verified_at = security.clock()
 
     locked.provider_bot_id = identity.bot_id
     locked.provider_username = identity.username

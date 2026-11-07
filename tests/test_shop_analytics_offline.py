@@ -17,6 +17,7 @@ from models.shop_engagement import (
 )
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from services.shop_analytics import build_shop_analytics
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
 
 
 class AsyncSessionAdapter:
@@ -39,23 +40,10 @@ class AsyncSessionAdapter:
 def database():
     """Initialize all tables needed by the isolated analytics queries."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ShopCategory.__table__,
-            Product.__table__,
-            ShopIdentity.__table__,
-            ShopOrder.__table__,
-            ShopOrderLine.__table__,
-            ShopPaymentAttempt.__table__,
-            ShopRefundCase.__table__,
-            ShopWalletAccount.__table__,
-            ShopWalletEntry.__table__,
-            ShopCampaign.__table__,
-            ShopCampaignDelivery.__table__,
-        ],
-    )
+    create_shop_schema(engine)
     with Session(engine) as session:
+        seed_registry(session)
+        session.commit()
         yield AsyncSessionAdapter(session)
     engine.dispose()
 
@@ -65,6 +53,7 @@ def paid_order(database, *, platform, provider, total_irr, amount, currency):
     session = database.session
     product = session.query(Product).first()
     order = ShopOrder(
+        bot_id=TEST_BOT_IDS[platform],
         platform=platform,
         platform_user_id=100 if platform == "telegram" else 200,
         chat_id=100 if platform == "telegram" else 200,
@@ -93,6 +82,7 @@ def paid_order(database, *, platform, provider, total_irr, amount, currency):
     )
     session.add(
         ShopPaymentAttempt(
+            bot_id=TEST_BOT_IDS[platform],
             order_id=order.id,
             platform=platform,
             provider=provider,
@@ -114,9 +104,9 @@ async def test_report_keeps_rials_store_credit_and_stars_separate(database):
         price=1500, stock_quantity=20, is_published=True,
     ))
     db.add_all([
-        ShopIdentity(platform="bale", platform_user_id=200,
+        ShopIdentity(bot_id=TEST_BOT_IDS["bale"], platform="bale", platform_user_id=200,
                      allow_announcements=True, is_blocked=False),
-        ShopIdentity(platform="telegram", platform_user_id=100,
+        ShopIdentity(bot_id=TEST_BOT_IDS["telegram"], platform="telegram", platform_user_id=100,
                      allow_announcements=False, is_blocked=False),
     ])
     db.commit()

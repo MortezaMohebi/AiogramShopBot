@@ -8,7 +8,7 @@ from sqlalchemy import select
 from channels.contracts import Platform
 from models.shop_customer_notifications import ShopCustomerNotificationOutbox
 from models.shop_multibot import DEFAULT_STORE_ID
-from services.shop_bot_context import resolve_legacy_bot_context
+from services.shop_bot_context import resolve_bot_context
 from services.shop_customer_notifications import (
     claim_outbox_message,
     enqueue_notification,
@@ -19,6 +19,7 @@ from services.shop_customer_notifications import (
 from services.shop_customer_notification_dispatch import deliver_once
 from services.shop_identity import register_customer
 from tests.test_shared_cart import db, seed
+from tests.schema_support import TEST_BOT_IDS
 
 
 @pytest.mark.asyncio
@@ -28,11 +29,15 @@ async def test_first_nine_stock_subscriptions_queue_once(db, platform):
     product, _ = seed(db)
     product.stock_quantity = 0
     db.session.commit()
-    context = await resolve_legacy_bot_context(
-        db, authenticated_platform=platform,
+    context = await resolve_bot_context(
+        db, authenticated_bot_id=TEST_BOT_IDS[platform.value],
+        authenticated_platform=platform,
     )
     for user_id in range(101, 110):
-        await register_customer(db, platform=platform, platform_user_id=user_id)
+        await register_customer(
+            db, bot_id=TEST_BOT_IDS[platform.value],
+            platform=platform, platform_user_id=user_id,
+        )
         await toggle_stock_alert(
             db, context=context, user_id=user_id, product_id=product.id,
         )
@@ -61,10 +66,12 @@ async def test_first_nine_stock_subscriptions_queue_once(db, platform):
 async def test_invalid_outbox_keys_do_not_enqueue(db, event_key):
     """Opaque event references must remain bounded printable identifiers."""
     await register_customer(
-        db, platform=Platform.TELEGRAM, platform_user_id=101,
+        db, bot_id=TEST_BOT_IDS["telegram"],
+        platform=Platform.TELEGRAM, platform_user_id=101,
     )
-    context = await resolve_legacy_bot_context(
-        db, authenticated_platform=Platform.TELEGRAM,
+    context = await resolve_bot_context(
+        db, authenticated_bot_id=TEST_BOT_IDS["telegram"],
+        authenticated_platform=Platform.TELEGRAM,
     )
     assert not await enqueue_notification(
         db, context=context, user_id=101, topic="order",
@@ -93,8 +100,14 @@ async def queued_stock(db, platform):
     product, _ = seed(db)
     product.stock_quantity = 0
     db.session.commit()
-    context = await resolve_legacy_bot_context(db, authenticated_platform=platform)
-    await register_customer(db, platform=platform, platform_user_id=101)
+    context = await resolve_bot_context(
+        db, authenticated_bot_id=TEST_BOT_IDS[platform.value],
+        authenticated_platform=platform,
+    )
+    await register_customer(
+        db, bot_id=TEST_BOT_IDS[platform.value],
+        platform=platform, platform_user_id=101,
+    )
     await toggle_stock_alert(db, context=context, user_id=101, product_id=product.id)
     product.stock_quantity = 2
     db.session.commit()

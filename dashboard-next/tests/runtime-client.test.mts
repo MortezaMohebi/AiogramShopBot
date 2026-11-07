@@ -112,7 +112,7 @@ test("a fresh Store gate receipt must echo its exact Store, flags and next versi
  assert.deepEqual(await client(async()=>Response.json(body)).runtimeRequest("/gates","POST",payload,{scopeKey:`store:${targetId}`}),body);
 });
 test("publication preview binds saved revision, selected edits and retained pointers",async()=>{
- const entry={bot_id:targetId,kind:"command",key:"apply",node_id:"start",priority:0,enabled:true,eligibility:"all",fallback:"legacy",version_policy:"active_publication"};
+ const entry={bot_id:targetId,kind:"command",key:"apply",node_id:"start",priority:0,enabled:true,eligibility:"all",fallback:"ignore",version_policy:"active_publication"};
  const retained={id:otherId,bot_id:targetId,kind:"command",key:"old",node_id:"old_start",publication_id:otherId,version:1,enabled:true};
  const payload={workflow_id:targetId,revision:4,bindings:[entry]};
  const body={preview_id:previewId,expires_at:"2099-01-01T00:00:00Z",ready:true,issues:[],dependencies:[],mutating_nodes:[],platforms:["telegram"],diff:{previous_revision:1,next_revision:4,definition_changed:true,previous_bindings:[retained],next_bindings:[entry],unchanged_bindings:[retained],retains_unselected_bindings:true}};
@@ -123,7 +123,7 @@ test("publication preview binds saved revision, selected edits and retained poin
  for(const comparisons of [[],[comparison,comparison],[{...comparison,key:"old"}],[{...comparison,previous_publication_id:otherId,previous_revision:1}],[{...comparison,definition_changed:false}]]) {
    await assert.rejects(client(async()=>Response.json({...grouped,diff:{...grouped.diff,binding_comparisons:comparisons}})).runtimeRequest("/publications/preview","POST",payload));
  }
- for(const patch of [{next_revision:5},{next_bindings:[{...entry,bot_id:otherId}]},{unchanged_bindings:[]},{retains_unselected_bindings:false},...(["priority","enabled","eligibility","fallback","version_policy"] as const).map(key=>({next_bindings:[{...entry,[key]:null}]}))])await assert.rejects(client(async()=>Response.json({...body,diff:{...body.diff,...patch}})).runtimeRequest("/publications/preview","POST",payload),(error:unknown)=>(error as {status:number}).status===0);
+ for(const patch of [{next_bindings:[{...entry,fallback:"legacy"}]},{next_bindings:[{...entry,kind:"legacy_bridge"}]},{next_revision:5},{next_bindings:[{...entry,bot_id:otherId}]},{unchanged_bindings:[]},{retains_unselected_bindings:false},...(["priority","enabled","eligibility","fallback","version_policy"] as const).map(key=>({next_bindings:[{...entry,[key]:null}]}))])await assert.rejects(client(async()=>Response.json({...body,diff:{...body.diff,...patch}})).runtimeRequest("/publications/preview","POST",payload),(error:unknown)=>(error as {status:number}).status===0);
 });
 test("approved and retry receipts cannot claim an unexpected execution or delivery state",async()=>{
  for(const spec of [mutationCases[3],mutationCases[4]])await assert.rejects(client(async()=>Response.json({...spec.receipt,status:"succeeded"})).runtimeRequest(spec.path,"POST",spec.payload),(error:unknown)=>(error as {status:number}).status===0);

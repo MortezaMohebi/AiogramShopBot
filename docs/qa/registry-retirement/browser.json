@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Authenticated production Bots page renders without Legacy bots",
+    "New bot defaults to current Store B while default Store A is inactive",
+    "Actual Store selection Server Action succeeds through Codespaces forwarded headers",
+    "Inert Registry draft is created in the current Store through real signed API",
+    "Draft settings refresh works without Legacy controls or provider activation",
+    "Registry list shows the owned draft after navigation",
+    "Bots RTL light 390px",
+    "Bots RTL light 1440px",
+    "Bots RTL dark 390px",
+    "Bots RTL dark 1440px",
+    "Zero console/runtime/failed HTTP responses"
+  ],
+  "errors": [],
+  "responses": []
+}

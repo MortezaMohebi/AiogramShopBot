@@ -6,7 +6,7 @@ SKIP LOCKED and clock_timestamp() concurrency still require final PostgreSQL QA.
 
 from __future__ import annotations
 
-import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -16,24 +16,25 @@ from sqlalchemy.orm import Session
 import config
 import db
 from channels.contracts import BotReply, Platform
-from models.base import Base
 from models.shop_content import ShopIdentity
-from models.shop_customer_crm import ShopCustomerProfile
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
-    DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore,
+    DEFAULT_STORE_ID, ShopBot, ShopBotCredential,
 )
-from models.shop_staff import ShopStaff
-from models.shop_engagement import (
-    ShopBroadcastRateSlot, ShopBroadcastWorkerHeartbeat,
-    ShopCampaign, ShopCampaignAudit, ShopCampaignDelivery, ShopCampaignMedia,
-)
+from models.shop_multibot_receiver import ShopBotReceiver
+from models.shop_engagement import ShopCampaign, ShopCampaignDelivery
 from services.shop_broadcast_control import (
     BroadcastControl, delivery_counts,
 )
 from services.shop_broadcast_rate import channel_rate, slot_intervals
-from services.shop_broadcast_worker import BroadcastWorker
+from services.shop_broadcast_worker import BroadcastWorker, CampaignTransport
 from services.shop_campaigns import CampaignRejected, ShopCampaignService
+from tests.schema_support import TEST_BOT_IDS, create_shop_schema, seed_registry
+
+TEST_TOKENS = {
+    "telegram": "200001:" + "A" * 32,
+    "bale": "200002:" + "B" * 32,
+}
 
 
 class AsyncSQLite:
@@ -55,6 +56,10 @@ class AsyncSQLite:
         """Load a row by its primary key."""
         return self.session.get(model, key)
 
+    async def run_sync(self, operation):
+        """Resolve an encrypted credential on the same isolated connection."""
+        return operation(self.session)
+
     async def flush(self):
         """Flush the pending transaction."""
         self.session.flush()
@@ -72,22 +77,27 @@ class AsyncSQLite:
         self.session.add(record)
 
 
-class RecordingTelegram:
-    """Fake outbound transport with a valid Telegram bot token."""
+class RecordingTransport:
+    """Record a registered bot transport without opening provider clients."""
 
-    def __init__(self, session: AsyncSQLite) -> None:
+    def __init__(
+        self, session: AsyncSQLite, *, platform: str = "telegram",
+        bale_mode: str = "standard",
+    ) -> None:
         """Store calls and allow a test hook to pause the campaign."""
-        self.bot = type(
-            "FakeBot", (), {"token": "123456:AAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
-        )()
+        self.bot_id = TEST_BOT_IDS[platform]
+        self.platform = Platform(platform)
+        self.bale_mode = bale_mode
+        self.messages: list[tuple[int, str]] = []
         self.sent: list[int] = []
         self.session = session
         self.pause_campaign: int | None = None
         self.fail_for: int | None = None
 
     async def send(self, chat_id: int, reply: BotReply) -> None:
-        """Simulate a Telegram text send with no external network."""
+        """Record one scoped provider request without external network."""
         self.sent.append(chat_id)
+        self.messages.append((chat_id, reply.text))
         if self.fail_for == chat_id:
             raise TimeoutError("Uncertain Bot API result")
         if self.pause_campaign is not None:
@@ -98,8 +108,29 @@ class RecordingTelegram:
             self.pause_campaign = None
 
     async def send_media(self, chat_id: int, attachment) -> None:
-        """Record a media send as another non-network Telegram message."""
+        """Record one scoped media request without external network."""
         self.sent.append(chat_id)
+
+
+def transport_factory(transport: RecordingTransport):
+    """Supply only the exact registered bot selected by the durable claim."""
+
+    @asynccontextmanager
+    async def factory(claim):
+        """Assert claim ownership before returning the fake provider."""
+        assert claim.bot_id == transport.bot_id
+        assert claim.platform == transport.platform
+        assert claim.credential_version == 1
+        assert claim.bale_mode == transport.bale_mode
+        yield CampaignTransport(
+            bot_id=claim.bot_id,
+            platform=claim.platform,
+            credential_version=claim.credential_version,
+            token=TEST_TOKENS[claim.platform.value],
+            transport=transport,
+        )
+
+    return factory
 
 
 @pytest.fixture
@@ -108,40 +139,37 @@ def context(monkeypatch):
     monkeypatch.setattr(config, "SHOP_CAMPAIGN_DISPATCH_ENABLED", True)
     monkeypatch.setattr(config, "SHOP_BROADCAST_WORKER_ENABLED", True)
     monkeypatch.setattr(
-        config, "TOKEN", "123456:AAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        config, "SHOP_BROADCAST_REGISTRY_ENABLED", True, raising=False
     )
-    monkeypatch.setattr(config, "BALE_BOT_TOKEN", None)
+    monkeypatch.setenv(
+        "SHOP_BOT_SECRET_KEY", "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+    )
+    from services.shop_bot_secrets import encrypt_for_bot
+
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    tables = [
-        ShopStaff.__table__, ShopStore.__table__, ShopBot.__table__,
-        ShopBotOperations.__table__,
-        ShopIdentity.__table__, ShopCampaign.__table__,
-        ShopCustomerProfile.__table__,
-        ShopCampaignDelivery.__table__, ShopCampaignMedia.__table__,
-        ShopCampaignAudit.__table__,
-        ShopBroadcastRateSlot.__table__,
-        ShopBroadcastWorkerHeartbeat.__table__,
-    ]
-    Base.metadata.create_all(engine, tables=tables)
+    create_shop_schema(engine)
     with Session(engine, expire_on_commit=False) as session:
-        session.add(ShopStore(
-            id=DEFAULT_STORE_ID, slug="default",
-            name="Existing shop", state="active",
-        ))
-        session.add_all([
-            ShopBot(
-                id=bot_id, store_id=DEFAULT_STORE_ID,
-                slug=f"legacy-{platform}", name=f"Legacy {platform}",
-                platform=platform, status="legacy", runtime_owner="legacy",
-                version=1, credential_version=1,
-            ) for platform, bot_id in LEGACY_BOT_IDS.items()
-        ])
-        session.add_all([
-            ShopBotOperations(
-                bot_id=bot_id, desired_state="active",
-                environment="staging",
-            ) for bot_id in LEGACY_BOT_IDS.values()
-        ])
+        seed_registry(session)
+        for index, (platform, bot_id) in enumerate(TEST_BOT_IDS.items(), start=1):
+            bot = session.get(ShopBot, bot_id)
+            bot.provider_bot_id = 200000 + index
+            session.add_all([
+                ShopBotCredential(
+                    id=f"credential-{platform}", bot_id=bot_id, version=1,
+                    source="encrypted", state="active",
+                    ciphertext=encrypt_for_bot(
+                        bot_id, platform, TEST_TOKENS[platform]
+                    ),
+                    verified_bot_id=bot.provider_bot_id,
+                ),
+                ShopBotOperations(bot_id=bot_id, desired_state="active"),
+                ShopBotReceiver(
+                    bot_id=bot_id, binding_id=f"receiver-{platform}",
+                    mode="webhook", state="active", credential_version=1,
+                    webhook_secret_ciphertext="unused",
+                    webhook_secret_digest="a" * 64,
+                ),
+            ])
         session.commit()
         adapter = AsyncSQLite(session)
 
@@ -177,11 +205,13 @@ def make_campaign(db_session: AsyncSQLite, total: int) -> ShopCampaign:
     for user_id in range(1, total + 1):
         db_session.session.add(
             ShopIdentity(
+                bot_id=TEST_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
                 platform="telegram", platform_user_id=user_id,
                 is_blocked=False, allow_announcements=True,
             )
         )
     campaign = ShopCampaign(
+        bot_id=TEST_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
         title="فروشگاه", text="اطلاعیه", audience="telegram",
         status="draft",
     )
@@ -202,8 +232,10 @@ async def test_worker_continues_past_ten_recipients_without_manager_clicks(conte
         context, campaign_id=campaign.id,
         actor="staff:1", bale_mode="standard",
     )
-    transport = RecordingTelegram(context)
-    worker = BroadcastWorker(telegram=transport, bale_session=None)
+    transport = RecordingTransport(context)
+    worker = BroadcastWorker(
+        registry_transport_factory=transport_factory(transport)
+    )
     for _ in range(27):
         assert await worker.process_next() is True
     await worker.finalize_campaigns()
@@ -224,8 +256,10 @@ async def test_pause_resume_and_cancel_are_durable(context):
     await BroadcastControl.start(
         context, campaign_id=campaign.id, actor="staff:2"
     )
-    transport = RecordingTelegram(context)
-    worker = BroadcastWorker(telegram=transport, bale_session=None)
+    transport = RecordingTransport(context)
+    worker = BroadcastWorker(
+        registry_transport_factory=transport_factory(transport)
+    )
     transport.pause_campaign = campaign.id
     assert await worker.process_next() is True
     assert campaign.status == "paused"
@@ -259,9 +293,11 @@ async def test_timeout_pauses_and_never_retries_the_uncertain_recipient(context)
     await BroadcastControl.start(
         context, campaign_id=campaign.id, actor="staff:1"
     )
-    transport = RecordingTelegram(context)
+    transport = RecordingTransport(context)
     transport.fail_for = 1
-    worker = BroadcastWorker(telegram=transport, bale_session=None)
+    worker = BroadcastWorker(
+        registry_transport_factory=transport_factory(transport)
+    )
     assert await worker.process_next() is True
     assert campaign.status == "paused"
     states = await delivery_counts(context, campaign.id)
@@ -269,7 +305,9 @@ async def test_timeout_pauses_and_never_retries_the_uncertain_recipient(context)
     assert states.get("queued") == 2
 
     # The old worker's ID is not used to retry a possibly delivered update.
-    newer_worker = BroadcastWorker(telegram=transport, bale_session=None)
+    newer_worker = BroadcastWorker(
+        registry_transport_factory=transport_factory(transport)
+    )
     assert await newer_worker.process_next() is False
     first = context.session.scalars(
         select(ShopCampaignDelivery)
@@ -332,16 +370,17 @@ async def test_paid_bale_budget_requires_explicit_worst_case_approval(
     context, monkeypatch
 ):
     """Business API cannot start with an unbounded or unapproved call budget."""
-    monkeypatch.setattr(config, "BALE_BOT_TOKEN", "123456:BBBBBBBBBBBBBBBBBBBBBBBBBBBB")
     monkeypatch.setattr(config, "BALE_BROADCAST_MODE", "business")
     monkeypatch.setattr(config, "BALE_BROADCAST_PAID_ENABLED", True)
     monkeypatch.setattr(config, "SHOP_BROADCAST_MAX_PAID_CALLS", 4)
     customer = ShopIdentity(
+        bot_id=TEST_BOT_IDS["bale"], store_id=DEFAULT_STORE_ID,
         platform="bale", platform_user_id=301,
         is_blocked=False, allow_announcements=True,
     )
     context.session.add(customer)
     campaign = ShopCampaign(
+        bot_id=TEST_BOT_IDS["bale"], store_id=DEFAULT_STORE_ID,
         title="بله", text="اطلاعیه بله", audience="bale", status="draft",
     )
     context.session.add(campaign)
@@ -379,8 +418,10 @@ async def test_opt_out_after_approval_is_rechecked_before_dispatch(context):
     first_identity.allow_announcements = False
     context.session.commit()
 
-    recorder = RecordingTelegram(context)
-    worker = BroadcastWorker(telegram=recorder, bale_session=None)
+    recorder = RecordingTransport(context)
+    worker = BroadcastWorker(
+        registry_transport_factory=transport_factory(recorder)
+    )
     assert await worker.process_next() is True
     assert await worker.process_next() is True
     await worker.finalize_campaigns()
@@ -394,17 +435,16 @@ async def test_business_api_reserves_exactly_one_paid_call_per_message(
     context, monkeypatch
 ):
     """An approved cost ceiling cannot be exceeded by replaying a queue row."""
-    monkeypatch.setattr(
-        config, "BALE_BOT_TOKEN", "123456:BBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-    )
     monkeypatch.setattr(config, "BALE_BROADCAST_MODE", "business")
     monkeypatch.setattr(config, "BALE_BROADCAST_PAID_ENABLED", True)
     monkeypatch.setattr(config, "SHOP_BROADCAST_MAX_PAID_CALLS", 1)
     identity = ShopIdentity(
+        bot_id=TEST_BOT_IDS["bale"], store_id=DEFAULT_STORE_ID,
         platform="bale", platform_user_id=904,
         is_blocked=False, allow_announcements=True,
     )
     campaign = ShopCampaign(
+        bot_id=TEST_BOT_IDS["bale"], store_id=DEFAULT_STORE_ID,
         title="خبر", text="یک پیام", audience="bale", status="draft"
     )
     context.session.add_all([identity, campaign])
@@ -417,28 +457,18 @@ async def test_business_api_reserves_exactly_one_paid_call_per_message(
         bale_mode="business", approved_paid_calls=1,
     )
 
-    calls = []
-
-    class FakeBale:
-        """Replace the paid transport with an offline recording object."""
-
-        def __init__(self, _token, _session, *, business_mode):
-            """Record that the paid endpoint has been explicitly selected."""
-            assert business_mode is True
-
-        async def send(self, user_id, reply):
-            """Record a single simulated billable request."""
-            calls.append((user_id, reply.text))
-
-    monkeypatch.setattr(
-        "services.shop_broadcast_worker.BaleTransport", FakeBale
+    transport = RecordingTransport(
+        context, platform="bale", bale_mode="business"
     )
-    worker = BroadcastWorker(telegram=None, bale_session=object())
+    worker = BroadcastWorker(
+        registry_transport_factory=transport_factory(transport)
+    )
     assert await worker.process_next() is True
     await worker.finalize_campaigns()
     assert campaign.status == "completed"
     assert campaign.paid_calls_reserved == 1
     assert campaign.max_paid_calls == 1
-    assert calls == [(904, "یک پیام")]
+    assert transport.sent == [904]
+    assert transport.messages == [(904, "یک پیام")]
     assert await worker.process_next() is False
     assert campaign.paid_calls_reserved == 1

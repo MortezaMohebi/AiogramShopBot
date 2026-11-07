@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # فاز ۲: داشبورد فارسی، محتوای پویا و کیف پول بله
 
 **وضعیت:** کد در شاخه Draft PR ثبت شده است؛ **اجرا، Migration، تست عملیاتی و دیباگ به درخواست صاحب پروژه برای مرحله آخر موکول شده‌اند**. هر مورد `coded` در این گزارش فقط به معنی وجود پیاده‌سازی در مخزن است، نه PASS.

@@ -2,7 +2,7 @@
 
 New registry bots must own an explicit enabled PaymentAccount. Their Provider
 Token is decrypted only on the backend; no shared platform-wide token fallback
-is permitted. Legacy payments preserve their existing deployment credentials.
+is permitted.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import Platform
-from models.shop_multibot import LEGACY_BOT_IDS, ShopBot
+from models.shop_multibot import ShopBot
+from models.shop_scope import require_bot_id
 from services.shop_payment_accounts import decrypt_provider_token
 from services.shop_payment_rails import payment_account, rail_enabled
 from services.shop_payments import InvoicePlan, PaymentRejected, ShopPaymentService
@@ -33,33 +34,25 @@ async def send_order_invoice(
     bale_transport: BaleTransport | None = None,
 ) -> InvoicePlan:
     """Send exactly one authorized invoice; never retry an uncertain result."""
-    owner = bot_id or LEGACY_BOT_IDS[platform.value]
+    owner = require_bot_id(bot_id)
     bot = await session.get(ShopBot, owner)
-    if bot is None or bot.platform != platform.value:
+    if bot is None or bot.platform != platform.value or bot.runtime_owner != "registry":
         raise PaymentRejected("هویت بات پرداخت معتبر نیست.")
-    registered = bot.runtime_owner == "registry"
     account_ids: dict[str, str] = {}
-    bale_token = config.BALE_WALLET_PROVIDER_TOKEN
-    fiat_token = config.TELEGRAM_FIAT_PROVIDER_TOKEN
-
-    if registered:
-        # Never borrow a provider token from another bot of the same platform.
-        bale_token = ""
-        fiat_token = ""
-        for rail_type in (
-            ("bale_wallet",) if platform == Platform.BALE else
-            ("telegram_fiat", "telegram_stars")
-        ):
-            account = await payment_account(
-                session, bot_id=owner, rail_type=rail_type,
-            )
-            if account is None:
-                continue
-            account_ids[rail_type] = account.id
-            if rail_type == "bale_wallet":
-                bale_token = decrypt_provider_token(account)
-            elif rail_type == "telegram_fiat":
-                fiat_token = decrypt_provider_token(account)
+    bale_token = ""
+    fiat_token = ""
+    for rail_type in (
+        ("bale_wallet",) if platform == Platform.BALE else
+        ("telegram_fiat", "telegram_stars")
+    ):
+        account = await payment_account(session, bot_id=owner, rail_type=rail_type)
+        if account is None:
+            continue
+        account_ids[rail_type] = account.id
+        if rail_type == "bale_wallet":
+            bale_token = decrypt_provider_token(account)
+        elif rail_type == "telegram_fiat":
+            fiat_token = decrypt_provider_token(account)
 
     if platform == Platform.BALE:
         if bale_transport is None or not bale_token:
@@ -67,11 +60,6 @@ async def send_order_invoice(
     elif platform == Platform.TELEGRAM:
         if telegram_bot is None:
             raise PaymentRejected("اتصال پرداخت تلگرام در دسترس نیست.")
-        if (
-            config.TELEGRAM_FIAT_CHECKOUT_ENABLED
-            and not registered and not fiat_token
-        ):
-            raise PaymentRejected("توکن درگاه ریالی تلگرام ثبت نشده است.")
     else:
         raise PaymentRejected("پیام‌رسان پشتیبانی نمی‌شود.")
 

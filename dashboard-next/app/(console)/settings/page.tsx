@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { saveChannelFeatures, savePaymentRails, saveReferralPolicy } from "@/app/(console)/settings/actions";
+import { saveReferralPolicy } from "@/app/(console)/settings/actions";
 import { ShopSettingsForm } from "@/components/blocks/shop-settings-form";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
@@ -10,18 +10,14 @@ import { adminFetch, currentStaff, optionalStoreRead } from "@/lib/bridge";
 import type { ShopSettings } from "@/lib/types";
 
 type Params = Promise<{ saved?: string; error?: string }>;
-type ChannelFeature = { platform: "telegram" | "bale"; cart_enabled: boolean; store_credit_enabled: boolean; store_credit_label: string };
-type PaymentRail = { platform: "telegram" | "bale"; rail_type: string; display_name: string; enabled: boolean; configured: boolean; runtime_ready: boolean; effective_enabled: boolean };
 
 /** Admin-controlled brand, welcome, help and FAQ, shared by both bots. */
 export default async function SettingsPage({ searchParams }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
-  const [settings, policy, channels, paymentRails, params] = await Promise.all([
+  const [settings, policy, params] = await Promise.all([
     adminFetch<ShopSettings>("/settings"),
     optionalStoreRead<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
-    optionalStoreRead<{ items: ChannelFeature[] }>("/channel-features"),
-    optionalStoreRead<{ items: PaymentRail[] }>("/payment-rails"),
     searchParams,
   ]);
   return (
@@ -35,62 +31,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
           <ShopSettingsForm initial={settings} />
         </CardContent>
       </Card>
-      {channels ? <Card className="mt-6 max-w-4xl">
-        <CardHeader>
-          <CardTitle>قابلیت‌های تلگرام و بله</CardTitle>
-          <CardDescription>سبد خرید و اعتبار داخلی برای هر پیام‌رسان مستقل است. غیرفعال‌سازی سوابق خرید، موجودی یا دفتر مالی را پاک نمی‌کند.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-4 text-xs leading-7 text-muted-foreground">برای تغییر این گزینه‌ها، در <Link href="/account" className="font-medium underline">حساب من</Link> هویت خود را مجدداً تأیید کنید. «اعتبار داخلی» با Bale Wallet و Telegram Stars تفاوت دارد.</p>
-          <form action={saveChannelFeatures} className="space-y-5">
-            {channels.items.map((channel) => <fieldset key={channel.platform} className="space-y-3 rounded-lg border p-4">
-              <legend className="px-2 font-semibold">{channel.platform === "telegram" ? "تلگرام" : "بله"}</legend>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name={`${channel.platform}_cart_enabled`} defaultChecked={channel.cart_enabled} className="size-4 accent-primary" />
-                سبد خرید و ثبت سفارش جدید فعال باشد
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name={`${channel.platform}_store_credit_enabled`} defaultChecked={channel.store_credit_enabled} className="size-4 accent-primary" />
-                اعتبار داخلی فروشگاه و پرداخت با اعتبار فعال باشد
-              </label>
-              <label className="block space-y-2 text-sm">عنوان اعتبار داخلی در این پیام‌رسان
-                <Input name={`${channel.platform}_store_credit_label`} defaultValue={channel.store_credit_label} maxLength={80} required />
-              </label>
-            </fieldset>)}
-            <Button type="submit">ذخیره قابلیت‌های پیام‌رسان‌ها</Button>
-          </form>
-        </CardContent>
-      </Card> : null}
-      {paymentRails ? <Card className="mt-6 max-w-4xl">
-        <CardHeader>
-          <CardTitle>روش‌های پرداخت</CardTitle>
-
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-xs leading-7 text-muted-foreground">
-            برای استفاده از هر روش پرداخت، تنظیمات اتصال آن نیز باید تکمیل شده باشد.
-          </p>
-          <form action={savePaymentRails} className="space-y-5">
-            {(["telegram", "bale"] as const).map((platform) => <fieldset key={platform} className="space-y-3 rounded-xl border p-4">
-              <legend className="px-2 font-semibold">{platform === "telegram" ? "تلگرام" : "بله"}</legend>
-              {paymentRails.items.filter(item => item.platform === platform).map(item => <div key={item.rail_type} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                <label className="space-y-1 text-sm">نام روش پرداخت ({item.rail_type})
-                  <Input name={`${platform}_${item.rail_type}_name`} defaultValue={item.display_name} maxLength={80} required />
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name={`${platform}_${item.rail_type}_enabled`} defaultChecked={item.enabled} className="size-4 accent-primary" />
-                  فعال
-                </label>
-                <p className="text-xs text-muted-foreground md:col-span-2">
-                  {item.runtime_ready ? (item.effective_enabled ? "قابل استفاده با پیکربندی فعلی" : "در تنظیمات غیرفعال است") :
-                    "اتصال این روش پرداخت آماده نیست؛ تنظیمات آن در سرور باید تکمیل شود."}
-                </p>
-              </div>)}
-            </fieldset>)}
-            <Button type="submit">ذخیره روش‌های پرداخت</Button>
-          </form>
-        </CardContent>
-      </Card> : null}
       {policy ? <Card className="mt-6 max-w-4xl">
         <CardHeader><CardTitle>پاداش معرفی مشتری</CardTitle><CardDescription>پاداش خرید اول از اعتبار داخلی فروشگاه تأمین می‌شود؛ هیچ موجودی بله یا رمز ارز تغییر نمی‌کند.</CardDescription></CardHeader>
         <CardContent>
@@ -112,13 +52,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
           </form>
         </CardContent>
       </Card> : null}
-      {(!channels || !paymentRails || !policy) ? <Card className="mt-6 max-w-4xl">
+      {<Card className="mt-6 max-w-4xl">
         <CardHeader><CardTitle>تنظیمات ربات و پرداخت</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           <Button asChild variant="outline"><Link href="/bots">تنظیمات ربات‌ها</Link></Button>
           <Button asChild variant="outline"><Link href="/payment-accounts">حساب‌های پرداخت</Link></Button>
         </CardContent>
-      </Card> : null}
+      </Card>}
     </div>
   );
 }

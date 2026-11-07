@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from tests.schema_support import test_bot_context
 from channels.contracts import Platform
 from models.shop_content import ShopOrder
 from models.shop_digital_delivery import ShopDigitalLicense
@@ -32,7 +33,7 @@ async def test_bale_mixed_preview_requires_two_separate_orders(db):
     physical.requires_shipping = False
     digital_supply(db, digital)
     await db.commit()
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     for product in (physical, digital):
         await flow.reply(event(Platform.BALE, callback=f"shop:add:{product.id}"), db)
     preview = await flow.reply(event(Platform.BALE, callback="shop:checkout"), db)
@@ -50,7 +51,7 @@ async def test_bale_old_confirmation_rechecks_a_now_mixed_cart(db):
     physical, changed = seed(db)
     physical.requires_shipping = changed.requires_shipping = False
     await db.commit()
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     for product in (physical, changed):
         await flow.reply(event(Platform.BALE, callback=f"shop:add:{product.id}"), db)
     preview = await flow.reply(event(Platform.BALE, callback="shop:checkout"), db)
@@ -75,7 +76,7 @@ async def test_bale_uniform_baskets_still_allow_explicit_checkout(db, digital):
         if digital:
             digital_supply(db, product)
     await db.commit()
-    flow = ShopCartFlow()
+    flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     for product in products:
         await flow.reply(event(Platform.BALE, callback=f"shop:add:{product.id}"), db)
     preview = await flow.reply(event(Platform.BALE, callback="shop:checkout"), db)

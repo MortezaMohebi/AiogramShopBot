@@ -156,7 +156,7 @@ async def revoke_bot_credential(
     bot_id: UUID, payload: CredentialRevoke,
     staff: Staff, db: Db,
 ) -> dict:
-    """Revoke only a staged credential; preserve active legacy credentials."""
+    """Revoke only a staged credential; preserve active credentials."""
     actor = require(staff, "bots.configure")
     await db.run_sync(lambda sync: vault.revoke_staged_token(
         sync, bot_id=str(bot_id), version=payload.version,

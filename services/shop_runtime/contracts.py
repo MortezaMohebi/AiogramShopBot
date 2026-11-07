@@ -63,13 +63,13 @@ class BindingSpec(StrictModel):
     """One exact Bot entry point, with no executable eligibility expression."""
 
     bot_id: str
-    kind: Literal["command", "menu", "start", "internal", "legacy_bridge", "admin_test"]
+    kind: Literal["command", "menu", "start", "internal", "admin_test"]
     key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
     node_id: str = Field(min_length=1, max_length=64)
     priority: int = Field(default=0, ge=0, le=100)
     enabled: bool = True
     eligibility: Literal["all", "existing_customer"] = "all"
-    fallback: Literal["legacy", "ignore"] = "legacy"
+    fallback: Literal["ignore"] = "ignore"
     version_policy: Literal["active_publication"] = "active_publication"
 
     @model_validator(mode="after")
@@ -77,7 +77,7 @@ class BindingSpec(StrictModel):
         """Reject malformed Bot IDs and entries reserved for financial commerce."""
         UUID(self.bot_id)
         if self.kind == "command" and self.key in RESERVED_COMMANDS:
-            raise ValueError("runtime_legacy_command_reserved")
+            raise ValueError("runtime_commerce_command_reserved")
         return self
 
 

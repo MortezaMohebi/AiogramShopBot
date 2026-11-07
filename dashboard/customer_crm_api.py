@@ -16,10 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import String, and_, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.next_api import database, signed_staff
+from dashboard.next_api import admin_store_context, database, signed_staff
 from models.shop_content import ShopIdentity, ShopOrder
-from models.shop_store_commerce import ShopStoreCustomer
-from models.shop_customer_links import ShopCustomerIdentityLink
+from models.shop_store_commerce import (
+    ShopStoreCustomer, ShopStoreCustomerLinkEvent,
+)
 from models.shop_customer_crm import (
     ShopCustomerAudit,
     ShopCustomerConsentEvent,
@@ -179,27 +180,47 @@ async def customer_case(
     require(actor)
     if not 1 <= customer_id:
         raise security.SecurityRejected("invalid_request", 422)
-    identity = await db.get(ShopIdentity, customer_id)
+    scope = admin_store_context()
+    identity = await db.scalar(select(ShopIdentity).where(
+        ShopIdentity.id == customer_id,
+        ShopIdentity.store_id.in_(scope.active_store_ids),
+    ))
     if identity is None:
         raise security.SecurityRejected("customer_not_found", 404)
     profile = await db.get(ShopCustomerProfile, identity.id)
-    linked = await db.scalar(select(ShopCustomerIdentityLink).where(or_(
-        ShopCustomerIdentityLink.source_id == identity.id,
-        ShopCustomerIdentityLink.target_id == identity.id,
-    )))
-    linked_peer = None
-    if linked:
-        peer_id = (
-            linked.target_id if linked.source_id == identity.id
-            else linked.source_id
-        )
-        linked_peer = await db.get(ShopIdentity, peer_id)
-    # An equal platform_user_id on a different bot is NOT the same person.
-    # Only identities linked by proven StoreCustomer ownership may share CRM.
+    store_customer = None
+    if identity.customer_id is not None:
+        store_customer = await db.scalar(select(ShopStoreCustomer).where(
+            ShopStoreCustomer.id == identity.customer_id,
+            ShopStoreCustomer.store_id == identity.store_id,
+        ))
+        if store_customer is None:
+            raise security.SecurityRejected("customer_not_found", 404)
+    # Canonical same-Store ownership is the identity link authority. Equal
+    # platform IDs and the retired pairwise link table confer no access.
     members = (await db.scalars(select(ShopIdentity).where(
-        ShopIdentity.customer_id == identity.customer_id,
+        ShopIdentity.customer_id == store_customer.id,
         ShopIdentity.store_id == identity.store_id,
-    ).order_by(ShopIdentity.id))).all() if identity.customer_id else [identity]
+    ).order_by(ShopIdentity.id))).all() if store_customer else [identity]
+    linked_peer = next((
+        item for item in members if item.platform != identity.platform
+    ), None)
+    linked_at = None
+    if linked_peer is not None:
+        linked_at = await db.scalar(select(ShopStoreCustomerLinkEvent.linked_at).where(
+            ShopStoreCustomerLinkEvent.store_id == identity.store_id,
+            ShopStoreCustomerLinkEvent.customer_id == store_customer.id,
+            or_(
+                and_(
+                    ShopStoreCustomerLinkEvent.source_identity_id == identity.id,
+                    ShopStoreCustomerLinkEvent.target_identity_id == linked_peer.id,
+                ),
+                and_(
+                    ShopStoreCustomerLinkEvent.target_identity_id == identity.id,
+                    ShopStoreCustomerLinkEvent.source_identity_id == linked_peer.id,
+                ),
+            ),
+        ).order_by(ShopStoreCustomerLinkEvent.linked_at.desc()).limit(1))
     order_owners = [and_(
         ShopOrder.bot_id == item.bot_id,
         ShopOrder.platform == item.platform,
@@ -209,10 +230,6 @@ async def customer_case(
         ShopOrder.store_id == identity.store_id,
         or_(*order_owners),
     ).order_by(ShopOrder.id.desc()).limit(50))).all()
-    store_customer = (
-        await db.get(ShopStoreCustomer, identity.customer_id)
-        if identity.customer_id is not None else None
-    )
     notes = (await db.scalars(select(ShopCustomerNote).where(
         ShopCustomerNote.identity_id == identity.id,
     ).order_by(ShopCustomerNote.id.desc()).limit(100))).all()
@@ -246,7 +263,7 @@ async def customer_case(
         "verified_other_platform": ({
             "id": linked_peer.id, "platform": linked_peer.platform,
             "user_id": str(linked_peer.platform_user_id),
-            "approved_at": safe_time(linked.approved_at),
+            "approved_at": safe_time(linked_at),
         } if linked_peer else None),
         "wallet_balance_irr": str(wallet.balance_irr) if wallet else "0",
         "orders": [{

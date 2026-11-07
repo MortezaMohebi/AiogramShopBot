@@ -180,14 +180,27 @@ async def test_worker_telegram_media_cache_uses_registered_bot_id(
     monkeypatch.setattr(config, "SHOP_RELAY_POOL_ENABLED", False)
     monkeypatch.setattr(config, "SHOP_MEDIA_ROOT", str(tmp_path))
     provider = TelegramSession()
-    monkeypatch.setattr(worker, "create_telegram_session", lambda: provider)
     monkeypatch.setattr(
         worker, "resolve_active_token", lambda session, *, bot_id: FAKE_TOKEN,
     )
 
+    @asynccontextmanager
+    async def provider_client(platform, token, *, bot_id):
+        """Exercise real Telegram media logic through the exact registered bot."""
+        assert platform == "telegram" and token == FAKE_TOKEN
+        assert bot_id == expected_bot_id
+        client = create_bot(token, provider)
+        try:
+            yield client
+        finally:
+            await client.session.close()
+
+    monkeypatch.setattr("services.shop_multibot_client.provider_client", provider_client)
+
     key = "a" * 32 + ".pdf"
     (tmp_path / key).write_bytes(b"%PDF-1.4 test media")
     store_id, bot_id = str(uuid4()), str(uuid4())
+    expected_bot_id = bot_id
     engine = create_engine("sqlite+pysqlite:///:memory:")
     create_shop_schema(engine)
     with Session(engine, expire_on_commit=False) as session:

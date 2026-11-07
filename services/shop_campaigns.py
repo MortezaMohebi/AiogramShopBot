@@ -19,7 +19,7 @@ from models.shop_engagement import (
     ShopCampaignDelivery,
     ShopCampaignMedia,
 )
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot, ShopStore
+from models.shop_multibot import ShopBot, ShopStore
 from services.shop_customer_access import customer_access_clause
 
 
@@ -106,40 +106,26 @@ class ShopCampaignService:
             ShopIdentity.allow_announcements.is_(True),
             customer_access_clause(),
         ]
-        if campaign.bot_id is not None:
-            bot = await session.get(ShopBot, campaign.bot_id)
-            if (
-                bot is None
-                or bot.runtime_owner != "registry"
-                or bot.status != "active"
-                or bot.store_id != campaign.store_id
-                or campaign.audience not in ("all", bot.platform)
-            ):
-                raise CampaignRejected("بات مقصد فعال نیست یا کانال کمپین نامعتبر است.")
-            store = await session.get(ShopStore, bot.store_id)
-            if store is None or store.state != "active":
-                raise CampaignRejected("فروشگاه مقصد فعال نیست.")
-            clause.extend(
-                (
-                    ShopIdentity.bot_id == bot.id,
-                    ShopIdentity.platform == bot.platform,
-                )
+        if not campaign.bot_id:
+            raise CampaignRejected("بات مقصد کمپین را انتخاب کنید.")
+        bot = await session.get(ShopBot, campaign.bot_id)
+        if (
+            bot is None
+            or bot.runtime_owner != "registry"
+            or bot.status != "active"
+            or bot.store_id != campaign.store_id
+            or campaign.audience not in ("all", bot.platform)
+        ):
+            raise CampaignRejected("بات مقصد فعال نیست یا کانال کمپین نامعتبر است.")
+        store = await session.get(ShopStore, bot.store_id)
+        if store is None or store.state != "active":
+            raise CampaignRejected("فروشگاه مقصد فعال نیست.")
+        clause.extend(
+            (
+                ShopIdentity.bot_id == bot.id,
+                ShopIdentity.platform == bot.platform,
             )
-        else:
-            # An old cross-provider campaign must NEVER consume the opt-ins
-            # of newly registered bots and deliver via legacy credentials.
-            if campaign.store_id != DEFAULT_STORE_ID:
-                raise CampaignRejected("بات مقصد کمپین را انتخاب کنید.")
-            clause.append(
-                (
-                    (ShopIdentity.platform == "telegram")
-                    & (ShopIdentity.bot_id == LEGACY_BOT_IDS["telegram"])
-                )
-                | (
-                    (ShopIdentity.platform == "bale")
-                    & (ShopIdentity.bot_id == LEGACY_BOT_IDS["bale"])
-                )
-            )
+        )
         if campaign.audience != "all":
             clause.append(ShopIdentity.platform == campaign.audience)
         stmt = insert(ShopCampaignDelivery).from_select(

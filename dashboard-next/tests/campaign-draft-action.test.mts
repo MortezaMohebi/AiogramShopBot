@@ -62,18 +62,8 @@ test("a Registry choice carries its explicit bot identity into the signed API", 
   }]);
 });
 
-for (const audience of ["all", "telegram", "bale"]) {
-  test(`an explicit legacy ${audience} choice preserves its bounded platform audience`, async () => {
-    const action = fixture();
-    await assert.rejects(action.createCampaign(form(`legacy:${audience}`)), redirectsTo("/campaigns?saved=1"));
-    assert.deepEqual(action.writes[0]?.data, {
-      title: "عنوان", text: "متن اعلان", bot_id: null, audience,
-    });
-  });
-}
-
-for (const target of [undefined, "", "legacy:unknown", "not-a-bot"]) {
-  test(`an invalid or absent target ${JSON.stringify(target)} cannot become a legacy draft`, async () => {
+for (const target of [undefined, "", "legacy:all", "legacy:telegram", "legacy:bale", "legacy:unknown", "not-a-bot"]) {
+  test(`an invalid or absent target ${JSON.stringify(target)} cannot become a campaign draft`, async () => {
     const action = fixture();
     await assert.rejects(action.createCampaign(form(target)), redirectsTo("/campaigns?error=create"));
     assert.equal(action.writes.length, 0);

@@ -29,7 +29,6 @@ function MfaFields() {
 
 /** Every new registered bot requires explicit merchant feature permission. */
 export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
-  const isRegistry = bot.runtime_owner === "registry";
   return <Card>
     <CardHeader><CardTitle>مجوزهای فروش و حساب‌های پرداخت این ربات</CardTitle></CardHeader>
     <CardContent className="space-y-6 text-sm">
@@ -45,7 +44,7 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
             <select name="cart_enabled"
               defaultValue={policy.cart_enabled === null ? "inherit" : String(policy.cart_enabled)}
               className="block h-10 w-full rounded-md border bg-background px-3">
-              <option value="inherit">{isRegistry ? "بدون تنظیم — غیرفعال" : "استفاده از تنظیمات اتصال قدیمی"}</option>
+              <option value="inherit">بدون تنظیم — غیرفعال</option>
               <option value="true">فعال</option>
               <option value="false">غیرفعال</option>
             </select>
@@ -54,7 +53,7 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
             <select name="credit_enabled"
               defaultValue={policy.credit_enabled === null ? "inherit" : String(policy.credit_enabled)}
               className="block h-10 w-full rounded-md border bg-background px-3">
-              <option value="inherit">{isRegistry ? "بدون تنظیم — غیرفعال" : "استفاده از تنظیمات اتصال قدیمی"}</option>
+              <option value="inherit">بدون تنظیم — غیرفعال</option>
               <option value="true">فعال</option>
               <option value="false">غیرفعال</option>
             </select>
@@ -75,13 +74,10 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
             <Link href="/payment-accounts">افزودن حساب پرداخت</Link>
           </Button>
         </div>
-        {!isRegistry ? <p className="text-muted-foreground">
-          روش‌های پرداخت ربات قدیمی در تنظیمات اتصال مدیریت می‌شوند. Token فعال آن به‌صورت خودکار منتقل نمی‌شود.
-        </p> : null}
-        {isRegistry && !paymentAccounts.items.length ? <p className="rounded-lg border p-3 text-muted-foreground">
+        {!paymentAccounts.items.length ? <p className="rounded-lg border p-3 text-muted-foreground">
           حساب پرداختی برای این فروشگاه و پیام‌رسان ثبت نشده است. ابتدا حساب پرداخت اضافه کنید.
         </p> : null}
-        {isRegistry && paymentAccounts.items.map(account => <form
+        {paymentAccounts.items.map(account => <form
           key={account.id} action={setBotPaymentAccess}
           className="space-y-3 rounded-lg border p-4">
           <input type="hidden" name="bot_id" value={bot.id} />

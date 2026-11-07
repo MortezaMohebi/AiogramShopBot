@@ -76,10 +76,10 @@ def classify_schema(
 
 async def bootstrap_schema() -> None:
     """Create all model tables atomically, or verify an existing complete set."""
-    # db.py imports every legacy and shared-shop model into Base.metadata.
+    # db.py registers only the Store-owned application schema.
     from db import engine, verify_codespace_schema
     from models.base import Base
-    from services.shop_multibot_bootstrap import adopt_legacy_codespace
+    from services.shop_multibot_bootstrap import ensure_default_store
 
     expected_tables = set(Base.metadata.tables)
 
@@ -132,9 +132,8 @@ async def bootstrap_schema() -> None:
 
         # Verify every expected ORM table and column before committing DDL.
         await verify_codespace_schema(connection)
-        # The compatibility entrypoint performs the same append-only adoption
-        # as scripts.security_bootstrap; neither requires a fresh/reset DB.
-        await adopt_legacy_codespace(connection)
+        # Store initialization is idempotent and creates no bots.
+        await ensure_default_store(connection)
 
 
 async def create_admin() -> None:
@@ -175,7 +174,7 @@ async def main() -> None:
     # Running this older module must never demand a volume reset just because
     # a later feature introduces additional model tables or nullable columns.
     await additive_bootstrap()
-    print("Codespaces schema and additive bot registry verified.")
+    print("Codespaces schema and Store registry verified.")
 
 
 if __name__ == "__main__":

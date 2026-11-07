@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import ShopCart, ShopCartInputSession
 from models.shop_customer_navigation import ShopCustomerChatState
-from services.shop_bot_context import BotContext, resolve_legacy_bot_context
+from services.shop_bot_context import BotContext
 from services import shop_customer_search as search
 
 
@@ -150,9 +150,7 @@ class CustomerExperienceFlow:
             if self.bot_context.platform != platform:
                 raise ValueError("Bot/provider mismatch.")
             return self.bot_context
-        return await resolve_legacy_bot_context(
-            db, authenticated_platform=platform,
-        )
+        raise ValueError("An authenticated bot context is required.")
 
     async def reply(
         self, event: InboundEvent, db: AsyncSession,

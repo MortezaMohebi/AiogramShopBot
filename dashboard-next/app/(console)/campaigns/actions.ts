@@ -11,8 +11,7 @@ function text(form: FormData, key: string): string {
 /** Create a draft; no recipient ever receives a message at this stage. */
 export async function createCampaign(form: FormData) {
   const target = text(form, "target");
-  const legacy = target.match(/^legacy:(all|telegram|bale)$/);
-  if (!legacy && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target)) {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target)) {
     redirect("/campaigns?error=create");
   }
   let failed = false;
@@ -22,8 +21,8 @@ export async function createCampaign(form: FormData) {
       text: text(form, "text"),
       // The API revalidates the current Store and live bot state. An explicit
       // Registry target's audience never widens to other bots or platforms.
-      bot_id: legacy ? null : target,
-      audience: legacy ? legacy[1] : "all",
+      bot_id: target,
+      audience: "all",
     });
   } catch {
     failed = true;
@@ -116,31 +115,4 @@ export async function deleteCampaignMedia(form: FormData) {
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
   redirect(`/campaigns/${campaignId}?saved=1`);
-}
-
-
-/** Prepare Bale media file IDs only in a configured private seed chat.
-
-No campaign deliveries, paid Business calls or worker wake-ups occur here.
-The external operation requires explicit operator confirmation.
-*/
-export async function prepareBaleMedia(form: FormData) {
-  const id = text(form, "campaign_id");
-  if (
-    !/^[1-9]\d*$/.test(id) ||
-    text(form, "confirmation") !== "PREPARE_BALE_MEDIA"
-  ) {
-    redirect("/campaigns?error=confirmation");
-  }
-  let failed = false;
-  try {
-    await adminFetch(`/broadcast/prepare/${id}`, "POST", {
-      confirmation: "PREPARE_BALE_MEDIA",
-    });
-  } catch {
-    failed = true;
-  }
-  if (failed) redirect(`/campaigns/${id}?error=prepare`);
-  revalidatePath(`/campaigns/${id}`);
-  redirect(`/campaigns/${id}?saved=prepared`);
 }

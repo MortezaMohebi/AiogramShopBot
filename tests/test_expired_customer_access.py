@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, aliased
 from channels.contracts import Platform
 from models.shop_content import Product, ShopIdentity, ShopOrder
 from models.shop_customer_crm import ShopCustomerAudit, ShopCustomerProfile
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot
+from models.shop_multibot import DEFAULT_STORE_ID, ShopBot
 from models.shop_staff import ShopStaff
 from models.shop_store_commerce import ShopStoreCustomer
 from services.shop_bot_context import BotContext
@@ -22,7 +22,7 @@ from services.shop_customer_orders import (
     order_visible_to_customer,
     verified_identity_keys,
 )
-from tests.schema_support import create_shop_schema, seed_legacy_registry
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
 from tests.test_shared_cart import AsyncDatabase
 
 
@@ -33,7 +33,7 @@ def access_lab():
     create_shop_schema(engine)
     now = datetime.now(timezone.utc)
     with Session(engine, expire_on_commit=False) as session:
-        seed_legacy_registry(session)
+        seed_registry(session)
         session.add(
             ShopStaff(
                 id=1,
@@ -55,8 +55,8 @@ def access_lab():
             slug="other-telegram",
             name="Other Telegram",
             platform="telegram",
-            status="legacy",
-            runtime_owner="legacy",
+            status="active",
+            runtime_owner="registry",
         )
         product = Product(
             store_id=DEFAULT_STORE_ID,
@@ -94,7 +94,7 @@ def access_lab():
                 bot_id=(
                     other_bot.id
                     if name == "other_customer"
-                    else LEGACY_BOT_IDS[platform]
+                    else TEST_BOT_IDS[platform]
                 ),
                 platform=platform,
                 platform_user_id=user_id,
@@ -144,12 +144,12 @@ def access_lab():
         session.commit()
         contexts = {
             platform: BotContext(
-                bot_id=LEGACY_BOT_IDS[platform.value],
+                bot_id=TEST_BOT_IDS[platform.value],
                 store_id=DEFAULT_STORE_ID,
                 platform=platform,
                 provider_bot_id=None,
-                status="legacy",
-                runtime_owner="legacy",
+                status="active",
+                runtime_owner="registry",
                 credential_version=1,
                 registry_version=1,
             )
@@ -200,10 +200,10 @@ async def test_verified_keys_include_expired_but_exclude_live_restrictions(
         customer_id=access_lab.customer.id,
     )
     assert set(keys) == {
-        (LEGACY_BOT_IDS["telegram"], "telegram", 101),
-        (LEGACY_BOT_IDS["bale"], "bale", 101),
-        (LEGACY_BOT_IDS["telegram"], "telegram", 505),
-        (LEGACY_BOT_IDS["telegram"], "telegram", 606),
+        (TEST_BOT_IDS["telegram"], "telegram", 101),
+        (TEST_BOT_IDS["bale"], "bale", 101),
+        (TEST_BOT_IDS["telegram"], "telegram", 505),
+        (TEST_BOT_IDS["telegram"], "telegram", 606),
     }
 
 
@@ -391,7 +391,7 @@ async def test_missing_identity_cannot_gain_access_from_its_raw_flag(
     unpersisted = ShopIdentity(
         id=987654321,
         store_id=DEFAULT_STORE_ID,
-        bot_id=LEGACY_BOT_IDS["telegram"],
+        bot_id=TEST_BOT_IDS["telegram"],
         platform="telegram",
         platform_user_id=919,
         is_blocked=False,

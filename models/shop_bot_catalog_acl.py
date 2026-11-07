@@ -1,7 +1,7 @@
 """Additive, bot-scoped Many2many allow/deny product and category rules.
 
-Legacy bots keep their existing published catalog by default. New bots
-default to deny. An absent rule is "inherit" and requires no database row.
+Registry bots default to deny. An absent rule is "inherit" and requires
+no database row.
 No product, order, wallet or historical customer column is replaced here.
 """
 

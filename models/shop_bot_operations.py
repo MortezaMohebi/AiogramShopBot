@@ -1,8 +1,7 @@
 """Per-bot operational settings and status distinct from receiver ownership.
 
-This is additive to the Foundation tables. Legacy bots may be paused without
-dropping provider webhooks or abandoning payment confirmation receipts.
-Registry-owned draft bots remain offline until the later multi-bot runtime.
+Registry-owned draft bots remain offline until verification and explicit
+activation. Operational settings never change recorded payment ownership.
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 import config
 from channels.contracts import Platform
 from models.shop_engagement import ShopBroadcastRateSlot
-from models.shop_scope import legacy_id
+from models.shop_scope import require_bot_id
 from services.shop_media_delivery import bot_fingerprint
 
 
@@ -55,12 +55,13 @@ async def reserve_message_slot(
     PostgreSQL `INSERT .. ON CONFLICT DO NOTHING` plus `FOR UPDATE` locks
     serialize reservations across multiple processes and campaigns.
     """
+    bot_id = require_bot_id(bot_id)
     if type(user_id) is not int or user_id <= 0:
         raise ValueError("Broadcast target must be a positive private ID.")
     from db import session_maker
 
     fingerprint = bot_fingerprint(token)
-    owner_id = bot_id or legacy_id(platform.value)
+    owner_id = bot_id
     gap_global, gap_chat = slot_intervals(channel_rate(platform, bale_mode=bale_mode))
     async with session_maker() as session:
         # Insert both rows first, always ordering by recipient ID to avoid

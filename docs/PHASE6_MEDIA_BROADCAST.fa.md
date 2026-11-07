@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # فاز ۶ — محدودیت رسانه، Cache هر بازو و Broadcast دوکاناله
 
 **وضعیت:** کدنویسی روی شاخه Draft ثبت شده است؛ بدون Deploy، اجرای Bot، ارسال واقعی،

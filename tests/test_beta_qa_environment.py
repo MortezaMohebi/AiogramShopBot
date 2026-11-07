@@ -13,7 +13,9 @@ def test_beta_qa_secrets_are_private_and_provider_free(tmp_path):
     assert target.stat().st_mode & 0o777 == 0o600
     assert b"POSTGRES_DB=shop_codespace\n" in original
     assert b"SHOP_BETA_QA=1\n" in original
-    assert b"TOKEN=\n" in original
+    assert b"\nTOKEN=\n" not in original
+    assert b"JWT_SECRET_KEY=" not in original
+    assert b"SHOP_SECURITY_ENCRYPTION_KEY=" in original
     prepare_environment(target)
     assert target.read_bytes() == original
 

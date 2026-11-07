@@ -1,13 +1,11 @@
 """Per-bot operational settings with optimistic locking and fail-closed state.
 
-Legacy receivers keep handling payment confirmations while ordinary shopping,
-callbacks and outbound broadcasts obey the requested state. New draft bots
-cannot be activated until the later isolated multi-bot runtime is accepted.
+Authenticated receivers keep processing payment confirmations while shopping,
+callbacks and outbound broadcasts obey each registered bot’s operational state.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from ipaddress import ip_address
 import re
 from urllib.parse import urlsplit
@@ -15,34 +13,20 @@ from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
-from models.shop_bot_profile import ShopBotProfile
-from models.shop_multibot import LEGACY_BOT_IDS, ShopBot, ShopBotRegistryEvent
+from models.shop_multibot import ShopBot, ShopBotRegistryEvent
 from models.shop_multibot_receiver import ShopBotReceiver
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 
 OPERATING_STATES = frozenset({"active", "maintenance", "paused", "disabled"})
-DEFAULT_MAINTENANCE = "فروشگاه موقتاً در حال نگهداری است. لطفاً بعداً مراجعه کنید."
-DEFAULT_PAUSED = "خدمات این ربات موقتاً متوقف شده است. لطفاً بعداً مراجعه کنید."
 _OPS_TITLES = {
     "active": "فعال",
     "maintenance": "حالت نگهداری",
     "paused": "متوقف",
     "disabled": "غیرفعال",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class EffectiveBotState:
-    """Immutable state used by the actual legacy receiver and broadcast gates."""
-
-    bot_id: str
-    state: str
-    message: str
-    runtime_ready: bool
 
 
 def _public_https_url(value: str) -> str:
@@ -97,18 +81,8 @@ def _get_or_add(db: Session, bot: ShopBot) -> ShopBotOperations:
     ).with_for_update())
     if row is not None:
         return row
-    inherited = db.get(ShopBotProfile, bot.platform) if (
-        bot.runtime_owner == "legacy"
-    ) else None
     row = ShopBotOperations(
-        bot_id=bot.id,
-        desired_state=(
-            "maintenance" if inherited and inherited.maintenance_enabled
-            else "active" if bot.runtime_owner == "legacy"
-            else "disabled"
-        ),
-        environment=inherited.environment if inherited else "staging",
-        owner_staff_id=inherited.owner_staff_id if inherited else None,
+        bot_id=bot.id, desired_state="disabled", environment="staging",
     )
     db.add(row)
     db.flush()
@@ -157,11 +131,7 @@ def change_state(
     db: Session, *, bot_id: str, actor_id: int,
     expected_version: int, state: str, reason: str,
 ) -> str:
-    """Apply an immediate legacy shopping gate without stopping receivers.
-
-    The current Telegram/Bale runtime is shared and cannot serve registry-
-    owned bots. Such bots stay disabled until an isolated dispatcher exists.
-    """
+    """Apply the registered bot's storefront gate without stopping settlement."""
     if state not in OPERATING_STATES:
         raise security.SecurityRejected("invalid_bot_state", 422)
     bot = db.scalar(select(ShopBot).where(
@@ -171,16 +141,14 @@ def change_state(
         raise security.SecurityRejected("bot_not_found", 404)
     if bot.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
-    is_legacy = bot.runtime_owner == "legacy" and bot.status == "legacy"
-    if not is_legacy:
-        receiver = db.get(ShopBotReceiver, bot.id)
-        if not (
-            bot.runtime_owner == "registry"
-            and bot.status in OPERATING_STATES
-            and bot.credential_version is not None
-            and receiver is not None and receiver.state == "active"
-        ):
-            raise security.SecurityRejected("bot_runtime_not_ready", 409)
+    receiver = db.get(ShopBotReceiver, bot.id)
+    if not (
+        bot.runtime_owner == "registry"
+        and bot.status in OPERATING_STATES
+        and bot.credential_version is not None
+        and receiver is not None and receiver.state == "active"
+    ):
+        raise security.SecurityRejected("bot_runtime_not_ready", 409)
     cleaned_reason = reason.strip()
     if state in {"paused", "disabled"} and not 8 <= len(cleaned_reason) <= 500:
         raise security.SecurityRejected("bot_state_reason_required", 422)
@@ -197,16 +165,8 @@ def change_state(
         reason=cleaned_reason or None,
     ))
     ops.updated_by = actor_id
-    # Other legacy management screens must see an identical maintenance
-    # status, otherwise they could silently overrule the new bot registry.
-    if is_legacy:
-        inherited = db.get(ShopBotProfile, bot.platform)
-        if inherited is not None:
-            inherited.maintenance_enabled = state == "maintenance"
-    else:
-        # Only the ordinary storefront is paused; the verified receiver
-        # continues to consume paid receipts and refund callbacks.
-        bot.status = state
+    # Keep the authenticated receiver alive for settlement and after-sale help.
+    bot.status = state
     bot.version += 1
     db.add(ShopBotRegistryEvent(
         id=str(uuid4()), bot_id=bot.id,
@@ -216,64 +176,19 @@ def change_state(
     return state
 
 
-async def legacy_state(db: AsyncSession, platform: str) -> EffectiveBotState:
-    """Resolve the effective real-time gate for one original provider bot."""
-    bot_id = LEGACY_BOT_IDS.get(platform)
-    if bot_id is None:
-        raise security.SecurityRejected("invalid_bot_platform", 422)
-    ops = await db.get(ShopBotOperations, bot_id)
-    if ops is None:
-        previous = await db.get(ShopBotProfile, platform)
-        state = (
-            "maintenance" if previous and previous.maintenance_enabled
-            else "active"
-        )
-        message = DEFAULT_MAINTENANCE
-    else:
-        state = ops.desired_state
-        message = (
-            ops.maintenance_message
-            if ops.maintenance_message and state == "maintenance"
-            else DEFAULT_PAUSED if state == "paused"
-            else DEFAULT_MAINTENANCE
-        )
-    if state not in OPERATING_STATES:
-        raise security.SecurityRejected("invalid_bot_state", 503)
-    return EffectiveBotState(
-        bot_id=bot_id, state=state, message=message,
-        runtime_ready=True,
-    )
-
-
 def operation_data(db: Session, bot: ShopBot) -> dict:
     """Display the actual operational gate, not a guessed provider online state."""
     ops = db.get(ShopBotOperations, bot.id)
-    if ops is None:
-        profile = db.get(ShopBotProfile, bot.platform) if (
-            bot.runtime_owner == "legacy"
-        ) else None
-        state = (
-            "maintenance" if profile and profile.maintenance_enabled
-            else "active" if bot.runtime_owner == "legacy"
-            else "disabled"
-        )
-    else:
-        state = ops.desired_state
-    receiver = (
-        db.get(ShopBotReceiver, bot.id)
-        if bot.runtime_owner == "registry" else None
-    )
+    state = ops.desired_state if ops is not None else "disabled"
+    receiver = db.get(ShopBotReceiver, bot.id)
     return {
         "desired_state": state,
         "state_label": _OPS_TITLES[state],
         "runtime_ready": (
-            bot.runtime_owner == "legacy"
-            or (
-                bot.runtime_owner == "registry"
-                and bot.credential_version is not None
-                and receiver is not None
-                and receiver.state == "active"
-            )
+            bot.runtime_owner == "registry"
+            and bot.credential_version is not None
+            and receiver is not None
+            and receiver.state == "active"
         ),
         "welcome_message": ops.welcome_message if ops else None,
         "maintenance_message": ops.maintenance_message if ops else None,

@@ -1,7 +1,6 @@
 """Shared order history and safe cancellation for Telegram and Bale.
 
-Purchase history does not depend on Bale's Wallet API or Telegram's Legacy
-purchase records. Payment transactions are never cancelled by this service.
+Payment transactions are never cancelled by this service.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from services.shop_money import format_rials
 from services.shop_channel_features import get_features, inline_credit_label
 from services.shop_payment_rails import rail_enabled
 from services.shop_bot_catalog_acl import resolve_scope, visible_product_ids
-from models.shop_scope import legacy_id
 from services.shop_bot_context import BotContext
 import config
 from services.shop_refunds import ShopRefundService
@@ -56,7 +54,7 @@ class ShopOrdersFlow:
     def _bot_id(self, platform) -> str:
         """Scope all order reads and callbacks to the authenticated bot."""
         if self.bot_context is None:
-            return legacy_id(platform.value)
+            raise ValueError("An authenticated bot context is required.")
         if self.bot_context.platform != platform:
             raise PaymentRejected("شناسه بات با پیام‌رسان تطبیق ندارد.")
         return self.bot_context.bot_id
@@ -168,10 +166,6 @@ class ShopOrdersFlow:
         features = await get_features(
             session, event.platform.value, bot_id=owner,
         )
-        from models.shop_multibot import ShopBot
-
-        bot = await session.get(ShopBot, owner)
-        legacy = bot is not None and bot.runtime_owner == "legacy"
         credit_available = (
             features.store_credit_enabled
             and await rail_enabled(
@@ -181,7 +175,6 @@ class ShopOrdersFlow:
         )
         bale_ready = (
             config.BALE_WALLET_CHECKOUT_ENABLED
-            and (not legacy or bool(config.BALE_WALLET_PROVIDER_TOKEN))
             and await rail_enabled(
                 session, "bale", "bale_wallet", bot_id=owner,
             )
@@ -194,7 +187,6 @@ class ShopOrdersFlow:
         ) if event.platform == Platform.TELEGRAM else False
         fiat_ready = (
             config.TELEGRAM_FIAT_CHECKOUT_ENABLED
-            and (not legacy or bool(config.TELEGRAM_FIAT_PROVIDER_TOKEN))
             and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
             and await rail_enabled(
                 session, "telegram", "telegram_fiat", bot_id=owner,

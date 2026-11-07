@@ -15,10 +15,11 @@ from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_customer_support import ShopSupportMessage
 from models.shop_store_commerce import ShopStoreCommercePolicy
 from services.shop_multibot_dispatch import dispatch
-from services.shop_bot_context import resolve_legacy_bot_context
+from services.shop_bot_context import resolve_bot_context
 from services.shop_identity import register_customer
 from tests.test_beta_paused_customer_support import NativeClient, raw
 from tests.test_shared_cart import AsyncDatabase, db, seed
+from tests.schema_support import TEST_BOT_IDS
 
 
 class FormDatabase(AsyncDatabase):
@@ -32,8 +33,14 @@ class FormDatabase(AsyncDatabase):
 async def setup_dispatch(db, monkeypatch, platform):
     """Use real registered identities, cart/search services and native sends."""
     wrapped = FormDatabase(db.session)
-    scope = await resolve_legacy_bot_context(wrapped, authenticated_platform=platform)
-    await register_customer(wrapped, platform=platform, platform_user_id=101)
+    scope = await resolve_bot_context(
+        wrapped, authenticated_bot_id=TEST_BOT_IDS[platform.value],
+        authenticated_platform=platform,
+    )
+    await register_customer(
+        wrapped, bot_id=scope.bot_id,
+        platform=platform, platform_user_id=101,
+    )
 
     @asynccontextmanager
     async def sessions():
@@ -112,9 +119,18 @@ async def test_shared_cart_navigation_clears_only_the_current_bot_form(
     """Linked Bots retain independent pending input for one shared Customer cart."""
     scope, native = await setup_dispatch(db, monkeypatch, platform)
     other_platform = Platform.BALE if platform == Platform.TELEGRAM else Platform.TELEGRAM
-    other = await resolve_legacy_bot_context(db, authenticated_platform=other_platform)
-    identity = await register_customer(db, platform=platform, platform_user_id=101)
-    peer = await register_customer(db, platform=other_platform, platform_user_id=101)
+    other = await resolve_bot_context(
+        db, authenticated_bot_id=TEST_BOT_IDS[other_platform.value],
+        authenticated_platform=other_platform,
+    )
+    identity = await register_customer(
+        db, bot_id=TEST_BOT_IDS[platform.value],
+        platform=platform, platform_user_id=101,
+    )
+    peer = await register_customer(
+        db, bot_id=other.bot_id,
+        platform=other_platform, platform_user_id=101,
+    )
     peer.customer_id = identity.customer_id
     db.add(ShopStoreCommercePolicy(
         store_id=scope.store_id, cart_scope="customer", credit_scope="identity",

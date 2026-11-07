@@ -5,6 +5,7 @@ import { serverCaptchaConfig } from "@/lib/captcha-config";
 import { verifyCaptchaToken } from "@/lib/captcha-verification";
 import { loginChallengeCookieName, safeLoginFetchMetadata, verifyLoginChallenge } from "@/lib/login-challenge";
 import { publicOrigin } from "@/lib/public-origin";
+import { loginRedirect } from "@/lib/login-redirect";
 import { createSession, sessionCookieName } from "@/lib/session";
 import { controlJson } from "@/lib/control-request";
 
@@ -15,7 +16,7 @@ function failure(request: NextRequest, code: string, status: number, correlation
   console.warn("[shop-admin/auth]", { requestId, code, status });
   const origin = publicOrigin(request), accept = request.headers.get("accept") ?? "";
   if (origin && accept.includes("text/html") && !accept.includes("application/json")) {
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(code)}`, origin), 303);
+    return loginRedirect(code);
   }
   return NextResponse.json({ ok: false, code, requestId }, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }
@@ -62,6 +63,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return failure(request, "service_unavailable", 503, error instanceof ApiError ? error.requestId : undefined);
   }
 }
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  return NextResponse.redirect(new URL("/login", publicOrigin(request) ?? request.url), 303);
+export async function GET(): Promise<NextResponse> {
+  return loginRedirect();
 }

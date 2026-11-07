@@ -12,7 +12,7 @@ const SAFE_ERRORS = new Set([
   "duplicate_bot_credential", "bot_identity_mismatch", "invalid_bot_token_format",
   "invalid_support_url", "invalid_credential_state", "bot_state_reason_required",
   "bot_state_unchanged", "provider_state_unavailable", "bot_secret_key_unavailable",
-  "bot_secret_unreadable", "legacy_bot_credential_locked", "mfa_enrollment_required",
+  "bot_secret_unreadable", "mfa_enrollment_required",
   "bot_credential_stage_requires_draft", "permission_denied",
   "invalid_receiver_mode", "receiver_worker_unavailable",
   "receiver_lease_lost", "multibot_runtime_disabled",
@@ -72,7 +72,7 @@ export async function saveBotDetails(form: FormData): Promise<void> {
   redirect(`/bots/${id}?saved=settings`);
 }
 
-/** Immediately restrict legacy commerce; retain all pending payment receipts. */
+/** Immediately restrict bot commerce; retain all pending payment receipts. */
 export async function changeBotState(form: FormData): Promise<void> {
   const id = idFrom(form);
   const expected_version = positiveInt(form.get("expected_version"));
@@ -109,7 +109,7 @@ export async function stageBotCredential(form: FormData): Promise<void> {
   redirect(`/bots/${id}?saved=staged`);
 }
 
-/** Verify exactly the selected staged token, or legacy active credential. */
+/** Verify exactly the selected staged Registry token. */
 export async function verifyBotCredential(form: FormData): Promise<void> {
   const id = idFrom(form);
   const version = positiveInt(form.get("version"));
@@ -137,20 +137,17 @@ export async function stageBotReceiver(form: FormData): Promise<void> {
   redirect(`/bots/${id}?saved=receiver_staged`);
 }
 
-/** Activate an opted-in receiver with fresh password and MFA verification. */
+/** Activate a verified draft using the authenticated administrator session. */
 export async function activateBotReceiver(form: FormData): Promise<void> {
   const id = idFrom(form);
   const expected_version = positiveInt(form.get("expected_version"));
-  const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
-  if (!expected_version || !current_password || current_password.length > 256 ||
-      !/^[0-9]{6}$/.test(second_factor)) {
+  if (!expected_version) {
     redirect(`/bots/${id}?error=validation`);
   }
   try {
     // Provider checks may exceed a read timeout; mutations are never retried.
     await adminFetch(`/bot-registry/${id}/receiver/activate`, "POST", {
-      expected_version, current_password, second_factor,
+      expected_version,
     }, 90_000);
   } catch (error) { failure(error, id); }
   revalidatePath("/bots");
@@ -158,7 +155,7 @@ export async function activateBotReceiver(form: FormData): Promise<void> {
   redirect(`/bots/${id}?saved=receiver_active`);
 }
 
-/** Revoke a proposed token; the active legacy Token stays untouched. */
+/** Revoke a proposed token; the active Token stays untouched. */
 export async function revokeBotCredential(form: FormData): Promise<void> {
   const id = idFrom(form);
   const version = positiveInt(form.get("version"));

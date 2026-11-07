@@ -533,3 +533,46 @@ async def test_older_ineligible_wait_does_not_starve_live_timeout(
     )
     assert event.run_id == live_id and event.correlation_id == live.correlation_id
     assert await timeout_once(factory(database)) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retirement", ["kind", "fallback"])
+@pytest.mark.parametrize("work", ["delivery", "action"])
+async def test_workers_cannot_consume_runs_with_retired_persisted_bindings(
+    buyer, monkeypatch, retirement, work,
+):
+    """Queued prompts and actions retain no authority through an unclean old binding."""
+    from unittest.mock import AsyncMock
+    from models.shop_workflow_runtime import RuntimeBinding, WorkflowActionJob, WorkflowRun
+    from services.shop_runtime import workers
+
+    db, principal = buyer
+    await setup_runtime(db, principal, monkeypatch)
+    await handle(db, context=principal.bot, event=inbound(1, "/wholesale", "command"))
+    run = await db.scalar(select(WorkflowRun))
+    binding = await db.scalar(select(RuntimeBinding))
+    if work == "action":
+        run.status = "waiting_action"
+        db.add(WorkflowActionJob(
+            store_id=principal.store_id, run_id=run.id, node_id=run.node_id,
+            epoch=run.state["epoch"], action_key="cart.get", action_version="1.0.0",
+            input={},
+        ))
+    if retirement == "kind":
+        binding.kind = "legacy_bridge"
+    else:
+        binding.fallback = "legacy"
+    await db.commit()
+    provider = AsyncMock(side_effect=AssertionError("Retired binding sent a prompt"))
+    invoke = AsyncMock(side_effect=AssertionError("Retired binding executed an action"))
+    monkeypatch.setattr(workers, "invoke", invoke)
+    if work == "action":
+        assert not await workers.action_once(factory(db))
+    else:
+        assert not await workers.deliver_once(factory(db), send=provider)
+    provider.assert_not_awaited()
+    invoke.assert_not_awaited()
+    db.session.expire_all()
+    assert (await db.scalar(select(WorkflowOutbox))).status == "pending"
+    if work == "action":
+        assert (await db.scalar(select(WorkflowActionJob))).status == "pending"

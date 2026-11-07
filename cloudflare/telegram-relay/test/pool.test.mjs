@@ -1,6 +1,6 @@
 /**
  * Self-contained P5 regression contracts for multi-bot Cloudflare relay auth.
- * These cases are committed but intentionally NOT executed until QA exists.
+ * Node exercises fake providers and quota storage without external calls.
  */
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";

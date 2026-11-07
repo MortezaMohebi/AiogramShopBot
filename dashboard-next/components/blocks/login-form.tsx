@@ -1,5 +1,5 @@
 "use client";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { ActivityIndicator } from "@/components/ui/activity-indicator";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,11 @@ import { type LoginErrorCode, loginErrorMessages, normalizeLoginError } from "@/
 interface Props { initialError?: string | null; captcha: PublicCaptchaConfig }
 interface Issue { code: LoginErrorCode; requestId?: string }
 interface PendingCredentials { username: string; password: string; rememberMe: boolean; expiresAt: number }
+// SSR and the first hydration render must agree. React enables submission only
+// after installing the client handler that obtains the double-submit challenge.
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 /** Convert supported authenticator digits and copied whitespace only. */
 export function normalizeAuthenticatorCode(value: string): string {
   const digits = "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩";
@@ -19,6 +24,7 @@ export function normalizeAuthenticatorCode(value: string): string {
 }
 /** CAPTCHA remains optional; MFA and the revocable session are verified in Python. */
 export function LoginForm({ initialError, captcha }: Props) {
+  const hydrated = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   const [issue, setIssue] = useState<Issue | null>(initialError ? { code: normalizeLoginError(initialError) } : null);
   const [working, setWorking] = useState(false), [showPassword, setShowPassword] = useState(false);
   const [phase, setPhase] = useState<"security" | "login">("security");
@@ -146,7 +152,7 @@ export function LoginForm({ initialError, captcha }: Props) {
     <button type="button" disabled={working} className="text-sm text-primary underline underline-offset-4 disabled:opacity-50" onClick={() => { setMethod(value => value === "authenticator" ? "recovery" : "authenticator"); setIssue(null); }}>{method === "authenticator" ? "استفاده از کد بازیابی" : "استفاده از برنامهٔ احراز هویت"}</button>
     </>}
     <CaptchaChallenge ref={captchaRef} config={captcha} />
-    <Button type="submit" size="lg" className="w-full" disabled={working || captcha.provider === "unavailable"}>{working ? <ActivityIndicator onPrimary announce={false} state="connecting" label={phase === "security" ? "در حال بررسی…" : "در حال ورود…"} /> : step === "credentials" ? "ادامه" : "ورود"}</Button>
+    <Button type="submit" size="lg" className="w-full" disabled={!hydrated || working || captcha.provider === "unavailable"}>{working ? <ActivityIndicator onPrimary announce={false} state="connecting" label={phase === "security" ? "در حال بررسی…" : "در حال ورود…"} /> : step === "credentials" ? "ادامه" : "ورود"}</Button>
     {step === "mfa" ? <Button type="button" variant="ghost" className="w-full" disabled={working} onClick={() => restart()}>بازگشت به ورود</Button> : null}
     <span role="status" className="sr-only">{working ? (phase === "security" ? "در حال بررسی…" : "در حال ورود…") : ""}</span>
   </form>;

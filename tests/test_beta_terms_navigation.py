@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from tests.schema_support import test_bot_context
 from channels.contracts import Platform
 from models.shop_checkout_policy import ShopStoreCheckoutPolicy
 from models.shop_content import ShopOrder
@@ -34,7 +35,7 @@ async def test_all_terms_are_reachable_without_truncation(db, platform, terms_te
     policy = db.session.get(ShopStoreCheckoutPolicy, DEFAULT_STORE_ID)
     policy.terms_text = terms_text
     db.session.commit()
-    flow = CustomerExperienceFlow()
+    flow = CustomerExperienceFlow(bot_context=test_bot_context(platform))
     reply = await flow.reply(event(platform, text="/terms"), db)
     contents = []
     page = 0
@@ -67,7 +68,7 @@ async def test_checkout_terms_view_returns_to_same_explicit_consent(db, platform
     product, _ = seed(db)
     product.requires_shipping = False
     db.session.commit()
-    cart = ShopCartFlow()
+    cart = ShopCartFlow(bot_context=test_bot_context(platform))
     await cart.reply(event(platform, callback=f"shop:add:{product.id}"), db)
     preview = await cart.reply(event(platform, callback="shop:checkout"), db)
     consent = next(
@@ -79,8 +80,9 @@ async def test_checkout_terms_view_returns_to_same_explicit_consent(db, platform
         if action.callback_data.startswith("ux:terms:")
     ]
     assert len(terms_actions) == 1
-    terms = await CustomerExperienceFlow().reply(
-        event(platform, callback=terms_actions[0].callback_data), db,
+    terms = await CustomerExperienceFlow(bot_context=test_bot_context(platform)).reply(
+        event(platform, callback=terms_actions[0].callback_data),
+        db,
     )
     assert "fixture-v1" in terms.text
     assert not any(
@@ -111,7 +113,7 @@ async def test_changed_terms_invalidate_old_paging_and_checkout_proof(db, platfo
     product, _ = seed(db)
     product.requires_shipping = False
     db.session.commit()
-    cart = ShopCartFlow()
+    cart = ShopCartFlow(bot_context=test_bot_context(platform))
     await cart.reply(event(platform, callback=f"shop:add:{product.id}"), db)
     preview = await cart.reply(event(platform, callback="shop:checkout"), db)
     consent = next(
@@ -126,8 +128,11 @@ async def test_changed_terms_invalidate_old_paging_and_checkout_proof(db, platfo
     policy = db.session.get(ShopStoreCheckoutPolicy, DEFAULT_STORE_ID)
     policy.terms_text = "شرایط فروش جدید؛ این متن با شرایط قبلی تفاوت دارد."
     db.session.commit()
-    expired_view = await CustomerExperienceFlow().reply(
-        event(platform, callback=terms_actions[0].callback_data), db,
+    expired_view = await CustomerExperienceFlow(
+        bot_context=test_bot_context(platform)
+    ).reply(
+        event(platform, callback=terms_actions[0].callback_data),
+        db,
     )
     assert "تغییر" in expired_view.text
     assert any(

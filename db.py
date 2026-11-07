@@ -16,18 +16,18 @@ from sqlalchemy.orm import sessionmaker, Session
 import config
 from models.base import Base
 from models.shop_staff import ShopStaff
+from models.shop_admin_control import (
+    AdminProfile, AdminSession, AdminEvent,
+)
 from models.shop_staff_security import (
     ShopPasswordPolicy, ShopStaffInvitation, ShopStaffPasswordReset,
 )
-from models.shop_channel_features import ShopChannelFeature
 from models.shop_customer_crm import (
     ShopCustomerProfile, ShopCustomerNote, ShopCustomerConsentEvent,
     ShopCustomerAudit, ShopCustomerRetentionPolicy,
 )
 from models.shop_staff_preferences import ShopStaffPreferences
-from models.shop_bot_profile import ShopBotProfile
-from models.shop_payment_rail import ShopPaymentRail
-from models.shop_customer_links import ShopCustomerLinkRequest, ShopCustomerIdentityLink
+from models.shop_customer_links import ShopCustomerLinkRequest
 from models.shop_staff_state import ShopStaffState
 from models.shop_multibot import (
     ShopStore, ShopBot, ShopBotCredential, ShopBotRegistryEvent,
@@ -75,9 +75,6 @@ from models.shop_workflow_runtime import RUNTIME_MODELS
 from models.shop_mcp import MCP_MODELS
 from models.shop_wholesale import ShopWholesaleApplication
 from models.shop_action import ShopActionExecution, ShopActionAuthorization
-from models.shop_telegram_transport import (
-    ShopTelegramTransport, ShopTelegramTransportChange,
-)
 from models.shop_product_visibility import ShopProductVisibility
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
@@ -97,22 +94,7 @@ from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopShippingMethod, ShopCoupon, ShopOrderLine,
     ShopOrderReviewAudit, ShopCheckoutGroup,
 )
-from models.shop_content import Product, ProductMedia, ShopCategory, ShopIdentity, ShopOrder, ShopSettings, Testimonial
-from models.item import Item
-from models.cart import Cart
-from models.cartItem import CartItem
-from models.user import User
-from models.buy import Buy
-from models.buyItem import BuyItem
-from models.category import Category
-from models.subcategory import Subcategory
-from models.deposit import Deposit
-from models.button_media import ButtonMedia
-from models.payment import Payment
-from models.coupon import Coupon
-from models.shipping_option import ShippingOption
-from models.review import Review
-from models.referral import ReferralBonus
+from models.shop_content import Product, ProductMedia, ShopCategory, ShopIdentity, ShopOrder, Testimonial
 
 url = f"postgresql+asyncpg://{config.DB_USER}:{config.DB_PASS}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
 # Do not log SQL parameters containing orders and private customer data.

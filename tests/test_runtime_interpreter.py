@@ -166,7 +166,7 @@ def test_main_menu_ends_run_and_emits_server_menu_intent():
     m.advance()
     m.choose("main_menu")
     assert m.status == "cancelled"
-    assert m.outbound[-1]["kind"] == "legacy_menu" and m.outbound[-1]["notice"] is True
+    assert m.outbound[-1]["kind"] == "shop_menu" and m.outbound[-1]["notice"] is True
 
 
 def test_native_contact_cannot_fill_a_text_question():

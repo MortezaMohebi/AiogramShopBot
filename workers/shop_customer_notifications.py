@@ -15,11 +15,9 @@ import signal
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from aiohttp import ClientSession
 from sqlalchemy import select
 
 import config
-from channels.bale import BaleTransport
 from channels.telegram import TelegramTransport
 from db import create_db_and_tables, engine, session_maker
 from models.shop_customer_notifications import ShopCustomerNotificationOutbox
@@ -29,7 +27,6 @@ from services.shop_customer_notification_dispatch import (
     NotificationTransport, deliver_once,
 )
 from services.shop_customer_notifications import prepare_stock_alerts
-from utils.telegram import create_bot, create_telegram_session
 
 _logger = logging.getLogger(__name__)
 _POLL_SECONDS = 5
@@ -45,8 +42,7 @@ async def _transport_for_bot(
         if (
             bot is None
             or not (
-                bot.runtime_owner == "legacy" and bot.status == "legacy"
-                or bot.runtime_owner == "registry" and bot.status == "active"
+                bot.runtime_owner == "registry" and bot.status == "active"
             )
         ):
             raise ValueError("Bot is not active for notification delivery.")
@@ -54,29 +50,14 @@ async def _transport_for_bot(
             lambda session: resolve_active_token(session, bot_id=bot_id),
         )
         platform = bot.platform
-        registered = bot.runtime_owner == "registry"
 
-    if platform == "telegram":
-        if registered and config.SHOP_RELAY_POOL_ENABLED:
-            # An active per-Bot relay route is mandatory. Never leak a
-            # registered bot's requests through another Bot's shared key.
-            from services.shop_relay_routing import build_bot_relay_session
+    from services.shop_multibot_client import provider_client
 
-            api_session = await build_bot_relay_session(bot_id)
-        else:
-            api_session = create_telegram_session()
-        client = create_bot(token, api_session)
-        try:
+    async with provider_client(platform, token, bot_id=bot_id) as client:
+        if platform == "telegram":
             yield TelegramTransport(client, bot_id=bot_id)
-        finally:
-            await client.session.close()
-        return
-
-    if platform == "bale":
-        async with ClientSession() as http:
-            yield BaleTransport(token, http, bot_id=bot_id)
-        return
-    raise ValueError("Unsupported bot platform.")
+        else:
+            yield client
 
 
 async def _active_bot_ids() -> list[str]:
@@ -90,13 +71,8 @@ async def _active_bot_ids() -> list[str]:
         ).where(
             ShopStore.state == "active",
             ShopCustomerNotificationOutbox.status == "queued",
-            (
-                (ShopBot.runtime_owner == "legacy")
-                & (ShopBot.status == "legacy")
-            ) | (
-                (ShopBot.runtime_owner == "registry")
-                & (ShopBot.status == "active")
-            ),
+            ShopBot.runtime_owner == "registry",
+            ShopBot.status == "active",
         ).distinct().order_by(ShopBot.id).limit(50)
         return (await db.scalars(query)).all()
 

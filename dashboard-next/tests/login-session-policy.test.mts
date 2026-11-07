@@ -13,7 +13,7 @@ const root=fileURLToPath(new URL("..",import.meta.url)),require=createRequire(im
 const {NextRequest}=require("next/server");
 const requestId="12345678-1234-4234-8234-123456789abc";
 class ApiError extends Error {status:number;code?:string;requestId=requestId;constructor(status:number,code?:string){super("upstream");this.status=status;this.code=code;}}
-function fixture({failure,ttl,legacy=false}:{failure?:ApiError;ttl?:number;legacy?:boolean}={}) {
+function fixture({failure,ttl,legacy=false,missingDevOrigin=false}:{failure?:ApiError;ttl?:number;legacy?:boolean;missingDevOrigin?:boolean}={}) {
  const sent:Record<string,unknown>[]=[],logs:unknown[][]=[],cache=new Map<string,Record<string,unknown>>();
  function load(relative:string):Record<string,unknown>{
   const stem=path.resolve(root,relative),filename=[stem,stem+".ts"].find(existsSync);assert(filename);
@@ -21,7 +21,7 @@ function fixture({failure,ttl,legacy=false}:{failure?:ApiError;ttl?:number;legac
   const evaluated={exports:{} as Record<string,unknown>};cache.set(filename,evaluated.exports);
   const source=process.env.LOGIN_BASELINE==="1"?execFileSync("git",["show",`HEAD:dashboard-next/${path.relative(root,filename)}`],{cwd:root,encoding:"utf8"}):readFileSync(filename,"utf8");
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  runInNewContext(code,{module:evaluated,exports:evaluated.exports,Buffer,URL,Request,Response,Headers,Uint8Array,AbortSignal,ReadableStream,TextDecoder,TextEncoder,console:{warn:(...args:unknown[])=>logs.push(args)},process:{env:{NODE_ENV:"production",NEXT_ADMIN_PUBLIC_ORIGIN:"https://shop.test",NEXT_ADMIN_SESSION_SECRET:"synthetic-session-signing-key-".repeat(3)}},require:(name:string)=>{
+  runInNewContext(code,{module:evaluated,exports:evaluated.exports,Buffer,URL,Request,Response,Headers,Uint8Array,AbortSignal,ReadableStream,TextDecoder,TextEncoder,console:{warn:(...args:unknown[])=>logs.push(args)},process:{env:{NODE_ENV:missingDevOrigin?"development":"production",NEXT_ADMIN_PUBLIC_ORIGIN:missingDevOrigin?"":"https://shop.test",NEXT_ADMIN_SESSION_SECRET:"synthetic-session-signing-key-".repeat(3)}},require:(name:string)=>{
    if(name==="server-only")return {};
    if(name==="node:crypto")return crypto;
    if(name==="next/headers")return {cookies:async()=>({get:()=>undefined})};
@@ -32,10 +32,18 @@ function fixture({failure,ttl,legacy=false}:{failure?:ApiError;ttl?:number;legac
    return require(name);
   }});return evaluated.exports;
  }
- const {POST}=load("app/api/auth/login/route") as {POST:(request:unknown)=>Promise<import("next/server").NextResponse>};
+ const {POST,GET}=load("app/api/auth/login/route") as Record<"POST"|"GET",(request:unknown)=>Promise<import("next/server").NextResponse>>;
  const {verifySession}=load("lib/session") as {verifySession:(value:string)=>{expires:number}|null};
- return {sent,logs,verifySession,post:(remember:unknown=false)=>POST(new NextRequest("https://shop.test/api/auth/login",{method:"POST",headers:{origin:"https://shop.test","sec-fetch-site":"same-origin","content-type":"application/json",accept:"application/json",cookie:"__Host-shop_login_challenge="+"C".repeat(43),"x-shop-login-challenge":"C".repeat(43)},body:JSON.stringify({username:"qa.synthetic",password:"TEST-ONLY-SECRET",remember_me:remember})}))};
+ const nativeRequest=()=>new NextRequest("https://localhost:3005/api/auth/login",{method:"POST",headers:{origin:"http://localhost:3005","x-forwarded-host":"qa-shop-3005.app.github.dev","sec-fetch-site":"same-origin",accept:"text/html","content-type":"application/x-www-form-urlencoded"},body:"username=qa.synthetic&password=TEST-ONLY-SECRET"});
+ return {sent,logs,verifySession,nativePost:()=>POST(nativeRequest()),nativeGet:()=>GET(new NextRequest("https://localhost:3005/api/auth/login")),post:(remember:unknown=false)=>POST(new NextRequest("https://shop.test/api/auth/login",{method:"POST",headers:{origin:"https://shop.test","sec-fetch-site":"same-origin","content-type":"application/json",accept:"application/json",cookie:"__Host-shop_login_challenge="+"C".repeat(43),"x-shop-login-challenge":"C".repeat(43)},body:JSON.stringify({username:"qa.synthetic",password:"TEST-ONLY-SECRET",remember_me:remember})}))};
 }
+test("native form rejection stays on the browser hostname when a proxy uses loopback internally",async()=>{
+ const f=fixture({missingDevOrigin:true}),response=await f.nativePost();
+ assert.equal(response.status,303);assert.equal(response.headers.get("location"),"/login?error=security_check_failed");assert.equal(response.headers.get("cache-control"),"no-store");assert.equal(f.sent.length,0);assert.equal(response.cookies.get("shop_admin_dev"),undefined);
+});
+test("direct auth navigation never redirects the browser to an internal development origin",async()=>{
+ const response=await fixture({missingDevOrigin:true}).nativeGet();assert.equal(response.status,303);assert.equal(response.headers.get("location"),"/login");
+});
 test("default login is a browser-session Cookie with an eight-hour signed limit",async()=>{
  const f=fixture(),response=await f.post();assert.equal(response.status,200);
  const cookie=response.cookies.get("__Host-shop_admin");assert(cookie);assert.equal(cookie.maxAge,undefined);assert.equal(cookie.expires,undefined);assert.equal(cookie.httpOnly,true);assert.equal(cookie.secure,true);assert.equal(cookie.sameSite,"strict");

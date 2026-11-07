@@ -29,7 +29,6 @@ export const navigation: NavigationItem[] = [
   { title: "مشتریان یکپارچه", href: "/store-customers", icon: Users, roles: ["superadmin"] },
   { title: "اعلان‌ها و موجودی", href: "/customer-notifications", icon: Megaphone, roles: ["superadmin"] },
   { title: "حساب‌های پرداخت", href: "/payment-accounts", icon: Wallet, roles: ["superadmin"] },
-  { title: "اتصال ربات‌ها", href: "/bot-connections", icon: Webhook, roles: ["superadmin"] },
   { title: "اتصال‌های Relay", href: "/relay-workers", icon: Webhook, roles: ["superadmin"] },
   { title: "تنظیمات", href: "/settings", icon: Settings2, roles: ["superadmin"] },
 ];

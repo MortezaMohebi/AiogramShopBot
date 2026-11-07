@@ -89,14 +89,14 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
         <CardContent><form action={createUomCategory} className="space-y-4">
           <input type="hidden" name="store_id" value={storeId} />
           <label className="block space-y-2 text-sm">کد دسته‌بندی
-            <Input name="code" dir="ltr" pattern="[a-z][a-z0-9_-]{0,31}"
+            <Input name="code" dir="ltr" pattern="[a-z][a-z0-9_\-]{0,31}"
               placeholder="surface" required />
           </label>
           <label className="block space-y-2 text-sm">نام دسته‌بندی
             <Input name="name" required placeholder="سطح" maxLength={120} />
           </label>
           <label className="block space-y-2 text-sm">کد واحد مرجع
-            <Input name="base_code" dir="ltr" pattern="[a-z][a-z0-9_-]{0,31}"
+            <Input name="base_code" dir="ltr" pattern="[a-z][a-z0-9_\-]{0,31}"
               required placeholder="m2" />
           </label>
           <label className="block space-y-2 text-sm">نام واحد مرجع
@@ -121,7 +121,7 @@ export default async function UomsPage({ searchParams }: { searchParams: Params 
             </select>
           </label>
           <label className="block space-y-2 text-sm">کد واحد
-            <Input name="code" dir="ltr" required pattern="[a-z][a-z0-9_-]{0,31}"
+            <Input name="code" dir="ltr" required pattern="[a-z][a-z0-9_\-]{0,31}"
               placeholder="box6" />
           </label>
           <label className="block space-y-2 text-sm">نام واحد

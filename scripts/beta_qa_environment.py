@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / ".codespaces" / "beta-qa.env"
 PROVIDER_KEYS = (
     "TOKEN",
+    "TELEGRAM_BOT_TOKEN",
+    "LIVE_TELEGRAM_TOKEN",
+    "LIVE_BALE_TOKEN",
     "BALE_BOT_TOKEN",
     "BALE_WALLET_PROVIDER_TOKEN",
     "TELEGRAM_FIAT_PROVIDER_TOKEN",
@@ -56,7 +59,6 @@ def prepare_environment(target: Path = TARGET) -> Path:
         "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
         "REDIS_HOST": "redis",
         "REDIS_PASSWORD": secrets.token_urlsafe(32),
-        "JWT_SECRET_KEY": secrets.token_urlsafe(48),
         "LIVE_ADMIN_PASSWORD": secrets.token_urlsafe(32),
         "NEXT_ADMIN_BRIDGE_ENABLED": "true",
         "NEXT_ADMIN_BRIDGE_SECRET": secrets.token_urlsafe(48),
@@ -70,17 +72,11 @@ def prepare_environment(target: Path = TARGET) -> Path:
         "NEXT_ADMIN_PUBLIC_ORIGIN": "",
         "NEXT_ADMIN_CAPTCHA_PROVIDER": "none",
         "RUNTIME_ENVIRONMENT": "PROD",
-        "WEBHOOK_HOST": "https://disabled.invalid",
-        "TELEGRAM_UPDATE_MODE": "webhook",
-        "TELEGRAM_API_MODE": "direct",
         "SHOP_ADMIN_SECURE_COOKIES": "false",
-        "CRYPTO_FORWARDING_MODE": "false",
         "SHOP_MEDIA_ROOT": "/qa/public",
         "SHOP_DIGITAL_ROOT": "/qa/private",
         "SHOP_DIGITAL_DELIVERY_ENABLED": "false",
         "SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR": "0",
-        "BALE_BROADCAST_PREPARE_CHAT_ID": "0",
-        "ADMIN_ID_LIST": "",
         "SHOP_CAMPAIGN_DISPATCH_ENABLED": "false",
         "SHOP_BROADCAST_WORKER_ENABLED": "false",
         "SHOP_BROADCAST_REGISTRY_ENABLED": "false",
@@ -93,7 +89,6 @@ def prepare_environment(target: Path = TARGET) -> Path:
         "MULTIBOT_V2_RUNTIME_ENABLED": "false",
         "SHOP_RELAY_POOL_ENABLED": "false",
         "PYTHONDONTWRITEBYTECODE": "1",
-        **{key: "" for key in PROVIDER_KEYS},
     }
     target.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation preserves a concurrently prepared environment.

@@ -13,7 +13,7 @@ export default async function NewCampaignPage() {
   const staff = await currentStaff();
   if (!["superadmin", "marketing"].includes(staff.role)) notFound();
   const options = await adminFetch<CampaignBotOptions>("/campaigns/bots");
-  const hasSender = options.legacy_available || options.bots.length > 0;
+  const hasSender = options.bots.length > 0;
   return (
     <div>
       <PageHeading title="کمپین جدید" description="ساخت پیش‌نویس، پیامی ارسال نمی‌کند. مخاطبان و شروع ارسال جداگانه تأیید می‌شوند." />
@@ -33,13 +33,6 @@ export default async function NewCampaignPage() {
                 {options.bots.map((bot) => (
                   <option key={bot.id} value={bot.id}>{bot.name} — {bot.platform === "bale" ? "بله" : "تلگرام"}</option>
                 ))}
-                {options.legacy_available ? (
-                  <optgroup label="ربات‌های قدیمی همین فروشگاه">
-                    <option value="legacy:all">ربات‌های قدیمی — تلگرام و بله</option>
-                    <option value="legacy:telegram">ربات قدیمی تلگرام</option>
-                    <option value="legacy:bale">ربات قدیمی بله</option>
-                  </optgroup>
-                ) : null}
               </select>
             </label>
             {!hasSender ? <p role="status" className="text-sm text-muted-foreground">برای این فروشگاه ربات فعالی در دسترس نیست. پس از فعال‌شدن ربات، می‌توانید پیش‌نویس بسازید.</p> : null}

@@ -9,10 +9,8 @@ from sqlalchemy import (
     Index, String, UniqueConstraint, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqladmin import ModelView
 
 from models.base import Base
-from models.shop_scope import legacy_bot_default
 from models.shop_multibot import DEFAULT_STORE_ID
 
 
@@ -111,7 +109,7 @@ class ShopCart(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -331,91 +329,3 @@ class ShopOrderReviewAudit(Base):
             name="ck_shop_order_review_action",
         ),
     )
-
-
-class ShopOrderReviewAuditAdmin(ModelView, model=ShopOrderReviewAudit):
-    """Read-only tracking for every manager decision."""
-
-    name = "رویداد سفارش"
-    name_plural = "سوابق تصمیم مدیر"
-    category = "فروش"
-    column_list = [
-        ShopOrderReviewAudit.order_id, ShopOrderReviewAudit.actor,
-        ShopOrderReviewAudit.action, ShopOrderReviewAudit.old_status,
-        ShopOrderReviewAudit.new_status, ShopOrderReviewAudit.created_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-
-
-class ShopShippingMethodAdmin(ModelView, model=ShopShippingMethod):
-    """Manage the delivery methods available to both messaging platforms."""
-
-    name = "روش ارسال"
-    name_plural = "روش‌های ارسال فروشگاه"
-    category = "فروش"
-    icon = "fa-solid fa-truck"
-    column_labels = {
-        ShopShippingMethod.name: "عنوان",
-        ShopShippingMethod.price_irr: "هزینه (ریال)",
-        ShopShippingMethod.position: "ترتیب نمایش",
-        ShopShippingMethod.is_active: "فعال",
-    }
-
-
-class ShopCouponAdmin(ModelView, model=ShopCoupon):
-    """Edit discount rules without modifying existing purchase history."""
-
-    name = "کد تخفیف"
-    name_plural = "کدهای تخفیف فروشگاه"
-    category = "بازاریابی"
-    icon = "fa-solid fa-tags"
-    column_labels = {
-        ShopCoupon.code: "کد تخفیف",
-        ShopCoupon.discount_type: "نوع: percent یا fixed",
-        ShopCoupon.value: "مقدار (درصد یا ریال)",
-        ShopCoupon.minimum_subtotal_irr: "حداقل مبلغ (ریال)",
-        ShopCoupon.max_uses: "سقف استفاده",
-        ShopCoupon.used_count: "تعداد مصرف",
-        ShopCoupon.expires_at: "انقضا",
-        ShopCoupon.is_active: "فعال",
-    }
-    form_columns = [
-        ShopCoupon.code, ShopCoupon.discount_type, ShopCoupon.value,
-        ShopCoupon.minimum_subtotal_irr, ShopCoupon.max_uses,
-        ShopCoupon.expires_at, ShopCoupon.is_active,
-    ]
-
-
-class ShopCartAdmin(ModelView, model=ShopCart):
-    """Display scoped baskets without allowing staff to alter quantities."""
-
-    name = "سبد خرید"
-    name_plural = "سبدهای کاربران"
-    category = "فروش"
-    can_create = False
-    can_edit = False
-    can_delete = False
-
-
-class ShopCartItemAdmin(ModelView, model=ShopCartItem):
-    """Show stored basket lines as read-only admin data."""
-
-    name = "قلم سبد"
-    name_plural = "اقلام سبد خرید"
-    category = "فروش"
-    can_create = False
-    can_edit = False
-    can_delete = False
-
-
-class ShopOrderLineAdmin(ModelView, model=ShopOrderLine):
-    """Show audited line snapshots without allowing price edits."""
-
-    name = "قلم سفارش"
-    name_plural = "اقلام سفارش‌های مشترک"
-    category = "فروش"
-    can_create = False
-    can_edit = False
-    can_delete = False

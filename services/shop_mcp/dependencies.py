@@ -8,12 +8,11 @@ from dataclasses import asdict
 from sqlalchemy import select
 
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_channel_features import ShopChannelFeature
 from models.shop_content import Product, ProductMedia
 from models.shop_multibot import ShopBot
 from models.shop_store_commerce import ShopBotCommercePolicy
 from services.shop_actions.definitions import definition as action_definition
-from services.shop_channel_features import PLATFORMS, get_features
+from services.shop_channel_features import get_features
 from services.shop_mcp.contracts import McpRejected
 from services.shop_workflow_schema import canonical_json
 
@@ -33,6 +32,7 @@ async def snapshot(db, *, store_id, definition, bindings=()) -> dict:
             select(ShopBot)
             .where(
                 ShopBot.store_id == store_id,
+                ShopBot.runtime_owner == "registry",
                 ShopBot.id.in_(bot_ids),
             )
             .order_by(ShopBot.id)
@@ -42,18 +42,6 @@ async def snapshot(db, *, store_id, definition, bindings=()) -> dict:
     ).all()
     if {bot.id for bot in bots} != bot_ids:
         raise McpRejected("mcp_dependency_changed", 409)
-    # Match the updater's platform order, independent of Bot UUID order.
-    # Refresh identities as well as taking compatible policy SHARE locks.
-    for platform in PLATFORMS:
-        if platform in {bot.platform for bot in bots}:
-            await db.scalar(
-                select(ShopChannelFeature)
-                .where(
-                    ShopChannelFeature.platform == platform,
-                )
-                .with_for_update(read=True)
-                .execution_options(populate_existing=True)
-            )
     bot_states = []
     for bot in bots:
         await db.scalar(

@@ -13,16 +13,15 @@ def test_create_telegram_session_without_proxy(monkeypatch):
     assert session._proxy is None
 
 
-def test_create_telegram_session_with_proxy(monkeypatch):
-    monkeypatch.setattr("config.TELEGRAM_API_MODE", None)
-    monkeypatch.setattr("config.TELEGRAM_PROXY_URL", "socks5://192.168.1.1:10808")
-
+def test_environment_proxy_cannot_select_a_registry_transport(monkeypatch):
+    """Global environment settings never override per-bot Registry routing."""
+    monkeypatch.setenv("TELEGRAM_PROXY_URL", "socks5://192.168.1.1:10808")
+    monkeypatch.setenv("TELEGRAM_API_MODE", "cloudflare_worker")
     session = create_telegram_session()
+    assert session._proxy is None
 
-    assert session._proxy == "socks5://192.168.1.1:10808"
 
-
-def test_create_bot_uses_proxy_session_by_default(monkeypatch):
+def test_create_bot_uses_direct_session_by_default(monkeypatch):
     fake_session = SimpleNamespace()
     captured = {}
 

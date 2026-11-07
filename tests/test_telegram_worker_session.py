@@ -10,7 +10,6 @@ from aiogram.methods import GetMe
 import config
 from utils.telegram import create_telegram_session
 from utils.telegram_worker import (
-    RELAY_AUTH_HEADER,
     CloudflareWorkerSession,
     validate_worker_origin,
 )
@@ -18,6 +17,13 @@ from utils.telegram_worker import (
 WORKER_ORIGIN = "https://my-relay.example.workers.dev"
 SECRET = "a-fake-secret-containing-more-than-32-characters"
 BOT_TOKEN = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcd"
+BOT_ID = "00000000-0000-4000-8000-000000000101"
+VERSION = 1
+RELAY_HEADERS = {
+    "X-Relay-Bot-ID": BOT_ID,
+    "X-Relay-Key": SECRET,
+    "X-Relay-Version": str(VERSION),
+}
 
 
 @pytest.mark.parametrize(
@@ -54,13 +60,15 @@ def test_factory_defaults_to_direct_telegram_api(monkeypatch) -> None:
     )
 
 
-def test_factory_enables_cloudflare_worker(monkeypatch) -> None:
+def test_explicit_registry_route_enables_cloudflare_worker(monkeypatch) -> None:
     """Route API calls and file downloads through the dynamic Worker URL."""
     monkeypatch.setattr(config, "TELEGRAM_API_MODE", "cloudflare_worker", raising=False)
     monkeypatch.setattr(config, "TELEGRAM_WORKER_URL", WORKER_ORIGIN, raising=False)
     monkeypatch.setattr(config, "TELEGRAM_WORKER_SECRET", SECRET, raising=False)
     monkeypatch.setattr(config, "TELEGRAM_PROXY_URL", None, raising=False)
-    session = create_telegram_session()
+    session = CloudflareWorkerSession(
+        WORKER_ORIGIN, SECRET, bot_id=BOT_ID, credential_version=VERSION,
+    )
     assert isinstance(session, CloudflareWorkerSession)
     assert session.api.api_url(BOT_TOKEN, "getMe") == (
         f"{WORKER_ORIGIN}/bot{BOT_TOKEN}/getMe"
@@ -73,13 +81,9 @@ def test_factory_enables_cloudflare_worker(monkeypatch) -> None:
 def test_worker_mode_rejects_weak_keys_and_mixed_proxy_modes(monkeypatch) -> None:
     """Fail closed rather than silently exposing an unauthenticated relay."""
     with pytest.raises(ValueError):
-        CloudflareWorkerSession(WORKER_ORIGIN, "short")
-    monkeypatch.setattr(config, "TELEGRAM_API_MODE", "cloudflare_worker", raising=False)
-    monkeypatch.setattr(config, "TELEGRAM_WORKER_URL", WORKER_ORIGIN, raising=False)
-    monkeypatch.setattr(config, "TELEGRAM_WORKER_SECRET", SECRET, raising=False)
-    monkeypatch.setattr(config, "TELEGRAM_PROXY_URL", "socks5://proxy.local:1080", raising=False)
-    with pytest.raises(ValueError, match="must be unset"):
-        create_telegram_session()
+        CloudflareWorkerSession(
+            WORKER_ORIGIN, "short", bot_id=BOT_ID, credential_version=VERSION,
+        )
 
 
 class FakeBody:
@@ -135,7 +139,9 @@ class FakeClient:
 @pytest.mark.asyncio
 async def test_method_auth_header_is_scoped_to_worker(monkeypatch) -> None:
     """Authenticate a Telegram API POST without modifying global headers."""
-    session = CloudflareWorkerSession(WORKER_ORIGIN, SECRET)
+    session = CloudflareWorkerSession(
+        WORKER_ORIGIN, SECRET, bot_id=BOT_ID, credential_version=VERSION,
+    )
     client = FakeClient()
 
     async def create_session():
@@ -156,14 +162,16 @@ async def test_method_auth_header_is_scoped_to_worker(monkeypatch) -> None:
     method, url, options = client.calls[0]
     assert method == "POST"
     assert url == f"{WORKER_ORIGIN}/bot{BOT_TOKEN}/getMe"
-    assert options["headers"] == {RELAY_AUTH_HEADER: SECRET}
+    assert options["headers"] == RELAY_HEADERS
     assert options["allow_redirects"] is False
 
 
 @pytest.mark.asyncio
 async def test_file_download_key_is_not_leaked_to_external_urls(monkeypatch) -> None:
     """Include the Worker key only for file URLs on the trusted origin."""
-    session = CloudflareWorkerSession(WORKER_ORIGIN, SECRET)
+    session = CloudflareWorkerSession(
+        WORKER_ORIGIN, SECRET, bot_id=BOT_ID, credential_version=VERSION,
+    )
     client = FakeClient()
 
     async def create_session():
@@ -178,7 +186,7 @@ async def test_file_download_key_is_not_leaked_to_external_urls(monkeypatch) -> 
     ]
     assert result == [b"binary-payload"]
     worker_options = client.calls[-1][2]
-    assert worker_options["headers"][RELAY_AUTH_HEADER] == SECRET
+    assert worker_options["headers"] == RELAY_HEADERS
     assert worker_options["allow_redirects"] is False
 
     result = [
@@ -188,4 +196,16 @@ async def test_file_download_key_is_not_leaked_to_external_urls(monkeypatch) -> 
     ]
     assert result == [b"binary-payload"]
     outside_options = client.calls[-1][2]
-    assert RELAY_AUTH_HEADER not in outside_options["headers"]
+    assert not set(RELAY_HEADERS) & set(outside_options["headers"])
+
+
+@pytest.mark.parametrize(
+    "bot_id,version",
+    [(None, None), ("not-a-uuid", 1), (BOT_ID, None), (BOT_ID, True), (BOT_ID, 0)],
+)
+def test_relay_requires_registered_uuid_and_explicit_key_version(bot_id, version):
+    """No caller can construct the retired platform-wide relay auth scheme."""
+    with pytest.raises(ValueError):
+        CloudflareWorkerSession(
+            WORKER_ORIGIN, SECRET, bot_id=bot_id, credential_version=version,
+        )

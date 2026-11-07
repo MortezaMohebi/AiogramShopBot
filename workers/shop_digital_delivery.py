@@ -38,13 +38,8 @@ async def _pending_bot_ids() -> list[str]:
             ShopDigitalDelivery.state == "queued",
             ShopDigitalDelivery.store_id == ShopBot.store_id,
             ShopStore.state == "active",
-            (
-                (ShopBot.runtime_owner == "legacy")
-                & (ShopBot.status == "legacy")
-            ) | (
-                (ShopBot.runtime_owner == "registry")
-                & (ShopBot.status == "active")
-            ),
+            ShopBot.runtime_owner == "registry",
+            ShopBot.status == "active",
         ).distinct().order_by(ShopBot.id).limit(50))
         return list(result.all())
 

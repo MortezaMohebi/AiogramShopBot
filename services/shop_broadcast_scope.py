@@ -1,4 +1,4 @@
-"""Resolve Registry broadcast permission without payment or legacy fallbacks."""
+"""Resolve Registry broadcast permission without payment permission inheritance."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from sqlalchemy.sql import Select, SQLColumnExpression
 import config
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
-    DEFAULT_STORE_ID,
-    LEGACY_BOT_IDS,
     ShopBot,
     ShopBotCredential,
     ShopStore,
@@ -20,25 +18,6 @@ from models.shop_multibot_receiver import ShopBotReceiver
 def registry_dispatch_enabled() -> bool:
     """Require an explicit deployment opt-in for Registry-owned campaigns."""
     return getattr(config, "SHOP_BROADCAST_REGISTRY_ENABLED", False) is True
-
-
-def ready_legacy_bot(platform: str) -> Select[tuple[ShopBot]]:
-    """Require the original bot's current Store and legacy runtime ownership."""
-    return (
-        select(ShopBot)
-        .join(
-            ShopStore,
-            ShopStore.id == ShopBot.store_id,
-        )
-        .where(
-            ShopBot.id == LEGACY_BOT_IDS[platform],
-            ShopBot.store_id == DEFAULT_STORE_ID,
-            ShopBot.platform == platform,
-            ShopBot.status == "legacy",
-            ShopBot.runtime_owner == "legacy",
-            ShopStore.state == "active",
-        )
-    )
 
 
 def ready_registry_bot(

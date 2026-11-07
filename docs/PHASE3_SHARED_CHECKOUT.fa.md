@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # فاز ۳ — سبد خرید و ثبت سفارش مشترک تلگرام و بله
 
 **وضعیت: CODED / NOT RUN.** همه تغییرات روی Draft PR هستند؛ هیچ Bot، پرداخت، Migration،

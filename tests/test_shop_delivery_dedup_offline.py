@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 import db
 from channels.contracts import Platform
 from models.base import Base
+from models.shop_multibot import DEFAULT_STORE_ID, ShopBot
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
 from models.shop_delivery import ShopInboundUpdate, ShopRemoteFile
 from services.shop_media_delivery import bot_fingerprint, cached_file_id
 from services.shop_updates import claim_update, finish_update
@@ -63,11 +65,23 @@ class SQLiteAsyncSession:
 def database(monkeypatch):
     """Replace the async DB factory with a disposable SQLite session."""
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[ShopRemoteFile.__table__, ShopInboundUpdate.__table__],
-    )
+    create_shop_schema(engine)
     with Session(engine, expire_on_commit=False) as session:
+        seed_registry(session)
+        session.add(
+            ShopBot(
+                id="00000000-0000-4000-8000-000000000103",
+                store_id=DEFAULT_STORE_ID,
+                slug="second-bale",
+                name="Second Bale",
+                platform="bale",
+                status="active",
+                runtime_owner="registry",
+                version=1,
+                credential_version=1,
+            )
+        )
+        session.commit()
         adapter = SQLiteAsyncSession(session)
 
         @asynccontextmanager
@@ -87,12 +101,14 @@ async def test_webhook_update_is_processed_once_for_same_bot(database):
         platform=Platform.TELEGRAM,
         token=TELEGRAM_TOKEN,
         update_id=200,
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     assert (fresh, state) == (True, "processing")
     again, state = await claim_update(
         platform=Platform.TELEGRAM,
         token=TELEGRAM_TOKEN,
         update_id=200,
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     assert (again, state) == (False, "processing")
     await finish_update(
@@ -100,11 +116,13 @@ async def test_webhook_update_is_processed_once_for_same_bot(database):
         token=TELEGRAM_TOKEN,
         update_id=200,
         success=True,
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     again, state = await claim_update(
         platform=Platform.TELEGRAM,
         token=TELEGRAM_TOKEN,
         update_id=200,
+        bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
     )
     assert (again, state) == (False, "processed")
     assert database.query(ShopInboundUpdate).count() == 1
@@ -114,9 +132,9 @@ async def test_webhook_update_is_processed_once_for_same_bot(database):
 async def test_webhook_same_numeric_id_is_unique_to_bot_and_platform(database):
     """Bale and Telegram can have identical update IDs without collision."""
     for platform, token, bot_id in [
-        (Platform.TELEGRAM, TELEGRAM_TOKEN, str(uuid4())),
-        (Platform.BALE, BALE_TOKEN, str(uuid4())),
-        (Platform.BALE, BALE_TOKEN_2, str(uuid4())),
+        (Platform.TELEGRAM, TELEGRAM_TOKEN, TEST_BOT_IDS["telegram"]),
+        (Platform.BALE, BALE_TOKEN, TEST_BOT_IDS["bale"]),
+        (Platform.BALE, BALE_TOKEN_2, "00000000-0000-4000-8000-000000000103"),
     ]:
         fresh, _ = await claim_update(
             platform=platform, token=token, update_id=42, bot_id=bot_id
@@ -129,16 +147,23 @@ async def test_webhook_same_numeric_id_is_unique_to_bot_and_platform(database):
 async def test_failed_webhook_stays_visible_for_manual_reconciliation(database):
     """Never silently retry mutations whose outcome may be ambiguous."""
     await claim_update(
-        platform=Platform.BALE, token=BALE_TOKEN, update_id=303
+        platform=Platform.BALE,
+        token=BALE_TOKEN,
+        update_id=303,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     await finish_update(
         platform=Platform.BALE,
         token=BALE_TOKEN,
         update_id=303,
         success=False,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     again, state = await claim_update(
-        platform=Platform.BALE, token=BALE_TOKEN, update_id=303
+        platform=Platform.BALE,
+        token=BALE_TOKEN,
+        update_id=303,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert (again, state) == (False, "needs_review")
 
@@ -150,39 +175,77 @@ async def test_cached_file_id_never_crosses_bot_or_platform_boundary(database):
     first_bot = bot_fingerprint(BALE_TOKEN)
     database.add(
         ShopRemoteFile(
-            platform="bale", bot_fingerprint=first_bot,
-            storage_key=key, delivery_kind="photo",
+            platform="bale",
+            bot_fingerprint=first_bot,
+            storage_key=key,
+            delivery_kind="photo",
             remote_file_id="bale-first-bot-file",
+            bot_id=TEST_BOT_IDS["bale"],
         )
     )
     database.commit()
-    assert await cached_file_id(
-        platform="bale", bot_key=first_bot,
-        storage_key=key, kind="photo",
-    ) == "bale-first-bot-file"
-    assert await cached_file_id(
-        platform="bale", bot_key=bot_fingerprint(BALE_TOKEN_2),
-        storage_key=key, kind="photo",
-    ) is None
-    assert await cached_file_id(
-        platform="telegram", bot_key=bot_fingerprint(TELEGRAM_TOKEN),
-        storage_key=key, kind="photo",
-    ) is None
-    assert await cached_file_id(
-        platform="bale", bot_key=first_bot,
-        storage_key=key, kind="document",
-    ) is None
+    assert (
+        await cached_file_id(
+            platform="bale",
+            bot_key=first_bot,
+            storage_key=key,
+            kind="photo",
+            bot_id=TEST_BOT_IDS["bale"],
+        )
+        == "bale-first-bot-file"
+    )
+    assert (
+        await cached_file_id(
+            platform="bale",
+            bot_key=bot_fingerprint(BALE_TOKEN_2),
+            storage_key=key,
+            kind="photo",
+            bot_id=TEST_BOT_IDS["bale"],
+        )
+        is None
+    )
+    assert (
+        await cached_file_id(
+            platform="telegram",
+            bot_key=bot_fingerprint(TELEGRAM_TOKEN),
+            storage_key=key,
+            kind="photo",
+            bot_id=TEST_BOT_IDS["telegram"],
+        )
+        is None
+    )
+    assert (
+        await cached_file_id(
+            platform="bale",
+            bot_key=first_bot,
+            storage_key=key,
+            kind="document",
+            bot_id=TEST_BOT_IDS["bale"],
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_token_rotation_keeps_the_original_update_receipt(database):
     """Rotating a credential cannot replay an update or hide its final state."""
-    await claim_update(platform=Platform.BALE, token=BALE_TOKEN, update_id=909)
+    await claim_update(
+        platform=Platform.BALE,
+        token=BALE_TOKEN,
+        update_id=909,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
+    )
     await finish_update(
-        platform=Platform.BALE, token=BALE_TOKEN_2,
-        update_id=909, success=True,
+        platform=Platform.BALE,
+        token=BALE_TOKEN_2,
+        update_id=909,
+        success=True,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     )
     assert await claim_update(
-        platform=Platform.BALE, token=BALE_TOKEN_2, update_id=909,
+        platform=Platform.BALE,
+        token=BALE_TOKEN_2,
+        update_id=909,
+        bot_id=TEST_BOT_IDS[(Platform.BALE).value],
     ) == (False, "processed")
     assert database.query(ShopInboundUpdate).count() == 1

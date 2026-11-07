@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, cast
-from uuid import UUID
+from uuid import RFC_4122, UUID
 from urllib.parse import urlsplit
 
 from aiohttp import ClientError
@@ -22,9 +22,6 @@ from aiogram.methods.base import TelegramType
 
 if TYPE_CHECKING:
     from aiogram import Bot
-
-
-RELAY_AUTH_HEADER = "X-Telegram-Relay-Key"
 
 
 def validate_worker_origin(raw_url: str) -> str:
@@ -64,25 +61,24 @@ class CloudflareWorkerSession(AiohttpSession):
 
     def __init__(
         self, worker_url: str, relay_secret: str, *,
-        bot_id: str | None = None, credential_version: int | None = None,
+        bot_id: str, credential_version: int,
     ) -> None:
-        """Bind each modern relay session to one bot and key version."""
-        if not isinstance(relay_secret, str) or len(relay_secret) < 32:
-            raise ValueError(
-                "TELEGRAM_WORKER_SECRET must contain at least 32 characters."
-            )
-        if bot_id is not None:
-            try:
-                bot_id = str(UUID(bot_id))
-            except (ValueError, TypeError):
-                raise ValueError("Invalid relay bot identity.") from None
-            if (
-                type(credential_version) is not int
-                or credential_version <= 0
-            ):
-                raise ValueError("Invalid relay credential version.")
-        elif credential_version is not None:
-            raise ValueError("Legacy relay has no credential version.")
+        """Bind every relay session to one registered bot and key version."""
+        if (
+            not isinstance(relay_secret, str)
+            or not 32 <= len(relay_secret) <= 256
+            or any(not 33 <= ord(char) <= 126 for char in relay_secret)
+        ):
+            raise ValueError("Relay keys require 32..256 printable ASCII characters.")
+        try:
+            identity = UUID(bot_id)
+            if identity.variant != RFC_4122 or identity.version not in range(1, 9):
+                raise ValueError
+            bot_id = str(identity)
+        except (ValueError, TypeError, AttributeError):
+            raise ValueError("Invalid relay bot identity.") from None
+        if type(credential_version) is not int or not 1 <= credential_version <= 999_999_999:
+            raise ValueError("Invalid relay credential version.")
         self.worker_origin = validate_worker_origin(worker_url)
         self._relay_secret = relay_secret
         self._bot_id = bot_id
@@ -92,9 +88,7 @@ class CloudflareWorkerSession(AiohttpSession):
         )
 
     def _relay_headers(self) -> dict[str, str]:
-        """Return the bound Worker credentials, never both auth schemes."""
-        if self._bot_id is None:
-            return {RELAY_AUTH_HEADER: self._relay_secret}
+        """Return only the exact registered bot's versioned relay credentials."""
         return {
             "X-Relay-Bot-ID": self._bot_id,
             "X-Relay-Key": self._relay_secret,
@@ -171,7 +165,7 @@ class CloudflareWorkerSession(AiohttpSession):
 
         Arbitrary external input URLs continue through the upstream Aiogram
         implementation without the Worker header. Requests to the Worker that
-        do not target the file endpoint receive no shared credential.
+        do not target the file endpoint receive no relay credential.
         """
         parts = urlsplit(url)
         trusted_file_url = (

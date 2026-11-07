@@ -1,7 +1,6 @@
 """Platform-scoped shop identities for common Telegram and Bale services.
 
-The user database used by the legacy Telegram shop is preserved separately.
-This new identity layer never treats equal numeric IDs across platforms as
+This identity layer never treats equal numeric IDs across platforms as
 the same customer, nor opts customers into campaigns without consent.
 """
 
@@ -13,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
-from models.shop_scope import legacy_id
+from models.shop_scope import require_registry_bot
 from services.shop_store_commerce import attach_new_customer, bot_store
 from models.shop_customer_crm import ShopCustomerProfile
 from services.shop_customer_crm import effective_restriction
@@ -36,14 +35,14 @@ async def register_customer(
     if first_name is not None:
         first_name = first_name.strip()[:255] or None
 
-    owner = bot_id or legacy_id(platform.value)
+    owner = (await require_registry_bot(session, bot_id, platform.value)).id
     store_id = await bot_store(session, bot_id=owner)
     condition = (
         ShopIdentity.bot_id == owner,
         ShopIdentity.platform == platform.value,
         ShopIdentity.platform_user_id == platform_user_id,
     )
-    # Serialize attachment for an existing legacy identity without a Customer.
+    # Serialize attachment for an existing identity without a Customer.
     # Refresh a preloaded ORM row after acquiring the lock so a competing
     # attachment is not overwritten with an orphan Customer left behind.
     # A missing row is protected by the unique Bot/user constraint below.
@@ -97,6 +96,7 @@ async def is_blocked(
     bot_id: str | None = None,
 ) -> bool:
     """Check the platform-scoped ban without mutating any records."""
+    bot = await require_registry_bot(session, bot_id, platform.value)
     rows = await session.execute(
         select(
             ShopIdentity.is_blocked,
@@ -107,7 +107,7 @@ async def is_blocked(
             ShopCustomerProfile.identity_id == ShopIdentity.id,
         )
         .where(
-            ShopIdentity.bot_id == (bot_id or legacy_id(platform.value)),
+            ShopIdentity.bot_id == bot.id,
             ShopIdentity.platform == platform.value,
             ShopIdentity.platform_user_id == platform_user_id,
         )

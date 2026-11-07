@@ -13,10 +13,8 @@ from sqlalchemy import (
     UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from sqladmin import ModelView
 
 from models.base import Base
-from models.shop_scope import legacy_bot_default
 
 
 class ShopRemoteFile(Base):
@@ -28,7 +26,7 @@ class ShopRemoteFile(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -62,7 +60,7 @@ class ShopInboundUpdate(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     bot_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     update_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -89,37 +87,3 @@ class ShopInboundUpdate(Base):
         ),
         CheckConstraint("update_id >= 0", name="ck_shop_inbound_id"),
     )
-
-
-class ShopRemoteFileAdmin(ModelView, model=ShopRemoteFile):
-    """Read-only information on bot-specific upload reuse."""
-
-    name = "شناسه فایل"
-    name_plural = "شناسه‌های رسانه در ربات‌ها"
-    category = "محتوا"
-    column_list = [
-        ShopRemoteFile.platform, ShopRemoteFile.bot_fingerprint,
-        ShopRemoteFile.storage_key, ShopRemoteFile.delivery_kind,
-        ShopRemoteFile.created_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False
-
-
-class ShopInboundUpdateAdmin(ModelView, model=ShopInboundUpdate):
-    """Inspect unprocessed and uncertain webhook updates without replay UI."""
-
-    name = "دریافت وبهوک"
-    name_plural = "دفتر دریافت آپدیت‌ها"
-    category = "گزارش‌ها"
-    column_list = [
-        ShopInboundUpdate.platform, ShopInboundUpdate.update_id,
-        ShopInboundUpdate.status, ShopInboundUpdate.received_at,
-        ShopInboundUpdate.completed_at,
-    ]
-    can_create = False
-    can_edit = False
-    can_delete = False
-    can_export = False

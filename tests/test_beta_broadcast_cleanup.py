@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
+import config
 from sqlalchemy import select, text
 from sqlalchemy.sql.elements import TextClause
 
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import ShopBot, ShopBotCredential, ShopStore
 from models.shop_multibot_receiver import ShopBotReceiver
-from tests.legacy_shop_entrypoints import legacy_function
+from tests.script_entrypoints import script_function
 from tests.test_shared_cart import db as shared_db
 
 
@@ -91,9 +92,9 @@ def cleanup_entry(db, *, database="shop_codespace", user="shop_codespace"):
         """Keep cleanup on one disposable transaction with real persistent rows."""
         yield GuardedDatabase()
 
-    return legacy_function(
+    return script_function(
         "scripts/beta_broadcast_e2e.py", "pause_synthetic_bots",
-        session_maker=sessions, re=re, select=select, text=text,
+        session_maker=sessions, config=config, re=re, select=select, text=text,
         ShopBot=ShopBot, ShopStore=ShopStore, ShopBotCredential=ShopBotCredential,
         ShopBotOperations=ShopBotOperations, ShopBotReceiver=ShopBotReceiver,
     )

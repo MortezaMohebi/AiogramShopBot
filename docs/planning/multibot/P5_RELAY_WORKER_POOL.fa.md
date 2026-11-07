@@ -8,7 +8,7 @@
 
 - One shop can own many Telegram and Bale bots. The pool handles **outbound Telegram Bot API traffic** for registered Telegram bots. The Bale adapter continues with its existing direct `https://tapi.bale.ai` transport, including its own wallet/media restrictions; it is not forwarded through Telegram's Cloudflare upstream.
 - A single Cloudflare Worker can serve many Telegram bots with **independent scoped keys**. A single bot can have multiple assigned Workers with explicit priority. There is **no per-bot container**.
-- The new data model uses `shop_relay_workers`, `shop_bot_relay_routes`, `shop_relay_credentials` and append-only `shop_relay_events`. Migration `20261104t001` adds tables after `20261103s001` and does not change customer, wallet, payment or legacy token data.
+- The new data model uses `shop_relay_workers`, `shop_bot_relay_routes`, `shop_relay_credentials` and append-only `shop_relay_events`. Migration `20261104t001` adds tables after `20261103s001` and does not change customer, wallet or payment data.
 - Every credential is bound cryptographically to `(bot_id, worker_id, version)` with an HMAC duplicate-key guard. Every route and status mutation has strict authorization. API responses never contain key material, ciphertext or token fingerprints.
 - The Worker accepts `X-Relay-Bot-ID`, `X-Relay-Version`, and `X-Relay-Key`, then verifies the **Telegram Bot API token hash** in the fixed Telegram URL against the corresponding bot's configured record. It only forwards to `https://api.telegram.org`; arbitrary upstream URLs, proxy authentication, cookies and relay headers are stripped.
 - Cloudflare `RelayQuota` Durable Object stores a global per-second budget and per-bot budget, plus bounded concurrent network leases. The quota persists across Worker isolates; failures are fail-closed. Actual limits must be configured correctly in the Worker secret binding. Dashboard capacity entries are planning constraints, not substitutes for Worker quotas.
@@ -19,7 +19,7 @@
 ## Provisioning — explicit, non-automated
 
 1. Back up PostgreSQL and apply migrations through `20261104t001` only after P1–P4 acceptance. Do not run live provider migration implicitly.
-2. Deploy the Cloudflare Worker code and its Durable Object binding from `cloudflare/telegram-relay/wrangler.toml`. The existing legacy relay continues accepting `RELAY_SHARED_SECRET` only when `RELAY_CLIENTS_JSON` is not configured.
+2. Deploy the Cloudflare Worker code and its Durable Object binding from `cloudflare/telegram-relay/wrangler.toml`. Every request requires `RELAY_CLIENTS_JSON` plus the Durable Object quota; shared-key authentication is rejected before forwarding.
 3. Allowlist each exact public Worker HTTPS **origin** in `TELEGRAM_WORKER_ALLOWED_ORIGINS` on the Python server. No local/IP/unknown domain should receive a Bot API token.
 4. Configure `RELAY_CLIENTS_JSON` as a **Cloudflare encrypted secret**, not in Git, environment templates, logs or Worker source. The format is:
 
@@ -51,12 +51,12 @@ The keys in this example are placeholders, not usable secrets. For each bot, obt
 ## Scope boundaries and operational safety
 
 - P5 does **not** introduce a Bale proxy. Bale remains direct; no Telegram Worker is allowed to forward Bale credentials to `api.telegram.org`.
-- The legacy Broadcast Worker still only possesses its two original credentials. Registry-owned campaigns must not be dispatched with legacy credentials and remain **fail-closed** until the separate bot-aware Broadcast E2E cutover is accepted. P5's relay pool does not silently enable existing campaign dispatch or paid Bale Business mode.
+- The Broadcast Worker resolves each campaign’s explicit Registry bot and credential version. Every send rechecks Store, bot, receiver, consent and quota; relay setup does not enable campaign dispatch or paid Bale Business mode.
 - P5 does not auto-rotate Bot API tokens. Worker auth versions rotate independently; Bot API token rotations also require updating the Worker token fingerprint and a separate verified receiver procedure.
 - Worker quota violations return HTTP 429; the client **does not** retry a send, because an upstream outcome may be ambiguous. Read-only operations can choose the next active route only for transport failures.
 - For read-only `getUpdates`, the P4 receipt ledger and persisted offsets still provide per-bot duplicate protection. There is no system-managed duplicate Webhook/Polling owner.
 - Route activation and Worker provisioning cannot run without an existing registered, verified bot and fresh MFA. No Worker can be implicitly activated just by its creation.
-- The old `TELEGRAM_API_MODE` transport settings serve legacy runtime paths; P5 is not a hidden replacement or emergency cutover for those connections.
+- Outbound routing comes from each registered bot’s reviewed relay routes. A shared environment setting cannot select its bot, relay credential or key version.
 
 ## QA — everything below is NOT RUN
 

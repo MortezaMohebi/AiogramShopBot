@@ -8,6 +8,7 @@ Telegram/Bale webhook and payment services are never started.
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import secrets
 import subprocess
@@ -30,9 +31,11 @@ def create_lab_environment() -> None:
     secrets_by_name = {
         "LAB_POSTGRES_PASSWORD": secrets.token_hex(24),
         "LAB_REDIS_PASSWORD": secrets.token_hex(24),
-        "LAB_JWT_SECRET": secrets.token_hex(32),
         "LAB_BRIDGE_SECRET": secrets.token_hex(32),
         "LAB_SESSION_SECRET": secrets.token_hex(32),
+        "LAB_SECURITY_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode("ascii"),
     }
     for role in ROLES:
         secrets_by_name[f"LAB_{role}_PASSWORD"] = secrets.token_urlsafe(28)

@@ -9,21 +9,28 @@ import pytest
 from channels.contracts import Platform
 from models.shop_content import ShopOrder
 from models.shop_bot_operations import ShopBotOperations
-from models.shop_multibot import LEGACY_BOT_IDS, ShopBot
+from models.shop_multibot import ShopBot
 from models.shop_payment import ShopPaymentAttempt
 from services import shop_customer_notification_dispatch as dispatch
 from services.shop_customer_notifications import enqueue_notification
-from services.shop_bot_context import resolve_legacy_bot_context
+from services.shop_bot_context import resolve_bot_context
 from services.shop_identity import register_customer
 from tests.test_beta_stock_queue import NotificationRecorder
 from tests.test_shared_cart import db, seed
+from tests.schema_support import TEST_BOT_IDS
 
 
 async def paid_notice(db, platform):
     """Persist a real paid Order/Attempt and an older unrelated queued notice."""
     product, _ = seed(db)
-    await register_customer(db, platform=platform, platform_user_id=101)
-    context = await resolve_legacy_bot_context(db, authenticated_platform=platform)
+    await register_customer(
+        db, bot_id=TEST_BOT_IDS[platform.value],
+        platform=platform, platform_user_id=101,
+    )
+    context = await resolve_bot_context(
+        db, authenticated_bot_id=TEST_BOT_IDS[platform.value],
+        authenticated_platform=platform,
+    )
     order = ShopOrder(
         bot_id=context.bot_id, store_id=context.store_id,
         platform=platform.value, platform_user_id=101, chat_id=101,
@@ -85,7 +92,7 @@ async def test_paid_confirmation_refuses_another_bot_order(db):
     _, order = await paid_notice(db, Platform.TELEGRAM)
     transport = NotificationRecorder()
     assert not await dispatch.deliver_order_paid_once(
-        db, order_id=order.id, bot_id=LEGACY_BOT_IDS["bale"], transport=transport,
+        db, order_id=order.id, bot_id=TEST_BOT_IDS["bale"], transport=transport,
     )
     assert transport.messages == []
 
@@ -126,7 +133,8 @@ async def test_paused_operational_override_does_not_send_marketing(db):
     """Operational support during a pause must not authorize advertising."""
     context, _ = await paid_notice(db, Platform.TELEGRAM)
     identity = await register_customer(
-        db, platform=Platform.TELEGRAM, platform_user_id=101,
+        db, bot_id=TEST_BOT_IDS["telegram"],
+        platform=Platform.TELEGRAM, platform_user_id=101,
     )
     identity.allow_announcements = True
     db.add(ShopBotOperations(bot_id=context.bot_id, desired_state="paused"))

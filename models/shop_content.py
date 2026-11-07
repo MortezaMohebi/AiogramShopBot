@@ -1,6 +1,5 @@
 """Independent product, media, testimonial and sales data for both bots.
 
-Legacy cryptocurrency transactions and Telegram-only inventory remain intact.
 All new catalogue prices are stored as integral Iranian rials (IRR).
 """
 
@@ -13,37 +12,14 @@ from sqlalchemy import (
     func, Index, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqladmin import ModelView
-from markupsafe import Markup, escape
 
 from models.base import Base
-from models.shop_scope import legacy_bot_default
 from models.shop_multibot import DEFAULT_STORE_ID
 from models.shop_uom import default_unit_id
 
 
-class ShopSettings(Base):
-    """Editable brand and help texts, avoiding hardcoded shop information."""
-
-    __tablename__ = "shop_settings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    brand_name: Mapped[str | None] = mapped_column(String(255))
-    welcome_message: Mapped[str | None] = mapped_column(Text)
-    faq_text: Mapped[str | None] = mapped_column(Text)
-    support_url: Mapped[str | None] = mapped_column(String(500))
-
-    __table_args__ = (
-        CheckConstraint("id = 1", name="ck_shop_settings_singleton"),
-    )
-
-    def __repr__(self) -> str:
-        """Show the current shop brand in SQLAdmin."""
-        return self.brand_name or "تنظیمات فروشگاه"
-
-
 class ShopCategory(Base):
-    """Dynamic category configured entirely through SQLAdmin."""
+    """Dynamic Store-owned product category."""
 
     __tablename__ = "shop_categories"
 
@@ -165,7 +141,7 @@ class Product(Base):
     )
 
     def __repr__(self) -> str:
-        """Display the product name in SQLAdmin."""
+        """Return the product display name."""
         return self.name
 
 
@@ -244,7 +220,7 @@ class ShopIdentity(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     username: Mapped[str | None] = mapped_column(String(255))
@@ -274,7 +250,7 @@ class ShopIdentity(Base):
 class ShopOrder(Base):
     """Cross-platform order paid via a platform-native payment provider.
 
-    The customer's identity is `(platform, platform_user_id)`; identifiers
+    The customer's identity is `(bot_id, platform_user_id)`; identifiers
     from Telegram and Bale must never be assumed globally interchangeable.
     """
 
@@ -297,7 +273,7 @@ class ShopOrder(Base):
     platform: Mapped[str] = mapped_column(String(12), nullable=False)
     bot_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
-        nullable=False, default=legacy_bot_default, index=True,
+        nullable=False, index=True,
     )
     platform_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -388,216 +364,6 @@ class ShopOrder(Base):
         """Identify the order in administrative forms."""
         return f"Order #{self.id}"
 
-
-class ShopSettingsAdmin(ModelView, model=ShopSettings):
-    """Manage customer-facing welcome, help and FAQ copy."""
-
-    name = "تنظیم فروشگاه"
-    name_plural = "اطلاعات و پشتیبانی"
-    category = "تنظیمات"
-    icon = "fa-solid fa-gear"
-    column_labels = {
-        ShopSettings.brand_name: "نام فروشگاه",
-        ShopSettings.welcome_message: "پیام خوش‌آمد",
-        ShopSettings.faq_text: "پرسش‌های متداول",
-        ShopSettings.support_url: "لینک پشتیبانی",
-    }
-    can_delete = False
-
-
-class ShopCategoryAdmin(ModelView, model=ShopCategory):
-    """CRUD for user-defined categories; never a static Enum."""
-
-    name = "دسته‌بندی"
-    name_plural = "دسته‌بندی‌های فروشگاه"
-    category = "کاتالوگ"
-    icon = "fa-solid fa-layer-group"
-    column_list = [
-        ShopCategory.id, ShopCategory.name, ShopCategory.position,
-        ShopCategory.is_published,
-    ]
-    column_searchable_list = [ShopCategory.name]
-    column_sortable_list = [ShopCategory.position, ShopCategory.name]
-    column_labels = {
-        ShopCategory.name: "نام دسته‌بندی",
-        ShopCategory.position: "ترتیب نمایش",
-        ShopCategory.is_published: "انتشار",
-    }
-    can_delete = False
-
-
-class ProductAdmin(ModelView, model=Product):
-    """Manage the product catalogue without modifying old sales data."""
-
-    name = "محصول"
-    name_plural = "محصولات"
-    category = "کاتالوگ"
-    icon = "fa-solid fa-box"
-    column_list = [
-        Product.id, Product.name, Product.sku, Product.category_id, Product.price,
-        Product.stock_quantity, Product.position, Product.is_published,
-    ]
-    column_searchable_list = [Product.name, Product.sku]
-    column_sortable_list = [Product.position, Product.price, Product.id]
-    column_labels = {
-        Product.sku: "کد محصول",
-        Product.category_id: "دسته‌بندی",
-        Product.name: "نام محصول",
-        Product.description: "توضیحات",
-        Product.price: "قیمت (ریال)",
-        Product.stock_quantity: "موجودی",
-        Product.requires_shipping: "نیازمند نشانی و ارسال",
-        Product.product_type: "نوع محصول (physical/digital)",
-        Product.price_stars: "قیمت Telegram Stars",
-        Product.position: "ترتیب",
-        Product.is_published: "انتشار",
-    }
-    # Orders retain snapshots; hide products instead of physical deletion.
-    can_delete = False
-
-
-def _media_link(record: ProductMedia, attribute: str) -> Markup:
-    """Link a trusted upload record to its authenticated preview route."""
-    title = escape(record.original_filename)
-    return Markup(
-        f'<a href="/admin/media-preview/product/{record.id}">{title}</a>'
-    )
-
-
-def _testimonial_media_link(record: Testimonial, attribute: str) -> Markup | str:
-    """Show a protected preview only for uploaded testimonial files."""
-    if not record.media_storage_key:
-        return "—"
-    return Markup(
-        f'<a href="/admin/media-preview/testimonial/{record.id}">'
-        "مشاهده فایل</a>"
-    )
-
-
-class ProductMediaAdmin(ModelView, model=ProductMedia):
-    """Read-only metadata; upload only through the validated manager form."""
-
-    name = "رسانه محصول"
-    name_plural = "رسانه‌های محصول"
-    category = "محتوا"
-    icon = "fa-solid fa-images"
-    column_list = [
-        ProductMedia.id, ProductMedia.product_id, ProductMedia.kind,
-        ProductMedia.original_filename, ProductMedia.position,
-        ProductMedia.is_published,
-    ]
-    column_formatters = {
-        ProductMedia.original_filename: _media_link,
-    }
-    column_labels = {
-        ProductMedia.product_id: "محصول",
-        ProductMedia.kind: "نوع رسانه",
-        ProductMedia.original_filename: "فایل",
-        ProductMedia.storage_key: "شناسه داخلی فایل",
-        ProductMedia.mime_type: "نوع فایل",
-        ProductMedia.caption: "توضیح",
-        ProductMedia.position: "ترتیب",
-        ProductMedia.is_published: "انتشار",
-    }
-    # Prevent arbitrary filesystem paths from being entered in generic CRUD.
-    can_create = False
-    can_edit = True
-    can_delete = False
-    form_columns = [
-        ProductMedia.caption, ProductMedia.position, ProductMedia.is_published,
-    ]
-
-
-class TestimonialAdmin(ModelView, model=Testimonial):
-    """Moderate customer content; file paths are never directly editable."""
-
-    name = "رضایت مشتری"
-    name_plural = "رضایت مشتریان"
-    category = "محتوا"
-    icon = "fa-solid fa-comment"
-    column_list = [
-        Testimonial.id, Testimonial.product_id, Testimonial.text,
-        Testimonial.media_storage_key, Testimonial.position,
-        Testimonial.is_approved,
-    ]
-    column_formatters = {
-        Testimonial.media_storage_key: _testimonial_media_link,
-    }
-    column_labels = {
-        Testimonial.product_id: "محصول",
-        Testimonial.text: "متن",
-        Testimonial.media_storage_key: "شناسه داخلی رسانه",
-        Testimonial.position: "ترتیب",
-        Testimonial.is_approved: "تأیید انتشار",
-    }
-    can_create = False
-    can_edit = True
-    can_delete = False
-    form_columns = [
-        Testimonial.text, Testimonial.position, Testimonial.is_approved,
-    ]
-
-
-class ShopIdentityAdmin(ModelView, model=ShopIdentity):
-    """Manage Telegram and Bale customers without conflating their IDs."""
-
-    name = "مشتری"
-    name_plural = "مشتریان پیام‌رسان‌ها"
-    category = "مشتریان"
-    icon = "fa-solid fa-users"
-    column_list = [
-        ShopIdentity.id, ShopIdentity.platform, ShopIdentity.platform_user_id,
-        ShopIdentity.username, ShopIdentity.is_blocked,
-        ShopIdentity.allow_announcements,
-    ]
-    column_labels = {
-        ShopIdentity.platform: "پیام‌رسان",
-        ShopIdentity.platform_user_id: "شناسه کاربر",
-        ShopIdentity.username: "نام کاربری",
-        ShopIdentity.first_name: "نام",
-        ShopIdentity.is_blocked: "مسدود",
-        ShopIdentity.allow_announcements: "رضایت دریافت اعلان",
-        ShopIdentity.registered_at: "تاریخ عضویت",
-    }
-    form_columns = [
-        ShopIdentity.is_blocked,
-    ]
-    can_create = False
-    can_delete = False
-
-
-class ShopOrderAdmin(ModelView, model=ShopOrder):
-    """Review payment status; never override provider-confirmed transactions."""
-
-    name = "سفارش"
-    name_plural = "سفارش‌های دو پیام‌رسان"
-    category = "فروش"
-    icon = "fa-solid fa-receipt"
-    column_list = [
-        ShopOrder.id, ShopOrder.platform, ShopOrder.product_name_snapshot,
-        ShopOrder.total_irr, ShopOrder.status, ShopOrder.created_at,
-    ]
-    column_labels = {
-        ShopOrder.platform: "پیام‌رسان",
-        ShopOrder.platform_user_id: "شناسه خریدار",
-        ShopOrder.product_name_snapshot: "نام محصول",
-        ShopOrder.quantity: "تعداد",
-        ShopOrder.subtotal_irr: "جمع کالاها (ریال)",
-        ShopOrder.discount_irr: "تخفیف (ریال)",
-        ShopOrder.shipping_irr: "هزینه ارسال (ریال)",
-        ShopOrder.shipping_address: "نشانی ارسال",
-        ShopOrder.shipping_method_snapshot: "روش ارسال",
-        ShopOrder.coupon_code_snapshot: "کد تخفیف",
-        ShopOrder.payment_currency: "ارز پرداخت",
-        ShopOrder.payment_amount: "مبلغ در واحد API",
-        ShopOrder.total_irr: "مبلغ (ریال)",
-        ShopOrder.provider: "روش پرداخت",
-        ShopOrder.status: "وضعیت",
-        ShopOrder.created_at: "تاریخ ثبت",
-    }
-    can_create = False
-    can_edit = False
-    can_delete = False
 
 # Resolve string-based SQLAlchemy relationships even when callers import only
 # models.shop_content (e.g., isolated catalogue unit tests).

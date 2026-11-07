@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from channels.contracts import Platform
 from models.shop_content import ShopIdentity
-from models.shop_multibot import DEFAULT_STORE_ID, LEGACY_BOT_IDS, ShopBot
+from models.shop_multibot import DEFAULT_STORE_ID, ShopBot
 from models.shop_store_commerce import ShopStoreCustomer
 from services.shop_identity import register_customer
-from tests.schema_support import create_shop_schema, seed_legacy_registry
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
 from tests.test_shared_cart import AsyncDatabase
 
 
@@ -22,11 +22,11 @@ def enrollment_engine(tmp_path):
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'enrollment.db'}")
     create_shop_schema(engine)
     with Session(engine) as session:
-        seed_legacy_registry(session)
+        seed_registry(session)
         session.add(ShopBot(
             id="telegram-second", store_id=DEFAULT_STORE_ID,
             slug="telegram-second", name="Second Telegram",
-            platform="telegram", status="legacy", runtime_owner="legacy",
+            platform="telegram", status="active", runtime_owner="registry",
             credential_version=1, version=1,
         ))
         session.commit()
@@ -57,8 +57,11 @@ class RegistrationAfterMissingRead(AsyncDatabase):
             # closed before another connection performs the competing write.
             result = result.freeze()()
             self.winner = await register_customer(
-                AsyncDatabase(self.winner_session), platform=self.platform,
-                platform_user_id=101, first_name="Winning customer",
+                AsyncDatabase(self.winner_session),
+                platform=self.platform,
+                platform_user_id=101,
+                first_name="Winning customer",
+                bot_id=TEST_BOT_IDS[(self.platform).value],
             )
         return result
 
@@ -77,12 +80,15 @@ async def test_parallel_first_start_reuses_winner_without_orphan(
             losing_session, winning_session, platform,
         )
         identity = await register_customer(
-            race, platform=platform, platform_user_id=101,
+            race,
+            platform=platform,
+            platform_user_id=101,
             first_name="Losing customer",
+            bot_id=TEST_BOT_IDS[(platform).value],
         )
         assert identity.id == race.winner.id
         assert identity.customer_id == race.winner.customer_id
-        assert identity.bot_id == LEGACY_BOT_IDS[platform.value]
+        assert identity.bot_id == TEST_BOT_IDS[platform.value]
         assert identity.allow_announcements is False
         assert losing_session.is_active
     with Session(enrollment_engine) as verification:
@@ -100,9 +106,9 @@ async def test_equal_numeric_ids_create_independent_bot_customers(enrollment_eng
         db = AsyncDatabase(session)
         owners = []
         for platform, bot_id in (
-            (Platform.TELEGRAM, LEGACY_BOT_IDS["telegram"]),
+            (Platform.TELEGRAM, TEST_BOT_IDS["telegram"]),
             (Platform.TELEGRAM, "telegram-second"),
-            (Platform.BALE, LEGACY_BOT_IDS["bale"]),
+            (Platform.BALE, TEST_BOT_IDS["bale"]),
         ):
             identity = await register_customer(
                 db, platform=platform, platform_user_id=101,
@@ -121,18 +127,20 @@ async def test_equal_numeric_ids_create_independent_bot_customers(enrollment_eng
 
 
 @pytest.mark.asyncio
-async def test_preloaded_legacy_identity_keeps_competing_customer_attachment(
+async def test_preloaded_identity_keeps_competing_customer_attachment(
     enrollment_engine,
 ):
     """A stale ORM identity must not overwrite a just-committed attachment."""
     with Session(enrollment_engine) as seed:
-        legacy = ShopIdentity(
-            bot_id=LEGACY_BOT_IDS["telegram"], store_id=DEFAULT_STORE_ID,
-            platform="telegram", platform_user_id=101,
+        original = ShopIdentity(
+            bot_id=TEST_BOT_IDS["telegram"],
+            store_id=DEFAULT_STORE_ID,
+            platform="telegram",
+            platform_user_id=101,
         )
-        seed.add(legacy)
+        seed.add(original)
         seed.commit()
-        identity_id = legacy.id
+        identity_id = original.id
     with (
         Session(enrollment_engine) as losing_session,
         Session(enrollment_engine) as winning_session,
@@ -141,13 +149,17 @@ async def test_preloaded_legacy_identity_keeps_competing_customer_attachment(
         preloaded = losing_session.get(ShopIdentity, identity_id)
         assert preloaded.customer_id is None
         winner = await register_customer(
-            AsyncDatabase(winning_session), platform=Platform.TELEGRAM,
+            AsyncDatabase(winning_session),
+            platform=Platform.TELEGRAM,
             platform_user_id=101,
+            bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
         )
         winning_customer_id = winner.customer_id
         recovered = await register_customer(
-            AsyncDatabase(losing_session), platform=Platform.TELEGRAM,
+            AsyncDatabase(losing_session),
+            platform=Platform.TELEGRAM,
             platform_user_id=101,
+            bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
         )
         assert recovered.customer_id == winning_customer_id
     with Session(enrollment_engine) as verification:
@@ -176,8 +188,11 @@ async def test_unrelated_constraint_failure_is_not_a_cross_bot_registration(
         session.commit()
         with pytest.raises(IntegrityError, match="test_identity_invariant"):
             await register_customer(
-                db, platform=Platform.TELEGRAM, platform_user_id=101,
+                db,
+                platform=Platform.TELEGRAM,
+                platform_user_id=101,
                 first_name="Rejected customer",
+                bot_id=TEST_BOT_IDS[(Platform.TELEGRAM).value],
             )
         await db.rollback()
         assert session.query(ShopIdentity).count() == 1

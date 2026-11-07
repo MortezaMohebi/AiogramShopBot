@@ -62,7 +62,7 @@ export function CreateWorkflowForm({
             aria-label="کلید فرایند"
             dir="ltr"
             required
-            pattern="[a-z][a-z0-9_-]{0,63}"
+            pattern="[a-z][a-z0-9_\-]{0,63}"
             maxLength={64}
             value={key}
             onChange={(e) => setKey(e.target.value)}

@@ -10,7 +10,9 @@ export function codespaceActionHeaders(method: string, headers: Headers, configu
       url.username || url.password || !match ||
       headers.get("sec-fetch-site") !== "same-origin" ||
       headers.get("x-forwarded-host") !== url.host ||
-      headers.get("origin") !== `http://localhost:${match[1]}`) return headers;
+      // Codespaces can preserve HTTPS when rewriting the public Origin.
+      ![`http://localhost:${match[1]}`, `https://localhost:${match[1]}`]
+        .includes(headers.get("origin") ?? "")) return headers;
   const restored = new Headers(headers);
   restored.set("origin", url.origin);
   return restored;

@@ -97,7 +97,7 @@ async def change_store_policy(
     store_id: UUID, payload: SharingPolicyUpdate,
     actor: Actor, db: Db,
 ) -> dict:
-    """Opt in after MFA; deny shared credit with unfunded legacy balances."""
+    """Opt in after MFA; deny shared credit with unreconciled identity balances."""
     member = require(actor, "bots.apply")
     await fresh_proof(db, member, payload)
     result = await commerce.set_store_policy(

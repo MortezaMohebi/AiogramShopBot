@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Bot, Plus, ShieldCheck } from "lucide-react";
+import { Bot, Plus } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,12 +56,6 @@ export default async function BotsPage({
     <PageHeading title="مدیریت ربات‌ها" />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-4 text-sm">
       <p className="max-w-3xl leading-7">ربات جدید ابتدا به‌صورت پیش‌نویس ایجاد می‌شود. برای شروع کار، Token را تأیید و دریافت پیام را فعال کنید.</p>
-      <Button asChild variant="outline"><Link href="/bot-connections">زیرساخت Webhook و Worker</Link></Button>
-    </div>
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <ShieldCheck className="size-4 text-primary" />
-      <span>ساخت، تأیید Token و تغییر وضعیت ربات به احراز هویت مجدد مدیر نیاز دارد.</span>
-      <Button asChild variant="outline" size="sm"><Link href="/account">تأیید هویت</Link></Button>
     </div>
     {query.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">ثبت اطلاعات انجام شد.</p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[query.error] ?? problems.save}</p> : null}
@@ -94,7 +88,7 @@ export default async function BotsPage({
             <tbody>{result.bots.map(bot => <tr key={bot.id} className="border-b align-top">
               <td className="p-3"><strong>{bot.name}</strong><p dir="ltr" className="text-xs text-muted-foreground">{bot.slug}</p></td>
               <td className="p-3">{botPlatformLabel(bot.platform)}</td>
-              <td className="p-3"><Badge tone={bot.runtime_owner === "legacy" && bot.operations.desired_state === "active" ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge></td>
+              <td className="p-3"><Badge tone={bot.operations.desired_state === "active" && bot.operations.runtime_ready ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge></td>
               <td className="p-3 text-xs">{bot.provider_bot_id ?? "هنوز تأیید نشده"}</td>
               <td className="p-3"><Button asChild variant="outline" size="sm"><Link href={`/bots/${bot.id}`}>مدیریت ربات</Link></Button></td>
             </tr>)}</tbody>
@@ -121,7 +115,7 @@ export default async function BotsPage({
             <Input name="name" maxLength={160} required placeholder="مثلاً ربات فروش محصولات صنعتی" />
           </label>
           <label className="block space-y-2 text-sm">شناسهٔ داخلی (Slug)
-            <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9-]{2,63}" minLength={3} maxLength={64} required placeholder="industrial-telegram" />
+            <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9\-]{2,63}" minLength={3} maxLength={64} required placeholder="industrial-telegram" />
           </label>
           <label className="block space-y-2 text-sm">نوع پیام‌رسان
             <select name="platform" className="h-10 w-full rounded-md border bg-background px-3">
@@ -138,7 +132,7 @@ export default async function BotsPage({
             <Input name="name" required maxLength={160} placeholder="نام نمایشی فروشگاه" />
           </label>
           <label className="block space-y-2 text-sm">شناسهٔ فروشگاه
-            <Input name="slug" dir="ltr" required pattern="[a-z][a-z0-9-]{2,63}" placeholder="second-store" />
+            <Input name="slug" dir="ltr" required pattern="[a-z][a-z0-9\-]{2,63}" placeholder="second-store" />
           </label>
           <p className="text-xs leading-7 text-muted-foreground">فروشگاه جدید با فروش متوقف‌شده ایجاد می‌شود. پیش از شروع فروش، محصولات و روش‌های پرداخت را تنظیم کنید.</p>
           <Button type="submit" variant="outline">ایجاد فروشگاه</Button>

@@ -17,7 +17,7 @@ class ApiError extends Error {
 }
 
 /** Substitute transport and child renderers, retaining the page's real decisions. */
-async function page(mode:"legacy"|"restricted"|"failure") {
+async function page(mode:"supported"|"restricted"|"failure") {
   const requests:string[]=[];
   async function read(path:string):Promise<unknown> {
     requests.push(path);
@@ -54,9 +54,11 @@ test("Store branding remains editable when unrelated global controls are restric
   assert.match(result.html,/href="\/payment-accounts"/);
   assert(!result.html.includes("store_scope_not_supported"));
 });
-test("supported global controls remain visible in their original Store",async()=>{
-  const result=await page("legacy");
-  for(const text of ["CURRENT_STORE_BRAND","قابلیت‌های تلگرام و بله","روش‌های پرداخت","پاداش معرفی مشتری"])assert(result.html.includes(text),text);
+test("Store settings use bot-specific commerce and payment controls",async()=>{
+  const result=await page("supported");
+  for(const text of ["CURRENT_STORE_BRAND","پاداش معرفی مشتری"])assert(result.html.includes(text),text);
+  assert(!result.requests.includes("/channel-features"));
+  assert(!result.requests.includes("/payment-rails"));
 });
 test("Settings does not disguise an unrelated service failure as Store availability",async()=>{
   await assert.rejects(page("failure"),(error:unknown)=>error instanceof ApiError&&error.status===503);

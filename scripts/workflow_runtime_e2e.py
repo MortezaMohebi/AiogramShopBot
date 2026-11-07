@@ -106,9 +106,9 @@ CHECK_NAMES = (
     "competing timeout workers and timeout versus input",
     "Back, optional document, cancellation and restart",
     "immutable snapshot, version pinning and rollback",
-    "emergency gates preserve accepted ownership and legacy handoff",
-    "receiver Runtime precedes legacy receipts and old claims stay quarantined",
-    "legacy start, catalog, cart, checkout, orders and payment bypass",
+    "emergency gates preserve accepted ownership and Registry commerce handoff",
+    "Registry Runtime precedes commerce receipts and prior claims stay quarantined",
+    "Registry start, catalog, cart, checkout, orders and payment bypass",
     "signed Store isolation, private metadata and audited recovery",
     "skip locked Run and Slot before ordered worker limits",
     "emergency gate serialization with claim and independent Layer 2 commit",
@@ -429,7 +429,7 @@ class Harness:
             require(bot_id in self.tokens, "non_fixture_token_lookup")
             return self.tokens[bot_id]
 
-        async def fake_provider(platform, token, *, bot_id=None):
+        async def fake_provider(platform, token, *, bot_id):
             """Yield an official transport's in-memory native client only."""
             require(bot_id in self.native, "non_fixture_provider_access")
             require(
@@ -852,6 +852,9 @@ class Harness:
                 bot = await db.get(ShopBot, bot_id)
                 require(
                     bot is not None
+                    and bot.runtime_owner == "registry"
+                    and bot.status == "active"
+                    and bot.credential_version is not None
                     and bot.store_id == self.fixture["stores"][int(key == "foreign")],
                     "fixture_bot_store_mismatch",
                 )
@@ -886,6 +889,8 @@ class Harness:
                 "kind": kind,
                 "key": "wholesale",
                 "node_id": "start",
+                "fallback": "ignore",
+                "version_policy": "active_publication",
             }
             for platform in ("telegram", "bale")
             for kind in ("command", "start")
@@ -975,6 +980,18 @@ class Harness:
         await self.api.call(
             "POST", RUNTIME + "/publications/preview", payload=payload, expected=422
         )
+        # Stored historical contracts are tested separately below. New signed
+        # requests must reject both retired inputs before creating a preview.
+        for unsupported in ({"fallback": "legacy"}, {"kind": "legacy_bridge"}):
+            await self.api.call(
+                "POST", RUNTIME + "/publications/preview",
+                payload={
+                    "workflow_id": self.record["id"],
+                    "revision": self.record["revision"],
+                    "bindings": [self.bindings()[0] | unsupported],
+                },
+                expected=422,
+            )
         self.publication_id = await self.publish(self.record["revision"])
         await self.set_gate()
         for platform in ("telegram", "bale"):
@@ -1610,7 +1627,7 @@ class Harness:
         require(
             result == {"handled": False}
             and (await self.run(case)).status == "suspended",
-            "legacy_navigation_did_not_suspend",
+            "commerce_navigation_did_not_suspend",
         )
 
     def supervisor(self):
@@ -1645,7 +1662,7 @@ class Harness:
                     )
                 )
                 == 0,
-                "runtime_created_legacy_claim",
+                "runtime_created_commerce_claim",
             )
         await self.drain()
         for status in ("processing", "processed", "needs_review"):
@@ -1667,16 +1684,16 @@ class Harness:
             require(
                 result
                 == {"handled": True, "status": "duplicate", "receipt_state": status},
-                "legacy_claim_not_quarantined",
+                "commerce_claim_not_quarantined",
             )
             require(
                 (await self.run(case)).node_id == "name",
-                "legacy_claim_advanced_runtime",
+                "commerce_claim_advanced_runtime",
             )
         await self.input(case, "cancelled", text_value="/cancel")
 
-    async def legacy(self):
-        """Exercise inherited shopping reads through real receiver/dispatcher handlers."""
+    async def commerce_bypass(self):
+        """Exercise modern commerce through authenticated Registry receiver dispatch."""
         manager = self.supervisor()
         for platform in ("telegram", "bale"):
             case = await self.new_case(platform, start=False)
@@ -1690,7 +1707,7 @@ class Harness:
                 require(
                     result.get("status") == "processed"
                     and len(native.messages) > before,
-                    "legacy_command_" + command.removeprefix("/"),
+                    "registry_commerce_command_" + command.removeprefix("/"),
                 )
                 delivered = len(native.messages)
                 again = await manager._process(
@@ -1699,7 +1716,7 @@ class Harness:
                 require(
                     again.get("status") == "duplicate"
                     and len(native.messages) == delivered,
-                    "legacy_receipt_did_not_deduplicate",
+                    "registry_receipt_did_not_deduplicate",
                 )
             # Exact financial envelopes bypass Runtime before gates/identity checks.
             financial = [
@@ -1729,7 +1746,7 @@ class Harness:
             require(
                 result.get("status") == "declined"
                 and native.precheckout[-1]["ok"] is False,
-                "legacy_precheckout_not_reached",
+                "registry_precheckout_not_reached",
             )
 
     async def security_http(self):
@@ -2177,6 +2194,90 @@ class Harness:
             replay.get("replayed") and replay.get("publication_id") == published_id,
             "publication_race_replay_changed",
         )
+        await self.persisted_entry_boundary()
+
+    async def persisted_entry_boundary(self):
+        """Unclean PostgreSQL bindings cannot execute or regain receiver fallback."""
+        manager = self.supervisor()
+        case = await self.new_case(start=False)
+        async with session_maker() as db:
+            binding = await db.scalar(select(RuntimeBinding).where(
+                RuntimeBinding.store_id == self.store_id,
+                RuntimeBinding.bot_id == case.bot_id,
+                RuntimeBinding.kind == "command",
+                RuntimeBinding.key == "wholesale",
+                RuntimeBinding.enabled.is_(True),
+            ).with_for_update())
+            require(binding is not None, "registry_binding_missing_for_retirement")
+            require(binding.fallback == "ignore", "registry_binding_not_ignore")
+            binding_id = binding.id
+            # This deliberate synthetic corruption models a database that has
+            # not yet applied cleanup. It is never a supported API payload.
+            binding.fallback = "legacy"
+            await db.commit()
+        payload = self.raw(case, text_value="/wholesale")
+        try:
+            result = await manager._process(
+                case.bot_id, update_id=payload["update_id"], payload=payload,
+            )
+            require(
+                result == {"handled": True, "status": "entry_unavailable"},
+                "retired_fallback_entered_runtime_or_commerce",
+            )
+            async with session_maker() as db:
+                require(await db.scalar(select(func.count()).select_from(
+                    WorkflowRun,
+                ).where(
+                    WorkflowRun.bot_id == case.bot_id,
+                    WorkflowRun.user_id == case.user_id,
+                )) == 0, "retired_fallback_created_run")
+                require(await db.scalar(select(ShopInboundUpdate.id).where(
+                    ShopInboundUpdate.bot_id == case.bot_id,
+                    ShopInboundUpdate.update_id == payload["update_id"],
+                )) is None, "retired_fallback_claimed_commerce_receipt")
+        finally:
+            async with session_maker() as db:
+                binding = await db.get(RuntimeBinding, binding_id, with_for_update=True)
+                binding.fallback = "ignore"
+                await db.commit()
+
+        active = await self.new_case()
+        before = await self.run(active)
+        async with session_maker() as db:
+            binding = await db.get(RuntimeBinding, binding_id, with_for_update=True)
+            binding.kind = "legacy_bridge"
+            await db.commit()
+        try:
+            payload = self.raw(active, text_value="/restart")
+            result = await manager._process(
+                active.bot_id, update_id=payload["update_id"], payload=payload,
+            )
+            after = await self.run(active)
+            require(
+                result == {
+                    "handled": True, "status": "entry_unavailable", "run_id": active.run_id,
+                }
+                and after.status == "failed"
+                and after.error_code == "runtime_entry_unavailable"
+                and after.node_id == before.node_id,
+                "retired_kind_restarted_or_advanced_run",
+            )
+            async with session_maker() as db:
+                require(await db.scalar(select(func.count()).select_from(
+                    WorkflowRun,
+                ).where(
+                    WorkflowRun.bot_id == active.bot_id,
+                    WorkflowRun.user_id == active.user_id,
+                )) == 1, "retired_kind_created_second_run")
+                require(await db.scalar(select(ShopActionExecution.id).where(
+                    ShopActionExecution.workflow_run_id == active.run_id,
+                )) is None, "retired_kind_created_action_receipt")
+        finally:
+            async with session_maker() as db:
+                binding = await db.get(RuntimeBinding, binding_id, with_for_update=True)
+                binding.kind = "command"
+                binding.fallback = "ignore"
+                await db.commit()
 
     async def commerce_fingerprint(self):
         """Count every financial/order/delivery table and fingerprint inventory state."""
@@ -2262,7 +2363,7 @@ async def main():
                         harness.versions,
                         harness.gates,
                         harness.receiver_receipts,
-                        harness.legacy,
+                        harness.commerce_bypass,
                         harness.security_http,
                         harness.locked_owners,
                         harness.emergency_race,

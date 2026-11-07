@@ -45,7 +45,7 @@ export default async function RelayWorkersPage({
         <Link href="/bots">مدیریت ربات‌ها</Link>
       </Button>
       <Button asChild variant="outline" size="sm">
-        <Link href="/bot-connections">تنظیمات اتصال</Link>
+        <Link href="/bots">تنظیمات ربات‌ها</Link>
       </Button>
     </div>
     <div className="rounded-xl border p-4 text-sm leading-7">
@@ -122,7 +122,7 @@ export default async function RelayWorkersPage({
             <Input name="name" maxLength={160} required placeholder="Relay Tokyo" />
           </label>
           <label className="space-y-2 text-sm">Slug یکتا
-            <Input name="slug" pattern="[a-z][a-z0-9-]{2,63}"
+            <Input name="slug" pattern="[a-z][a-z0-9\-]{2,63}"
               minLength={3} maxLength={64} required dir="ltr" placeholder="relay-tokyo" />
           </label>
           <label className="space-y-2 text-sm sm:col-span-2">آدرس Worker (HTTPS)

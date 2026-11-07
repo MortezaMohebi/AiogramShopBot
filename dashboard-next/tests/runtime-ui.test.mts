@@ -42,7 +42,7 @@ test("publication preview attributes selected and retained entries to each Bot w
  const botA="f423a748-9c8c-4065-9ece-37d132002677",botB="2a74c464-402d-4e17-8939-d9d94f52f760",oldPublication="2c92dcba-aa29-4fef-9fb1-5e36b964b93d";
  const pointer=(id:string,bot_id:string,key:string)=>({id,bot_id,kind:"command",key,node_id:"start",version:1,publication_id:oldPublication,enabled:true});
  const previous=[pointer("p1",botA,"apply"),pointer("p2",botA,"old"),pointer("p3",botB,"apply")];
- const next=[botA,botB].map(bot_id=>({bot_id,kind:"command",key:"apply",node_id:"start",priority:0,enabled:true,eligibility:"all",fallback:"legacy",version_policy:"active_publication"}));
+ const next=[botA,botB].map(bot_id=>({bot_id,kind:"command",key:"apply",node_id:"start",priority:0,enabled:true,eligibility:"all",fallback:"ignore",version_policy:"active_publication"}));
  const preview={preview_id:"e1d67cfa-4fd2-45a2-b72a-78aaec98258d",expires_at:"2099-01-01T00:00:00Z",ready:true,issues:[],dependencies:[],mutating_nodes:[],platforms:["telegram"],diff:{binding_comparisons:next.map(entry=>({...entry,previous_revision:1,previous_publication_id:oldPublication,definition_changed:true})),previous_revision:1,next_revision:2,definition_changed:true,previous_bindings:previous,next_bindings:next,unchanged_bindings:[previous[1]],retains_unselected_bindings:true}};
  let hookIndex=0;
  const previewReact={...React,useState:(value:unknown)=>{const index=hookIndex++;return React.useState(index===1?preview:value);}};

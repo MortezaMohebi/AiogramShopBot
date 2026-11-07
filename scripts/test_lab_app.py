@@ -1,13 +1,10 @@
 """FastAPI application for isolated dashboard integration tests only.
 
-Do not import bot.py: its lifespan contacts Telegram, configures webhooks,
-sends staff notifications and may launch polling. This app has none of those
-side effects. It exposes the actual signed Next.js administration router.
+Receivers stay disabled. The lab exposes the actual signed Next.js
+administration router without contacting messaging providers.
 """
 
 from __future__ import annotations
-
-import os
 
 from fastapi import FastAPI, HTTPException
 from redis.asyncio import Redis
@@ -60,10 +57,8 @@ async def health() -> dict[str, object]:
     }
 
 
-if os.environ.get("SHOP_BETA_QA") == "1":
-    from dashboard.admin_control_app import create_app
+from dashboard.admin_control_app import create_app  # noqa: E402
 
-    # Register legacy health endpoints BEFORE the root fallback is mounted.
-    # Exercise production session, StoreContext and P0-P6 routers. The empty
-    # legacy FastAPI lifespan and disabled receivers cannot contact providers.
-    app = create_app(app, live_receivers=False)
+# Keep lab health routes before the production root fallback.
+# Exercise production session and StoreContext with receivers disabled.
+app = create_app(app, live_receivers=False)

@@ -1,4 +1,4 @@
-"""Keep authenticated Runtime routing before legacy at-most-once receipts."""
+"""Keep authenticated Runtime routing before commerce at-most-once receipts."""
 
 import importlib
 from contextlib import asynccontextmanager
@@ -31,16 +31,13 @@ def use_database(monkeypatch, db):
 
 
 @pytest.mark.asyncio
-async def test_runtime_off_returns_to_legacy_without_database_or_provider(monkeypatch):
+async def test_runtime_off_returns_to_commerce_without_database_or_provider(monkeypatch):
     """Default flags only read durable ownership; they cannot enroll or send."""
     monkeypatch.setattr(config, "SHOP_WORKFLOW_RUNTIME_ENABLED", False)
     use_database(monkeypatch, SimpleNamespace(scalar=AsyncMock(return_value=None)))
     assert await ingress.try_ingress(None, message(text="/wholesale")) == {
         "handled": False
     }
-    assert await ingress.try_legacy_ingress(
-        Platform.TELEGRAM, message(text="/wholesale")
-    ) == {"handled": False}
 
 
 @pytest.mark.asyncio
@@ -50,7 +47,7 @@ async def test_runtime_off_returns_to_legacy_without_database_or_provider(monkey
 async def test_disabled_runtime_retains_durable_duplicate_ownership(
     buyer, monkeypatch, flag
 ):
-    """Disabling Runtime hands only new update IDs to legacy handlers."""
+    """Disabling Runtime hands only new update IDs to commerce handlers."""
     db, principal = buyer
     await setup_runtime(db, principal, monkeypatch)
     use_database(monkeypatch, db)
@@ -59,7 +56,6 @@ async def test_disabled_runtime_retains_durable_duplicate_ownership(
     for expected_count, route in enumerate(
         (
             lambda payload: ingress.try_ingress(principal.bot, payload),
-            lambda payload: ingress.try_legacy_ingress(Platform.TELEGRAM, payload),
         ),
         start=1,
     ):
@@ -106,10 +102,10 @@ async def test_authenticated_ingress_durably_starts_and_deduplicates_run(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["needs_review", "processing", "processed"])
-async def test_preexisting_legacy_receipt_never_becomes_new_runtime_input(
+async def test_preexisting_commerce_receipt_never_becomes_new_runtime_input(
     buyer, monkeypatch, state
 ):
-    """Enabling Runtime cannot replay a legacy receipt quarantined before rollout."""
+    """Enabling Runtime cannot replay a commerce receipt quarantined before rollout."""
     db, principal = buyer
     await setup_runtime(db, principal, monkeypatch)
     db.add(
@@ -124,7 +120,7 @@ async def test_preexisting_legacy_receipt_never_becomes_new_runtime_input(
     await db.commit()
     use_database(monkeypatch, db)
     handler = AsyncMock(
-        side_effect=AssertionError("Legacy receipt must remain quarantined")
+        side_effect=AssertionError("Commerce receipt must remain quarantined")
     )
     monkeypatch.setattr(sessions, "handle", handler)
     result = await ingress.try_ingress(principal.bot, message(text="/wholesale"))
@@ -186,7 +182,7 @@ async def test_ingress_passes_upload_verifier_without_sending_inline(
 async def test_supervisor_offers_runtime_before_old_claim_and_propagates_crash(
     monkeypatch,
 ):
-    """A pre-inbox exception cannot be hidden by a committed legacy receipt."""
+    """A pre-inbox exception cannot be hidden by a committed commerce receipt."""
     import db as db_module
 
     monkeypatch.setattr(db_module, "engine", SimpleNamespace(), raising=False)
@@ -198,7 +194,7 @@ async def test_supervisor_offers_runtime_before_old_claim_and_propagates_crash(
     monkeypatch.setattr(
         supervisor,
         "claim_update",
-        AsyncMock(side_effect=AssertionError("Runtime must precede legacy claim")),
+        AsyncMock(side_effect=AssertionError("Runtime must precede commerce claim")),
     )
     runtime = AsyncMock(return_value={"handled": True, "status": "queued"})
     monkeypatch.setattr(supervisor, "try_ingress", runtime)
@@ -217,17 +213,16 @@ async def test_supervisor_offers_runtime_before_old_claim_and_propagates_crash(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("disabled", [False, True])
-@pytest.mark.parametrize("legacy_bridge", [False, True])
 @pytest.mark.parametrize("old_outcome", [False, True])
 async def test_pending_duplicate_replays_once_without_coordinator_or_parse(
-    buyer, monkeypatch, disabled, legacy_bridge, old_outcome
+    buyer, monkeypatch, disabled, old_outcome
 ):
     """Ingress owns accepted pending input; only its worker may resume processing."""
     db, principal = buyer
     await setup_runtime(db, principal, monkeypatch)
     use_database(monkeypatch, db)
     payload = message(text="/wholesale")
-    original = await ingress.try_legacy_ingress(Platform.TELEGRAM, payload)
+    original = await ingress.try_ingress(principal.bot, payload)
     inbox = await db.scalar(select(WorkflowInbox))
     run = await db.scalar(select(WorkflowRun))
     inbox.status = "pending"
@@ -253,11 +248,7 @@ async def test_pending_duplicate_replays_once_without_coordinator_or_parse(
         "normalize",
         lambda *args: pytest.fail("Duplicate must not be parsed"),
     )
-    route = (
-        (lambda: ingress.try_legacy_ingress(Platform.TELEGRAM, payload))
-        if legacy_bridge
-        else lambda: ingress.try_ingress(principal.bot, payload)
-    )
+    route = lambda: ingress.try_ingress(principal.bot, payload)
     assert await route() == expected | {"duplicate": True}
     assert (await db.scalar(select(WorkflowInbox))).duplicate_count == 1
     assert (await db.scalar(select(WorkflowRun))).node_id == before_node

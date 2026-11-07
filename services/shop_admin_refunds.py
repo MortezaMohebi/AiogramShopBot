@@ -7,16 +7,12 @@ creates a Registry client only after its exact paid owner is verified.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
 from models.shop_content import ShopOrder
 from models.shop_multibot import (
-    DEFAULT_STORE_ID,
-    LEGACY_BOT_IDS,
     ShopBot,
     ShopBotCredential,
 )
@@ -29,10 +25,6 @@ from services.shop_payments import PaymentRejected
 from services.shop_refunds import ShopRefundService
 from services.shop_store_context import StoreContext
 from services.shop_wallet import ShopWalletService
-
-if TYPE_CHECKING:
-    from aiogram import Bot
-
 
 def _require_client_identity(client, *, provider_id: int | None) -> None:
     """Reject unavailable or mismatched clients before claiming a refund."""
@@ -116,13 +108,12 @@ async def resolve_admin_refund(
     case_id: int,
     action: str,
     provider_reference: str = "",
-    legacy_telegram_bot: Bot | None = None,
 ) -> ShopRefundCase:
     """Resolve one explicitly approved refund within the trusted current Store.
 
     Registry Stars refunds use the Order's verified active credential and
-    per-Bot provider factory. Only canonical legacy Orders may reuse the app's
-    legacy client. Disabled provider refunds create no client or pending claim.
+    per-Bot provider factory. Disabled provider refunds create no client or
+    pending claim.
     Manual evidence and internal credit use their existing audited services.
     """
     if not isinstance(scope, StoreContext):
@@ -191,23 +182,6 @@ async def resolve_admin_refund(
     if case.status != "requested":
         raise PaymentRejected("این درخواست بازپرداخت آماده اقدام نیست.")
     bot = await _stars_owner(session, order=order)
-    if bot.runtime_owner == "legacy":
-        if (
-            bot.id != LEGACY_BOT_IDS["telegram"]
-            or bot.store_id != DEFAULT_STORE_ID
-            or bot.status != "legacy"
-        ):
-            raise PaymentRejected("مالکیت ربات قدیمی این پرداخت معتبر نیست.")
-        _require_client_identity(
-            legacy_telegram_bot, provider_id=bot.provider_bot_id
-        )
-        return await ShopRefundService.refund_stars(
-            session,
-            case_id=case_id,
-            bot=legacy_telegram_bot,
-            enabled=True,
-            reviewer=reviewer,
-        )
     if (
         bot.runtime_owner != "registry"
         or bot.status != "active"

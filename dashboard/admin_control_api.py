@@ -16,18 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
-from models.shop_admin_control import AdminEvent, AdminSession, ConnectionChange, ConnectionConfig
+from models.shop_admin_control import AdminEvent, AdminSession
 from models.shop_staff_security import ShopStaffInvitation, ShopStaffPasswordReset
 from models.shop_staff_state import ShopStaffState
-from models.shop_channel_features import ShopChannelFeature
-from services.shop_channel_features import get_features, to_data, PLATFORMS
 from services import shop_staff_lifecycle as lifecycle
 from services import shop_staff_preferences as staff_preferences
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from services import shop_admin_security as security
 from services.shop_mfa_qr import make_mfa_qr_data_uri, make_otpauth_uri
-from services.shop_connection_control import stage_change, transition
 from utils.utils import hash_password, verify_password
 
 Db = Annotated[AsyncSession, Depends(database)]
@@ -99,19 +96,6 @@ class Code(StrictPayload):
 class SessionTarget(StrictPayload):
     """Public session identifier, distinct from the secret session bearer."""
     session_id: UUID
-
-
-class StageChange(StrictPayload):
-    """One idempotent change request bound to the intended receiver."""
-    platform: Literal["telegram", "bale"]
-    mode: Literal["webhook", "polling"]
-    idempotency_key: UUID
-
-
-class ChangeAction(Proof):
-    """Applying an external change requires fresh password/MFA proof."""
-    operation_id: UUID
-    action: Literal["apply", "cancel", "reconcile"]
 
 
 async def throttle(key: str, limit: int, seconds: int) -> None:
@@ -457,131 +441,6 @@ async def permissions(staff: Staff) -> dict:
             "roles": {name: sorted(values) for name, values in security.ROLE_PERMISSIONS.items()}}
 
 
-@router.get("/connection-changes")
-async def changes(staff: Staff, db: Db) -> dict:
-    """Show requested, active and ambiguous state, not optimistic success."""
-    required(staff, "bots.read")
-    rows = (await db.scalars(select(ConnectionChange).order_by(ConnectionChange.created_at.desc()).limit(50))).all()
-    cfg = (await db.scalars(select(ConnectionConfig))).all()
-    return {"active": {v.platform: {"mode": v.mode, "version": v.version, "verified_at": v.verified_at.isoformat() if v.verified_at else None,
-                "webhook_label": config.WEBHOOK_URL if v.platform == "telegram" else config.WEBHOOK_HOST + "/webhooks/bale/[private-secret]",
-                "configured": bool(config.TOKEN if v.platform == "telegram" else config.BALE_BOT_TOKEN)} for v in cfg},
-            "items": [{"id": v.id, "platform": v.platform, "previous_mode": v.previous_mode,
-                "requested_mode": v.requested_mode, "state": v.state, "error_code": v.error_code,
-                "created_at": v.created_at.isoformat(), "updated_at": v.updated_at.isoformat(), "requested_by": v.staff_id, "approved_by": v.approved_by} for v in rows]}
-
-
-@router.post("/connection-changes")
-async def stage(payload: StageChange, staff: Staff, db: Db) -> dict:
-    """Stage with an idempotency key; no network or receiver change occurs."""
-    member = required(staff, "bots.configure")
-    mode = config.TELEGRAM_UPDATE_MODE if payload.platform == "telegram" else "webhook"
-    row = await db.run_sync(lambda sync: stage_change(sync, actor_id=member.id,
-        platform=payload.platform, current_mode=mode, requested_mode=payload.mode,
-        key=str(payload.idempotency_key)))
-    result = {"ok": True, "operation_id": row.id, "state": row.state}
-    await db.commit()
-    return result
-
-
-@router.post("/connection-changes/action")
-async def change_action(payload: ChangeAction, request: Request, staff: Staff, db: Db) -> dict:
-    """Queue/cancel a known operation; only the supervised worker calls APIs."""
-    member = required(staff, "bots.apply")
-    await fresh_proof(db, member, payload)
-    row = await db.scalar(select(ConnectionChange).where(
-        ConnectionChange.id == str(payload.operation_id)).with_for_update())
-    if row is None:
-        raise security.SecurityRejected("operation_not_found", 404)
-    if payload.action in {"apply", "reconcile"}:
-        worker = getattr(request.app.state, "connection_supervisor", None)
-        if worker is None or worker.worker is None or worker.worker.done():
-            raise security.SecurityRejected("connection_worker_unavailable", 503)
-    if payload.action == "reconcile":
-        if row.state != "needs_review":
-            raise security.SecurityRejected("invalid_operation_state", 409)
-        row.verification_only = True
-    row.approved_by = member.id
-    target = "cancelled" if payload.action == "cancel" else "queued"
-    # Repeated HTTP confirmation returns the durable existing result.
-    if row.state != target:
-        await db.run_sync(lambda sync: transition(sync, row, target, actor_id=member.id))
-    result = {"ok": True, "operation_id": row.id, "state": row.state}
-    await db.commit()
-    return result
-
-
-@router.post("/bot-connections/telegram-mode-request")
-async def retired_mode_request(staff: Staff) -> dict:
-    """Do not permit old Redis-only staging to bypass durable apply/audit."""
-    required(staff, "bots.configure")
-    raise security.SecurityRejected("legacy_endpoint_retired", 409)
-
-
-class ChannelFeatureItem(StrictPayload):
-    """One provider's shopping and internal-credit controls."""
-
-    platform: Literal["telegram", "bale"]
-    cart_enabled: bool
-    store_credit_enabled: bool
-    store_credit_label: str = Field(min_length=1, max_length=80)
-
-
-class ChannelFeaturesUpdate(StrictPayload):
-    """Replace the two provider policies in one atomic transaction."""
-
-    items: list[ChannelFeatureItem] = Field(min_length=2, max_length=2)
-
-
-@router.get("/channel-features")
-async def channel_features(staff: Staff, db: Db) -> dict:
-    """Return the current effective flags for both Telegram and Bale."""
-    required(staff, "settings.manage")
-    rows = [to_data(await get_features(db, platform)) for platform in PLATFORMS]
-    return {"items": rows}
-
-
-@router.post("/channel-features")
-async def update_channel_features(
-    payload: ChannelFeaturesUpdate, staff: Staff, db: Db,
-) -> dict:
-    """Toggle provider features atomically; preserve all carts and ledgers."""
-    actor = required(staff, "settings.manage")
-    options = {item.platform: item for item in payload.items}
-    if set(options) != set(PLATFORMS):
-        raise security.SecurityRejected("invalid_request", 422)
-
-    for platform in PLATFORMS:
-        item = options[platform]
-        name = item.store_credit_label.strip()
-        if not name or len(name) > 80:
-            raise security.SecurityRejected("invalid_request", 422)
-        record = await db.scalar(
-            select(ShopChannelFeature)
-            .where(ShopChannelFeature.platform == platform)
-            .with_for_update()
-        )
-        if record is None:
-            record = ShopChannelFeature(platform=platform)
-            db.add(record)
-        record.cart_enabled = item.cart_enabled
-        record.store_credit_enabled = item.store_credit_enabled
-        record.store_credit_label = name
-        record.changed_by = actor.id
-
-    await db.run_sync(lambda sync: security.audit(
-        sync, actor.id, "settings.channel_features_changed",
-    ))
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise security.SecurityRejected("configuration_changed", 409) from None
-    return {"ok": True, "items": [
-        to_data(await get_features(db, platform)) for platform in PLATFORMS
-    ]}
-
-
 class StaffInvite(StrictPayload):
     """Invite a user with an explicit role, not an administrator-chosen password."""
 
@@ -655,7 +514,7 @@ async def redeem_staff(payload: RedeemRequest, staff: Staff, db: Db) -> dict:
 
 @router.post("/staff", status_code=410)
 async def retired_staff_creation(staff: Staff) -> dict:
-    """Never fall through to the legacy direct-password creation handler."""
+    """Keep the retired direct-password staff creation route unavailable."""
     required(staff, "staff.manage")
     raise security.SecurityRejected("invitation_only", 410)
 

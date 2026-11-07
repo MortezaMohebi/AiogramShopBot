@@ -10,7 +10,6 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-from enums.language import Language
 
 # revision identifiers, used by Alembic.
 revision: str = '0d03c288ab28'
@@ -25,8 +24,8 @@ def upgrade() -> None:
     with op.batch_alter_table("users", schema=None) as batch_op:
         batch_op.add_column(sa.Column("language",
                             sa.Enum('EN', 'FR', 'DE', 'IT', name='language'),
-                                      server_default=Language.EN.name,
-                                      default=Language.EN,
+                                      server_default="EN",
+                                      default="EN",
                                       nullable=False))
     op.execute("PRAGMA foreign_keys=1;")
     # ### end Alembic commands ###

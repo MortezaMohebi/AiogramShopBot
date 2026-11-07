@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # ماتریس موازی Telegram / Bale (اسنپ‌شات مستندات ۱۴۰۵/۲۰۲۶)
 
 این سند با استفاده از آرشیو رسمی ارائه‌شده `official_bot_docs_2026-11-02_complete(2).zip` تدوین شد.

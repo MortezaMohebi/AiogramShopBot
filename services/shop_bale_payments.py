@@ -1,4 +1,4 @@
-"""Route Bale wallet events to the shared or preserved legacy payment flow.
+"""Route authenticated Bale wallet events to the shared payment ledger.
 
 The independent `inquireTransaction` check is mandatory for new orders.
 Neither Bale nor Telegram shares raw numeric customer IDs with the other.
@@ -14,8 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.bale import BaleTransport
 from channels.contracts import Platform
 from models.shop_payment import ShopPaymentAttempt
-from models.shop_scope import legacy_id
-from services.bale_wallet import BaleWalletService, CheckoutRejected
+from models.shop_scope import require_bot_id
 from services.shop_payments import PaymentRejected, ShopPaymentService
 
 
@@ -23,14 +22,14 @@ async def _is_new_intent(
     session: AsyncSession, payload: Any,
     *, bot_id: str | None = None,
 ) -> bool:
-    """Identify a multi-line shop invoice without routing it as legacy stock."""
+    """Identify an invoice only within its authenticated bot scope."""
     if not isinstance(payload, str) or not payload:
         return False
     found = await session.scalar(
         select(ShopPaymentAttempt.id).where(
             ShopPaymentAttempt.payload == payload,
             ShopPaymentAttempt.bot_id == (
-                bot_id or legacy_id(Platform.BALE.value)
+                require_bot_id(bot_id)
             ),
             ShopPaymentAttempt.platform == Platform.BALE.value,
         )
@@ -58,11 +57,7 @@ async def validate_bale_precheckout(
             amount=query.get("total_amount"),
             bot_id=bot_id,
         )
-    if bot_id is not None and bot_id != legacy_id("bale"):
-        return False, "فاکتور متعلق به این بات نیست."
-    # Old direct-item invoices issued before migration may still be payable;
-    # preserve their settlement path without mixing their order models.
-    return await BaleWalletService.validate_pre_checkout(session, query)
+    return False, "فاکتور متعلق به این بات نیست."
 
 
 async def settle_bale_payment(
@@ -78,15 +73,7 @@ async def settle_bale_payment(
     if not await _is_new_intent(
         session, payment.get("invoice_payload"), bot_id=bot_id,
     ):
-        if bot_id is not None and bot_id != legacy_id("bale"):
-            raise PaymentRejected("رسید متعلق به این بات نیست.")
-        return await BaleWalletService.confirm_success(
-            session,
-            transport,
-            payer_id=payer_id,
-            chat_id=chat_id,
-            payment=payment,
-        )
+        raise PaymentRejected("رسید متعلق به این بات نیست.")
 
     tx_id = payment.get("telegram_payment_charge_id")
     reference = payment.get("provider_payment_charge_id")

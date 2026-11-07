@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from channels.contracts import Platform
 from models.shop_delivery import ShopInboundUpdate
+from models.shop_scope import require_bot_id
 from services.shop_media_delivery import bot_fingerprint
 
 
@@ -22,15 +23,15 @@ async def claim_update(
     bot_id: str | None = None,
 ) -> tuple[bool, str]:
     """Claim a unique update for one bot and platform, safely under concurrency."""
+    bot_id = require_bot_id(bot_id)
     if type(update_id) is not int or update_id < 0:
         raise ValueError("Bot API update_id must be a nonnegative integer.")
 
     from db import session_maker
 
     fingerprint = bot_fingerprint(token)
-    from models.shop_scope import legacy_id
 
-    owner = bot_id or legacy_id(platform.value)
+    owner = bot_id
     scope = (
         ShopInboundUpdate.bot_id == owner,
         ShopInboundUpdate.platform == platform.value,
@@ -73,11 +74,11 @@ async def finish_update(
     bot_id: str | None = None,
 ) -> None:
     """Mark a claimed update processed or pending manual investigation."""
+    bot_id = require_bot_id(bot_id)
     from db import session_maker
 
-    from models.shop_scope import legacy_id
 
-    owner = bot_id or legacy_id(platform.value)
+    owner = bot_id
     async with session_maker() as session:
         entry = await session.scalar(
             select(ShopInboundUpdate).where(

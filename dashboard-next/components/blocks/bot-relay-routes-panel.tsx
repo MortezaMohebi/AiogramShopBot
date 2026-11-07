@@ -115,7 +115,7 @@ function RouteControls({
 
 /** Show authenticated many-to-many routing without exposing keys or Bot API tokens. */
 export function BotRelayRoutesPanel({ bot, workers, routes }: Props) {
-  if (bot.runtime_owner !== "registry" || bot.platform !== "telegram") {
+  if (bot.platform !== "telegram") {
     return null;
   }
   const assignedIds = new Set(routes.items.map(row => row.worker_id));

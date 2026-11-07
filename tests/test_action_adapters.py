@@ -38,9 +38,9 @@ async def test_catalog_search_visibility_price_and_uom(buyer):
     """Public data follows the same Bot ACL and native currency/unit rules."""
     db, principal = buyer
     first, second = seed(db)
-    db.add(
-        ShopBotProductRule(bot_id=principal.bot_id, product_id=second.id, effect="deny")
-    )
+    rule = await db.get(ShopBotProductRule, (principal.bot_id, second.id))
+    assert rule is not None and rule.effect == "allow"
+    rule.effect = "deny"
     await db.commit()
     found = await invoke(
         db, principal, request("catalog.search_products", {"query": "محصول"})
@@ -124,11 +124,9 @@ async def test_cart_removal_can_clean_up_multiple_unquotable_lines(buyer, invali
         first.stock_quantity = second.stock_quantity = 0
     else:
         for product in (first, second):
-            db.add(
-                ShopBotProductRule(
-                    bot_id=principal.bot_id, product_id=product.id, effect="deny"
-                )
-            )
+            rule = await db.get(ShopBotProductRule, (principal.bot_id, product.id))
+            assert rule is not None and rule.effect == "allow"
+            rule.effect = "deny"
     await db.commit()
     removed = await invoke(
         db,

@@ -7,6 +7,7 @@ import pytest
 import config
 from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import BotReply, MediaAttachment
+from tests.schema_support import TEST_BOT_IDS
 
 
 class Response:
@@ -45,8 +46,10 @@ async def test_regular_and_paid_bale_endpoints_are_separate() -> None:
     """Do not charge Business API requests in ordinary broadcast mode."""
     token = "222222:BBBBBBBBBBBBBBBBBBBBBBBBBBB"
     session = RecordingSession()
-    regular = BaleTransport(token, session)
-    paid = BaleTransport(token, session, business_mode=True)
+    regular = BaleTransport(token, session, bot_id=TEST_BOT_IDS["bale"])
+    paid = BaleTransport(
+        token, session, business_mode=True, bot_id=TEST_BOT_IDS["bale"]
+    )
 
     await regular.send(123, BotReply("متن معمولی"))
     await paid.send(123, BotReply("متن کمپین پولی"))
@@ -72,10 +75,13 @@ async def test_paid_media_requires_existing_file_id_before_dispatch(
         "222222:BBBBBBBBBBBBBBBBBBBBBBBBBBB",
         session,
         business_mode=True,
+        bot_id=TEST_BOT_IDS["bale"],
     )
 
     async def cache_miss(**kwargs):
-        """Pretend no regular-API upload has yet returned a file ID."""
+        """Assert the lookup stays within this registered bot namespace."""
+        assert kwargs["bot_id"] == TEST_BOT_IDS["bale"]
+        assert kwargs["platform"] == "bale"
         return None
 
     monkeypatch.setattr(

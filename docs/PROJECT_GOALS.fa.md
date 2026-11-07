@@ -1,3 +1,5 @@
+> Historical implementation record. Current runtime and setup: [Registry-only](REGISTRY_ONLY_RETIREMENT.md) and [README](../readme.md).
+
 # اهداف و معیارهای پذیرش ربات فروش تلگرام و بله
 
 > این سند مرجع نیازمندی‌های Fork است. قابلیت‌های ذکرشده لزوماً در کد فعلی پیاده‌سازی نشده‌اند؛ وضعیت هر فاز در ROADMAP ثبت می‌شود.

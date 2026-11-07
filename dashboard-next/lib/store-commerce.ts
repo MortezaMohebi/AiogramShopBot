@@ -12,7 +12,7 @@ export interface StoreCommercePolicy {
 
 export interface BotCommercePolicy {
   bot_id: string;
-  runtime_owner: "legacy" | "registry";
+  runtime_owner: "registry";
   version: number;
   cart_enabled: boolean | null;
   credit_enabled: boolean | null;

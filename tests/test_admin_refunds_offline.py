@@ -18,7 +18,6 @@ from models.shop_content import Product, ShopIdentity, ShopOrder
 from models.shop_engagement import ShopWalletAccount, ShopWalletEntry
 from models.shop_multibot import (
     DEFAULT_STORE_ID,
-    LEGACY_BOT_IDS,
     ShopBot,
     ShopBotCredential,
     ShopStore,
@@ -129,7 +128,6 @@ def admin_refund(purchase, monkeypatch):  # noqa: F811
     purchase.receipt.payment_account_id = account.id
     purchase.session.commit()
     primary = RefundBot(purchase.session, case.id, 12345678)
-    legacy = RefundBot(purchase.session, case.id, 87654321)
     lifecycle = []
 
     @asynccontextmanager
@@ -151,7 +149,6 @@ def admin_refund(purchase, monkeypatch):  # noqa: F811
         token=token,
         scope=store_scope(purchase.order.store_id),
         provider=primary,
-        legacy=legacy,
         lifecycle=lifecycle,
     )
 
@@ -166,7 +163,6 @@ async def resolve(refund, *, action="stars", scope=None, reference=""):
         case_id=refund.case.id,
         action=action,
         provider_reference=reference,
-        legacy_telegram_bot=refund.legacy,
     )
 
 
@@ -192,7 +188,7 @@ async def test_disabled_stars_refunds_never_decrypt_or_open_client(
         await resolve(admin_refund)
     assert secret_reads == []
     assert admin_refund.lifecycle == []
-    assert admin_refund.provider.calls == admin_refund.legacy.calls == []
+    assert admin_refund.provider.calls == []
     assert admin_refund.case.status == "requested"
 
 
@@ -209,7 +205,6 @@ async def test_registry_refund_preserves_origin_and_account_history(
     result = await resolve(refund)
     assert result.status == "confirmed"
     assert refund.purchase.order.status == "refunded"
-    assert refund.legacy.calls == []
     assert refund.provider.calls == [
         {
             "user_id": 101,
@@ -269,14 +264,13 @@ async def test_every_refund_action_requires_the_authorized_current_store(
         "unverified_credential",
         "wrong_provider_id",
         "wrong_client_id",
-        "fake_legacy",
     ],
 )
 async def test_unavailable_or_wrong_origin_bot_never_marks_refund_pending(
     admin_refund,
     invalid,
 ):
-    """A legacy app client cannot rescue an invalid Registry origin."""
+    """Invalid Registry origins cannot fall back to another provider client."""
     refund = admin_refund
     bot = refund.purchase.bot
     if invalid in {"paused", "disabled", "maintenance", "draft"}:
@@ -301,13 +295,10 @@ async def test_unavailable_or_wrong_origin_bot_never_marks_refund_pending(
         refund.credential.verified_bot_id = 87654321
     elif invalid == "wrong_client_id":
         refund.provider.id = 87654321
-    else:
-        bot.runtime_owner = "legacy"
-        bot.status = "legacy"
     refund.purchase.session.commit()
     with pytest.raises(PaymentRejected):
         await resolve(refund)
-    assert refund.provider.calls == refund.legacy.calls == []
+    assert refund.provider.calls == []
     assert refund.case.status == "requested"
     assert refund.purchase.order.status == "paid"
 
@@ -369,115 +360,6 @@ async def test_client_setup_failure_leaves_requested_case_and_hides_secret(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("availability", ["ready", "absent", "wrong_identity"])
-async def test_legacy_order_uses_only_canonical_legacy_client(
-    admin_refund, availability
-):
-    """Only the built-in legacy Telegram owner may use the app's old client."""
-    refund = admin_refund
-    session = refund.purchase.session
-    session.add(
-        ShopStore(
-            id=DEFAULT_STORE_ID,
-            slug="default-store",
-            name="Legacy",
-            state="active",
-        )
-    )
-    session.add(
-        ShopBot(
-            id=LEGACY_BOT_IDS["telegram"],
-            store_id=DEFAULT_STORE_ID,
-            slug="legacy-tg",
-            name="Legacy Telegram",
-            platform="telegram",
-            status="legacy",
-            runtime_owner="legacy",
-            provider_bot_id=87654321,
-        )
-    )
-    session.flush()
-    seed_test_units(session)
-    product = Product(
-        store_id=DEFAULT_STORE_ID,
-        sku="LEGACY-REFUND",
-        name="Legacy paid item",
-        description="Legacy fixture",
-        price=10000,
-        stock_quantity=0,
-        product_type="physical",
-        requires_shipping=True,
-    )
-    session.add(product)
-    session.flush()
-    order = ShopOrder(
-        store_id=DEFAULT_STORE_ID,
-        bot_id=LEGACY_BOT_IDS["telegram"],
-        platform="telegram",
-        platform_user_id=202,
-        chat_id=202,
-        product_id=product.id,
-        product_name_snapshot="Legacy paid item",
-        quantity=1,
-        unit_price_irr=10000,
-        total_irr=10000,
-        provider="telegram_stars",
-        status="paid",
-        invoice_payload="legacy-invoice",
-        payment_currency="XTR",
-        payment_amount=5,
-        paid_at=datetime.now(timezone.utc),
-        telegram_payment_charge_id="legacy-charge",
-    )
-    session.add(order)
-    session.flush()
-    session.add(
-        ShopPaymentAttempt(
-            store_id=DEFAULT_STORE_ID,
-            bot_id=order.bot_id,
-            order_id=order.id,
-            platform="telegram",
-            provider="telegram_stars",
-            currency="XTR",
-            amount=5,
-            payload=order.invoice_payload,
-            status="paid",
-            completed_at=datetime.now(timezone.utc),
-        )
-    )
-    case = ShopRefundCase(
-        order_id=order.id,
-        status="requested",
-        actor="staff:1",
-        reason="Legacy refund",
-    )
-    session.add(case)
-    session.commit()
-    refund.case = case
-    refund.legacy.case_id = case.id
-    if availability != "ready":
-        if availability == "absent":
-            refund.legacy = None
-        else:
-            refund.legacy.id = 12345678
-        with pytest.raises(PaymentRejected):
-            await resolve(refund, scope=store_scope(DEFAULT_STORE_ID))
-        assert case.status == "requested"
-        assert refund.lifecycle == []
-        return
-    result = await resolve(refund, scope=store_scope(DEFAULT_STORE_ID))
-    assert result.status == "confirmed"
-    assert refund.lifecycle == []
-    assert refund.provider.calls == []
-    assert refund.legacy.calls == [
-        {
-            "user_id": 202,
-            "telegram_payment_charge_id": "legacy-charge",
-        }
-    ]
-
-
-@pytest.mark.asyncio
 async def test_manual_bale_refund_records_proof_without_provider_setup(
     admin_refund,
     monkeypatch,
@@ -504,7 +386,7 @@ async def test_manual_bale_refund_records_proof_without_provider_setup(
     assert result.status == "confirmed"
     assert refund.purchase.order.status == "refunded"
     assert refund.lifecycle == []
-    assert refund.provider.calls == refund.legacy.calls == []
+    assert refund.provider.calls == []
 
 
 @pytest.mark.asyncio
@@ -581,7 +463,6 @@ async def test_missing_store_context_is_rejected_without_financial_work(
             scope=None,
             case_id=admin_refund.case.id,
             action="stars",
-            legacy_telegram_bot=admin_refund.legacy,
         )
     assert admin_refund.lifecycle == []
     assert admin_refund.case.status == "requested"

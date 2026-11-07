@@ -15,11 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
 from dashboard.admin_control_api import throttle
 from dashboard.next_api import database, signed_staff
 from models.shop_bot_operations import ShopBotOperations, ShopBotOperationsEvent
-from models.shop_bot_profile import ShopBotProfile
 from models.shop_delivery import ShopInboundUpdate
 from models.shop_multibot import ShopBot, ShopBotRegistryEvent
 from models.shop_staff import ShopStaff
@@ -68,7 +66,7 @@ class BotStateUpdate(StrictPayload):
 
 
 class BotIdentityVerification(StrictPayload):
-    """Optional staged credential version; None resolves current legacy only."""
+    """Optional staged credential version; None resolves the current credential."""
 
     version: int | None = Field(default=None, ge=1)
 
@@ -79,32 +77,18 @@ async def bot_health_data(db: AsyncSession, bot: ShopBot) -> dict:
 
     policy = await db.get(ShopBotOperations, bot.id)
     receiver = await db.get(ShopBotReceiver, bot.id)
-    previous = (
-        await db.get(ShopBotProfile, bot.platform)
-        if policy is None and bot.runtime_owner == "legacy"
-        else None
-    )
     target_state = (
         policy.desired_state if policy is not None
-        else "maintenance" if previous and previous.maintenance_enabled
-        else "active" if bot.runtime_owner == "legacy"
         else bot.status if bot.status in {
             "active", "paused", "maintenance", "disabled",
         } else "disabled"
     )
-    is_legacy = bot.runtime_owner == "legacy"
-    ready = is_legacy or (
+    ready = (
         receiver is not None and receiver.state == "active"
         and bot.credential_version is not None
     )
-    credential_configured = (
-        bool(config.TOKEN if bot.platform == "telegram" else config.BALE_BOT_TOKEN)
-        if is_legacy else bot.credential_version is not None
-    )
-    receiver_state = (
-        "legacy_receiver" if is_legacy
-        else receiver.state if receiver is not None else "not_installed"
-    )
+    credential_configured = bot.credential_version is not None
+    receiver_state = receiver.state if receiver is not None else "not_installed"
     if ready and target_state != "active":
         receiver_state += "_shopping_paused"
     since = security.clock() - timedelta(hours=1)
@@ -212,7 +196,7 @@ async def edit_bot(
 async def change_bot_state(
     bot_id: UUID, payload: BotStateUpdate, actor: Actor, db: Db,
 ) -> dict:
-    """Immediately gate only legacy bot shopping, preserving payment receipts."""
+    """Immediately gate bot shopping, preserving payment receipts."""
     member = required(actor, "bots.configure")
     state = await db.run_sync(lambda sync: operations.change_state(
         sync, bot_id=str(bot_id),
@@ -231,7 +215,7 @@ async def verify_bot_credential(
     bot_id: UUID, payload: BotIdentityVerification,
     actor: Actor, db: Db,
 ) -> dict:
-    """Probe staged or legacy credential via provider getMe; no activation."""
+    """Probe staged Registry credential via provider getMe; no activation."""
     member = required(actor, "bots.configure")
     await throttle("registry-verify:" + str(member.id), 4, 60)
     return await verification.verify_bot(
