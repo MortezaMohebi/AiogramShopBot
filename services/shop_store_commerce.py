@@ -150,7 +150,7 @@ async def set_store_policy(
     if row is None:
         if expected_version != 0:
             raise security.SecurityRejected("configuration_changed", 409)
-        row = ShopStoreCommercePolicy(store_id=store_id)
+        row = ShopStoreCommercePolicy(store_id=store_id, version=0)
         db.add(row)
     elif row.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
@@ -224,7 +224,7 @@ async def update_bot_policy(
     if row is None:
         if expected_version != 0:
             raise security.SecurityRejected("configuration_changed", 409)
-        row = ShopBotCommercePolicy(bot_id=bot_id)
+        row = ShopBotCommercePolicy(bot_id=bot_id, version=0)
         db.add(row)
     elif row.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
