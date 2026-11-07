@@ -6,7 +6,9 @@ from dashboard import shop_customer_experience_api, shop_store_commerce_api
 from models.shop_admin_control import AdminSession
 from services.shop_admin_security import SecurityRejected, clock
 from tests.test_bot_onboarding_session_policy import onboarding_app
-from tests.test_campaign_admin_store_scope import BOT_A, STORE_A
+from tests.test_campaign_admin_store_scope import (  # noqa: F401
+    BOT_A, STORE_A, campaign_app,
+)
 
 
 @pytest.mark.asyncio
