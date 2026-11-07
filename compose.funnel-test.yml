@@ -1,0 +1,23 @@
+# Stable no-domain HTTPS testing through Tailscale Funnel on the Windows host.
+# Funnel reaches only the loopback-bound gateway; PostgreSQL and Redis stay private.
+services:
+  test-gateway:
+    image: nginx:1.29-alpine
+    user: "101:101"
+    volumes:
+      - ./deploy/funnel-test/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      bot:
+        condition: service_healthy
+      next-admin:
+        condition: service_started
+    networks: [private]
+    ports: ["127.0.0.1:8081:8081"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/_edge/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
