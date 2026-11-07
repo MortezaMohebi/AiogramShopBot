@@ -71,6 +71,26 @@ def bot_onboarding_route(path: str, method: str) -> bool:
     ))
 
 
+def explicit_commerce_proof_route(path: str, method: str) -> bool:
+    """Allow policy forms with fresh password and MFA to reach their verifier.
+
+    Session, role and Store scope checks remain mandatory. This narrow route
+    exemption only skips an earlier session step-up that could have expired
+    while the administrator was filling the form.
+    """
+    if method != "POST":
+        return False
+    identifier = (
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    )
+    return bool(re.fullmatch(
+        re.escape(PREFIX) + rf"/(?:bot-registry/{identifier}/commerce|"
+        rf"bot-registry/{identifier}/checkout-policy|"
+        rf"stores/{identifier}/checkout-policy)", path,
+    ))
+
+
 def permission_for(path: str, method: str) -> str | None:
     """Map server-owned route families to fixed capabilities; fail closed."""
     resource = path.removeprefix(PREFIX).strip("/").split("/")[0]
@@ -272,7 +292,8 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
                 if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or (path.startswith(PREFIX + "/products/") and path.endswith(("/digital-file", "/digital-licenses"))) or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
-                    if not bot_onboarding_route(path, request.method):
+                    if not (bot_onboarding_route(path, request.method)
+                            or explicit_commerce_proof_route(path, request.method)):
                         require_recent(row)
                 request.state.admin_session_id = row.id
                 # Only session-authenticated requests can acquire StoreContext.
