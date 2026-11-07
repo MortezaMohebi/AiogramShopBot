@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from sqlalchemy import inspect, select, text
+from sqlalchemy import inspect, text
 
 # Require an exact database identity, not merely a user-controlled flag.
 REQUIRED = {
@@ -38,8 +38,6 @@ def safe_configuration() -> None:
             raise RuntimeError(
                 f"Unsafe Codespace bootstrap setting: {name}."
             )
-    if len(os.environ.get("LIVE_ADMIN_PASSWORD", "")) < 16:
-        raise RuntimeError("A strong admin bootstrap password is required.")
 
 
 def classify_schema(
@@ -134,37 +132,6 @@ async def bootstrap_schema() -> None:
         await verify_codespace_schema(connection)
         # Store initialization is idempotent and creates no bots.
         await ensure_default_store(connection)
-
-
-async def create_admin() -> None:
-    """Provision a hashed administrator only when the account is absent."""
-    from db import session_maker
-    from models.shop_staff import ShopStaff
-    from utils.utils import hash_password
-
-    async with session_maker() as session:
-        # Only a completely empty staff register permits bootstrap. This
-        # prevents re-provisioning a deliberately disabled or renamed admin.
-        account = await session.scalar(
-            select(ShopStaff.id).order_by(ShopStaff.id).limit(1)
-        )
-        if account is not None:
-            print("Existing administrator preserved; password not changed.")
-            return
-
-        session.add(
-            ShopStaff(
-                username="shopadmin",
-                password_hash=hash_password(
-                    os.environ["LIVE_ADMIN_PASSWORD"]
-                ),
-                role="superadmin",
-                is_active=True,
-                session_version=1,
-            )
-        )
-        await session.commit()
-        print("Created Codespaces shopadmin (Argon2 hash only).")
 
 
 async def main() -> None:

@@ -63,8 +63,8 @@ TELEGRAM_STARS_REFUNDS_ENABLED=false
 پس از Migration روی دیتابیس آزمایشی و فقط در مرحله اجرای نهایی:
 
 ```bash
-python -m scripts.manage_shop_staff add shopowner --role superadmin
-python -m scripts.manage_shop_staff add marketing1 --role marketing
+python -m scripts.first_owner_setup  # فقط هنگام راه‌اندازی پایگاه تازه
+# مدیر بعد از ورود، کاربر دوم را از Dashboard > Staff با لینک دعوت می‌سازد.
 python -m scripts.manage_shop_staff reset-password shopowner
 python -m scripts.manage_shop_staff disable marketing1
 ```

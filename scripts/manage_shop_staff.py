@@ -73,21 +73,28 @@ async def manage_user(action: str, username: str, role: str) -> None:
         if password != confirmation or len(password) < 14:
             raise ValueError("Password confirmation failed or is too short.")
     async with session_maker() as session:
+        if action == "add":
+            if role != "superadmin":
+                raise ValueError("The first account must be a superadmin.")
+            from scripts.first_owner_setup import create_first_owner
+
+            # Keep the former CLI entry point safe for operators who still
+            # invoke it: it can only initialize an empty staff register.
+            if session.bind.dialect.name == "postgresql":
+                from sqlalchemy import text
+
+                await session.execute(text("SELECT pg_advisory_xact_lock(90211003)"))
+            await session.run_sync(
+                lambda sync: create_first_owner(sync, username, password)
+            )
+            await session.commit()
+            print("First owner created. Invite further staff in the dashboard.")
+            return
         user = await session.scalar(
             select(ShopStaff).where(ShopStaff.username == username)
             .with_for_update()
         )
-        if action == "add":
-            if user is not None:
-                raise ValueError("The staff account already exists.")
-            user = ShopStaff(
-                username=username,
-                role=role,
-                password_hash=hash_password(password),
-                is_active=True,
-            )
-            session.add(user)
-        elif user is None:
+        if user is None:
             raise ValueError("The staff account does not exist.")
         elif action == "reset-password":
             user.password_hash = hash_password(password)

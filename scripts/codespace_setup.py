@@ -1,7 +1,7 @@
 """Secure one-command Docker Compose setup for GitHub Codespaces.
 
-Creates isolated service secrets, a random first administrator password,
-and a private dashboard. Bot registration and receiver changes belong to
+Creates isolated service secrets and a private dashboard without accounts.
+First owner setup, Bot registration and receiver changes belong to
 the authenticated Bot Registry dashboard. Uses no third-party Python
 dependencies on the Codespace host.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import getpass
 import os
 from pathlib import Path
 import re
@@ -128,7 +129,6 @@ def init() -> None:
         "LIVE_REDIS_PASSWORD": secrets.token_hex(24),
         "LIVE_BRIDGE_SECRET": secrets.token_hex(32),
         "LIVE_SESSION_SECRET": secrets.token_hex(32),
-        "LIVE_ADMIN_PASSWORD": secrets.token_urlsafe(25),
         "LIVE_SECURITY_ENCRYPTION_KEY": base64.urlsafe_b64encode(
             secrets.token_bytes(32)
         ).decode("ascii"),
@@ -146,25 +146,7 @@ def init() -> None:
     write_env(data)
     print("Codespaces service secrets created (mode 0600); no bots registered.")
     show_urls(data)
-    credentials(data)
-
-
-def new_bootstrap_password() -> None:
-    """Rotate the stored initial password for an administrator not yet created.
-
-    This does NOT change an existing account's database hash. To rotate an
-    already-created administrator, use the authenticated /staff dashboard.
-    """
-    data = read_env()
-    data["LIVE_ADMIN_PASSWORD"] = secrets.token_urlsafe(32)
-    write_env(data)
-    print(
-        "A new private bootstrap password was generated for a NEW account. "
-        "Existing database accounts were not modified."
-    )
-    print(
-        "If shopadmin already exists, change its password in /staff instead."
-    )
+    print("After start, run 'python3 scripts/codespace_setup.py owner-setup'.")
 
 
 def show_urls(data: dict[str, str]) -> None:
@@ -176,15 +158,65 @@ def show_urls(data: dict[str, str]) -> None:
     print("Register bot credentials through Dashboard > Bots after login.")
 
 
-def credentials(data: dict[str, str]) -> None:
-    """Reveal only the first-login password inside the owner's terminal."""
-    print("\nInitial dashboard credentials (Codespace owner terminal only):")
-    print("  Username: shopadmin")
-    print("  Password: " + data["LIVE_ADMIN_PASSWORD"])
-    print(
-        "This is only the bootstrap password. After changing it in /staff, "
-        "the password cannot be recovered here."
-    )
+def configure_smtp() -> None:
+    """Store optional TLS-only SMTP credentials in the private owner file."""
+    from services.shop_smtp import configured_settings
+
+    data = read_env()
+    host = input("SMTP host: ").strip()
+    port = input("SMTP port: ").strip()
+    security = input("TLS mode (ssl/starttls): ").strip().lower()
+    username = input("SMTP username: ").strip()
+    sender = input("Sender email: ").strip()
+    password = getpass.getpass("SMTP password: ")
+    proposed = dict(zip(
+        ("HOST", "PORT", "SECURITY", "USERNAME", "SENDER", "PASSWORD_B64"),
+        (host, port, security, username, sender,
+         base64.b64encode(password.encode("utf-8")).decode("ascii")),
+    ))
+    previous = {key: os.environ.get("SHOP_SMTP_" + key) for key in proposed}
+    try:
+        os.environ.update({"SHOP_SMTP_" + key: value for key, value in proposed.items()})
+        if configured_settings() is None:
+            raise ValueError("SMTP configuration is incomplete.")
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop("SHOP_SMTP_" + key, None)
+            else:
+                os.environ["SHOP_SMTP_" + key] = value
+    data.update({"LIVE_SMTP_" + key: value for key, value in proposed.items()})
+    write_env(data)
+    print("SMTP settings saved. Restart application to apply them.")
+
+
+def test_smtp() -> None:
+    """Send one diagnostic message to an explicitly entered address."""
+    from services.shop_email_templates import render_email
+    from services.shop_smtp import configured_settings, send_email
+
+    data = read_env()
+    keys = ("HOST", "PORT", "SECURITY", "USERNAME", "SENDER", "PASSWORD_B64")
+    previous = {key: os.environ.get("SHOP_SMTP_" + key) for key in keys}
+    try:
+        for key in keys:
+            value = data.get("LIVE_SMTP_" + key)
+            if value is None:
+                os.environ.pop("SHOP_SMTP_" + key, None)
+            else:
+                os.environ["SHOP_SMTP_" + key] = value
+        settings = configured_settings()
+        if settings is None:
+            raise RuntimeError("Configure SMTP before sending a test message.")
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop("SHOP_SMTP_" + key, None)
+            else:
+                os.environ["SHOP_SMTP_" + key] = value
+    destination = input("Test recipient email: ").strip()
+    send_email(settings, destination, render_email("smtp_test", recipient=destination))
+    print("SMTP test message accepted by the configured server.")
 
 
 def compose(*args: str) -> int:
@@ -248,7 +280,7 @@ def main() -> int:
         "command",
         choices=(
             "info", "init", "config", "start", "build-dashboard", "ports",
-            "doctor", "auth-smoke", "dashboard-probe", "credentials", "new-bootstrap-password", "demo", "status", "logs", "test",
+            "doctor", "auth-smoke", "dashboard-probe", "owner-setup", "smtp-config", "smtp-test", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -266,18 +298,21 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py doctor")
         print("  python3 scripts/codespace_setup.py auth-smoke")
         print("  python3 scripts/codespace_setup.py dashboard-probe")
-        print("  python3 scripts/codespace_setup.py credentials")
-        print("  python3 scripts/codespace_setup.py new-bootstrap-password")
+        print("  python3 scripts/codespace_setup.py owner-setup")
+        print("  python3 scripts/codespace_setup.py smtp-config")
+        print("  python3 scripts/codespace_setup.py smtp-test")
         print("  python3 scripts/codespace_setup.py demo")
         return 0
     if args.command == "init":
         init()
         return 0
-    if args.command == "credentials":
-        credentials(read_env())
+    if args.command == "owner-setup":
+        return compose("run", "--rm", "--no-deps", "app", "python", "-m", "scripts.first_owner_setup")
+    if args.command == "smtp-config":
+        configure_smtp()
         return 0
-    if args.command == "new-bootstrap-password":
-        new_bootstrap_password()
+    if args.command == "smtp-test":
+        test_smtp()
         return 0
     if args.command == "config":
         return compose("config", "--quiet")
@@ -298,6 +333,7 @@ def main() -> int:
         if code == 0:
             show_urls(read_env())
             print("Services started with zero new bots. Register through Dashboard > Bots.")
+            print("If this is a new database, run owner-setup to create your first administrator.")
         return code
     if args.command == "ports":
         set_ports()

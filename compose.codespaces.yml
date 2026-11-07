@@ -9,6 +9,12 @@ x-backend-env: &backend-env
   SHOP_WORKFLOW_RUNTIME_KILL_SWITCH: "${LIVE_WORKFLOW_RUNTIME_KILL_SWITCH:-false}"
   MULTIBOT_WEBHOOK_BASE_URL: "${LIVE_WEBHOOK_BASE:?Run setup init}"
   SHOP_SECURITY_ENCRYPTION_KEY: "${LIVE_SECURITY_ENCRYPTION_KEY:?Run setup config to initialize security}"
+  SHOP_SMTP_HOST: "${LIVE_SMTP_HOST:-}"
+  SHOP_SMTP_PORT: "${LIVE_SMTP_PORT:-}"
+  SHOP_SMTP_SECURITY: "${LIVE_SMTP_SECURITY:-}"
+  SHOP_SMTP_USERNAME: "${LIVE_SMTP_USERNAME:-}"
+  SHOP_SMTP_PASSWORD_B64: "${LIVE_SMTP_PASSWORD_B64:-}"
+  SHOP_SMTP_SENDER: "${LIVE_SMTP_SENDER:-}"
   # Approved outbound destinations; updates via the dashboard are limited to
   # these allowlists to prevent leaking the Bot token to unknown relays.
   TELEGRAM_PROXY_ALLOWED_ENDPOINTS: "${LIVE_TELEGRAM_PROXY_ALLOWED_ENDPOINTS:-}"
@@ -80,11 +86,8 @@ services:
     restart: unless-stopped
   bootstrap:
     <<: *backend-service
-    environment:
-      <<: *backend-env
-      LIVE_ADMIN_PASSWORD: "${LIVE_ADMIN_PASSWORD:?Initialize admin password}"
     depends_on: {postgres: {condition: service_healthy}}
-    # Initializes a fresh Store schema and staff account; creates zero bots.
+    # Initializes Store schema; creates no staff identity or bot.
     command: ["python", "-m", "scripts.security_bootstrap"]
     restart: "no"
   app:
