@@ -264,9 +264,11 @@ class CustomerExperienceFlow:
 
             from models.shop_checkout import ShopOrderLine
             from models.shop_content import ShopOrder
+            from models.shop_uom import ShopUom
             from services.shop_customer_account import customer_for_bot
             from services.shop_customer_orders import order_visible_to_customer
             from services.shop_fulfillment import customer_tracking
+            from services.shop_orders import STATUS_NAMES
 
             try:
                 _, customer = await customer_for_bot(
@@ -303,22 +305,28 @@ class CustomerExperienceFlow:
             rows = (await db.scalars(select(ShopOrderLine).where(
                 ShopOrderLine.order_id == order.id,
             ).order_by(ShopOrderLine.id).limit(40))).all()
+            unit_codes = {item.uom_code_snapshot for item in rows}
+            units = (await db.scalars(select(ShopUom).where(
+                ShopUom.store_id == context.store_id,
+                ShopUom.code.in_(unit_codes),
+            ))).all()
+            unit_names = {unit.code: unit.name for unit in units}
             details = [
                 f"📦 سفارش #{order.id}",
-                f"وضعیت: {order.status}",
+                f"وضعیت: {STATUS_NAMES.get(order.status, 'نامشخص')}",
                 (
-                    f"مبلغ تأییدشده: {order.total_stars_snapshot} Stars (XTR)"
+                    f"مبلغ سفارش: {order.total_stars_snapshot} Stars (XTR)"
                     if order.platform == "telegram"
                     and order.total_stars_snapshot is not None
-                    else f"مبلغ قطعی: {order.total_irr:,} ریال"
+                    else f"مبلغ سفارش: {order.total_irr:,} ریال"
                 ),
-                f"بات مبدأ: {order.bot_id[:8]}",
                 f"نسخه شرایط خرید: {order.terms_version_snapshot or 'ثبت نشده'}",
             ]
             for item in rows:
                 details.append(
                     f"• {item.product_name_snapshot[:100]} — "
-                    f"{item.quantity} {item.uom_code_snapshot}"
+                    f"{item.quantity} "
+                    f"{unit_names.get(item.uom_code_snapshot, item.uom_code_snapshot)}"
                 )
             return BotReply(
                 "\n".join(details)[:4096],

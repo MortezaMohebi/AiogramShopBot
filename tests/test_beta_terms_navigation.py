@@ -108,6 +108,34 @@ async def test_checkout_terms_view_returns_to_same_explicit_consent(db, platform
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_order_detail_uses_customer_labels_and_sale_unit(db, platform):
+    """An unpaid order shows its business state without internal identifiers."""
+    product, _ = seed(db)
+    product.requires_shipping = False
+    db.session.commit()
+    context = test_bot_context(platform)
+    cart = ShopCartFlow(bot_context=context)
+    await cart.reply(event(platform, callback=f"shop:add:{product.id}"), db)
+    preview = await cart.reply(event(platform, callback="shop:checkout"), db)
+    consent = next(
+        action.callback_data for action in actions(preview)
+        if action.callback_data.startswith("shop:place:")
+    )
+    await cart.reply(event(platform, callback=consent), db)
+    order = db.session.scalars(select(ShopOrder)).one()
+
+    detail = await CustomerExperienceFlow(bot_context=context).reply(
+        event(platform, callback=f"ux:order:detail:{order.id}"), db,
+    )
+    assert "وضعیت: در انتظار بررسی فروشنده" in detail.text
+    assert "مبلغ سفارش:" in detail.text
+    assert "1 عدد" in detail.text
+    assert "بات مبدأ" not in detail.text
+    assert "pending_review" not in detail.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
 async def test_changed_terms_invalidate_old_paging_and_checkout_proof(db, platform):
     """Even an edit retaining the public version expires old view and consent."""
     product, _ = seed(db)
