@@ -41,6 +41,7 @@ class NativePollingClient:
         self.supervisor = supervisor
         self.token = token
         self.messages = []
+        self.edits = []
 
     async def get_webhook_info(self):
         """Report no webhook without network access."""
@@ -60,6 +61,11 @@ class NativePollingClient:
     async def answer_callback_query(self, **_payload):
         """Acknowledge a synthetic callback without contacting Telegram."""
         return True
+
+    async def edit_message_text(self, **payload):
+        """Capture navigation updates on the callback's existing message."""
+        self.edits.append(payload)
+        return SimpleNamespace(message_id=payload["message_id"])
 
 
 @pytest.fixture
@@ -142,8 +148,15 @@ async def test_native_polling_preserves_sender_for_actual_dispatch(
     monkeypatch.setattr(supervisor, "check_lease", owned_lease)
     await asyncio.wait_for(supervisor._poll(bot_id), timeout=3)
 
-    assert len(native.messages) == 1, "Polling silently discarded the sender"
-    assert native.messages[0]["chat_id"] == 101
+    if kind == "message":
+        # /start installs the persistent main keyboard and then shows UI.
+        assert len(native.messages) == 2, "Polling discarded the sender"
+        assert all(message["chat_id"] == 101 for message in native.messages)
+    else:
+        # Inline navigation edits its origin rather than posting another UI.
+        assert native.messages == []
+        assert len(native.edits) == 1, "Polling discarded the callback"
+        assert native.edits[0]["chat_id"] == 101
     assert row.next_update_id == 302
     receipt = receiver_db.session.query(ShopInboundUpdate).one()
     assert receipt.bot_id == bot_id and receipt.status == "processed"

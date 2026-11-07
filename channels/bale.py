@@ -41,6 +41,16 @@ class BaleTransport:
         self._url_prefix = f"{self.BASE_URL}/{route}{token}"
         self._session = session
 
+    async def clear_inline(self, chat_id: int, message_id: int) -> None:
+        """Remove an obsolete inline keyboard while retaining its message."""
+        try:
+            await self._call("editMessageReplyMarkup", {
+                "chat_id": chat_id, "message_id": message_id,
+                "reply_markup": {"inline_keyboard": []},
+            })
+        except BaleApiError:
+            pass
+
     async def _call(
         self, method: str, body: dict[str, Any], *, timeout_seconds: int = 15
     ) -> Any:
@@ -67,7 +77,10 @@ class BaleTransport:
             # Avoid exceptions from aiohttp that contain a token-bearing URL.
             raise BaleApiError(f"Bale API {method} request failed.") from None
 
-    async def send_media(self, chat_id: int, media: MediaAttachment) -> None:
+    async def send_media(
+        self, chat_id: int, media: MediaAttachment, *,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> int | None:
         """Send bounded multipart media, reusing only this Bale bot's own file ID."""
         import logging
 
@@ -103,6 +116,8 @@ class BaleTransport:
             "chat_id": chat_id,
             "caption": media.caption[:1024],
         }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         if self._business_mode and selected.name == "sendVoice":
             raise BaleApiError(
@@ -117,11 +132,17 @@ class BaleTransport:
         if cached:
             # Bale file IDs are unique per bot. Never borrow another bot's ID.
             payload[selected.field] = cached
-            await self._call(selected.name, payload)
-            return
+            message = await self._call(selected.name, payload)
+            return message.get("message_id") if isinstance(message, dict) else None
 
         form = FormData()
         form.add_field("chat_id", str(chat_id))
+        if reply_markup:
+            import json
+
+            form.add_field(
+                "reply_markup", json.dumps(reply_markup, ensure_ascii=False),
+            )
         if media.caption:
             form.add_field("caption", media.caption[:1024])
         try:
@@ -179,6 +200,7 @@ class BaleTransport:
                 # Delivery succeeded: never resend a user message just because
                 # the optional file-id cache could not be updated.
                 logging.warning("Bale file-id cache write was unsuccessful.")
+        return message.get("message_id") if isinstance(message, dict) else None
 
     async def deliver_digital(self, payload: "DigitalSend") -> str:
         """Send one private paid file or license via Bale normal Bot API.
@@ -236,7 +258,10 @@ class BaleTransport:
             raise BaleApiError("Bale did not confirm a delivery Message ID.")
         return str(message_id)
 
-    async def send(self, chat_id: int, reply: BotReply) -> None:
+    async def send(
+        self, chat_id: int, reply: BotReply, *,
+        edit_message_id: int | None = None,
+    ) -> int | None:
         """Send UTF-8 text with standard inline callback buttons."""
         for media in reply.attachments:
             await self.send_media(chat_id, media)
@@ -266,7 +291,56 @@ class BaleTransport:
                     for row in reply.rows
                 ]
             }
-        await self._call("sendMessage", payload)
+        if reply.show_main_keyboard:
+            main = {
+                "keyboard": [
+                    [{"text": "🛍 فروشگاه"}, {"text": "🛒 سبد خرید"}],
+                    [{"text": "📦 سفارش‌های من"}, {"text": "💬 پشتیبانی"}],
+                ],
+                "resize_keyboard": True,
+            }
+            if reply.rows:
+                await self._call("sendMessage", {
+                    "chat_id": chat_id, "text": "منوی اصلی در دسترس است.",
+                    "reply_markup": main,
+                })
+            elif not reply.request_contact:
+                payload["reply_markup"] = main
+        if reply.preview is not None:
+            if reply.preview.kind != "photo":
+                raise ValueError("Product preview must be a photo.")
+            if edit_message_id:
+                # Bale documents text/caption/markup edits, but no media
+                # replacement. Preserve old previews without active controls.
+                await self.clear_inline(chat_id, edit_message_id)
+            return await self.send_media(
+                chat_id,
+                MediaAttachment(
+                    storage_key=reply.preview.storage_key, kind="photo",
+                    mime_type=reply.preview.mime_type, caption=reply.text[:1024],
+                ),
+                reply_markup=payload.get("reply_markup"),
+            )
+        if edit_message_id and not reply.attachments and not reply.request_contact:
+            try:
+                result = await self._call("editMessageText", {
+                    **payload, "message_id": edit_message_id,
+                })
+                return result.get("message_id", edit_message_id) if isinstance(result, dict) else edit_message_id
+            except BaleApiError as error:
+                if "HTTP 400" not in str(error) and "HTTP 404" not in str(error):
+                    raise
+                # Older Bale clients may reject an edit. Invalidate the
+                # obsolete controls before posting the replacement screen.
+                try:
+                    await self._call("editMessageReplyMarkup", {
+                        "chat_id": chat_id, "message_id": edit_message_id,
+                        "reply_markup": {"inline_keyboard": []},
+                    })
+                except BaleApiError:
+                    pass
+        result = await self._call("sendMessage", payload)
+        return result.get("message_id") if isinstance(result, dict) else None
 
     async def send_runtime(self, chat_id: int, payload) -> list[str]:
         """Send one prepared Runtime message/album with explicit message receipts.

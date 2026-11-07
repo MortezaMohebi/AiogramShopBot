@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import (
@@ -31,7 +31,7 @@ from services.shop_admin_security import SecurityRejected
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_store_commerce import ShopStoreSettings
 
-_PAGE_SIZE = 6
+_PAGE_SIZE = 1
 _CATEGORY_PAGE_SIZE = 6
 _REVIEW_PAGE_SIZE = 3
 _MEDIA_PAGE_SIZE = 4
@@ -39,8 +39,10 @@ _LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,18})\Z")
 _CATEGORY_PATTERN = re.compile(r"shop:category:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _CATEGORY_LIST_PATTERN = re.compile(r"shop:categories:(0|[1-9][0-9]{0,18})\Z")
 _PRODUCT_PATTERN = re.compile(r"shop:item:([1-9][0-9]{0,18})\Z")
+_DETAIL_PATTERN = re.compile(r"shop:detail:([1-9][0-9]{0,18})\Z")
 _REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _MEDIA_PATTERN = re.compile(r"shop:files:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
+_FILE_PATTERN = re.compile(r"shop:file:([1-9][0-9]{0,18})\Z")
 
 
 def _price(value: Decimal) -> str:
@@ -92,6 +94,27 @@ class CatalogFlow:
             match = _PRODUCT_PATTERN.fullmatch(data)
             if match:
                 return await self._product(session, int(match.group(1)), event.platform.value, scope)
+            match = _DETAIL_PATTERN.fullmatch(data)
+            if match:
+                product_id = int(match.group(1))
+                card = await self._product(
+                    session, product_id, event.platform.value, scope,
+                )
+                product = await session.scalar(select(Product).where(
+                    Product.id == product_id,
+                    permitted_product_clause(scope),
+                ))
+                if product is None:
+                    return card
+                visibility = await session.get(ShopProductVisibility, product_id)
+                description = (
+                    product.description or ""
+                    if visibility is None or visibility.show_description else ""
+                )
+                return BotReply(
+                    (card.text + "\n\n" + description)[:4096],
+                    ((_button("بازگشت به محصول", f"shop:item:{product_id}"),),),
+                )
             match = _REVIEW_PATTERN.fullmatch(data)
             if match:
                 return await self._reviews(
@@ -102,6 +125,9 @@ class CatalogFlow:
                 return await self._media(
                     session, int(match.group(1)), int(match.group(2)), scope
                 )
+            match = _FILE_PATTERN.fullmatch(data)
+            if match:
+                return await self._file(session, int(match.group(1)), scope)
             if data == "shop:home":
                 return await self._home(session, event.platform.value)
             if data == "shop:help":
@@ -123,8 +149,8 @@ class CatalogFlow:
             return None
 
         text = (event.text or "").strip()
-        if text in ("/catalog", "محصولات", "🛍 محصولات", "🏠 صفحه اول"):
-            return await self._categories_or_products(session, scope=scope)
+        if text in ("/catalog", "محصولات", "🛍 محصولات", "🛍 فروشگاه", "🏠 صفحه اول"):
+            return await self._list_products(session, 0, scope=scope)
         if text.split(" ", 1)[0] == "/start":
             return await self._home(session, event.platform.value)
         if text in ("/help", "پشتیبانی", "🆘 پشتیبانی"):
@@ -155,6 +181,12 @@ class CatalogFlow:
         owner = self.bot_context.bot_id
         rows = await effective_menu(
             session, bot_id=owner, platform=Platform(platform),
+        )
+        rows = tuple(
+            row for row in rows
+            if row[0].callback_data not in {
+                "shop:list:0", "shop:cart", "shop:orders", "ux:support",
+            }
         )
         return BotReply(text=welcome[:4096], rows=rows)
 
@@ -266,32 +298,25 @@ class CatalogFlow:
             .offset(page * _PAGE_SIZE)
             .limit(_PAGE_SIZE)
         )
-        products = results.scalars().all()
-        rows = [
-            (_button(product.name, f"shop:item:{product.id}"),)
-            for product in products
-        ]
+        product = results.scalar_one()
         controls = []
         prefix = (
             f"shop:category:{category_id}" if category_id is not None
             else "shop:list"
         )
         if page > 0:
-            controls.append(_button("صفحه قبل", f"{prefix}:{page - 1}"))
+            controls.append(_button("◀ محصول قبلی", f"{prefix}:{page - 1}"))
         if page < last_page:
-            controls.append(_button("صفحه بعد", f"{prefix}:{page + 1}"))
-        if controls:
-            rows.append(tuple(controls))
-        rows.append((_button("🗂️ دسته‌بندی‌ها", "shop:categories"),))
-
-        return BotReply(
-            text=f"🛍 محصولات فروشگاه\nصفحه {page + 1} از {last_page + 1}",
-            rows=tuple(rows),
+            controls.append(_button("محصول بعدی ▶", f"{prefix}:{page + 1}"))
+        return await self._product(
+            session, product.id, self.bot_context.platform.value, scope,
+            navigation=tuple(controls),
         )
 
     async def _product(
         self, session: AsyncSession, product_id: int,
         platform: str, scope: CatalogScope,
+        *, navigation: tuple[InlineAction, ...] | None = None,
     ) -> BotReply:
         """Show an active product, never exposing an unpublished record."""
         result = await session.execute(
@@ -355,14 +380,69 @@ class CatalogFlow:
             rows.append(
                 (_button("🔔 اطلاع از موجودشدن", f"ux:stock:toggle:{product.id}"),)
             )
-        rows.append((_button("📦 سفارش‌های من", "shop:orders"),))
+        if navigation is None:
+            previous = await session.scalar(select(Product.id).where(
+                permitted_product_clause(scope),
+                or_(
+                    Product.position < product.position,
+                    (Product.position == product.position) & (Product.id < product.id),
+                ),
+            ).order_by(Product.position.desc(), Product.id.desc()).limit(1))
+            following = await session.scalar(select(Product.id).where(
+                permitted_product_clause(scope),
+                or_(
+                    Product.position > product.position,
+                    (Product.position == product.position) & (Product.id > product.id),
+                ),
+            ).order_by(Product.position, Product.id).limit(1))
+            navigation = tuple(
+                _button(label, f"shop:item:{target}")
+                for label, target in (
+                    ("◀ محصول قبلی", previous), ("محصول بعدی ▶", following),
+                ) if target is not None
+            )
+        if navigation:
+            rows.append(navigation)
+        rows.append((
+            _button("🔎 جستجو", "ux:search"),
+            _button("☰ دسته‌بندی‌ها", "shop:categories"),
+        ))
         # Hide the navigation controls as well as the underlying data.
         if show_media:
-            rows.append((_button("📎 تصاویر و فایل‌ها", f"shop:files:{product.id}:0"),))
+            rows.append((_button("📎 رسانه‌های محصول", f"shop:files:{product.id}:0"),))
         if show_reviews:
             rows.append((_button("💬 رضایت مشتریان", f"shop:reviews:{product.id}:0"),))
         rows.append((_button("بازگشت به محصولات", "shop:list:0"),))
-        return BotReply(text=body, rows=tuple(rows))
+        preview = None
+        if show_media:
+            cover = await session.scalar(select(ProductMedia).where(
+                ProductMedia.product_id == product.id,
+                ProductMedia.is_published.is_(True),
+                ProductMedia.kind == "photo",
+            ).order_by(ProductMedia.position, ProductMedia.id).limit(1))
+            if cover is not None:
+                # Keep name, price and stock visible within the photo caption.
+                body = product_message(
+                    product, price_label=price_label, unit_symbol=unit.symbol,
+                    show_description=False, show_stock=show_stock,
+                )
+                preview = MediaAttachment(
+                    storage_key=cover.storage_key, kind=cover.kind,
+                    mime_type=cover.mime_type, caption=product.name[:100],
+                )
+            total_media = await session.scalar(select(func.count()).select_from(
+                ProductMedia,
+            ).where(
+                ProductMedia.product_id == product.id,
+                ProductMedia.is_published.is_(True),
+            ))
+            if total_media:
+                body += f"\n📎 {total_media} رسانه؛ فقط با درخواست شما باز می‌شوند."
+        if show_description and product.description:
+            rows.insert(1, (_button("مشاهده جزئیات", f"shop:detail:{product.id}"),))
+        if navigation is not None:
+            body = f"🛍 {body}"
+        return BotReply(text=body[:4096], rows=tuple(rows), preview=preview)
 
     async def _media(
         self, session: AsyncSession, product_id: int,
@@ -401,26 +481,48 @@ class CatalogFlow:
             .offset(page * _MEDIA_PAGE_SIZE)
             .limit(_MEDIA_PAGE_SIZE)
         )
-        attachments = tuple(
-            MediaAttachment(
-                storage_key=item.storage_key,
-                kind=item.kind,
-                mime_type=item.mime_type,
-                caption=item.caption or "",
-            )
+        buttons = [
+            (_button(
+                f"📎 {item.kind} · {(item.caption or item.original_filename)[:36]}",
+                f"shop:file:{item.id}",
+            ),)
             for item in items.scalars().all()
-        )
+        ]
         controls = []
         if page:
             controls.append(_button("صفحه قبل", f"shop:files:{product_id}:{page - 1}"))
         if page < last_page:
             controls.append(_button("صفحه بعد", f"shop:files:{product_id}:{page + 1}"))
-        rows = [tuple(controls)] if controls else []
+        rows = buttons + ([tuple(controls)] if controls else [])
         rows.append((_button("بازگشت به محصول", f"shop:item:{product_id}"),))
         return BotReply(
             text=f"📎 فایل‌های محصول\nصفحه {page + 1} از {last_page + 1}",
             rows=tuple(rows),
-            attachments=attachments,
+        )
+
+    async def _file(
+        self, session: AsyncSession, media_id: int, scope: CatalogScope,
+    ) -> BotReply:
+        """Deliver exactly one explicitly requested, published attachment."""
+        item = await session.scalar(select(ProductMedia).join(
+            Product, Product.id == ProductMedia.product_id,
+        ).where(
+            ProductMedia.id == media_id,
+            ProductMedia.is_published.is_(True),
+            permitted_product_clause(scope),
+        ))
+        if item is None:
+            return BotReply("رسانه در دسترس نیست.")
+        visibility = await session.get(ShopProductVisibility, item.product_id)
+        if visibility is not None and not visibility.show_media:
+            return BotReply("رسانه در دسترس نیست.")
+        return BotReply(
+            "📎 رسانهٔ درخواستی محصول",
+            ((_button("بازگشت به محصول", f"shop:item:{item.product_id}"),),),
+            (MediaAttachment(
+                storage_key=item.storage_key, kind=item.kind,
+                mime_type=item.mime_type, caption=item.caption or "",
+            ),),
         )
 
     async def _reviews(

@@ -33,7 +33,7 @@ def upload_limit(kind: str, configured_max: int) -> int:
         raise ValueError("The shop media limit must be 1..50,000,000 bytes.")
     if kind == "photo":
         return min(configured_max, BALE_PHOTO_UPLOAD_LIMIT)
-    if kind not in ("document", "video", "audio"):
+    if kind not in ("document", "video", "audio", "animation"):
         raise MediaLimitError("این نوع رسانه پشتیبانی نمی‌شود.")
     return min(configured_max, BALE_OTHER_UPLOAD_LIMIT)
 
@@ -59,6 +59,8 @@ def bale_media_method(kind: str, mime: str, size_bytes: int) -> BaleMediaMethod:
         if size_bytes <= BALE_VOICE_LIMIT:
             return BaleMediaMethod("sendVoice", "voice", "voice")
         return BaleMediaMethod("sendDocument", "document", "document")
+    if kind == "animation" and mime == "image/gif":
+        return BaleMediaMethod("sendAnimation", "animation", "animation")
     if kind == "document":
         return BaleMediaMethod("sendDocument", "document", "document")
     raise MediaLimitError("نوع رسانه با متد ارسال بله سازگار نیست.")

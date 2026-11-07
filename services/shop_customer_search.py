@@ -27,7 +27,7 @@ _SEARCH_FIELDS = {
     "sku": Product.sku,
     "description": Product.description,
 }
-_SEARCH_PAGE_SIZE = 6
+_SEARCH_PAGE_SIZE = 1
 _SEARCH_TTL = timedelta(minutes=15)
 
 
@@ -166,30 +166,23 @@ async def results(
             ),
         )
     last_page = (total - 1) // _SEARCH_PAGE_SIZE
-    rows = [
-        (InlineAction(
-            item.name[:59] + "…" if len(item.name) > 60 else item.name,
-            f"shop:item:{item.id}",
-        ),) for item in items
-    ]
     controls = []
     if page:
         controls.append(InlineAction("⬅ قبلی", f"ux:search:page:{page - 1}"))
     if page < last_page:
         controls.append(InlineAction("بعدی ➡", f"ux:search:page:{page + 1}"))
-    if controls:
-        rows.append(tuple(controls))
-    rows.extend(_rows(
-        InlineAction("🔎 عبارت جدید", "ux:search"),
-        InlineAction("🛍 فروشگاه", "shop:categories"),
-        InlineAction("🏠 خانه", "shop:home"),
-    ))
     state.page = page
     state.expires_at = datetime.now(timezone.utc) + _SEARCH_TTL
     await db.commit()
+    from services.shop_channel_catalog import CatalogFlow
+
+    card = await CatalogFlow(bot_context=context)._product(
+        db, items[0].id, context.platform.value, scope,
+        navigation=tuple(controls),
+    )
     return BotReply(
-        f"🔎 نتایج جستجو: {total} محصول\nصفحهٔ {page + 1} از {last_page + 1}",
-        tuple(rows),
+        f"🔎 {page + 1} از {total} نتیجه برای «{state.query_text[:70]}»\n{card.text}",
+        card.rows, card.attachments, card.preview,
     )
 
 

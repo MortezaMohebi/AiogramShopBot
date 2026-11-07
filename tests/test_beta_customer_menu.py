@@ -9,7 +9,7 @@ from services.shop_customer_menu import DEFAULT_MENU, menu_rows, normalize_menu
 def test_six_main_menu_buttons_have_identical_callbacks_on_both_channels():
     """The platform adapter may differ, but the business navigation may not."""
     expected = (
-        "shop:categories", "ux:search", "shop:cart",
+        "shop:list:0", "ux:search", "shop:cart",
         "shop:orders", "ux:account", "ux:support",
     )
     telegram = menu_rows(DEFAULT_MENU, platform=Platform.TELEGRAM, cart_enabled=True)

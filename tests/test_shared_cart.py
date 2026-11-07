@@ -22,6 +22,8 @@ from models.shop_checkout import (
     ShopCart, ShopCartItem, ShopCoupon, ShopOrderLine, ShopShippingMethod,
 )
 from models.shop_content import Product, ShopCategory, ShopOrder
+from models.shop_content import ShopIdentity
+from models.shop_customer_account_data import ShopCustomerAddress
 from models.shop_bot_catalog_acl import ShopBotProductRule, ShopBotCategoryRule
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
@@ -29,6 +31,7 @@ from models.shop_multibot import (
 )
 from models.shop_staff import ShopStaff
 from services.shop_cart import ShopCartFlow, validate_coupon
+from services.shop_customer_account import CustomerAccountFlow
 from services.shop_orders import ShopOrdersFlow
 
 
@@ -140,6 +143,26 @@ def seed(db):
     return first, second
 
 
+async def select_saved_address(db, platform):
+    """Select an account address through the real checkout callback."""
+    identity = db.session.scalar(select(ShopIdentity).where(
+        ShopIdentity.bot_id == TEST_BOT_IDS[platform.value],
+        ShopIdentity.platform_user_id == 101,
+    ))
+    address = ShopCustomerAddress(
+        store_id=DEFAULT_STORE_ID, customer_id=identity.customer_id,
+        label="خانه", recipient="مشتری آزمایشی", phone="09123456789",
+        province="تهران", city="تهران",
+        full_address="خیابان نمونه، پلاک ۱۲", is_default=True,
+    )
+    db.add(address)
+    await db.commit()
+    result = await CustomerAccountFlow(
+        bot_context=test_bot_context(platform),
+    ).reply(event(platform, callback=f"ux:address:choose:{address.id}"), db)
+    assert "نشانی انتخاب شد" in result.text
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
 async def test_cart_quote_shipping_coupon_and_order_are_common(db, platform):
@@ -152,7 +175,7 @@ async def test_cart_quote_shipping_coupon_and_order_are_common(db, platform):
 
     prompt = await flow.reply(event(platform, callback="shop:address"), db)
     assert "نشانی" in prompt.text
-    await flow.reply(event(platform, text="تهران خیابان نمونه پلاک ۱۲"), db)
+    await select_saved_address(db, platform)
     await flow.reply(event(platform, callback="shop:ship:1"), db)
     await flow.reply(event(platform, callback="shop:coupon"), db)
     await flow.reply(event(platform, text="save10"), db)
@@ -245,9 +268,7 @@ async def test_order_history_and_cancellation_require_matching_platform(db):
     flow = ShopCartFlow(bot_context=test_bot_context(Platform.BALE))
     await flow.reply(event(Platform.BALE, callback=f"shop:add:{first.id}"), db)
     await flow.reply(event(Platform.BALE, callback="shop:address"), db)
-    await flow.reply(
-        event(Platform.BALE, text="تهران خیابان نمونه پلاک ۱۲"), db
-    )
+    await select_saved_address(db, Platform.BALE)
     await flow.reply(event(Platform.BALE, callback="shop:ship:1"), db)
     confirmation = await flow.reply(
         event(Platform.BALE, callback="shop:checkout"), db

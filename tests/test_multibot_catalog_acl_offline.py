@@ -457,7 +457,7 @@ def test_category_listing_hides_unauthorized_categories(db):
     adapter = AsyncDb(db)
     listing = asyncio.run(flow.reply(InboundEvent(
         platform=Platform.TELEGRAM, chat_id=456, user_id=456,
-        text="/catalog",
+        callback_data="shop:categories", callback_query_id="cb",
     ), adapter))
     labels = [action.label for row in listing.rows for action in row]
     assert "Category A" not in labels

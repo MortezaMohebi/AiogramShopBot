@@ -30,7 +30,7 @@ MENU_LABELS = {
     "support": "🆘 پشتیبانی",
 }
 MENU_CALLBACKS = {
-    "shop": "shop:categories",
+    "shop": "shop:list:0",
     "search": "ux:search",
     "cart": "shop:cart",
     "orders": "shop:orders",

@@ -20,7 +20,75 @@ class TelegramTransport:
         self.bot = bot
         self.bot_id = bot_id
 
-    async def send_media(self, chat_id: int, attachment) -> None:
+    async def clear_inline(self, chat_id: int, message_id: int) -> None:
+        """Disable controls on a superseded UI message without deleting media."""
+        from aiogram.exceptions import TelegramBadRequest
+
+        try:
+            await self.bot.edit_message_reply_markup(
+                chat_id=chat_id, message_id=message_id,
+                reply_markup=None,
+            )
+        except TelegramBadRequest:
+            pass
+
+    async def _preview(
+        self, chat_id: int, reply: BotReply, markup,
+        edit_message_id: int | None,
+    ) -> int | None:
+        """Replace a card image in place using the current bot's file cache."""
+        from aiogram.exceptions import TelegramBadRequest
+        from aiogram.types import FSInputFile, InputMediaPhoto
+
+        from config import SHOP_MEDIA_ROOT
+        from dashboard.media_storage import safe_media_path
+        from services.shop_media_delivery import (
+            bot_fingerprint, cached_file_id, remember_file_id,
+        )
+
+        preview = reply.preview
+        if preview is None or preview.kind != "photo":
+            raise ValueError("Product preview must be a photo.")
+        bot_key = bot_fingerprint(self.bot.token)
+        cached = await cached_file_id(
+            platform="telegram", bot_key=bot_key, bot_id=self.bot_id,
+            storage_key=preview.storage_key, kind="photo",
+        )
+        source = cached or FSInputFile(
+            safe_media_path(SHOP_MEDIA_ROOT, preview.storage_key),
+        )
+        caption = reply.text[:1024]
+        message = None
+        if edit_message_id:
+            try:
+                message = await self.bot.edit_message_media(
+                    chat_id=chat_id, message_id=edit_message_id,
+                    media=InputMediaPhoto(media=source, caption=caption),
+                    reply_markup=markup,
+                )
+            except TelegramBadRequest:
+                await self.clear_inline(chat_id, edit_message_id)
+        if message is None:
+            message = await self.bot.send_photo(
+                chat_id=chat_id, photo=source, caption=caption,
+                reply_markup=markup, parse_mode=None,
+            )
+        remote_id = message.photo[-1].file_id if getattr(message, "photo", None) else None
+        if not cached and remote_id:
+            try:
+                await remember_file_id(
+                    platform="telegram", bot_key=bot_key, bot_id=self.bot_id,
+                    storage_key=preview.storage_key, kind="photo",
+                    file_id=remote_id,
+                )
+            except Exception:
+                # Delivery succeeded; cache failure cannot trigger a resend.
+                import logging
+
+                logging.warning("Telegram preview file cache write failed.")
+        return getattr(message, "message_id", None)
+
+    async def send_media(self, chat_id: int, attachment) -> int | None:
         """Send one original shop asset or its own bot-scoped cached file ID."""
         # Keep originals on private storage and cache provider file IDs
         # separately for each bot token. Text/keyboard logic is unchanged.
@@ -81,6 +149,13 @@ class TelegramTransport:
                 chat_id, value, caption=caption, parse_mode=None
             )
             remote_id = message.voice.file_id if message.voice else None
+        elif kind == "animation":
+            message = await self.bot.send_animation(
+                chat_id, value, caption=caption, parse_mode=None,
+            )
+            remote_id = (
+                message.animation.file_id if message.animation else None
+            )
         else:
             message = await self.bot.send_document(
                 chat_id, value, caption=caption, parse_mode=None
@@ -101,6 +176,7 @@ class TelegramTransport:
                 # The message was already sent; never resend it because
                 # an optimization-only database write failed.
                 logging.warning("Telegram media cache write failed.")
+        return getattr(message, "message_id", None)
 
 
     async def deliver_digital(self, payload: "DigitalSend") -> str:
@@ -210,13 +286,23 @@ class TelegramTransport:
             raise RuntimeError("runtime_delivery_receipt_invalid")
         return [str(value) for value in ids]
 
-    async def send(self, chat_id: int, reply: BotReply) -> None:
+    async def send(
+        self, chat_id: int, reply: BotReply, *,
+        edit_message_id: int | None = None,
+    ) -> int | None:
         """Send plain text with an optional inline keyboard."""
         from aiogram.types import (
             InlineKeyboardButton, InlineKeyboardMarkup,
             KeyboardButton, ReplyKeyboardMarkup,
         )
 
+        main = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="🛍 فروشگاه"), KeyboardButton(text="🛒 سبد خرید")],
+                [KeyboardButton(text="📦 سفارش‌های من"), KeyboardButton(text="💬 پشتیبانی")],
+            ],
+            resize_keyboard=True, is_persistent=True,
+        )
         markup = None
         if reply.request_contact:
             markup = ReplyKeyboardMarkup(
@@ -243,16 +329,49 @@ class TelegramTransport:
                     for row in reply.rows
                 ]
             )
+        if reply.show_main_keyboard and reply.rows:
+            await self.bot.send_message(
+                chat_id=chat_id, text="منوی اصلی در دسترس است.",
+                reply_markup=main, parse_mode=None,
+            )
+        elif reply.show_main_keyboard and not reply.request_contact:
+            markup = main
         for attachment in reply.attachments:
             await self.send_media(chat_id, attachment)
+        if reply.preview is not None:
+            return await self._preview(chat_id, reply, markup, edit_message_id)
+        if edit_message_id and not reply.attachments and not reply.request_contact:
+            try:
+                edited = await self.bot.edit_message_text(
+                    chat_id=chat_id, message_id=edit_message_id,
+                    text=reply.text,
+                    reply_markup=markup,
+                    parse_mode=None, disable_web_page_preview=True,
+                )
+                return getattr(edited, "message_id", edit_message_id)
+            except Exception as error:
+                # Old/deleted/non-text messages cannot be edited. Do not
+                # swallow provider transport failures unrelated to editability.
+                from aiogram.exceptions import TelegramBadRequest
+
+                if not isinstance(error, TelegramBadRequest):
+                    raise
+                try:
+                    await self.bot.edit_message_reply_markup(
+                        chat_id=chat_id, message_id=edit_message_id,
+                        reply_markup=None,
+                    )
+                except TelegramBadRequest:
+                    pass
         # The upstream bot defaults to HTML; product content must be plain.
-        await self.bot.send_message(
+        message = await self.bot.send_message(
             chat_id=chat_id,
             text=reply.text,
             reply_markup=markup,
             parse_mode=None,
             disable_web_page_preview=True,
         )
+        return getattr(message, "message_id", None)
 
     async def acknowledge(self, query_id: str) -> None:
         """Clear the Telegram inline-button loading indicator."""

@@ -715,6 +715,18 @@ class ShopCartFlow:
         self, event: InboundEvent, session: AsyncSession, action: str,
     ) -> BotReply:
         """Stage address/coupon form state only for the requesting bot."""
+        if action == "shop:address":
+            # Checkout uses the same resumable address book as the account.
+            from services.shop_customer_account import CustomerAccountFlow
+
+            return await CustomerAccountFlow(
+                bot_context=self.bot_context,
+            ).reply(
+                InboundEvent(
+                    platform=event.platform, chat_id=event.chat_id,
+                    user_id=event.user_id, callback_data="ux:addresses",
+                ), session,
+            )
         cart = await self._get_cart(event, session, create=True, lock=True)
         selected = "address" if action == "shop:address" else "coupon"
         if cart.is_shared:

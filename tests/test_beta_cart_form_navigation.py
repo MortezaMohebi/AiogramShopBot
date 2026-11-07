@@ -53,7 +53,7 @@ async def setup_dispatch(db, monkeypatch, platform):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
-@pytest.mark.parametrize("form", ["address", "coupon"])
+@pytest.mark.parametrize("form", ["coupon"])
 async def test_home_search_cannot_be_consumed_by_an_old_cart_form(
     db, monkeypatch, platform, form,
 ):
@@ -78,7 +78,8 @@ async def test_home_search_cannot_be_consumed_by_an_old_cart_form(
         ]
     else:
         actions = [action.callback_data for row in delivered["rows"] for action in row]
-    assert f"shop:item:{product.id}" in actions
+    assert f"shop:add:{product.id}" in actions
+    assert product.name in delivered["text"]
 
 
 @pytest.mark.asyncio
@@ -86,7 +87,7 @@ async def test_home_search_cannot_be_consumed_by_an_old_cart_form(
 async def test_cancel_clears_cart_before_a_new_support_form(db, monkeypatch, platform):
     """Cancelling a cart address also permits a later ticket body to reach support."""
     scope, native = await setup_dispatch(db, monkeypatch, platform)
-    await dispatch(scope, native, raw(callback="shop:address"))
+    await dispatch(scope, native, raw(callback="shop:coupon"))
     await dispatch(scope, native, raw(message="/cancel"))
     cart = db.session.scalars(select(ShopCart)).one()
     assert cart.awaiting_input is None
@@ -104,9 +105,13 @@ async def test_new_account_form_clears_old_cart_coupon(db, monkeypatch, platform
     scope, native = await setup_dispatch(db, monkeypatch, platform)
     await dispatch(scope, native, raw(callback="shop:coupon"))
     await dispatch(scope, native, raw(callback="ux:address:new"))
-    await dispatch(scope, native, raw(message=(
-        "خانه|مشتری نمونه|09123456789|تهران|تهران|خیابان نمونه پلاک ۱۲|1234567890"
-    )))
+    await dispatch(scope, native, raw(message="مشتری نمونه"))
+    await dispatch(scope, native, raw(message="09123456789"))
+    await dispatch(scope, native, raw(callback="ux:address:province:7"))
+    await dispatch(scope, native, raw(callback="ux:address:city:0"))
+    await dispatch(scope, native, raw(message="خیابان نمونه پلاک ۱۲"))
+    await dispatch(scope, native, raw(callback="ux:address:next"))
+    await dispatch(scope, native, raw(callback="ux:address:confirm"))
     assert db.session.query(ShopCustomerAddress).count() == 1
     assert db.session.scalars(select(ShopCart.awaiting_input)).one() is None
 
@@ -136,13 +141,13 @@ async def test_shared_cart_navigation_clears_only_the_current_bot_form(
         store_id=scope.store_id, cart_scope="customer", credit_scope="identity",
     ))
     await db.commit()
-    await dispatch(replace(other, status="active"), native, raw(callback="shop:address"))
+    await dispatch(replace(other, status="active"), native, raw(callback="shop:coupon"))
     await dispatch(scope, native, raw(callback="shop:coupon"))
     await dispatch(scope, native, raw(callback="ux:search"))
     current = db.session.get(ShopCartInputSession, (scope.bot_id, 101))
     untouched = db.session.get(ShopCartInputSession, (other.bot_id, 101))
     assert current.awaiting_input is None
-    assert untouched.awaiting_input == "address"
+    assert untouched.awaiting_input == "coupon"
 
 
 @pytest.mark.asyncio
@@ -153,7 +158,7 @@ async def test_shared_cart_navigation_clears_only_the_current_bot_form(
 async def test_semantic_menu_aliases_end_old_cart_input(db, monkeypatch, platform, entry):
     """Stale search-field buttons and supported text menu labels also leave forms."""
     scope, native = await setup_dispatch(db, monkeypatch, platform)
-    await dispatch(scope, native, raw(callback="shop:address"))
+    await dispatch(scope, native, raw(callback="shop:coupon"))
     await dispatch(
         scope, native,
         raw(callback=entry) if entry.startswith("ux:") else raw(message=entry),

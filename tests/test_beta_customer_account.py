@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from channels.contracts import InboundEvent, Platform, normalize_update
-from services.shop_customer_account import verified_contact, validate_address
+from services.shop_customer_account import verified_contact
 
 
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
@@ -29,18 +29,6 @@ def test_verified_contact_requires_exact_bot_message_sender(platform):
     assert wrong is not None
     with pytest.raises(ValueError):
         verified_contact(wrong)
-
-
-def test_address_validation_requires_structured_bounded_values():
-    """Chat address entries are validated instead of storing arbitrary text."""
-    valid = "خانه|گیرنده نمونه|09123456789|تهران|تهران|خیابان نمونه پلاک ۱|1234567890"
-    data = validate_address(valid)
-    assert data["label"] == "خانه"
-    assert data["city"] == "تهران"
-    with pytest.raises(ValueError):
-        validate_address("نشانی غیر ساختاریافته")
-    with pytest.raises(ValueError):
-        validate_address("a|b|c|d|e|f|" + "9" * 1000)
 
 
 def test_callback_ids_fit_bot_api():

@@ -49,8 +49,12 @@ class BotReply:
     text: str
     rows: tuple[tuple[InlineAction, ...], ...] = ()
     attachments: tuple[MediaAttachment, ...] = ()
+    # Preview is the replaceable card image; attachments are persistent
+    # on-demand messages and must never be deleted during navigation.
+    preview: MediaAttachment | None = None
     # Official Telegram/Bale ReplyKeyboard request_contact, never an inline button.
     request_contact: bool = False
+    show_main_keyboard: bool = False
 
     def __post_init__(self) -> None:
         """Validate common limits before handing data to an adapter."""
@@ -70,6 +74,7 @@ class InboundEvent:
     text: str | None = None
     callback_data: str | None = None
     callback_query_id: str | None = None
+    message_id: int | None = None
     contact_user_id: int | None = None
     contact_phone: str | None = None
 
@@ -127,6 +132,10 @@ def normalize_update(
                 user_id=user_id,
                 callback_data=data,
                 callback_query_id=query_id,
+                message_id=(
+                    message.get("message_id")
+                    if type(message.get("message_id")) is int else None
+                ),
             )
         return None
 

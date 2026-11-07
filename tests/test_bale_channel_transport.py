@@ -60,6 +60,30 @@ async def test_bale_send_message_uses_inline_keyboard():
 
 
 @pytest.mark.asyncio
+async def test_bale_installs_main_keyboard_and_edits_inline_navigation():
+    """Keep global routes in the reply keyboard and page actions inline."""
+    session = FakeSession(FakeResponse({
+        "ok": True, "result": {"message_id": 12},
+    }))
+    transport = BaleTransport("test-token", session)
+    reply = BotReply(
+        "فروشگاه", ((InlineAction("بعدی", "shop:list:1"),),),
+        show_main_keyboard=True,
+    )
+    await transport.send(101, reply)
+    assert session.calls[0][0].endswith("/sendMessage")
+    assert session.calls[0][1]["reply_markup"]["keyboard"][0][0]["text"] == "🛍 فروشگاه"
+    assert session.calls[1][1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "بعدی"
+
+    session.calls.clear()
+    result = await transport.send(101, BotReply("صفحهٔ بعد"), edit_message_id=12)
+    assert result == 12
+    assert len(session.calls) == 1
+    assert session.calls[0][0].endswith("/editMessageText")
+    assert session.calls[0][1]["message_id"] == 12
+
+
+@pytest.mark.asyncio
 async def test_bale_legacy_callback_does_not_use_unsupported_ack():
     """Preserve compatibility with Bale clients whose IDs start with 1."""
     session = FakeSession(FakeResponse({"ok": True, "result": True}))

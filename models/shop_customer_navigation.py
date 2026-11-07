@@ -89,6 +89,10 @@ class ShopCustomerChatState(Base):
     query_text: Mapped[str | None] = mapped_column(String(100))
     # Opaque field/subject of the currently awaited chat form, never a Bot ID.
     context_ref: Mapped[str | None] = mapped_column(String(100))
+    # Draft survives navigation, while action is reset so menu text is never
+    # consumed as a field. No delivery address is committed until confirmation.
+    address_draft: Mapped[str | None] = mapped_column(Text)
+    ui_message_id: Mapped[int | None] = mapped_column(BigInteger)
     query_field: Mapped[str] = mapped_column(
         String(16), nullable=False, default="all", server_default="all",
     )
@@ -113,8 +117,27 @@ class ShopCustomerChatState(Base):
     )
 
 
+class ShopCustomerMediaReceipt(Base):
+    """A confirmed media delivery to one bot user; files stay in chat."""
+
+    __tablename__ = "shop_customer_media_receipts"
+
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_bots.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    platform_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    storage_key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    store_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("shop_stores.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 CUSTOMER_NAV_TABLES = frozenset({
     ShopStoreMenuPolicy.__tablename__,
     ShopBotMenuPolicy.__tablename__,
     ShopCustomerChatState.__tablename__,
+    ShopCustomerMediaReceipt.__tablename__,
 })

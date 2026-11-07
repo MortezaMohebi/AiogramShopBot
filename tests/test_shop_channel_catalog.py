@@ -100,8 +100,8 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
         event(platform, text="/catalog"), AsyncSessionProxy(session)
     )
     assert reply is not None
-    assert len(reply.rows) == 2
-    assert reply.rows[0][0].label == "کرم"
+    assert "کرم" in reply.text
+    assert any(button.callback_data == "shop:add:1" for row in reply.rows for button in row)
     assert "پنهان" not in reply.text
     detail = await flow.reply(
         event(platform, callback="shop:item:1"), AsyncSessionProxy(session)
@@ -201,14 +201,23 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
     flow = CatalogFlow(bot_context=test_bot_context(platform))
     proxy = AsyncSessionProxy(session)
     start = await flow.reply(event(platform, text="/catalog"), proxy)
-    assert start.rows[0][0].label == "محصولات مراقبتی"
+    assert "محصول" in start.text
+    assert not start.attachments
+    categories = await flow.reply(event(platform, callback="shop:categories"), proxy)
+    assert categories.rows[0][0].label == "محصولات مراقبتی"
     category_page = await flow.reply(
         event(platform, callback=f"shop:category:{category.id}:0"),
         proxy,
     )
-    assert category_page.rows[0][0].label == "محصول"
-    attachments = await flow.reply(
+    assert "محصول" in category_page.text
+    listing = await flow.reply(
         event(platform, callback=f"shop:files:{product.id}:0"), proxy
     )
-    assert len(attachments.attachments) == 1
-    assert attachments.attachments[0].mime_type == "application/pdf"
+    assert not listing.attachments
+    media_id = session.query(ProductMedia).filter_by(is_published=True).one().id
+    assert listing.rows[0][0].callback_data == f"shop:file:{media_id}"
+    attachment = await flow.reply(
+        event(platform, callback=f"shop:file:{media_id}"), proxy,
+    )
+    assert len(attachment.attachments) == 1
+    assert attachment.attachments[0].mime_type == "application/pdf"

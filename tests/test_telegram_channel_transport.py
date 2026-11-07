@@ -1,8 +1,9 @@
 """Offline Aiogram transport tests with a fake Bot object."""
 
 import pytest
+from types import SimpleNamespace
 
-from channels.contracts import BotReply, InlineAction
+from channels.contracts import BotReply, InlineAction, MediaAttachment
 from channels.telegram import TelegramTransport
 
 # Native Aiogram type validation is part of the contract under CI.
@@ -46,3 +47,53 @@ async def test_telegram_uses_the_same_inline_buttons_as_bale():
     )
     await transport.acknowledge("cb-1")
     assert bot.acknowledged == [{"callback_query_id": "cb-1"}]
+
+
+@pytest.mark.asyncio
+async def test_product_preview_edits_existing_card_with_cached_file_id(monkeypatch):
+    """Changing products replaces the card instead of posting another photo."""
+    class CardBot(RecordingBot):
+        """Provide the image edit API without a live provider."""
+
+        token = "offline-token"
+
+        async def edit_message_media(self, **kwargs):
+            """Record one in-place image replacement."""
+            self.sent.append(kwargs)
+            return SimpleNamespace(
+                message_id=77,
+                photo=[SimpleNamespace(file_id="cached-photo")],
+            )
+
+    async def cached(**kwargs):
+        """Use the current bot's already uploaded media."""
+        return "cached-photo"
+
+    monkeypatch.setattr("services.shop_media_delivery.cached_file_id", cached)
+    bot = CardBot()
+    reply = BotReply(
+        "کرم\nقیمت: ۲۵۰ ریال\nموجودی: ۲",
+        ((InlineAction("➕ افزودن", "shop:add:1"),),),
+        preview=MediaAttachment("0" * 32 + ".jpg", "photo", "image/jpeg"),
+    )
+    assert await TelegramTransport(bot).send(101, reply, edit_message_id=77) == 77
+    assert len(bot.sent) == 1
+    assert bot.sent[0]["message_id"] == 77
+    assert bot.sent[0]["media"].media == "cached-photo"
+
+
+@pytest.mark.asyncio
+async def test_main_keyboard_is_persistent_and_inline_actions_stay_on_screen():
+    """The initial fixed keyboard coexists with contextual inline actions."""
+    bot = RecordingBot()
+    await TelegramTransport(bot).send(
+        101,
+        BotReply(
+            "خوش آمدید",
+            ((InlineAction("جستجو", "ux:search"),),),
+            show_main_keyboard=True,
+        ),
+    )
+    assert len(bot.sent) == 2
+    assert bot.sent[0]["reply_markup"].keyboard[0][0].text == "🛍 فروشگاه"
+    assert bot.sent[1]["reply_markup"].inline_keyboard[0][0].callback_data == "ux:search"

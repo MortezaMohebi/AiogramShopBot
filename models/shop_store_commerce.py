@@ -48,6 +48,8 @@ class ShopStoreCustomer(Base):
     )
     display_name: Mapped[str | None] = mapped_column(String(255))
     phone: Mapped[str | None] = mapped_column(String(32))
+    # A typed number or another person's Contact is usable for delivery only.
+    contact_phone: Mapped[str | None] = mapped_column(String(32))
     # Contact.user_id must match the provider-authenticated chat user.
     phone_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

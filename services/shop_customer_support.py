@@ -122,7 +122,7 @@ class CustomerSupportFlow:
 
         handled = (
             is_support_action(action)
-            or text in {"/support", "/paysupport", "🆘 پشتیبانی", "/ticket"}
+            or text in {"/support", "/paysupport", "🆘 پشتیبانی", "💬 پشتیبانی", "/ticket"}
         )
         state = None
         if not handled and text and not text.startswith("/"):
@@ -142,7 +142,7 @@ class CustomerSupportFlow:
             return BotReply("برای پشتیبانی ابتدا /start را ارسال کنید.")
 
         if action == "ux:support" or text in {
-            "/support", "/paysupport", "🆘 پشتیبانی",
+            "/support", "/paysupport", "🆘 پشتیبانی", "💬 پشتیبانی",
         }:
             return BotReply(
                 "🆘 مرکز پشتیبانی\n"

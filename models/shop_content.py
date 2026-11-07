@@ -168,7 +168,7 @@ class ProductMedia(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('photo', 'video', 'audio', 'document')",
+            "kind IN ('photo', 'video', 'audio', 'document', 'animation')",
             name="ck_shop_media_kind",
         ),
         CheckConstraint("size_bytes > 0", name="ck_shop_media_nonempty"),

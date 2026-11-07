@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import BotReply, InboundEvent, InlineAction
@@ -45,41 +45,6 @@ def verified_contact(event: InboundEvent) -> str:
     if not _PHONE.fullmatch(normalized):
         raise ValueError("Contact phone number is invalid.")
     return normalized
-
-
-def validate_address(raw: str) -> dict[str, str]:
-    """Parse a single bounded, human-readable chat address submission.
-
-    Format: label|recipient|phone|province|city|full address|postal code.
-    This is a chat fallback; authenticated Mini Apps may use validated fields.
-    """
-    if not isinstance(raw, str) or len(raw) > 950:
-        raise ValueError("Invalid address input length.")
-    fields = [part.strip() for part in raw.split("|")]
-    if len(fields) != 7:
-        raise ValueError("Address needs all seven labeled fields.")
-    label, recipient, phone, province, city, full_address, postal_code = fields
-    if not (
-        1 <= len(label) <= 40
-        and 2 <= len(recipient) <= 100
-        and 2 <= len(province) <= 80
-        and 2 <= len(city) <= 80
-        and 10 <= len(full_address) <= 500
-        and 0 <= len(postal_code) <= 20
-        and _PHONE.fullmatch(re.sub(r"[ \-()]", "", phone))
-        and all(
-            char.isprintable()
-            for char in label + recipient + province + city + full_address + postal_code
-        )
-    ):
-        raise ValueError("Invalid address field.")
-    return {
-        "label": label, "recipient": recipient,
-        "phone": re.sub(r"[ \-()]", "", phone),
-        "province": province, "city": city,
-        "full_address": full_address,
-        "postal_code": postal_code,
-    }
 
 
 def _actions(*items: tuple[str, str]) -> tuple[tuple[InlineAction, ...], ...]:
@@ -153,7 +118,7 @@ class CustomerAccountFlow:
                 ShopCustomerChatState,
                 (self.context.bot_id, event.user_id),
             )
-            if state is None or state.action != "address_input":
+            if state is None or state.action not in {"address_input", "phone_verification"}:
                 return None
         if not known and state is None:
             return None
@@ -181,7 +146,7 @@ class CustomerAccountFlow:
                 expiry = expiry.replace(tzinfo=timezone.utc)
             if (
                 state is None or state.store_id != self.context.store_id
-                or state.action != "phone_verification"
+                or state.action not in {"phone_verification", "address_input"}
                 or expiry is None or expiry <= datetime.now(timezone.utc)
             ):
                 return BotReply(
@@ -189,68 +154,81 @@ class CustomerAccountFlow:
                     "دکمهٔ تأیید شماره تماس را انتخاب کنید.",
                     _actions(("🪪 مشخصات من", "ux:profile")),
                 )
-            try:
-                phone = verified_contact(event)
-            except ValueError:
-                return BotReply(
-                    "برای تأیید شماره، Contact مربوط به حساب خودتان را ارسال کنید.",
-                    _actions(("👤 حساب من", "ux:account")),
+            phone = re.sub(r"[ \-()]", "", event.contact_phone)
+            if not _PHONE.fullmatch(phone):
+                return BotReply("شماره تماس معتبر نیست.")
+            if state.action == "address_input":
+                from services.shop_address_wizard import address_reply
+
+                if state.context_ref != "phone":
+                    return BotReply(
+                        "در این مرحله شماره تماس درخواست نشده است.",
+                        _actions(("ادامه نشانی", "ux:address:resume")),
+                    )
+                if event.contact_user_id == event.user_id:
+                    customer.phone = verified_contact(event)
+                    customer.phone_verified_at = datetime.now(timezone.utc)
+                    customer.contact_phone = phone
+                return await address_reply(
+                    db, state,
+                    InboundEvent(
+                        platform=event.platform, chat_id=event.chat_id,
+                        user_id=event.user_id, text=phone,
+                    ),
+                    store_id=self.context.store_id, customer_id=customer.id,
+                    display_name=customer.display_name or identity.first_name,
+                    known_phone=customer.phone if customer.phone_verified_at else customer.contact_phone,
                 )
-            customer.phone = phone
-            customer.phone_verified_at = datetime.now(timezone.utc)
+            customer.contact_phone = phone
+            if event.contact_user_id == event.user_id:
+                customer.phone = verified_contact(event)
+                customer.phone_verified_at = datetime.now(timezone.utc)
             state.action = "idle"
             state.context_ref = None
             await db.commit()
             return BotReply(
-                "✅ شمارهٔ تماس متعلق به حساب پیام‌رسان شما تأیید و ثبت شد.",
+                "✅ شمارهٔ حساب تأیید شد." if event.contact_user_id == event.user_id
+                else "شماره برای تماس ثبت شد؛ مالکیت حساب با آن تأیید نشده است.",
                 _actions(("🪪 پروفایل", "ux:profile")),
             )
 
-        if state is not None and state.action == "address_input":
-            expire = state.expires_at
-            if expire.tzinfo is None:
-                expire = expire.replace(tzinfo=timezone.utc)
-            if expire < datetime.now(timezone.utc):
-                state.action = "idle"
-                await db.commit()
-                return BotReply("زمان ثبت آدرس پایان یافت؛ دوباره تلاش کنید.")
-            try:
-                values = validate_address(text)
-            except ValueError:
-                return BotReply(
-                    "نشانی معتبر نیست. هفت بخش را با | جدا کنید:\n"
-                    "عنوان|گیرنده|تلفن|استان|شهر|آدرس کامل|کدپستی",
-                    _actions(("لغو", "ux:addresses")),
-                )
-            exists = await db.scalar(select(ShopCustomerAddress.id).where(
-                ShopCustomerAddress.store_id == self.context.store_id,
-                ShopCustomerAddress.customer_id == customer.id,
-                ShopCustomerAddress.label == values["label"],
-            ))
-            if exists is not None:
-                return BotReply("این عنوان آدرس قبلاً ثبت شده است؛ عنوان دیگری انتخاب کنید.")
-            count = int(await db.scalar(select(func.count()).select_from(
-                ShopCustomerAddress,
-            ).where(
-                ShopCustomerAddress.store_id == self.context.store_id,
-                ShopCustomerAddress.customer_id == customer.id,
-            )) or 0)
-            if count >= 10:
-                return BotReply("حداکثر ۱۰ نشانی قابل ذخیره است.")
-            row = ShopCustomerAddress(
-                store_id=self.context.store_id, customer_id=customer.id,
-                is_default=count == 0, **values,
-            )
-            db.add(row)
+        if state is not None and state.action == "phone_verification" and text:
+            phone = re.sub(r"[ \-()]", "", text)
+            if not _PHONE.fullmatch(phone):
+                return BotReply("شماره معتبر نیست. شماره تماس را دوباره وارد کنید.")
+            customer.contact_phone = phone
             state.action = "idle"
             await db.commit()
             return BotReply(
-                "✅ نشانی ذخیره شد.",
-                _actions(
-                    ("📍 نشانی‌های من", "ux:addresses"),
-                    ("🛒 سبد خرید", "shop:cart"),
-                ),
+                "شماره برای تماس ذخیره شد؛ تأیید حساب نیست.",
+                _actions(("🪪 پروفایل", "ux:profile")),
+                show_main_keyboard=True,
             )
+        if action.startswith("ux:address:") or (
+            state is not None and state.action == "address_input"
+            and text and not text.startswith("/")
+        ):
+            from services.shop_address_wizard import address_reply
+
+            if state is None:
+                state = await db.get(
+                    ShopCustomerChatState, (self.context.bot_id, event.user_id),
+                )
+            if state is None and action == "ux:address:new":
+                state = ShopCustomerChatState(
+                    bot_id=self.context.bot_id, platform_user_id=event.user_id,
+                    store_id=self.context.store_id,
+                    expires_at=datetime.now(timezone.utc) + _ADDRESS_TTL,
+                )
+                db.add(state)
+            response = await address_reply(
+                db, state, event,
+                store_id=self.context.store_id, customer_id=customer.id,
+                display_name=customer.display_name or identity.first_name,
+                known_phone=customer.phone if customer.phone_verified_at else customer.contact_phone,
+            )
+            if response is not None:
+                return response
 
         if action == "ux:account" or text in {"/account", "👤 حساب من"}:
             return BotReply(
@@ -280,7 +258,8 @@ class CustomerAccountFlow:
                 "🪪 مشخصات من\n"
                 f"نام: {customer.display_name or identity.first_name or 'ثبت نشده'}\n"
                 f"شماره تماس: {phone_label}\n"
-                "شماره باید توسط Contact متعلق به خودتان تأیید شود.",
+                f"شماره تماس گیرنده: {customer.contact_phone or 'ثبت نشده'}\n"
+                "تأیید حساب فقط با اشتراک Contact متعلق به خودتان انجام می‌شود.",
                 _actions(
                     ("📱 تأیید شماره تماس", "ux:phone"),
                     ("📍 نشانی‌های من", "ux:addresses"),
@@ -308,7 +287,8 @@ class CustomerAccountFlow:
             await db.commit()
             return BotReply(
                 "برای تأیید مالکیت شماره، از دکمهٔ رسمی اشتراک شمارهٔ تماس "
-                "در پیام‌رسان استفاده کنید. ارسال شماره به صورت متن تأیید محسوب نمی‌شود.",
+                "در پیام‌رسان استفاده کنید. اگر دکمه در Client شما کار نکرد، "
+                "شماره را بنویسید؛ شمارهٔ دستی فقط برای تماس ذخیره می‌شود.",
                 request_contact=True,
             )
 
@@ -345,6 +325,8 @@ class CustomerAccountFlow:
                         f"ux:address:delete:{row.id}",
                     ),
                 ))
+            if state is not None and state.address_draft:
+                buttons.extend(_actions(("▶ ادامه نشانی ناتمام", "ux:address:resume")))
             buttons.extend(_actions(
                 ("➕ نشانی جدید", "ux:address:new"),
                 ("👤 حساب من", "ux:account"),
@@ -352,34 +334,6 @@ class CustomerAccountFlow:
             return BotReply(
                 "\n".join(lines) if rows else "هنوز نشانی ثبت نکرده‌اید.",
                 tuple(buttons),
-            )
-
-        if action == "ux:address:new":
-            # Use the module-level model: importing inside this method would
-            # make all earlier ShopCustomerChatState reads unbound locals.
-            state = await db.get(
-                ShopCustomerChatState, (self.context.bot_id, event.user_id),
-            )
-            if state is None:
-                state = ShopCustomerChatState(
-                    bot_id=self.context.bot_id,
-                    platform_user_id=event.user_id,
-                    store_id=self.context.store_id,
-                    expires_at=datetime.now(timezone.utc) + _ADDRESS_TTL,
-                )
-                db.add(state)
-            if state.store_id != self.context.store_id:
-                raise ValueError("Invalid Store chat ownership.")
-            state.action = "address_input"
-            state.expires_at = datetime.now(timezone.utc) + _ADDRESS_TTL
-            await db.commit()
-            return BotReply(
-                "📍 آدرس جدید\n"
-                "لطفاً هفت بخش را در یک پیام با علامت | جدا کنید:\n"
-                "عنوان|نام گیرنده|شماره تماس|استان|شهر|نشانی کامل|کد پستی\n"
-                "نمونه:\nخانه|مشتری نمونه|09123456789|تهران|تهران|"
-                "خیابان نمونه پلاک ۱|1234567890",
-                _actions(("لغو", "ux:addresses")),
             )
 
         match = _CALLBACK_ADDRESS_CHOOSE.fullmatch(action)

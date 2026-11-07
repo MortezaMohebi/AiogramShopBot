@@ -60,8 +60,11 @@ def should_clear_chat_state(callback: str, text: str) -> bool:
             "shop:home", "shop:categories", "shop:cart", "shop:orders",
             "ux:account", "ux:support",
         }
-        or callback.startswith("shop:item:")
-        or text in {"/start", "/menu", "🏠 منوی اصلی"}
+        or callback.startswith(("shop:item:", "shop:detail:", "shop:file:", "shop:files:"))
+        or text in {
+            "/start", "/menu", "🏠 منوی اصلی", "🛍 فروشگاه",
+            "🛒 سبد خرید", "📦 سفارش‌های من", "💬 پشتیبانی",
+        }
     )
 
 
@@ -89,6 +92,8 @@ async def clear_pending_on_navigation(
             "/cancel", "/search", "/address", "/ticket", "/support",
             "/paysupport", "/account", "/profile", "/wishlist",
             "🔎 جستجوی محصول", "👤 حساب من", "🆘 پشتیبانی",
+            "🛍 فروشگاه", "🛒 سبد خرید", "📦 سفارش‌های من",
+            "💬 پشتیبانی",
         }
     )
     account_navigation = action.startswith((
@@ -110,8 +115,10 @@ async def clear_pending_on_navigation(
         if state.store_id != context.store_id:
             raise ValueError("Customer chat Store mismatch.")
         if state.action != "idle" or state.context_ref or state.query_text:
+            preserve_draft_step = bool(state.address_draft)
             state.action = "idle"
-            state.context_ref = None
+            if not preserve_draft_step:
+                state.context_ref = None
             state.query_text = None
             changed = True
     private = await db.execute(update(ShopCart).where(

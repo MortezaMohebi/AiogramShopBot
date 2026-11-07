@@ -24,7 +24,7 @@ _SIGNATURES = {
     "image/png": (".png", "photo"),
     "image/jpeg": (".jpg", "photo"),
     "image/webp": (".webp", "photo"),
-    "image/gif": (".gif", "document"),
+    "image/gif": (".gif", "animation"),
     "application/pdf": (".pdf", "document"),
     "video/mp4": (".mp4", "video"),
     "audio/mpeg": (".mp3", "audio"),

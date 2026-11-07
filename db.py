@@ -56,6 +56,7 @@ from models.shop_digital_delivery import (
 )
 from models.shop_customer_navigation import (
     ShopStoreMenuPolicy, ShopBotMenuPolicy, ShopCustomerChatState,
+    ShopCustomerMediaReceipt,
 )
 from models.shop_customer_account_data import (
     ShopCustomerAddress, ShopCustomerWishlist, ShopCustomerPreference,

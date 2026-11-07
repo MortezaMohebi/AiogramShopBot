@@ -11,7 +11,8 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from channels.contracts import BotReply, InboundEvent, Platform, normalize_update
 from channels.shop_payment_dispatch import send_order_invoice
@@ -27,6 +28,7 @@ from services.shop_channel_catalog import CatalogFlow
 from services.shop_customer_experience import (
     CustomerExperienceFlow,
     clear_pending_on_navigation,
+    should_clear_chat_state,
 )
 from services.shop_customer_notification_dispatch import deliver_order_paid_once
 from services.shop_customer_support import CustomerSupportFlow, is_support_action
@@ -47,7 +49,7 @@ async def _paused_service_route(db, context: BotContext, event: InboundEvent) ->
     action = event.callback_data or ""
     text = (event.text or "").strip()
     if is_support_action(action) or text in {
-        "/support", "/paysupport", "/ticket", "🆘 پشتیبانی",
+        "/support", "/paysupport", "/ticket", "🆘 پشتیبانی", "💬 پشتیبانی",
     }:
         return "support"
     if action == "shop:orders" or _REFUND_ACTION.fullmatch(action) or text in {
@@ -110,14 +112,107 @@ async def paused_customer_reply(
     return await flow.reply(event, db)
 
 
-async def _send(context: BotContext, client, chat_id: int, reply: BotReply) -> None:
+async def _send(
+    context: BotContext, client, chat_id: int, reply: BotReply,
+    *, event: InboundEvent | None = None,
+) -> None:
     """Send one finalized message through only the current bot's transport."""
+    from models.shop_customer_navigation import (
+        ShopCustomerChatState, ShopCustomerMediaReceipt,
+    )
+
+    state = None
+    previous = None
+    if event is not None:
+        async with session_maker() as db:
+            state = await db.get(
+                ShopCustomerChatState, (context.bot_id, event.user_id),
+            )
+            if state is not None:
+                previous = state.ui_message_id
+    if event is not None and (
+        (event.text or "").split(" ", 1)[0] == "/start"
+        or event.contact_phone is not None
+        or (
+            state is not None and state.action == "idle"
+            and (event.text or "").strip() == "📱 اشتراک شمارهٔ تماس"
+        )
+    ):
+        reply = replace(reply, show_main_keyboard=True)
+    if event is not None and reply.attachments:
+        transport = (
+            TelegramTransport(client, bot_id=context.bot_id)
+            if context.platform == Platform.TELEGRAM else client
+        )
+        delivered = 0
+        for attachment in reply.attachments:
+            key = (context.bot_id, event.user_id, attachment.storage_key)
+            async with session_maker() as db:
+                receipt = await db.get(ShopCustomerMediaReceipt, key)
+                if receipt is not None and receipt.store_id != context.store_id:
+                    raise ValueError("Customer media ownership mismatch.")
+            if receipt is not None:
+                continue
+            message_id = await transport.send_media(chat_id, attachment)
+            delivered += 1
+            if type(message_id) is int and message_id > 0:
+                async with session_maker() as db:
+                    db.add(ShopCustomerMediaReceipt(
+                        bot_id=context.bot_id,
+                        platform_user_id=event.user_id,
+                        storage_key=attachment.storage_key,
+                        store_id=context.store_id,
+                        message_id=message_id,
+                    ))
+                    await db.commit()
+        reply = replace(
+            reply, attachments=(),
+            text=(
+                "این رسانه قبلاً در همین گفتگو ارسال شده است؛ در تاریخچهٔ گفتگو در دسترس است."
+                if not delivered and (event.callback_data or "").startswith("shop:file:")
+                else reply.text
+            ),
+        )
+    edit_id = previous or (event.message_id if event and event.is_callback else None)
+    new_event = bool(
+        event and (event.callback_data or "").startswith((
+            "shop:place:", "shop:creditconfirm:", "shop:refundorder:",
+        ))
+    )
+    if new_event and edit_id:
+        transport = (
+            TelegramTransport(client, bot_id=context.bot_id)
+            if context.platform == Platform.TELEGRAM else client
+        )
+        if hasattr(transport, "clear_inline"):
+            await transport.clear_inline(chat_id, edit_id)
+        edit_id = None
     if context.platform == Platform.TELEGRAM:
-        await TelegramTransport(
-            client, bot_id=context.bot_id,
-        ).send(chat_id, reply)
+        transport = TelegramTransport(client, bot_id=context.bot_id)
+        result = await transport.send(
+            chat_id, reply, edit_message_id=edit_id,
+        )
     else:
-        await client.send(chat_id, reply)
+        result = (
+            await client.send(chat_id, reply, edit_message_id=edit_id)
+            if edit_id else await client.send(chat_id, reply)
+        )
+    if event is not None and type(result) is int and result > 0:
+        async with session_maker() as db:
+            current = await db.get(
+                ShopCustomerChatState, (context.bot_id, event.user_id),
+                with_for_update=True,
+            )
+            if current is None:
+                current = ShopCustomerChatState(
+                    bot_id=context.bot_id, platform_user_id=event.user_id,
+                    store_id=context.store_id, expires_at=datetime.now(UTC) + timedelta(days=7),
+                )
+                db.add(current)
+            if current.store_id != context.store_id:
+                raise ValueError("Customer UI ownership mismatch.")
+            current.ui_message_id = result
+            await db.commit()
 
 
 async def _acknowledge(context: BotContext, client, query_id: str) -> None:
@@ -267,6 +362,25 @@ async def dispatch(
         return {"status": "ignored"}
     if event.callback_query_id:
         await _acknowledge(context, client, event.callback_query_id)
+    if event.is_callback and event.message_id is not None:
+        from models.shop_customer_navigation import ShopCustomerChatState
+
+        async with session_maker() as db:
+            state = await db.get(
+                ShopCustomerChatState, (context.bot_id, event.user_id),
+            )
+            if state is not None and state.ui_message_id is not None and (
+                state.ui_message_id != event.message_id
+            ):
+                # A stale callback may mutate the cart or place an order;
+                # never execute it after the active screen has moved on.
+                transport = (
+                    TelegramTransport(client, bot_id=context.bot_id)
+                    if context.platform == Platform.TELEGRAM else client
+                )
+                if hasattr(transport, "clear_inline"):
+                    await transport.clear_inline(event.chat_id, event.message_id)
+                return {"status": "stale_callback"}
 
     # A customer may request a refund on a paid order while shopping is off.
     refund_request = bool(_REFUND_ACTION.fullmatch(event.callback_data or ""))
@@ -303,6 +417,23 @@ async def dispatch(
         ) and not refund_request:
             return {"status": "blocked"}
 
+        from models.shop_customer_navigation import ShopCustomerChatState
+
+        active_state = await db.get(
+            ShopCustomerChatState, (context.bot_id, event.user_id),
+        )
+        restore_keyboard = bool(
+            active_state is not None
+            and active_state.action == "phone_verification"
+            and event.contact_phone is None
+            and (
+                event.callback_data is not None
+                or should_clear_chat_state(
+                    event.callback_data or "", (event.text or "").strip(),
+                )
+                or (event.text or "").strip() == "/cancel"
+            )
+        )
         await clear_pending_on_navigation(
             db, context=context, event=event,
         )
@@ -345,7 +476,9 @@ async def dispatch(
                 break
     if reply is None:
         return {"status": "ignored"}
-    await _send(context, client, event.chat_id, reply)
+    if restore_keyboard:
+        reply = replace(reply, show_main_keyboard=True)
+    await _send(context, client, event.chat_id, reply, event=event)
     return {"status": "processed"}
 
 
