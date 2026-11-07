@@ -236,7 +236,7 @@ export default async function BotDetailPage({
               <ShieldAlert className="mt-1 size-5 shrink-0 text-amber-600" />
               دریافت پیام این ربات فعال نیست؛ فروش جدید تا تأیید هویت و اتصال متوقف می‌ماند.
             </p>
-            <p className="text-xs leading-7 text-muted-foreground">در بخش «دریافت پیام و فعال‌سازی ربات»، روش دریافت را ثبت و سپس آن را با MFA فعال کنید.</p>
+            <p className="text-xs leading-7 text-muted-foreground">در بخش «دریافت پیام و فعال‌سازی ربات»، روش دریافت را ثبت و سپس آن را فعال کنید.</p>
           </div>}
         </CardContent>
       </Card>

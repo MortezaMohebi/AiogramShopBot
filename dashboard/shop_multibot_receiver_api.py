@@ -1,7 +1,7 @@
 """Signed superadmin API for independent bot receiver activation and state.
 
 New bots require a verified staged credential, safe per-bot webhook ownership,
-explicit password/MFA confirmation, an active shop and an opt-in runtime flag.
+an authenticated administrator, an active shop and an opt-in runtime flag.
 No credential, webhook authenticator, or live endpoint URL is returned.
 """
 
@@ -15,9 +15,7 @@ from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
-from dashboard.admin_control_api import (
-    Proof, StrictPayload, fresh_proof, throttle,
-)
+from dashboard.admin_control_api import StrictPayload, throttle
 from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
@@ -42,8 +40,8 @@ class ReceiverStage(StrictPayload):
     mode: Literal["webhook", "polling"]
 
 
-class ReceiverApply(Proof):
-    """Require a fresh password and MFA for the irreversible provider change."""
+class ReceiverApply(StrictPayload):
+    """Bind activation to the staged revision and authenticated administrator."""
 
     expected_version: int = Field(ge=1)
 
@@ -82,10 +80,9 @@ async def activate_receiver(
     bot_id: UUID, payload: ReceiverApply, request: Request,
     staff: Staff, db: Db,
 ) -> dict:
-    """Verify fresh MFA then apply provider webhook/polling under an owned lease."""
+    """Apply the verified draft's receiver under an authorized session and lease."""
     actor = require(staff, "bots.apply")
     await throttle("multibot-activate:" + str(actor.id), 3, 60)
-    await fresh_proof(db, actor, payload)
     supervisor = getattr(request.app.state, "multi_bot_supervisor", None)
     return await control.activate_receiver(
         db, bot_id=str(bot_id), actor_id=actor.id,

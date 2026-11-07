@@ -137,20 +137,17 @@ export async function stageBotReceiver(form: FormData): Promise<void> {
   redirect(`/bots/${id}?saved=receiver_staged`);
 }
 
-/** Activate an opted-in receiver with fresh password and MFA verification. */
+/** Activate a verified draft using the authenticated administrator session. */
 export async function activateBotReceiver(form: FormData): Promise<void> {
   const id = idFrom(form);
   const expected_version = positiveInt(form.get("expected_version"));
-  const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
-  if (!expected_version || !current_password || current_password.length > 256 ||
-      !/^[0-9]{6}$/.test(second_factor)) {
+  if (!expected_version) {
     redirect(`/bots/${id}?error=validation`);
   }
   try {
     // Provider checks may exceed a read timeout; mutations are never retried.
     await adminFetch(`/bot-registry/${id}/receiver/activate`, "POST", {
-      expected_version, current_password, second_factor,
+      expected_version,
     }, 90_000);
   } catch (error) { failure(error, id); }
   revalidatePath("/bots");

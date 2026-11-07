@@ -51,6 +51,26 @@ from dashboard.next_api import bounded_bridge_body, verify_bridge_signature
 PREFIX = "/internal/admin/v1"
 
 
+def bot_onboarding_route(path: str, method: str) -> bool:
+    """Exempt only additive bot setup from repeated administrator proof.
+
+    Session validation, role permissions, Store ownership, verified credentials,
+    receiver revision checks, and exclusive worker leases remain mandatory.
+    Unknown routes and every destructive method retain the step-up boundary.
+    """
+    if method != "POST":
+        return False
+    if path == PREFIX + "/bot-registry":
+        return True
+    return bool(re.fullmatch(
+        re.escape(PREFIX) + r"/bot-registry/"
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/"
+        r"(?:credentials/stage|verify|receiver/stage|receiver/activate)",
+        path,
+    ))
+
+
 def permission_for(path: str, method: str) -> str | None:
     """Map server-owned route families to fixed capabilities; fail closed."""
     resource = path.removeprefix(PREFIX).strip("/").split("/")[0]
@@ -252,7 +272,8 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 if permission is None or not has_permission(staff.role, permission):
                     raise SecurityRejected("permission_denied")
                 if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or (path.startswith(PREFIX + "/products/") and path.endswith(("/digital-file", "/digital-licenses"))) or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
-                    require_recent(row)
+                    if not bot_onboarding_route(path, request.method):
+                        require_recent(row)
                 request.state.admin_session_id = row.id
                 # Only session-authenticated requests can acquire StoreContext.
                 # A user's allowed set is always re-read from active grants;

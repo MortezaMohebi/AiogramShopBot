@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Bot, Plus, ShieldCheck } from "lucide-react";
+import { Bot, Plus } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,11 +56,6 @@ export default async function BotsPage({
     <PageHeading title="مدیریت ربات‌ها" />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-4 text-sm">
       <p className="max-w-3xl leading-7">ربات جدید ابتدا به‌صورت پیش‌نویس ایجاد می‌شود. برای شروع کار، Token را تأیید و دریافت پیام را فعال کنید.</p>
-    </div>
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <ShieldCheck className="size-4 text-primary" />
-      <span>ساخت، تأیید Token و تغییر وضعیت ربات به احراز هویت مجدد مدیر نیاز دارد.</span>
-      <Button asChild variant="outline" size="sm"><Link href="/account">تأیید هویت</Link></Button>
     </div>
     {query.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">ثبت اطلاعات انجام شد.</p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[query.error] ?? problems.save}</p> : null}

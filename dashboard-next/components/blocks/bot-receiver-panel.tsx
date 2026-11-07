@@ -1,6 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type {
   BotCredentialStatus, BotReceiverSnapshot, BotRecord,
 } from "@/lib/bot-registry";
@@ -65,16 +64,6 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
         </p>
         <input type="hidden" name="id" value={bot.id} />
         <input type="hidden" name="expected_version" value={receiver.version ?? ""} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block space-y-2">رمز فعلی مدیر
-            <Input type="password" name="current_password" required minLength={1}
-              maxLength={256} autoComplete="current-password" />
-          </label>
-          <label className="block space-y-2">کد شش‌رقمی MFA
-            <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
-              maxLength={6} autoComplete="one-time-code" required />
-          </label>
-        </div>
         <Button type="submit">فعال‌سازی دریافت پیام</Button>
       </form> : null}
 
