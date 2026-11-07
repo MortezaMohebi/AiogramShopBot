@@ -45,7 +45,7 @@ class ShopRemoteFile(Base):
             "platform IN ('telegram','bale')", name="ck_shop_remote_platform"
         ),
         CheckConstraint(
-            "delivery_kind IN ('photo','video','audio','voice','document')",
+            "delivery_kind IN ('photo','video','audio','voice','document','animation')",
             name="ck_shop_remote_kind",
         ),
     )

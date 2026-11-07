@@ -232,6 +232,7 @@ async def test_worker_telegram_media_cache_uses_registered_bot_id(
         async with worker._transport_for_bot(bot_id) as transport:
             await transport.send_media(101, MediaAttachment(
                 storage_key=key, kind="document", mime_type="application/pdf",
+                filename="qa_manual.pdf",
             ))
 
         assert provider.closed is True
@@ -244,4 +245,32 @@ async def test_worker_telegram_media_cache_uses_registered_bot_id(
             )
         else:
             assert cache.remote_file_id == "telegram-uploaded-document"
+            assert provider.requests[0].document.filename == "qa_manual.pdf"
+    engine.dispose()
+
+
+def test_animation_cache_accepts_provider_file_id() -> None:
+    """A sent GIF must be cacheable under its actual animation method."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_shop_schema(engine)
+    store_id, bot_id = str(uuid4()), str(uuid4())
+    with Session(engine) as session:
+        session.add(ShopStore(
+            id=store_id, slug="animation-store", name="Store", state="active",
+        ))
+        session.add(ShopBot(
+            id=bot_id, store_id=store_id, slug="animation-telegram",
+            name="Telegram", platform="telegram", status="active",
+            runtime_owner="registry", version=1, credential_version=1,
+        ))
+        session.add(ShopRemoteFile(
+            bot_id=bot_id, platform="telegram",
+            bot_fingerprint=bot_fingerprint(FAKE_TOKEN),
+            storage_key="a" * 32 + ".gif", delivery_kind="animation",
+            remote_file_id="uploaded-animation",
+        ))
+        session.commit()
+        assert session.scalar(select(ShopRemoteFile.remote_file_id)) == (
+            "uploaded-animation"
+        )
     engine.dispose()

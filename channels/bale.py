@@ -150,7 +150,7 @@ class BaleTransport:
                 form.add_field(
                     selected.field,
                     source,
-                    filename=path.name,
+                    filename=media.filename or path.name,
                     content_type=media.mime_type,
                 )
                 async with self._session.post(

@@ -40,6 +40,7 @@ class MediaAttachment:
     kind: str
     mime_type: str
     caption: str = ""
+    filename: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

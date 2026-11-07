@@ -75,6 +75,7 @@ class ShopCampaignService:
                     kind=item.kind,
                     mime_type=item.mime_type,
                     caption=item.caption or "",
+                    filename=item.original_filename,
                 )
             )
         return tuple(attachments)

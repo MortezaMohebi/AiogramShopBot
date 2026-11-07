@@ -522,6 +522,7 @@ class CatalogFlow:
             (MediaAttachment(
                 storage_key=item.storage_key, kind=item.kind,
                 mime_type=item.mime_type, caption=item.caption or "",
+                filename=item.original_filename,
             ),),
         )
 

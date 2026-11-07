@@ -126,7 +126,7 @@ class TelegramTransport:
             storage_key=attachment.storage_key,
             kind=kind,
         )
-        value = cached or FSInputFile(path)
+        value = cached or FSInputFile(path, filename=attachment.filename)
         caption = attachment.caption[:1024] or None
 
         if kind == "photo":
