@@ -17,13 +17,18 @@ export async function GET(request: NextRequest, { params }: Context): Promise<Re
   const query = request.nextUrl.searchParams;
   const format = query.get("format") ?? "";
   const fields = query.getAll("fields");
+  const ids = query.getAll("ids");
   const compatible = query.get("update_compatible");
   if (!VALID_MODELS.has(model) || !VALID_ACTIONS.has(action) ||
       !VALID_FORMATS.has(format) || fields.length > 40 ||
+      ids.length > 100 || (ids.length > 0 && (
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => !/^[1-9][0-9]{0,18}$/.test(id) || BigInt(id) > BigInt("9223372036854775807"))
+      )) ||
       new Set(fields).size !== fields.length ||
       fields.some((field) => !/^[a-z][a-z0-9_]{0,63}$/.test(field)) ||
       (compatible !== null && !["true", "false"].includes(compatible)) ||
-      (action !== "export" && (fields.length > 0 || compatible !== null))) {
+      (action !== "export" && (fields.length > 0 || ids.length > 0 || compatible !== null))) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
   const session = await readSession();
@@ -33,6 +38,7 @@ export async function GET(request: NextRequest, { params }: Context): Promise<Re
   try {
     const parameters = new URLSearchParams({ format });
     for (const field of fields) parameters.append("fields", field);
+    for (const id of ids) parameters.append("ids", id);
     if (compatible === "true") parameters.set("update_compatible", "true");
     const upstream = await bridgeResponse(
       `/data-models/${model}/${action}?${parameters.toString()}`,
@@ -56,6 +62,7 @@ export async function GET(request: NextRequest, { params }: Context): Promise<Re
       ? error.status : 503;
     const code = error instanceof ApiError && [
       "model_export_too_large", "unknown_model_field", "model_import_not_supported",
+      "invalid_model_selection", "model_selection_changed",
       "store_access_denied", "permission_denied", "session_expired",
     ].includes(error.code ?? "") ? error.code : "download_unavailable";
     return NextResponse.json({ error: code }, {

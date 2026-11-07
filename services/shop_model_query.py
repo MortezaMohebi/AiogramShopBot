@@ -100,7 +100,7 @@ async def serialize_rows(
                 value = None
             # Never round large IRR amounts through JavaScript Number.
             record[field.key] = (
-                str(value) if field.kind == "money" and value is not None
+                str(value) if (field.kind == "money" or field.key == "id") and value is not None
                 else safe_value(value)
             )
         result.append(record)
@@ -198,6 +198,7 @@ async def export_records(
     fields: Sequence[str] | None = None,
     current_store_only: bool = False,
     max_rows: int = MAX_EXPORT_ROWS,
+    selected_ids: Sequence[int] | None = None,
 ) -> tuple[list[str], list[dict]]:
     """Return a deterministic, bounded snapshot for CSV/XLSX export."""
     ctx = trusted_context()
@@ -207,9 +208,18 @@ async def export_records(
     columns = [dataset.field(key, intent="export") for key in headers]
     store_ids = (ctx.current_store_id,) if current_store_only else ctx.active_store_ids
     scope = dataset.model.store_id.in_(store_ids)
+    if selected_ids is not None:
+        if (not 1 <= len(selected_ids) <= 100
+            or any(type(item) is not int or item < 1 or item > 9_223_372_036_854_775_807
+                   for item in selected_ids)
+            or len(set(selected_ids)) != len(selected_ids)):
+            raise security.SecurityRejected("invalid_model_selection", 422)
+        scope = scope & dataset.model.id.in_(selected_ids)
     total = int(await db.scalar(select(func.count()).select_from(
         dataset.model,
     ).where(scope)) or 0)
+    if selected_ids is not None and total != len(selected_ids):
+        raise security.SecurityRejected("model_selection_changed", 409)
     if total > max_rows:
         raise security.SecurityRejected("model_export_too_large", 409)
     # Reject oversized text sets BEFORE materializing thousands of Product

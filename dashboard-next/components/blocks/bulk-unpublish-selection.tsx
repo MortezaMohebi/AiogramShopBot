@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { Button } from "@/components/ui/button";
@@ -25,8 +26,10 @@ const errorMessages: Record<string, string> = {
 };
 
 /** Select published rows on this view and ask before hiding them from customers. */
-export function BulkUnpublishSelection({ entity, eligible, children, enabled = true }: {
+export function BulkUnpublishSelection({ entity, eligible, children, enabled = true, canArchive = true,
+  archivable = eligible }: {
   entity: Entity; eligible: number[]; children: ReactNode; enabled?: boolean;
+  canArchive?: boolean; archivable?: number[];
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -35,6 +38,7 @@ export function BulkUnpublishSelection({ entity, eligible, children, enabled = t
   const [notice, setNotice] = useState<{ ok: boolean; message: string }>();
   const noun = entity === "products" ? "محصول" : "دسته‌بندی";
   const visibleSelected = eligible.filter((id) => selected.has(id));
+  const archiveSelected = archivable.filter((id) => selected.has(id));
 
   function toggle(id: number, checked: boolean) {
     setSelected((current) => {
@@ -49,7 +53,7 @@ export function BulkUnpublishSelection({ entity, eligible, children, enabled = t
   }
 
   async function apply() {
-    if (busy || visibleSelected.length === 0) return;
+    if (busy || archiveSelected.length === 0) return;
     setBusy(true);
     setNotice(undefined);
     try {
@@ -61,7 +65,7 @@ export function BulkUnpublishSelection({ entity, eligible, children, enabled = t
           "Content-Type": "application/json", Accept: "application/json",
           "X-Shop-Login-Challenge": challenge,
         },
-        body: JSON.stringify({ entity, ids: visibleSelected }),
+        body: JSON.stringify({ entity, ids: archiveSelected }),
       });
       const result = await response.json() as {
         ok?: boolean; code?: string; unpublished?: number;
@@ -72,7 +76,7 @@ export function BulkUnpublishSelection({ entity, eligible, children, enabled = t
       }
       setOpen(false);
       setSelected(new Set());
-      setNotice({ ok: true, message: `${result.unpublished ?? visibleSelected.length} ${noun} از نمایش به مشتری برداشته شد.` });
+      setNotice({ ok: true, message: `${result.unpublished ?? archiveSelected.length} ${noun} از نمایش به مشتری برداشته شد.` });
       router.refresh();
     } catch {
       setNotice({ ok: false, message: errorMessages.service_unavailable });
@@ -84,11 +88,14 @@ export function BulkUnpublishSelection({ entity, eligible, children, enabled = t
   if (!enabled) return <>{children}</>;
   return <Context.Provider value={{ selected, eligible, toggle, toggleAll }}>
     <div className="mb-4 flex flex-wrap items-center gap-3">
-      <Button type="button" variant="outline" size="sm" disabled={!visibleSelected.length}
+      {canArchive ? <Button type="button" variant="outline" size="sm" disabled={!archiveSelected.length}
         onClick={() => { setNotice(undefined); setOpen(true); }}>
-        بایگانی انتخاب‌شده‌ها ({visibleSelected.length})
-      </Button>
-      <span className="text-xs text-muted-foreground">فقط موارد منتشرشدهٔ همین فهرست قابل انتخاب‌اند.</span>
+        بایگانی انتخاب‌شده‌ها ({archiveSelected.length})
+      </Button> : null}
+      {entity === "products" && visibleSelected.length ? <Button asChild variant="outline" size="sm">
+        <Link href={`/data-models/products?ids=${visibleSelected.join(",")}`}>خروجی انتخاب‌شده‌ها ({visibleSelected.length})</Link>
+      </Button> : null}
+      <span className="text-xs text-muted-foreground">انتخاب همه فقط سطرهای همین صفحه را شامل می‌شود.</span>
     </div>
     {notice && !open ? <p role={notice.ok ? "status" : "alert"}
       className={`mb-4 rounded-md p-3 text-sm ${notice.ok ? "bg-accent text-accent-foreground" : "bg-destructive/10 text-destructive"}`}>
@@ -97,7 +104,7 @@ export function BulkUnpublishSelection({ entity, eligible, children, enabled = t
     {children}
     <Dialog open={open} label="تأیید بایگانی انتخاب‌شده‌ها" onClose={() => { if (!busy) setOpen(false); }}>
       <div className="space-y-4 p-5">
-        <h2 className="text-lg font-semibold">بایگانی {visibleSelected.length} {noun}</h2>
+        <h2 className="text-lg font-semibold">بایگانی {archiveSelected.length} {noun}</h2>
         <p className="text-sm leading-7">
           {entity === "products"
             ? "محصولات انتخاب‌شده از فروشگاه ربات‌ها پنهان می‌شوند. اطلاعات محصول و سوابق سفارش حفظ می‌شوند؛ می‌توانید آن‌ها را دوباره منتشر کنید."

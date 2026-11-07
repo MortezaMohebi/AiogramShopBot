@@ -16,7 +16,7 @@ import type {
   ModelMetadata, ModelSearchResult, TimeGranularity,
 } from "@/lib/model-data";
 
-interface Props { metadata: ModelMetadata }
+interface Props { metadata: ModelMetadata; initialIds?: string }
 type Format = "csv" | "xlsx";
 
 const OPS: Array<[FieldOperator, string]> = [
@@ -52,7 +52,7 @@ const ERRORS: Record<string, string> = {
 const MAX_BYTES = 8 * 1024 * 1024;
 
 /** One reusable UI driven entirely by backend ModelRegistry metadata. */
-export function ModelDataWorkbench({ metadata }: Props) {
+export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
   const router = useRouter();
   const searchable = metadata.fields.filter((item) => item.searchable);
   const sortable = metadata.fields.filter((item) => item.sortable);
@@ -77,6 +77,10 @@ export function ModelDataWorkbench({ metadata }: Props) {
   const [descending, setDescending] = useState(true);
   const [filters, setFilters] = useState<ModelFilter[]>([]);
   const [searchResult, setSearchResult] = useState<ModelSearchResult | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(
+    initialIds.split(",").filter((id) => /^[1-9][0-9]{0,18}$/.test(id)
+      && BigInt(id) <= BigInt("9223372036854775807")).slice(0, 100),
+  ));
   const [groupField, setGroupField] = useState(groupable[0]?.key ?? "");
   const [period, setPeriod] = useState<TimeGranularity>("month");
   const [groupResult, setGroupResult] = useState<ModelGroupResult | null>(null);
@@ -118,6 +122,7 @@ export function ModelDataWorkbench({ metadata }: Props) {
         setNotice(response.error);
       } else {
         setSearchResult(response.data);
+        setSelectedIds(new Set());
       }
     } catch {
       setNotice("جست‌وجو انجام نشد. اتصال را بررسی و دوباره جست‌وجو کنید.");
@@ -212,6 +217,7 @@ export function ModelDataWorkbench({ metadata }: Props) {
       const query = new URLSearchParams({ format: extension });
       if (updateCompatible) query.set("update_compatible", "true");
       for (const item of chosenFields) query.append("fields", item);
+      for (const id of selectedIds) query.append("ids", id);
       const response = await fetch(`/api/admin/data-models/${metadata.model}/export?${query}`, {
         credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(45_000),
       });
@@ -219,6 +225,8 @@ export function ModelDataWorkbench({ metadata }: Props) {
         const result = await response.json().catch(() => null) as { error?: string } | null;
         setExportIssue(result?.error === "model_export_too_large"
           ? "حجم یا تعداد ردیف‌های خروجی بیش از حد مجاز است."
+          : result?.error === "model_selection_changed" || result?.error === "invalid_model_selection"
+            ? "یک یا چند رکورد انتخاب‌شده دیگر در فروشگاه‌های مجاز شما نیستند. دوباره جست‌وجو و انتخاب کنید."
           : "دریافت خروجی انجام نشد. ستون‌ها و دسترسی‌تان را بررسی کنید.");
         return;
       }
@@ -298,11 +306,27 @@ export function ModelDataWorkbench({ metadata }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
               <thead><tr className="border-b">
+                <th className="p-2"><input type="checkbox" aria-label="انتخاب همهٔ رکوردهای این صفحه"
+                  checked={searchResult.items.length > 0 && searchResult.items.every((row) => selectedIds.has(String(row.id)))}
+                  onChange={(event) => setSelectedIds((current) => {
+                    const next = new Set(current);
+                    for (const row of searchResult.items) {
+                      if (event.target.checked) next.add(String(row.id)); else next.delete(String(row.id));
+                    }
+                    return next;
+                  })} /></th>
                 {visibleFields.map((item) =>
                   <th key={item.key} className="min-w-24 p-2 font-semibold">{item.title}</th>)}
               </tr></thead>
               <tbody>{searchResult.items.map((row, index) =>
                 <tr key={String(row.id ?? index)} className="border-b">
+                  <td className="p-2"><input type="checkbox" aria-label={`انتخاب رکورد ${row.id}`}
+                    checked={selectedIds.has(String(row.id))}
+                    onChange={(event) => setSelectedIds((current) => {
+                      const next = new Set(current);
+                      if (event.target.checked) next.add(String(row.id)); else next.delete(String(row.id));
+                      return next;
+                    })} /></td>
                   {visibleFields.map((field) =>
                     <td key={field.key} className="max-w-64 truncate p-2" title={String(row[field.key] ?? "")}>
                       {String(row[field.key] ?? "—")}
@@ -373,6 +397,11 @@ export function ModelDataWorkbench({ metadata }: Props) {
         <FileDown className="size-5" /> دریافت فایل خروجی
       </CardTitle></CardHeader>
       <CardContent className="space-y-4">
+        <p role="status" className="text-sm text-muted-foreground">
+          {selectedIds.size ? `خروجی فقط برای ${selectedIds.size.toLocaleString("fa-IR")} رکورد انتخاب‌شده` : "خروجی همهٔ رکوردهای مجاز"}
+        </p>
+        {selectedIds.size ? <Button type="button" size="sm" variant="outline"
+          onClick={() => setSelectedIds(new Set())}>لغو انتخاب رکوردها</Button> : null}
         {canUpdateExport ? <label className="flex items-center gap-2 text-sm font-medium">
           <input type="checkbox" checked={updateCompatible} disabled={busy}
             onChange={(event) => { setUpdateCompatible(event.target.checked); setExportIssue(""); }} />

@@ -167,7 +167,7 @@ async def test_scoped_export_import_keeps_stable_identity_and_precise_price() ->
     from models.shop_multibot import DEFAULT_STORE_ID, ShopStore
     from services.shop_external_ids import external_id
     from services.shop_model_io import preview_or_apply
-    from services.shop_model_query import export_records
+    from services.shop_model_query import export_records, search
     from services.shop_uom import seed_store_units
     from tests.schema_support import create_shop_schema
 
@@ -198,9 +198,24 @@ async def test_scoped_export_import_keeps_stable_identity_and_precise_price() ->
                 ))
             await db.commit()
             with bind_context(context):
+                listed = await search(
+                    db, PRODUCT, filters=[], page=1, page_size=30,
+                    sort_by="id", descending=False,
+                )
+                assert [item["id"] for item in listed["items"]] == ["1", "2"]
+                _, selected = await export_records(
+                    db, PRODUCT, fields=["external_id", "price_irr"], selected_ids=[2],
+                )
+                assert [row["external_id"] for row in selected] == [external_id("products", other, 2)]
+                for chosen in ([2], [1, 2], [999], [1, 1], []):
+                    with pytest.raises(SecurityRejected):
+                        await export_records(
+                            db, PRODUCT, fields=["external_id", "price_irr"],
+                            current_store_only=True, selected_ids=chosen,
+                        )
                 headers, rows = await export_records(
                     db, PRODUCT, fields=["external_id", "price_irr"],
-                    current_store_only=True,
+                    current_store_only=True, selected_ids=[1],
                 )
                 assert len(rows) == 1 and rows[0]["external_id"] == external_id("products", own, 1)
                 rows[0]["price_irr"] = "9007199254740993"

@@ -20,11 +20,12 @@ export async function ProductsResults({ page, search, canEdit }: Props) {
 export function ProductsTable({ data, page, search, canEdit }: Props & { data: Paginated<Product> }) {
   const lastPage = Math.max(1, Math.ceil(data.total / data.page_size));
   return <BulkUnpublishSelection key={`${page}:${search}`} entity="products"
-    eligible={data.items.filter((item) => item.is_published).map((item) => item.id)}
-    enabled={canEdit}>
+    eligible={data.items.map((item) => item.id)}
+    archivable={data.items.filter((item) => item.is_published).map((item) => item.id)}
+    canArchive={canEdit}>
           <Table>
             <TableHeader><TableRow>
-              {canEdit ? <TableHead><BulkSelectCheckbox all /></TableHead> : null}
+              <TableHead><BulkSelectCheckbox all /></TableHead>
               <TableHead>محصول</TableHead><TableHead>کد</TableHead>
               <TableHead>قیمت</TableHead><TableHead>موجودی</TableHead>
               <TableHead>انتشار</TableHead><TableHead>عملیات</TableHead>
@@ -32,7 +33,7 @@ export function ProductsTable({ data, page, search, canEdit }: Props & { data: P
             <TableBody>
               {data.items.map((item) => (
                 <TableRow key={item.id}>
-                  {canEdit ? <TableCell><BulkSelectCheckbox id={item.id} /></TableCell> : null}
+                  <TableCell><BulkSelectCheckbox id={item.id} /></TableCell>
                   <TableCell className="max-w-64 font-semibold">{item.name}</TableCell>
                   <TableCell dir="ltr" className="text-start text-xs text-muted-foreground">{item.sku}</TableCell>
                   <TableCell className="whitespace-nowrap tabular">{formatIrr(item.price_irr)}</TableCell>
@@ -43,7 +44,7 @@ export function ProductsTable({ data, page, search, canEdit }: Props & { data: P
                   </TableCell>
                 </TableRow>
               ))}
-              {!data.items.length ? <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
+              {!data.items.length ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
             </TableBody>
           </Table>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">

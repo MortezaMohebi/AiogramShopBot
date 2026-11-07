@@ -16,11 +16,14 @@ const backlinks: Record<ModelName, { title: string; href: string }> = {
 };
 
 /** All model-dependent controls derive from backend ModelRegistry metadata. */
-export default async function DataModelPage({ params }: { params: Params }) {
+export default async function DataModelPage({ params, searchParams }: {
+  params: Params; searchParams: Promise<{ ids?: string | string[] }>;
+}) {
   const { model } = await params;
   if (!SUPPORTED.has(model)) notFound();
   const name = model as ModelName;
   const metadata = await adminFetch<ModelMetadata>(`/data-models/${name}`);
+  const selection = (await searchParams).ids;
 
   return <div className="space-y-6">
     <Button asChild size="sm" variant="outline">
@@ -28,6 +31,6 @@ export default async function DataModelPage({ params }: { params: Params }) {
     </Button>
     <PageHeading title={`مدیریت داده: ${metadata.label}`}
       description="داده‌ها را جست‌وجو و گروه‌بندی کنید یا فایل خروجی بگیرید." />
-    <ModelDataWorkbench metadata={metadata} />
+    <ModelDataWorkbench metadata={metadata} initialIds={typeof selection === "string" ? selection : ""} />
   </div>;
 }

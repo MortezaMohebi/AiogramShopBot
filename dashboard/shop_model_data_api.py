@@ -162,6 +162,7 @@ async def export_model(
     model_name: str, actor: Actor, db: Db,
     format_name: Literal["csv", "xlsx"] = Query(alias="format"),
     fields: Annotated[list[str] | None, Query(max_length=40)] = None,
+    ids: Annotated[list[int] | None, Query(max_length=100)] = None,
     update_compatible: bool = False,
 ) -> Response:
     """Export at most 5,000 records from only selected, authorized Stores."""
@@ -174,6 +175,7 @@ async def export_model(
     _, records = await engine.export_records(
         db, dataset, fields=headers, current_store_only=update_compatible,
         max_rows=data_io.MAX_IMPORT_ROWS if update_compatible else data_io.MAX_EXPORT_ROWS,
+        selected_ids=ids,
     )
     payload, media = data_io.encode_table(
         dataset, format_name=format_name,
