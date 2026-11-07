@@ -19,6 +19,7 @@ from models.shop_multibot import ShopBot, ShopBotRegistryEvent
 from models.shop_multibot_receiver import ShopBotReceiver
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
+from utils.shop_text import clean_text
 
 OPERATING_STATES = frozenset({"active", "maintenance", "paused", "disabled"})
 _OPS_TITLES = {
@@ -29,12 +30,14 @@ _OPS_TITLES = {
 }
 
 
-def _public_https_url(value: str) -> str:
+def public_https_url(value: str) -> str:
     """Accept an optional public HTTPS support link without URL credentials."""
     raw = value.strip()
     if not raw:
         return ""
-    if len(raw) > 500:
+    if len(raw) > 500 or "\\" in raw or any(
+        char.isspace() or not char.isprintable() for char in raw
+    ):
         raise security.SecurityRejected("invalid_support_url", 422)
     try:
         url = urlsplit(raw)
@@ -54,11 +57,14 @@ def _public_https_url(value: str) -> str:
     ):
         raise security.SecurityRejected("invalid_support_url", 422)
     try:
-        if not ip_address(host).is_global:
-            raise security.SecurityRejected("invalid_support_url", 422)
+        address = ip_address(host)
     except ValueError:
         # Non-IP hostnames were validated above; no network request is sent.
-        pass
+        address = None
+    # Browsers may reinterpret abbreviated or non-decimal numeric hosts.
+    numeric_suffix = re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]+)", host.rsplit(".", 1)[-1])
+    if (address is None and numeric_suffix) or (address is not None and not address.is_global):
+        raise security.SecurityRejected("invalid_support_url", 422)
     return raw
 
 
@@ -66,12 +72,10 @@ def _message(text: str | None, limit: int = 4096) -> str | None:
     """Bound and sanitize an optional public-facing message."""
     if text is None or not text.strip():
         return None
-    clean = text.strip()
-    if len(clean) > limit or any(
-        ord(char) < 32 and char not in ("\n", "\t") for char in clean
-    ):
+    clean = clean_text(text, multiline=True)
+    if len(clean) > limit:
         raise security.SecurityRejected("invalid_request", 422)
-    return clean
+    return clean or None
 
 
 def _get_or_add(db: Session, bot: ShopBot) -> ShopBotOperations:
@@ -117,7 +121,7 @@ def update_details(
     ops.environment = environment
     ops.welcome_message = _message(welcome_message)
     ops.maintenance_message = _message(maintenance_message)
-    ops.support_url = _public_https_url(support_url) or None
+    ops.support_url = public_https_url(support_url) or None
     ops.updated_by = actor_id
     bot.version += 1
     db.add(ShopBotRegistryEvent(

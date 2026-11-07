@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_customer_account_data import ShopCustomerAddress
 from models.shop_customer_navigation import ShopCustomerChatState
+from utils.shop_text import clean_text
 
 PROVINCES = (
     "آذربایجان شرقی", "آذربایجان غربی", "اردبیل", "اصفهان", "البرز",
@@ -41,6 +42,7 @@ CITIES = (
 )
 STEPS = ("recipient", "phone", "province", "city", "full_address", "postal_code")
 PHONE = re.compile(r"^\+?[0-9]{7,16}\Z")
+_LOCAL_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 ACTION = re.compile(
     r"ux:address:(new|resume|pause|back|cancel|next|confirm|page:[0-3]|"
     r"province:(?:[0-9]|[12][0-9]|30)|city:[0-9]|other)\Z"
@@ -163,8 +165,9 @@ async def address_reply(
             if (name := f"نشانی {number}") not in existing
         )
         draft = {"label": label}
-        if display_name:
-            draft["recipient"] = display_name[:100]
+        recipient = clean_text(display_name or "")[:100]
+        if len(recipient) >= 2:
+            draft["recipient"] = recipient
         if known_phone:
             draft["phone"] = known_phone
         state.address_draft = json.dumps(draft, ensure_ascii=False)
@@ -249,8 +252,11 @@ async def address_reply(
         step = _step(state)
         if step in {"province", "city", "confirm"}:
             return _render(state)
-        value = event.text.strip()
         field = "city" if step == "city_other" else step
+        value = (
+            clean_text(event.text) if field in {"recipient", "city", "full_address"}
+            else event.text.strip().translate(_LOCAL_DIGITS)
+        )
         valid = (
             (field == "recipient" and 2 <= len(value) <= 100)
             or (field == "phone" and PHONE.fullmatch(re.sub(r"[ \-()]", "", value)))
@@ -258,7 +264,7 @@ async def address_reply(
             or (field == "full_address" and 10 <= len(value) <= 500)
             or (field == "postal_code" and re.fullmatch(r"[0-9]{10}", value))
         )
-        if not valid or not all(char.isprintable() for char in value):
+        if not valid:
             return BotReply("مقدار واردشده معتبر نیست. دوباره تلاش کنید.", _render(state).rows)
         values = _draft(state)
         values[field] = re.sub(r"[ \-()]", "", value) if field == "phone" else value

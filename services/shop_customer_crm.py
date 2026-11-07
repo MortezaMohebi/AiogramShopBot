@@ -18,6 +18,7 @@ from models.shop_customer_crm import (
     ShopCustomerAudit, ShopCustomerNote, ShopCustomerProfile,
 )
 from services.shop_admin_security import SecurityRejected, clock, utc
+from utils.shop_text import clean_text
 
 TAG_RE = re.compile(r"^[^<>\\/\x00-\x1f]{1,32}$")
 MAX_TAGS = 12
@@ -45,7 +46,7 @@ def validate_tags(tags: list[str]) -> list[str]:
     for tag in tags:
         if not isinstance(tag, str):
             raise SecurityRejected("invalid_request", 422)
-        normalized = tag.strip()
+        normalized = clean_text(tag)
         if not TAG_RE.fullmatch(normalized):
             raise SecurityRejected("invalid_request", 422)
         if normalized.casefold() not in {item.casefold() for item in result}:
@@ -73,7 +74,7 @@ def profile_for(db: Session, identity_id: int) -> ShopCustomerProfile:
 
 def add_note(db: Session, identity_id: int, actor_id: int, content: str) -> None:
     """Store a new immutable internal note and record its author."""
-    value = content.strip()
+    value = clean_text(content, multiline=True)
     if not 1 <= len(value) <= 4000:
         raise SecurityRejected("invalid_request", 422)
     profile_for(db, identity_id)

@@ -161,18 +161,29 @@ async def template(
 async def export_model(
     model_name: str, actor: Actor, db: Db,
     format_name: Literal["csv", "xlsx"] = Query(alias="format"),
+    fields: Annotated[list[str] | None, Query(max_length=40)] = None,
+    update_compatible: bool = False,
 ) -> Response:
     """Export at most 5,000 records from only selected, authorized Stores."""
     dataset = authorize(actor, model_name)
-    _, records = await engine.export_records(db, dataset)
+    if update_compatible:
+        authorize(actor, model_name, write=True)
+    headers = data_io.export_headers(
+        dataset, fields=fields, update_compatible=update_compatible,
+    )
+    _, records = await engine.export_records(
+        db, dataset, fields=headers, current_store_only=update_compatible,
+        max_rows=data_io.MAX_IMPORT_ROWS if update_compatible else data_io.MAX_EXPORT_ROWS,
+    )
     payload, media = data_io.encode_table(
         dataset, format_name=format_name,
-        rows=records, template=False,
+        rows=records, template=False, fields=headers,
+        update_compatible=update_compatible,
     )
     return Response(
         content=payload, media_type=media,
         headers={
-            "Content-Disposition": f'attachment; filename="{model_name}-export.{format_name}"',
+            "Content-Disposition": f'attachment; filename="{model_name}-{"update" if update_compatible else "export"}.{format_name}"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
@@ -182,7 +193,6 @@ async def export_model(
 @router.post("/data-models/{model_name}/import")
 async def import_model(
     model_name: str, request: Request, actor: Actor, db: Db,
-    format_name: Literal["csv", "xlsx"] = Query(alias="format"),
     dry_run: bool = True, expected_sha256: str | None = None,
     preview_id: str | None = None,
 ) -> dict:
@@ -206,7 +216,6 @@ async def import_model(
         # this signed Staff, current Store, context version and browser session.
         outcome = await data_io.preview_or_apply(
             db, dataset=dataset, raw=raw,
-            format_name=format_name,
             store_id=context.current_store_id, dry_run=True,
             expected_sha256=None,
         )
@@ -223,7 +232,7 @@ async def import_model(
     )
     result = await data_io.preview_or_apply(
         db, dataset=dataset, raw=raw,
-        format_name=format_name, store_id=context.current_store_id,
+        store_id=context.current_store_id,
         dry_run=False, expected_sha256=expected_sha256,
         preview_receipt=locked_receipt,
     )

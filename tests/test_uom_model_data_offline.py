@@ -133,6 +133,108 @@ def test_xlsx_template_round_trip() -> None:
     assert rows == []
 
 
+@pytest.mark.parametrize("format_name", ["csv", "xlsx"])
+def test_update_export_only_contains_identity_and_safe_writable_fields(format_name) -> None:
+    """A generated update file must be accepted without picking a file format."""
+    row = {
+        "id": 7, "external_id": "products:00000000-0000-4000-8000-000000000001:7",
+        "price_irr": "9007199254740993", "stock_quantity": 42, "is_published": True,
+        "store_id": "00000000-0000-4000-8000-000000000001",
+    }
+    payload, _ = encode_table(
+        PRODUCT, format_name=format_name, rows=[row], template=False,
+        fields=["price_irr"], update_compatible=True,
+    )
+    headers, parsed = decode_table(PRODUCT, raw=payload)
+    assert headers == ["external_id", "price_irr"]
+    assert parsed == [{"row": 2, "values": {
+        "external_id": row["external_id"], "price_irr": row["price_irr"],
+    }}]
+    with pytest.raises(SecurityRejected):
+        encode_table(
+            PRODUCT, format_name=format_name, rows=[row], template=False,
+            fields=["stock_quantity"], update_compatible=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_scoped_export_import_keeps_stable_identity_and_precise_price() -> None:
+    """Round-trip one published item without moving stock or rewriting aliases."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from models.shop_content import Product
+    from models.shop_model_import import ShopModelImportPreview
+    from models.shop_multibot import DEFAULT_STORE_ID, ShopStore
+    from services.shop_external_ids import external_id
+    from services.shop_model_io import preview_or_apply
+    from services.shop_model_query import export_records
+    from services.shop_uom import seed_store_units
+    from tests.schema_support import create_shop_schema
+
+    own = DEFAULT_STORE_ID
+    other = "00000000-0000-4000-8000-000000000002"
+    stores = tuple(AuthorizedStore(
+        id=key, slug=slug, name=slug, state="active", access_level="manager",
+    ) for key, slug in ((own, "default"), (other, "second")))
+    context = StoreContext(
+        staff_id=1, session_id="import-test", allowed_stores=stores,
+        active_store_ids=(own, other), current_store_id=own,
+        default_store_id=own, version=1,
+    )
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(create_shop_schema)
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            db.add_all([ShopStore(id=store.id, slug=store.slug, name=store.name) for store in stores])
+            await db.flush()
+            for store in stores:
+                await db.run_sync(lambda sync: seed_store_units(sync, store.id))
+            for idx, store in enumerate(stores, start=1):
+                db.add(Product(
+                    id=idx, store_id=store.id, sku="same-sku", external_ref="legacy-ref",
+                    name="Example", description="=literal", price=5, stock_quantity=8,
+                    is_published=True, uom_id=default_unit_id(store.id),
+                ))
+            await db.commit()
+            with bind_context(context):
+                headers, rows = await export_records(
+                    db, PRODUCT, fields=["external_id", "price_irr"],
+                    current_store_only=True,
+                )
+                assert len(rows) == 1 and rows[0]["external_id"] == external_id("products", own, 1)
+                rows[0]["price_irr"] = "9007199254740993"
+                raw, _ = encode_table(
+                    PRODUCT, format_name="xlsx", rows=rows, template=False,
+                    fields=headers, update_compatible=True,
+                )
+                preview = await preview_or_apply(
+                    db, dataset=PRODUCT, raw=raw, store_id=own,
+                    dry_run=True, expected_sha256=None, format_name="csv",
+                )
+                assert (preview["updates"], preview["creates"]) == (1, 0)
+                receipt = ShopModelImportPreview(**{
+                    key: preview[key] for key in ("snapshot_sha256", "rows", "creates", "updates")
+                })
+                applied = await preview_or_apply(
+                    db, dataset=PRODUCT, raw=raw, store_id=own,
+                    dry_run=False, expected_sha256=preview["sha256"], preview_receipt=receipt,
+                )
+                assert applied["committed"] is True
+                product = await db.get(Product, 1)
+                assert (product.price, product.stock_quantity, product.is_published) == (9_007_199_254_740_993, 8, True)
+                assert (product.external_ref, product.description) == ("legacy-ref", "=literal")
+                for key in (external_id("products", other, 2), external_id("products", own, 999)):
+                    with pytest.raises(SecurityRejected) as rejected:
+                        await preview_or_apply(
+                            db, dataset=PRODUCT, raw=f"external_id,price_irr\n{key},10\n".encode(),
+                            store_id=own, dry_run=True, expected_sha256=None,
+                        )
+                    assert rejected.value.code == "invalid_external_reference"
+    finally:
+        await engine.dispose()
+
+
 def test_csv_formula_injection_is_escaped() -> None:
     """External names cannot become executable spreadsheet formulas."""
     payload, _ = encode_table(

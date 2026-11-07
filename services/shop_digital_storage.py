@@ -21,6 +21,7 @@ from starlette.datastructures import UploadFile
 from services.shop_digital_rules import (
     DeliveryPolicyError, safe_digital_filename,
 )
+from utils.shop_text import clean_text
 
 _MAX_FILE = 50_000_000
 _MIMES = {
@@ -117,8 +118,7 @@ async def save_digital_file(
         raise DeliveryPolicyError("Invalid digital upload size.")
     filename = PurePath((uploaded.filename or "").replace("\\", "/")).name
     filename = "".join(
-        char for char in filename if char.isprintable()
-        and char not in "<>:|?*\\/"
+        char for char in clean_text(filename) if char not in '<>:"|?*\\/'
     )[:255]
     ext = Path(filename).suffix.lower()
     base = digital_root(root, public_media_root=public_media_root)

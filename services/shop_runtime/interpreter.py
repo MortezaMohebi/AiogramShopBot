@@ -9,6 +9,7 @@ from decimal import Decimal
 from services.shop_runtime.contracts import SUPPORTED_NODES
 from services.shop_workflow_conditions import cast_value, evaluate_condition
 from services.shop_workflow_schema import canonical_json
+from utils.shop_text import clean_text
 
 DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 
@@ -332,7 +333,10 @@ class Machine:
             } and kind != node.type.removeprefix("ask_"):
                 raise ValueError("runtime_file_required")
             if isinstance(value, str):
-                value = value.strip().translate(DIGITS)
+                value = (
+                    clean_text(value, multiline=True) if node.type == "ask_text"
+                    else value.strip()
+                ).translate(DIGITS)
             if value in (None, "") and config.get("required", True):
                 raise ValueError("runtime_input_required")
             if node.type == "ask_choice":

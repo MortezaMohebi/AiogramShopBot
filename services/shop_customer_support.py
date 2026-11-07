@@ -20,6 +20,7 @@ from models.shop_customer_support import ShopSupportMessage, ShopSupportTicket
 from services.shop_bot_context import BotContext
 from services.shop_customer_access import customer_access_clause
 from services.shop_customer_account import customer_for_bot
+from utils.shop_text import clean_text
 
 _TICKET_ID = re.compile(r"ux:ticket:view:([1-9][0-9]{0,18})\Z")
 _TICKET_REPLY = re.compile(r"ux:ticket:reply:([1-9][0-9]{0,18})\Z")
@@ -60,16 +61,13 @@ def _message_pages(body: str) -> tuple[str, ...]:
 
 
 def validate_ticket_body(value: str) -> str:
-    """Reject empty, unbounded or control-character customer messages."""
-    if (
-        not isinstance(value, str) or not 1 <= len(value.strip()) <= 4000
-        or any(
-            not char.isprintable() and char not in {"\n", "\t", "\u200c", "\u200d"}
-            for char in value
-        )
-    ):
+    """Normalize ticket text and reject empty or unbounded messages."""
+    if not isinstance(value, str) or len(value.strip()) > 4000:
         raise ValueError("Ticket message must be readable and 1-4000 characters.")
-    return value.strip()
+    cleaned = clean_text(value, multiline=True)
+    if not cleaned:
+        raise ValueError("Ticket message must be readable and 1-4000 characters.")
+    return cleaned
 
 
 def ticket_actions(

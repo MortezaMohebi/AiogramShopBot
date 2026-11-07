@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import Platform
 from models.shop_checkout_policy import ShopBotCheckoutPolicy, ShopStoreCheckoutPolicy
 from models.shop_multibot import ShopBot, ShopStore
+from utils.shop_text import clean_text
 from services import shop_admin_security as security
 
 
@@ -133,11 +134,12 @@ async def save_store_checkout(
     expected_version: int, mode: str, terms_version: str, terms_text: str,
 ) -> dict:
     """Update merchant checkout rules after version and terms validation."""
+    terms_text = clean_text(terms_text, multiline=True)
     if (
         mode not in {"manual", "instant"}
         or not 1 <= len(terms_version) <= 32
         or len(terms_text) > 6000
-        or (mode == "instant" and len(terms_text.strip()) < 12)
+        or (mode == "instant" and len(terms_text) < 12)
     ):
         raise security.SecurityRejected("invalid_checkout_policy", 422)
     row = await db.scalar(select(ShopStoreCheckoutPolicy).where(
@@ -154,7 +156,7 @@ async def save_store_checkout(
         raise security.SecurityRejected("configuration_changed", 409)
     row.mode = mode
     row.terms_version = terms_version.strip()
-    row.terms_text = terms_text.strip()
+    row.terms_text = terms_text
     row.version = row.version + 1 if expected_version else 1
     row.updated_by = actor_id
     await db.commit()

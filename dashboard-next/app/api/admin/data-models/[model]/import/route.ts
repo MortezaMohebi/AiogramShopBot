@@ -6,7 +6,6 @@ import { readSession } from "@/lib/session";
 export const runtime = "nodejs";
 const MAX_BYTES = 8 * 1024 * 1024;
 const VALID_MODELS = new Set(["products", "customers"]);
-const VALID_FORMATS = new Set(["csv", "xlsx"]);
 const SHA = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -31,12 +30,11 @@ export async function POST(
   if (!session) return reject("session_expired", 401);
 
   const { model } = await params;
-  const format = request.nextUrl.searchParams.get("format") ?? "";
   const mode = request.nextUrl.searchParams.get("mode") ?? "preview";
   const hash = request.nextUrl.searchParams.get("hash") ?? "";
   const previewId = request.nextUrl.searchParams.get("preview_id") ?? "";
   if (
-    !VALID_MODELS.has(model) || !VALID_FORMATS.has(format)
+    !VALID_MODELS.has(model)
     || !["preview", "apply"].includes(mode)
     || (mode === "apply" && (!SHA.test(hash) || !UUID.test(previewId)))
   ) {
@@ -76,7 +74,7 @@ export async function POST(
       offset += part.byteLength;
     }
     const parameters = new URLSearchParams({
-      format, dry_run: mode === "preview" ? "true" : "false",
+      dry_run: mode === "preview" ? "true" : "false",
     });
     if (mode === "apply") {
       parameters.set("expected_sha256", hash);
@@ -101,7 +99,8 @@ export async function POST(
         "import_preview_required", "import_data_changed",
         "invalid_import_value",
         "invalid_external_reference", "uom_not_available",
-        "uom_category_mismatch", "store_access_denied",
+        "uom_category_mismatch", "uom_locked", "store_access_denied",
+        "reauthentication_required", "session_expired", "permission_denied",
       ]);
       return reject(
         error.code && safe.has(error.code) ? error.code : "import_failed",

@@ -13,6 +13,7 @@ export interface ModelField {
   groupable: boolean;
   importable: boolean;
   exportable: boolean;
+  update_exportable?: boolean;
   required: boolean;
 }
 

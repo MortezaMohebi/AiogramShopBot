@@ -89,7 +89,6 @@ export function ProductEditor({
       ...(product ? { id: product.id } : {}),
       name: value("name"),
       sku: value("sku"),
-      external_ref: value("external_ref") || null,
       uom_id: uomId || null,
       purchase_uom_id: purchaseUnit || null,
       description: value("description"),
@@ -198,14 +197,9 @@ export function ProductEditor({
                   </p>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label htmlFor="product-external-ref" className="text-sm font-medium">
-                  شناسهٔ خارجی (اختیاری، برای ورود و خروج داده)
-                </label>
-                <Input id="product-external-ref" name="external_ref"
-                  maxLength={80} dir="ltr" defaultValue={product?.external_ref ?? ""}
-                  placeholder="supplier-product-001" />
-              </div>
+              {product?.external_id ? <p className="text-xs text-muted-foreground">
+                شناسهٔ خارجی برای ورود و خروج داده <bdi dir="ltr">{product.external_id}</bdi>
+              </p> : null}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label htmlFor="product-description" className="text-sm font-medium">

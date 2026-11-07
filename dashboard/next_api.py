@@ -45,6 +45,7 @@ from services.shop_service_controls import service_enabled
 from services.shop_sequence import next_display_position
 from services.shop_store_context import StoreContext, current_context
 from services.shop_uom import validate_product_units
+from services.shop_external_ids import external_id
 from models.shop_multibot import ShopBot, ShopStore
 from models.shop_store_commerce import ShopStoreSettings
 from services.shop_analytics import build_shop_analytics
@@ -52,9 +53,11 @@ from services.shop_broadcast_control import (
     BroadcastControl, CampaignRejected, delivery_counts,
 )
 from services.shop_admin_security import SecurityRejected
+from services.shop_bot_operations import public_https_url
 from services.shop_broadcast_scope import registry_dispatch_enabled
 from services.shop_campaigns import ShopCampaignService
 from utils.utils import verify_password
+from utils.shop_text import clean_text
 
 
 router = APIRouter(prefix="/internal/admin/v1", tags=["Next Admin bridge"])
@@ -241,6 +244,7 @@ def product_data(item: Product) -> dict:
         "store_id": item.store_id,
         "sku": item.sku,
         "external_ref": item.external_ref,
+        "external_id": external_id("products", item.store_id, item.id),
         "uom_id": item.uom_id,
         "purchase_uom_id": item.purchase_uom_id,
         "category_id": item.category_id,
@@ -293,12 +297,20 @@ class CategoryPatch(BaseModel):
     is_published: bool | None = None
 
 
+class BulkUnpublishPayload(BaseModel):
+    """Bound a reversible, all-or-nothing visibility change to selected IDs."""
+
+    model_config = ConfigDict(extra="forbid")
+    ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(
+        min_length=1, max_length=2000,
+    )
+
+
 class ProductPayload(BaseModel):
     """Create a product; merchant SKU and optional description may be blank."""
 
     model_config = ConfigDict(extra="forbid")
     sku: str = Field(default="", max_length=64)
-    external_ref: str | None = Field(default=None, max_length=80)
     uom_id: str | None = Field(default=None, max_length=36)
     purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str = Field(min_length=1, max_length=255)
@@ -321,7 +333,6 @@ class ProductPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     sku: str | None = Field(default=None, max_length=64)
-    external_ref: str | None = Field(default=None, max_length=80)
     uom_id: str | None = Field(default=None, max_length=36)
     purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -501,6 +512,39 @@ async def categories(staff: Staff, session: Db) -> list[dict]:
     ]
 
 
+async def bulk_unpublish_rows(
+    model: type[Product] | type[ShopCategory], ids: list[int],
+    staff: Staff, session: Db,
+) -> dict:
+    """Lock and hide every selected row in one scoped transaction."""
+    member = require_staff(staff, "content")
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="Duplicate IDs")
+    scope = admin_store_context(member)
+    records = (await session.execute(select(model).where(
+        model.id.in_(ids), model.store_id.in_(scope.active_store_ids),
+    ).order_by(model.id).with_for_update())).scalars().all()
+    if len(records) != len(ids):
+        raise HTTPException(status_code=404, detail="Selection not found")
+    for record in records:
+        require_store_access(scope, record.store_id, write=True)
+    changed = 0
+    for record in records:
+        if record.is_published:
+            record.is_published = False
+            changed += 1
+    await session.commit()
+    return {"selected": len(records), "unpublished": changed}
+
+
+@router.post("/categories/bulk-unpublish")
+async def bulk_unpublish_categories(
+    payload: BulkUnpublishPayload, staff: Staff, session: Db,
+) -> dict:
+    """Remove selected categories from customer navigation without deleting them."""
+    return await bulk_unpublish_rows(ShopCategory, payload.ids, staff, session)
+
+
 @router.post("/categories", status_code=201)
 async def create_category(
     payload: CategoryPayload, staff: Staff, session: Db
@@ -510,6 +554,9 @@ async def create_category(
     scope = admin_store_context(member)
     require_store_access(scope, scope.current_store_id, write=True)
     fields = payload.model_dump()
+    fields["name"] = clean_text(fields["name"])
+    if not fields["name"]:
+        raise HTTPException(status_code=422, detail="invalid_request")
     fields["store_id"] = scope.current_store_id
     fields["position"] = await session.run_sync(
         lambda sync: next_display_position(sync, ShopCategory)
@@ -543,6 +590,10 @@ async def edit_category(
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
+        if field == "name":
+            value = clean_text(value)
+            if not value:
+                raise HTTPException(status_code=422, detail="invalid_request")
         setattr(record, field, value)
     try:
         await session.commit()
@@ -585,6 +636,14 @@ async def products(
     }
 
 
+@router.post("/products/bulk-unpublish")
+async def bulk_unpublish_products(
+    payload: BulkUnpublishPayload, staff: Staff, session: Db,
+) -> dict:
+    """Hide selected products from all bot catalogs while retaining history."""
+    return await bulk_unpublish_rows(Product, payload.ids, staff, session)
+
+
 @router.get("/products/{product_id}")
 async def product(product_id: int, staff: Staff, session: Db) -> dict:
     """Read a single product for the editable dashboard form."""
@@ -603,6 +662,12 @@ def validated_product_values(
     values: dict, *, current: Product | None = None
 ) -> dict:
     """Enforce physical/digital constraints before a database write."""
+    if "name" in values:
+        values["name"] = clean_text(values["name"])
+        if not values["name"]:
+            raise HTTPException(status_code=422, detail="invalid_request")
+    if "description" in values:
+        values["description"] = clean_text(values["description"], multiline=True)
     merged = {
         "product_type": current.product_type if current else "physical",
         "requires_shipping": current.requires_shipping if current else True,
@@ -972,8 +1037,12 @@ async def create_campaign(
         raise HTTPException(status_code=409, detail="bot_not_active")
     if payload.audience not in {"all", bot.platform}:
         raise HTTPException(status_code=422, detail="invalid_campaign_audience")
+    title = clean_text(payload.title)
+    message = clean_text(payload.text, multiline=True)
+    if not title or not message:
+        raise HTTPException(status_code=422, detail="invalid_request")
     item = ShopCampaign(
-        title=payload.title, text=payload.text, audience=payload.audience,
+        title=title, text=message, audience=payload.audience,
         store_id=store.id, bot_id=bot_id, status="draft",
     )
     session.add(item)
@@ -1046,6 +1115,14 @@ async def change_settings(
         row = ShopStoreSettings(store_id=scope.current_store_id)
         session.add(row)
     for key, value in payload.model_dump(exclude_unset=True).items():
+        if value is not None:
+            if key == "support_url":
+                try:
+                    value = public_https_url(value)
+                except SecurityRejected as error:
+                    raise HTTPException(error.status, error.code) from None
+            else:
+                value = clean_text(value, multiline=key != "brand_name")
         setattr(row, key, value)
     await session.commit()
     return {"ok": True}

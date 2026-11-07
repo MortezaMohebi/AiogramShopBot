@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BulkSelectCheckbox, BulkUnpublishSelection } from "@/components/blocks/bulk-unpublish-selection";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { Category } from "@/lib/types";
 
@@ -45,11 +46,20 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
         ) : null}
         <Card>
           <CardHeader><CardTitle>دسته‌بندی‌های موجود</CardTitle></CardHeader>
-          <CardContent className="divide-y divide-border">
+          <CardContent>
+            <BulkUnpublishSelection entity="categories" enabled={edit}
+              eligible={categories.filter((category) => category.is_published).map((category) => category.id)}>
+            {edit ? <label className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <BulkSelectCheckbox all /> انتخاب همهٔ دسته‌بندی‌های منتشرشده
+            </label> : null}
+            <div className="divide-y divide-border">
             {categories.map((category) => (
               <details key={category.id} className="group py-4">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
-                  <span className="font-medium">{category.name}</span>
+                  <span className="flex items-center gap-3 font-medium">
+                    {edit ? <BulkSelectCheckbox id={category.id} /> : null}
+                    {category.name}
+                  </span>
                   <div className="flex items-center gap-2">
                     <Badge tone={category.is_published ? "success" : "neutral"}>
                       {category.is_published ? "منتشرشده" : "پیش‌نویس"}
@@ -75,6 +85,8 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
               </details>
             ))}
             {categories.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">هنوز دسته‌بندی‌ای تعریف نشده است.</p> : null}
+            </div>
+            </BulkUnpublishSelection>
           </CardContent>
         </Card>
       </div>

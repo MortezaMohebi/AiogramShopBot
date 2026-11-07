@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import case, cast, func, select, Integer
+from sqlalchemy import case, cast, func, literal, select, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlalchemy.orm import InstrumentedAttribute
@@ -194,37 +194,49 @@ async def group_by(
 
 
 async def export_records(
-    db: AsyncSession, dataset: Dataset,
+    db: AsyncSession, dataset: Dataset, *,
+    fields: Sequence[str] | None = None,
+    current_store_only: bool = False,
+    max_rows: int = MAX_EXPORT_ROWS,
 ) -> tuple[list[str], list[dict]]:
     """Return a deterministic, bounded snapshot for CSV/XLSX export."""
     ctx = trusted_context()
+    headers = list(fields) if fields is not None else [
+        field.key for field in dataset.fields if field.exportable
+    ]
+    columns = [dataset.field(key, intent="export") for key in headers]
+    store_ids = (ctx.current_store_id,) if current_store_only else ctx.active_store_ids
+    scope = dataset.model.store_id.in_(store_ids)
     total = int(await db.scalar(select(func.count()).select_from(
         dataset.model,
-    ).where(
-        dataset.model.store_id.in_(ctx.active_store_ids),
-    )) or 0)
-    if total > MAX_EXPORT_ROWS:
+    ).where(scope)) or 0)
+    if total > max_rows:
         raise security.SecurityRejected("model_export_too_large", 409)
     # Reject oversized text sets BEFORE materializing thousands of Product
     # descriptions into Python memory. The encoder also checks real UTF-8
     # output bytes, including Farsi multibyte characters and CSV quoting.
     long_texts = [
-        field for field in dataset.fields
-        if field.exportable and field.max_length > 1000
+        field for field in columns
+        if field.max_length > 1000
         and isinstance(field.column, InstrumentedAttribute)
     ]
     for field in long_texts:
         total_chars = int(await db.scalar(select(
             func.coalesce(func.sum(func.length(field.column)), 0),
-        ).where(
-            dataset.model.store_id.in_(ctx.active_store_ids),
-        )) or 0)
+        ).where(scope)) or 0)
         if total_chars > MAX_EXPORT_BYTES:
             raise security.SecurityRejected("model_export_too_large", 409)
-    records = (await db.scalars(
-        select(dataset.model).where(
-            dataset.model.store_id.in_(ctx.active_store_ids),
-        ).order_by(dataset.model.id.asc()).limit(MAX_EXPORT_ROWS)
-    )).all()
-    headers = [field.key for field in dataset.fields if field.exportable]
-    return headers, await serialize_rows(db, dataset, records)
+    records = (await db.execute(select(*[
+        (field.column if field.column is not None else literal(None)).label(field.key)
+        for field in columns
+    ]).select_from(dataset.model).where(scope)
+        .order_by(dataset.model.id.asc()).limit(max_rows + 1))).mappings().all()
+    if len(records) > max_rows:
+        raise security.SecurityRejected("model_export_too_large", 409)
+    return headers, [{
+        field.key: (
+            str(row[field.key]) if field.kind == "money" and row[field.key] is not None
+            else safe_value(row[field.key])
+        )
+        for field in columns
+    } for row in records]

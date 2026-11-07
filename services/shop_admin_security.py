@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from models.shop_admin_control import AdminEvent, AdminProfile, AdminSession
+from utils.shop_text import clean_text
 
 UTC = timezone.utc
 IDLE_LIMIT = timedelta(minutes=30)
@@ -114,7 +115,7 @@ def update_profile(db: Session, staff_id: int, display_name: str, time_zone: str
     except (ZoneInfoNotFoundError, ValueError):
         raise SecurityRejected("invalid_timezone", 422) from None
     profile = profile_for(db, staff_id)
-    profile.display_name, profile.time_zone = display_name.strip(), time_zone
+    profile.display_name, profile.time_zone = clean_text(display_name), time_zone
     audit(db, staff_id, "account.profile_changed")
     return profile
 

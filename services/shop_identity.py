@@ -16,6 +16,7 @@ from models.shop_scope import require_registry_bot
 from services.shop_store_commerce import attach_new_customer, bot_store
 from models.shop_customer_crm import ShopCustomerProfile
 from services.shop_customer_crm import effective_restriction
+from utils.shop_text import clean_text
 
 
 async def register_customer(
@@ -33,7 +34,7 @@ async def register_customer(
     if username is not None:
         username = username.strip()[:255] or None
     if first_name is not None:
-        first_name = first_name.strip()[:255] or None
+        first_name = clean_text(first_name)[:255] or None
 
     owner = (await require_registry_bot(session, bot_id, platform.value)).id
     store_id = await bot_store(session, bot_id=owner)

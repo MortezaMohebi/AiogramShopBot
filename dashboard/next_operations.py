@@ -46,6 +46,7 @@ from services.shop_broadcast_control import CampaignRejected
 from services.shop_wallet import ShopWalletService, StoreCreditRejected
 from services.shop_channel_features import get_features
 from services.shop_sequence import next_display_position
+from utils.shop_text import clean_text
 
 router = APIRouter()
 MAX_UPLOAD_REQUEST = 50_100_000
@@ -222,7 +223,7 @@ async def upload_media(
             caption = form.get("caption", "")
             if not isinstance(caption, str):
                 raise HTTPException(status_code=422, detail="Invalid caption")
-            caption = caption.strip()
+            caption = clean_text(caption, multiline=True)
             max_caption = 1024 if target == "campaign" else 2000
             if len(caption) > max_caption:
                 raise HTTPException(status_code=422, detail="توضیح بیش از حد طولانی است.")
@@ -326,7 +327,7 @@ async def update_media(
     )
     changes = payload.model_dump(exclude_unset=True)
     if "caption" in changes:
-        new_caption = (changes["caption"] or "").strip() or None
+        new_caption = clean_text(changes["caption"] or "", multiline=True) or None
         if new_caption != record.caption:
             record.caption = new_caption
             record.is_published = False
@@ -382,7 +383,7 @@ async def update_testimonial(
     )
     values = payload.model_dump(exclude_unset=True)
     if "text" in values:
-        text = (values["text"] or "").strip() or None
+        text = clean_text(values["text"] or "", multiline=True) or None
         if text is None and record.media_storage_key is None:
             raise HTTPException(status_code=422, detail="Review cannot be empty")
         if text != record.text:

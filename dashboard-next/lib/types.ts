@@ -50,6 +50,7 @@ export interface Product {
   id: number;
   sku: string;
   external_ref: string | null;
+  external_id?: string;
   store_id: string;
   uom_id: string;
   purchase_uom_id: string | null;

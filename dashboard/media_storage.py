@@ -17,6 +17,7 @@ from pathlib import Path, PurePath
 from starlette.datastructures import UploadFile
 
 from channels.media_policy import BALE_OTHER_UPLOAD_LIMIT, upload_limit
+from utils.shop_text import clean_text
 
 
 # Restrict file types to formats supported by the bot APIs and safe previews.
@@ -101,7 +102,7 @@ async def save_media(
         raise ValueError("Invalid upload size configuration.")
     filename = PurePath((uploaded.filename or "").replace("\\", "/")).name
     filename = "".join(
-        ch for ch in filename if ch.isprintable() and ch not in "<>:|?*"
+        ch for ch in clean_text(filename) if ch not in '<>:"|?*'
     )[:255] or "file"
     root_path = Path(root).resolve()
     root_path.mkdir(mode=0o700, parents=True, exist_ok=True)

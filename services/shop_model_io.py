@@ -13,6 +13,7 @@ import hashlib
 import io
 import json
 import re
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from decimal import Decimal
@@ -21,6 +22,7 @@ from zipfile import BadZipFile, ZipFile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
+from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,9 +33,11 @@ from models.shop_store_commerce import ShopStoreCustomer
 from models.shop_model_import import ShopModelImportPreview
 from models.shop_uom import ShopUom, default_unit_id
 from services import shop_admin_security as security
+from services.shop_external_ids import EXTERNAL_ID_FIELD, external_record_id
 from services.shop_model_registry import Dataset, Field
 from services.shop_store_context import StoreContext
 from services.shop_uom import validate_product_units
+from utils.shop_text import clean_text
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_UNPACKED = 32 * 1024 * 1024
@@ -62,6 +66,22 @@ def _safe_cell(value: Any) -> Any:
     return value if value is not None else ""
 
 
+def _csv_cell(value: Any, *, update_compatible: bool) -> Any:
+    """Keep Excel formula escaping reversible on update-compatible exports."""
+    if update_compatible and isinstance(value, str) and value.startswith("'"):
+        return "'" + value
+    return _safe_cell(value)
+
+
+def _restore_csv_cell(value: str) -> str:
+    """Undo the quote protecting a formula-shaped or quote-prefixed value."""
+    if value.startswith("'"):
+        unescaped = value[1:]
+        if unescaped.startswith("'") or _safe_cell(unescaped) != unescaped:
+            return unescaped
+    return value
+
+
 def _headers(dataset: Dataset, *, template: bool) -> list[str]:
     """Reuse the registry's exposure rules, never arbitrary ORM columns."""
     if template:
@@ -69,15 +89,45 @@ def _headers(dataset: Dataset, *, template: bool) -> list[str]:
     return [field.key for field in dataset.fields if field.exportable]
 
 
+def export_headers(
+    dataset: Dataset, *, fields: Sequence[str] | None = None,
+    update_compatible: bool = False,
+) -> list[str]:
+    """Select allowlisted columns and guarantee a leading update identity."""
+    if update_compatible and not dataset.write_permission:
+        raise security.SecurityRejected("model_import_not_supported", 405)
+    allowed = [
+        field.key for field in dataset.fields if field.exportable and (
+            not update_compatible or (field.importable and field.update_exportable)
+        )
+    ]
+    selected = list(allowed if fields is None else fields)
+    if (
+        not selected or len(selected) > 40 or len(set(selected)) != len(selected)
+        or any(key not in allowed for key in selected)
+    ):
+        raise security.SecurityRejected("unknown_model_field", 422)
+    if update_compatible:
+        if not any(key != EXTERNAL_ID_FIELD for key in selected):
+            raise security.SecurityRejected("unknown_model_field", 422)
+        return [EXTERNAL_ID_FIELD, *[key for key in selected if key != EXTERNAL_ID_FIELD]]
+    return selected
+
+
 def encode_table(
     dataset: Dataset, *, format_name: str, rows: list[dict],
-    template: bool,
+    template: bool, fields: Sequence[str] | None = None,
+    update_compatible: bool = False,
 ) -> tuple[bytes, str]:
     """Encode one spreadsheet format with identical header contracts."""
     if format_name not in {"csv", "xlsx"}:
         raise security.SecurityRejected("unsupported_data_format", 422)
-    headers = _headers(dataset, template=template)
-    if len(rows) > MAX_EXPORT_ROWS:
+    headers = _headers(dataset, template=True) if template else export_headers(
+        dataset, fields=fields, update_compatible=update_compatible,
+    )
+    limit = MAX_BYTES if update_compatible else MAX_EXPORT_BYTES
+    row_limit = MAX_IMPORT_ROWS if update_compatible else MAX_EXPORT_ROWS
+    if len(rows) > row_limit:
         raise security.SecurityRejected("model_export_too_large", 409)
     # Reject oversized exports before allocating large XLSX worksheets.
     # Descriptions may be 40k characters even for a small row count.
@@ -85,16 +135,19 @@ def encode_table(
         sum(len(str(record.get(key) or "").encode("utf-8")) for key in headers)
         for record in rows
     )
-    if estimated > MAX_EXPORT_BYTES:
+    if estimated > limit:
         raise security.SecurityRejected("model_export_too_large", 409)
     if format_name == "csv":
         output = io.StringIO(newline="")
         writer = csv.writer(output, lineterminator="\r\n")
         writer.writerow(headers)
         for record in rows:
-            writer.writerow([_safe_cell(record.get(key)) for key in headers])
+            writer.writerow([
+                _csv_cell(record.get(key), update_compatible=update_compatible)
+                for key in headers
+            ])
         payload = b"\xef\xbb\xbf" + output.getvalue().encode("utf-8")
-        if len(payload) > MAX_EXPORT_BYTES:
+        if len(payload) > limit:
             raise security.SecurityRejected("model_export_too_large", 409)
         return payload, "text/csv; charset=utf-8"
 
@@ -106,17 +159,29 @@ def encode_table(
     for cell in sheet[1]:
         cell.fill = PatternFill("solid", fgColor="1F365B")
         cell.font = Font(color="FFFFFF", bold=True)
+    money_columns = set()
     for column, key in enumerate(headers, start=1):
         field = dataset.field(
             key, intent="import" if template else "export",
         )
+        if field.kind == "money":
+            money_columns.add(column)
+            sheet.column_dimensions[cell_column(column)].number_format = "@"
         sheet.column_dimensions[cell_column(column)].width = min(
             max(len(field.title) + 3, len(key) + 4, 15), 40,
         )
-    for record in rows:
-        sheet.append([
-            _safe_cell(record.get(key)) for key in headers
-        ])
+    for row_number, record in enumerate(rows, start=2):
+        for column, key in enumerate(headers, start=1):
+            value = record.get(key)
+            if value is None:
+                continue
+            cell = sheet.cell(row_number, column, value)
+            # XLSX can explicitly mark formula-shaped strings as literal text,
+            # so importing a generated workbook does not add a quote to them.
+            if isinstance(value, str):
+                cell.data_type = "s"
+            if column in money_columns:
+                cell.number_format = "@"
     if template:
         help_sheet = workbook.create_sheet("Guide")
         help_sheet.append(["Column", "Label", "Required", "Value Type"])
@@ -134,8 +199,12 @@ def encode_table(
     output = io.BytesIO()
     try:
         workbook.save(output)
-        if output.tell() > MAX_EXPORT_BYTES:
+        if output.tell() > limit:
             raise security.SecurityRejected("model_export_too_large", 409)
+        if update_compatible:
+            with ZipFile(output) as archive:
+                if sum(part.file_size for part in archive.infolist()) > MAX_UNPACKED:
+                    raise security.SecurityRejected("model_export_too_large", 409)
         return (
             output.getvalue(),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -152,23 +221,29 @@ def cell_column(index: int) -> str:
 
 
 def decode_table(
-    dataset: Dataset, *, raw: bytes, format_name: str,
+    dataset: Dataset, *, raw: bytes, format_name: str | None = None,
 ) -> tuple[list[str], list[dict[str, Any]]]:
-    """Decode one strictly bounded CSV/XLSX sheet without evaluating formulas."""
-    if (
-        format_name not in {"csv", "xlsx"}
-        or not raw or len(raw) > MAX_BYTES
-    ):
+    """Sniff bounded CSV/XLSX content; the legacy format hint is not trusted."""
+    if not raw or len(raw) > MAX_BYTES:
         raise security.SecurityRejected("invalid_import_file", 422)
 
-    if format_name == "csv":
+    xlsx = raw.startswith(b"PK")
+    if not xlsx:
         try:
             decoded = raw.decode("utf-8-sig", errors="strict")
-            stream = csv.reader(io.StringIO(decoded, newline=""))
+            if "\x00" in decoded:
+                raise ValueError
+            stream = csv.reader(io.StringIO(decoded, newline=""), strict=True)
             lines = iter(stream)
             headers = [str(item).strip() for item in next(lines)]
-            values = [list(row) for row in lines]
-        except (UnicodeError, csv.Error, StopIteration):
+            values = []
+            for index, line in enumerate(lines):
+                if index >= MAX_IMPORT_ROWS:
+                    raise security.SecurityRejected("import_too_many_rows", 422)
+                values.append(line)
+        except security.SecurityRejected:
+            raise
+        except (ValueError, csv.Error, StopIteration):
             raise security.SecurityRejected("invalid_import_file", 422) from None
     else:
         try:
@@ -178,6 +253,7 @@ def decode_table(
                     len(archive.infolist()) > 500
                     or expanded > MAX_UNPACKED
                     or any(part.file_size > MAX_UNPACKED for part in archive.infolist())
+                    or not {"[Content_Types].xml", "xl/workbook.xml"} <= set(archive.namelist())
                 ):
                     raise security.SecurityRejected("invalid_import_file", 422)
             workbook = load_workbook(
@@ -188,6 +264,8 @@ def decode_table(
                 sheet = workbook["Data"] if "Data" in workbook else workbook.active
                 iterator = sheet.iter_rows(values_only=False)
                 header_cells = next(iterator)
+                if any(cell.data_type == "f" for cell in header_cells):
+                    raise security.SecurityRejected("import_formula_not_allowed", 422)
                 headers = [
                     str(cell.value).strip() if cell.value is not None else ""
                     for cell in header_cells
@@ -201,7 +279,12 @@ def decode_table(
                     values.append([cell.value for cell in line])
             finally:
                 workbook.close()
-        except (BadZipFile, KeyError, StopIteration, OSError, ValueError):
+        except security.SecurityRejected:
+            raise
+        except (
+            BadZipFile, IndexError, InvalidFileException, KeyError, StopIteration,
+            OSError, RuntimeError, SyntaxError, TypeError, ValueError,
+        ):
             raise security.SecurityRejected("invalid_import_file", 422) from None
     accepted = {field.key for field in dataset.fields if field.importable}
     if (
@@ -215,6 +298,8 @@ def decode_table(
     for index, line in enumerate(values, start=2):
         if len(line) > len(headers):
             raise security.SecurityRejected("invalid_import_columns", 422)
+        if not xlsx and headers[0] == EXTERNAL_ID_FIELD:
+            line = [_restore_csv_cell(value) for value in line]
         data = dict(zip(headers, line, strict=False))
         if not any(value is not None and str(value).strip() for value in data.values()):
             continue
@@ -226,30 +311,52 @@ def _parse(field: Field, raw: Any) -> Any:
     """Validate one import cell using the common ModelRegistry field type."""
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return None
-    if field.key in {"external_ref", "sku", "uom_code", "purchase_uom_code"}:
+    if field.key in {EXTERNAL_ID_FIELD, "external_ref", "sku", "uom_code", "purchase_uom_code"}:
         if not isinstance(raw, str):
             raw = str(raw)
-    return field.parse(raw)
+    value = field.parse(raw)
+    if isinstance(value, str) and field.key in {"name", "description", "display_name"}:
+        return clean_text(value, multiline=field.key == "description") or None
+    return value
+
+
+async def _match_import_identity(
+    db: AsyncSession, *, dataset: Dataset, store_id: str, line: dict[str, Any],
+) -> Product | ShopStoreCustomer | None:
+    """Match a generated identity or legacy alias strictly inside this Store."""
+    model = dataset.model
+    key = line.get(EXTERNAL_ID_FIELD)
+    alias = line.get("external_ref")
+    if alias and not REF_PATTERN.fullmatch(alias):
+        raise security.SecurityRejected("invalid_external_reference", 422)
+    if key:
+        identifier = external_record_id(key, model_name=dataset.name, store_id=store_id)
+        record = await db.scalar(select(model).where(
+            model.store_id == store_id, model.id == identifier,
+        ).with_for_update())
+        if record is None:
+            # A mistyped, deleted or cross-Store identity cannot create a row.
+            raise security.SecurityRejected("invalid_external_reference", 422)
+        if alias and alias != record.external_ref:
+            raise security.SecurityRejected("import_identity_conflict", 409)
+        return record
+    if alias:
+        return await db.scalar(select(model).where(
+            model.store_id == store_id, model.external_ref == alias,
+        ).with_for_update())
+    return None
 
 
 async def _plan_product(
     db: AsyncSession, *, store_id: str, line: dict[str, Any],
-    index: int,
+    index: int, dataset: Dataset,
 ) -> RowPlan:
     """Find Products by explicit reference/SKU, never name or bot identity."""
     external_ref = line.get("external_ref")
     sku = line.get("sku")
-    if external_ref and not REF_PATTERN.fullmatch(external_ref):
-        raise security.SecurityRejected("invalid_external_reference", 422)
-    if not sku and not external_ref:
-        raise security.SecurityRejected("import_identity_required", 422)
-
-    existing = None
-    if external_ref:
-        existing = await db.scalar(select(Product).where(
-            Product.store_id == store_id,
-            Product.external_ref == external_ref,
-        ).with_for_update())
+    existing = await _match_import_identity(
+        db, dataset=dataset, store_id=store_id, line=line,
+    )
     if sku:
         matches_sku = await db.scalar(select(Product).where(
             Product.store_id == store_id, Product.sku == sku,
@@ -259,18 +366,16 @@ async def _plan_product(
                 raise security.SecurityRejected("import_identity_conflict", 409)
             if (
                 existing is None and external_ref
-                and matches_sku.external_ref not in (None, external_ref)
+                and matches_sku.external_ref != external_ref
             ):
                 raise security.SecurityRejected("import_identity_conflict", 409)
             existing = matches_sku
-    if existing is not None and external_ref and existing.external_ref not in (
-        None, external_ref,
-    ):
-        raise security.SecurityRejected("import_identity_conflict", 409)
-
     values = {
-        key: value for key, value in line.items() if value is not None
+        key: value for key, value in line.items()
+        if value is not None and key != EXTERNAL_ID_FIELD
     }
+    if existing is not None:
+        values.pop("external_ref", None)
     if existing is None:
         for field in ("name", "price_irr"):
             if values.get(field) in (None, ""):
@@ -293,6 +398,8 @@ async def _plan_product(
         "product_type", existing.product_type if existing else "physical",
     )
     if ptype not in {"physical", "digital"}:
+        raise security.SecurityRejected("invalid_import_value", 422)
+    if existing is not None and existing.digital_delivery_mode in {"file", "license"} and ptype != "digital":
         raise security.SecurityRejected("invalid_import_value", 422)
     requires_shipping = values.get(
         "requires_shipping", existing.requires_shipping if existing else True,
@@ -360,21 +467,23 @@ async def _plan_product(
 
 async def _plan_customer(
     db: AsyncSession, *, store_id: str, line: dict[str, Any],
-    index: int,
+    index: int, dataset: Dataset,
 ) -> RowPlan:
     """Never merge customers from matching names, phones or messenger IDs."""
-    key = line.get("external_ref")
-    if not key or not REF_PATTERN.fullmatch(key):
-        raise security.SecurityRejected("import_identity_required", 422)
-    record = await db.scalar(select(ShopStoreCustomer).where(
-        ShopStoreCustomer.store_id == store_id,
-        ShopStoreCustomer.external_ref == key,
-    ).with_for_update())
+    record = await _match_import_identity(
+        db, dataset=dataset, store_id=store_id, line=line,
+    )
+    values = {
+        key: value for key, value in line.items()
+        if value is not None and key != EXTERNAL_ID_FIELD
+    }
+    if record is not None:
+        values.pop("external_ref", None)
     return RowPlan(
         number=index,
         action="update" if record is not None else "create",
         record=record,
-        values={key: value for key, value in line.items() if value is not None},
+        values=values,
     )
 
 
@@ -408,8 +517,9 @@ def _snapshot_digest(plans: list[RowPlan]) -> str:
 
 async def preview_or_apply(
     db: AsyncSession, *, dataset: Dataset, raw: bytes,
-    format_name: str, store_id: str, dry_run: bool,
+    store_id: str, dry_run: bool,
     expected_sha256: str | None,
+    format_name: str | None = None,
     preview_receipt: ShopModelImportPreview | None = None,
 ) -> dict:
     """Preview or atomically upsert explicit models within the current Store."""
@@ -440,6 +550,14 @@ async def preview_or_apply(
         # external refs but the same SKU must never mutate one Product twice.
         external_ref = values.get("external_ref")
         sku = values.get("sku")
+        if not any((values.get(EXTERNAL_ID_FIELD), external_ref, sku)):
+            if dataset.name == "customers" and not any((
+                values.get("display_name"), values.get("phone"),
+            )):
+                raise security.SecurityRejected("import_required_field", 422)
+            # Empty-identity rows are deliberate creates. Re-importing the
+            # same bytes and row cannot silently add a second record.
+            external_ref = values["external_ref"] = f"import:{digest}:{record['row']}"
         if (
             (external_ref and external_ref in seen_external_refs)
             or (sku and sku in seen_skus)
@@ -451,11 +569,11 @@ async def preview_or_apply(
             seen_skus.add(sku)
         if dataset.name == "products":
             plan = await _plan_product(
-                db, store_id=store_id, line=values, index=record["row"],
+                db, store_id=store_id, line=values, index=record["row"], dataset=dataset,
             )
         else:
             plan = await _plan_customer(
-                db, store_id=store_id, line=values, index=record["row"],
+                db, store_id=store_id, line=values, index=record["row"], dataset=dataset,
             )
         if plan.record is not None:
             if plan.record.id in seen_record_ids:

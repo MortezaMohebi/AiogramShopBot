@@ -21,6 +21,7 @@ from models.shop_uom import ShopUom
 from models.shop_content import Product, ShopOrder
 from models.shop_store_commerce import ShopStoreCustomer
 from services import shop_admin_security as security
+from services.shop_external_ids import EXTERNAL_ID_FIELD, external_id_column
 
 DT_FORMATS = ("day", "week", "month", "quarter", "year")
 OPS = frozenset({"eq", "ne", "contains", "starts", "gte", "lte", "in"})
@@ -39,6 +40,7 @@ class Field:
     groupable: bool = False
     importable: bool = False
     exportable: bool = True
+    update_exportable: bool = True
     required: bool = False
     max_length: int = 255
 
@@ -51,6 +53,7 @@ class Field:
             "groupable": self.groupable,
             "importable": self.importable,
             "exportable": self.exportable,
+            "update_exportable": self.importable and self.exportable and self.update_exportable,
             "required": self.required,
         }
 
@@ -144,12 +147,21 @@ class Dataset:
         }
 
 
+def _external_field(name: str, model: type, *, importable: bool) -> Field:
+    """Expose a stable identity separately from the legacy import alias."""
+    return Field(
+        EXTERNAL_ID_FIELD, "شناسهٔ خارجی", "string",
+        external_id_column(name, model), importable=importable, max_length=80,
+    )
+
+
 PRODUCT = Dataset(
     "products", Product, "محصولات", "catalog.read", "catalog.write",
     (
         Field("id", "ID", "integer", Product.id, importable=False),
-        Field("external_ref", "شناسه خارجی", "string", Product.external_ref,
-              importable=True, max_length=80),
+        _external_field("products", Product, importable=True),
+        Field("external_ref", "مرجع قدیمی", "string", Product.external_ref,
+              importable=True, update_exportable=False, max_length=80),
         Field("sku", "SKU", "string", Product.sku,
               importable=True, max_length=64),
         Field("name", "نام محصول", "string", Product.name,
@@ -159,7 +171,7 @@ PRODUCT = Dataset(
         Field("price_irr", "قیمت (ریال)", "money", Product.price,
               importable=True, required=True),
         Field("stock_quantity", "موجودی", "integer", Product.stock_quantity,
-              importable=True),
+              importable=True, update_exportable=False),
         Field("product_type", "نوع محصول", "enum", Product.product_type,
               importable=True, groupable=True, max_length=12),
         Field("requires_shipping", "نیازمند ارسال", "boolean",
@@ -167,7 +179,7 @@ PRODUCT = Dataset(
         Field("price_stars", "قیمت Stars", "integer", Product.price_stars,
               importable=True),
         Field("is_published", "منتشرشده", "boolean", Product.is_published,
-              importable=True, groupable=True),
+              importable=True, update_exportable=False, groupable=True),
         Field("category_id", "دسته‌بندی", "integer", Product.category_id,
               importable=True, groupable=True),
         Field(
@@ -194,9 +206,10 @@ CUSTOMER = Dataset(
     "customers.read", "customers.import",
     (
         Field("id", "ID", "integer", ShopStoreCustomer.id),
-        Field("external_ref", "شناسه خارجی", "string",
+        _external_field("customers", ShopStoreCustomer, importable=True),
+        Field("external_ref", "مرجع قدیمی", "string",
               ShopStoreCustomer.external_ref, importable=True,
-              required=True, max_length=80),
+              update_exportable=False, max_length=80),
         Field("display_name", "نام مشتری", "string",
               ShopStoreCustomer.display_name, importable=True, max_length=255),
         Field("phone", "تلفن", "string", ShopStoreCustomer.phone,
@@ -212,6 +225,7 @@ ORDER = Dataset(
     "orders", ShopOrder, "سفارش‌ها", "orders.read", None,
     (
         Field("id", "ID", "integer", ShopOrder.id),
+        _external_field("orders", ShopOrder, importable=False),
         Field("status", "وضعیت", "enum", ShopOrder.status,
               groupable=True, max_length=24),
         Field("platform", "پیام‌رسان", "enum", ShopOrder.platform,

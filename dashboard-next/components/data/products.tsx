@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { readSection } from "@/lib/read-section";
 import { formatIrr } from "@/lib/utils";
 import type { Paginated, Product } from "@/lib/types";
+import { BulkSelectCheckbox, BulkUnpublishSelection } from "@/components/blocks/bulk-unpublish-selection";
 import { DataSectionError } from "./section-error";
 
 type Props = { page: number; search: string; canEdit: boolean };
@@ -18,9 +19,12 @@ export async function ProductsResults({ page, search, canEdit }: Props) {
 /** The existing table, empty states and pagination share one authoritative response. */
 export function ProductsTable({ data, page, search, canEdit }: Props & { data: Paginated<Product> }) {
   const lastPage = Math.max(1, Math.ceil(data.total / data.page_size));
-  return <>
+  return <BulkUnpublishSelection key={`${page}:${search}`} entity="products"
+    eligible={data.items.filter((item) => item.is_published).map((item) => item.id)}
+    enabled={canEdit}>
           <Table>
             <TableHeader><TableRow>
+              {canEdit ? <TableHead><BulkSelectCheckbox all /></TableHead> : null}
               <TableHead>محصول</TableHead><TableHead>کد</TableHead>
               <TableHead>قیمت</TableHead><TableHead>موجودی</TableHead>
               <TableHead>انتشار</TableHead><TableHead>عملیات</TableHead>
@@ -28,6 +32,7 @@ export function ProductsTable({ data, page, search, canEdit }: Props & { data: P
             <TableBody>
               {data.items.map((item) => (
                 <TableRow key={item.id}>
+                  {canEdit ? <TableCell><BulkSelectCheckbox id={item.id} /></TableCell> : null}
                   <TableCell className="max-w-64 font-semibold">{item.name}</TableCell>
                   <TableCell dir="ltr" className="text-start text-xs text-muted-foreground">{item.sku}</TableCell>
                   <TableCell className="whitespace-nowrap tabular">{formatIrr(item.price_irr)}</TableCell>
@@ -38,7 +43,7 @@ export function ProductsTable({ data, page, search, canEdit }: Props & { data: P
                   </TableCell>
                 </TableRow>
               ))}
-              {!data.items.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
+              {!data.items.length ? <TableRow><TableCell colSpan={canEdit ? 7 : 6} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
             </TableBody>
           </Table>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -53,5 +58,5 @@ export function ProductsTable({ data, page, search, canEdit }: Props & { data: P
               </Button>}
             </div>
           </div>
-  </>;
+  </BulkUnpublishSelection>;
 }
