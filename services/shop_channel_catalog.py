@@ -46,6 +46,14 @@ _DETAIL_PATTERN = re.compile(r"shop:detail:([1-9][0-9]{0,18})\Z")
 _GALLERY_DETAIL_PATTERN = re.compile(
     r"d:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z"
 )
+
+
+def is_gallery_read_action(action: str) -> bool:
+    """Identify read-only product buttons emitted on independent gallery cards."""
+    return bool(
+        _GALLERY_ITEM_PATTERN.fullmatch(action)
+        or _GALLERY_DETAIL_PATTERN.fullmatch(action)
+    )
 _REVIEW_PATTERN = re.compile(r"shop:reviews:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _MEDIA_PATTERN = re.compile(r"shop:files:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
 _FILE_PATTERN = re.compile(r"shop:file:([1-9][0-9]{0,18})\Z")

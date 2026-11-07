@@ -17,7 +17,7 @@ from models.shop_store_commerce import ShopStoreCustomer
 from services.shop_multibot_dispatch import _send, dispatch
 from tests.test_beta_cart_form_navigation import setup_dispatch
 from tests.test_beta_paused_customer_support import NativeClient, raw
-from tests.test_shared_cart import db
+from tests.test_shared_cart import db, seed
 
 
 @pytest.mark.asyncio
@@ -187,3 +187,43 @@ async def test_stale_inline_button_cannot_mutate_active_cart(
 
     result = await dispatch(scope, StaleClient(), payload)
     assert result["status"] == "stale_callback"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+@pytest.mark.parametrize("action", ["g", "d"])
+async def test_product_card_callback_works_when_gallery_footer_is_active(
+    db, monkeypatch, platform, action,
+):
+    """A gallery card may open its product despite a newer footer message."""
+    product, _ = seed(db)
+    scope, _ = await setup_dispatch(db, monkeypatch, platform)
+
+    class CardClient(NativeClient):
+        """Represent provider markup editing when a callback is rejected."""
+
+        async def edit_message_reply_markup(self, **kwargs):
+            """Accept Telegram's request to remove obsolete buttons."""
+            self.messages.append(kwargs)
+
+    native = CardClient()
+    db.session.add(ShopCustomerChatState(
+        bot_id=scope.bot_id, platform_user_id=101,
+        store_id=scope.store_id, ui_message_id=100,
+        expires_at=datetime.now(timezone.utc),
+    ))
+    db.session.commit()
+    delivered = []
+
+    async def capture_send(context, client, chat_id, reply, *, event=None):
+        """Capture the result after real dispatch and catalog authorization."""
+        delivered.append(reply)
+
+    monkeypatch.setattr("services.shop_multibot_dispatch._send", capture_send)
+    payload = raw(callback=f"{action}:{product.id}:0:0")
+    payload["callback_query"]["message"]["message_id"] = 99
+    result = await dispatch(scope, native, payload)
+
+    assert result["status"] == "processed"
+    assert native.acks == ["cb"]
+    assert product.name in delivered[0].text

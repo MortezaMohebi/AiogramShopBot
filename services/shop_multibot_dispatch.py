@@ -24,7 +24,7 @@ from services.shop_bale_payments import (
 )
 from services.shop_bot_context import BotContext
 from services.shop_cart import ShopCartFlow
-from services.shop_channel_catalog import CatalogFlow
+from services.shop_channel_catalog import CatalogFlow, is_gallery_read_action
 from services.shop_customer_experience import (
     CustomerExperienceFlow,
     clear_pending_on_navigation,
@@ -368,9 +368,11 @@ async def dispatch(
             )
             if state is not None and state.ui_message_id is not None and (
                 state.ui_message_id != event.message_id
-            ):
+            ) and not is_gallery_read_action(event.callback_data or ""):
                 # A stale callback may mutate the cart or place an order;
                 # never execute it after the active screen has moved on.
+                # Gallery cards are separate messages from the tracked footer,
+                # and their product detail actions only read the current ACL.
                 transport = (
                     TelegramTransport(client, bot_id=context.bot_id)
                     if context.platform == Platform.TELEGRAM else client
