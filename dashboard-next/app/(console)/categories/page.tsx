@@ -34,9 +34,7 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
                 <label className="block space-y-2 text-sm font-medium">نام دسته‌بندی
                   <Input name="name" required maxLength={255} placeholder="نام قابل نمایش در ربات" />
                 </label>
-                <label className="block space-y-2 text-sm font-medium">ترتیب
-                  <Input name="position" type="number" defaultValue={0} min={0} max={1000000} required />
-                </label>
+                <p className="text-sm text-muted-foreground">ترتیب نمایش خودکار تعیین می‌شود و پس از ایجاد قابل ویرایش است.</p>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" className="size-4 accent-primary" name="is_published" /> انتشار
                 </label>

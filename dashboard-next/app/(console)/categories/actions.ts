@@ -7,11 +7,12 @@ import { adminFetch } from "@/lib/bridge";
 /** Save a category in the original PostgreSQL model used by both bots. */
 export async function saveCategory(form: FormData) {
   const id = String(form.get("id") ?? "").trim();
-  const payload = {
-    name: String(form.get("name") ?? "").trim(),
-    position: Number(form.get("position") ?? 0),
-    is_published: form.has("is_published"),
-  };
+  const name = String(form.get("name") ?? "").trim();
+  const is_published = form.has("is_published");
+  // Creation allocates the next position in PostgreSQL; only edits accept one.
+  const payload = id
+    ? { name, position: Number(form.get("position") ?? 0), is_published }
+    : { name, is_published };
   let error = false;
   try {
     await adminFetch(
