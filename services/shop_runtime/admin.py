@@ -18,6 +18,7 @@ from models.shop_workflow_runtime import (
     WorkflowOutbox,
     WorkflowRun,
 )
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_runtime.contracts import SUPPORTED_NODES, TERMINAL, RuntimeRejected
 from services.shop_runtime.publication import digest, require_manager
@@ -250,7 +251,7 @@ async def overview(db, scope, actor, *, gate_page=None):
         .all()
     )
     return {
-        "global_enabled": config.SHOP_WORKFLOW_RUNTIME_ENABLED,
+        "global_enabled": service_enabled("workflow-runtime"),
         "global_killed": config.SHOP_WORKFLOW_RUNTIME_KILL_SWITCH,
         "runs": dict(counts),
         "deliveries": dict(deliveries),

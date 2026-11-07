@@ -15,6 +15,7 @@ from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import config
 from dashboard.admin_control_api import Proof, StrictPayload, fresh_proof
 from dashboard.next_api import database, signed_staff
 from models.shop_content import ShopIdentity
@@ -25,6 +26,7 @@ from models.shop_store_commerce import ShopStoreCustomer
 from services import shop_admin_security as security
 from services import shop_payment_accounts as accounts
 from services import shop_store_commerce as commerce
+from services.shop_service_controls import service_enabled
 
 router = APIRouter(prefix="/internal/admin/v1", tags=["Store Commerce"])
 Db = Annotated[AsyncSession, Depends(database)]
@@ -77,6 +79,11 @@ class BotAccountGrant(Proof):
 
     enabled: bool
     priority: int = Field(ge=1, le=1000)
+
+
+def telegram_fiat_available() -> bool:
+    """Only offer IRR setup when this installation can use the rail."""
+    return config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0 and service_enabled("telegram-fiat")
 
 
 @router.get("/stores/{store_id}/commerce")
@@ -144,7 +151,8 @@ async def list_payment_accounts(
 ) -> dict:
     """List redacted payment connections owned by one Store."""
     require(actor, "bots.read")
-    return await accounts.list_accounts(db, store_id=str(store_id))
+    result = await accounts.list_accounts(db, store_id=str(store_id))
+    return {**result, "telegram_fiat_enabled": telegram_fiat_available()}
 
 
 @router.post("/stores/{store_id}/payment-accounts", status_code=201)
@@ -154,6 +162,8 @@ async def create_payment_account(
 ) -> dict:
     """Create a disabled-by-default, purpose-encrypted provider connection."""
     member = require(actor, "bots.apply")
+    if payload.rail_type == "telegram_fiat" and not telegram_fiat_available():
+        raise security.SecurityRejected("telegram_fiat_unavailable", 409)
     await fresh_proof(db, member, payload)
     return await accounts.create_account(
         db, store_id=str(store_id), actor_id=member.id,

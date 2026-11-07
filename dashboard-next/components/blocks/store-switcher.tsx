@@ -102,7 +102,7 @@ function StoreSwitcherForm({ context }: Props) {
     <Dialog open={open} onClose={() => setOpen(false)} label="انتخاب فروشگاه">
       <div className="space-y-4 p-5">
       <div>
-        <p className="text-sm font-semibold">فروشگاه‌های مجاز من</p>
+        <p className="text-sm font-semibold">فروشگاه‌های من</p>
         <p className="mt-1 text-xs leading-6 text-muted-foreground">
           فروشگاه‌های قابل مشاهده را انتخاب کنید. تغییرات در فروشگاه «جاری» ثبت می‌شوند.
         </p>

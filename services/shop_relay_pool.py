@@ -14,7 +14,6 @@ import hmac
 import json
 import re
 
-import config
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -27,6 +26,7 @@ from models.shop_multibot import ShopBot, ShopStore, ShopBotCredential
 from models.shop_relay_pool import (
     ShopBotRelayRoute, ShopRelayCredential, ShopRelayEvent, ShopRelayWorker,
 )
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_bot_secrets import _key_bytes, decrypt_for_bot
 from services.shop_telegram_transport import approved_worker_origins
@@ -157,7 +157,7 @@ async def list_workers(
         "items": [{**_safe_worker(row), "bot_count": int(
             mapped.get(row.id, 0),
         )} for row in rows],
-        "enabled": bool(config.SHOP_RELAY_POOL_ENABLED),
+        "enabled": bool(service_enabled("relay-pool")),
         "approved_origins": list(approved_worker_origins()),
     }
 
@@ -398,7 +398,7 @@ async def activate_route(
     Provider network calls are made outside a transaction. Two simultaneous
     probes are harmless; the post-probe version check serializes promotion.
     """
-    if not config.SHOP_RELAY_POOL_ENABLED:
+    if not service_enabled("relay-pool"):
         raise security.SecurityRejected("relay_pool_disabled", 409)
     worker = await db.get(ShopRelayWorker, worker_id)
     bot = await db.get(ShopBot, bot_id)

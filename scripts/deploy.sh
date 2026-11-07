@@ -23,12 +23,13 @@ Registry deployment from this checkout:
   6. Provision staff using scripts.manage_shop_staff inside the backend image.
   7. scripts/deploy.sh start
 Register bots and credentials through Dashboard > Bots after login.
-One shared Runtime worker starts with conservative global and tenant gates.
+Shared workers start idle. Activate application services from Dashboard > Services.
+Private fallback: docker compose exec bot python -m scripts.manage_shop_services list
 No public ingress or provider webhook registration is performed here.
 HELP
     ;;
   check) docker compose config --quiet ;;
-  build) docker compose build bot runtime-worker next-admin ;;
+  build) docker compose build bot runtime-worker broadcast-worker digital-delivery-worker customer-notifications-worker next-admin ;;
   initialize)
     docker compose up -d --wait postgres redis
     docker compose run --rm --no-deps bot python -m scripts.initialize_registry_database
@@ -42,7 +43,7 @@ HELP
     docker compose up -d --wait postgres redis
     docker compose run --rm --no-deps bot python -m scripts.migrate_registry_database --retire-original-schema
     ;;
-  start) docker compose up -d --wait postgres redis bot runtime-worker next-admin ;;
+  start) docker compose up -d --wait postgres redis bot runtime-worker broadcast-worker digital-delivery-worker customer-notifications-worker next-admin ;;
   status) docker compose ps -a ;;
   stop) docker compose down --remove-orphans ;;
   *) echo "Usage: $0 [info|check|build|initialize|migrate --retire-original-schema|start|status|stop]" >&2; exit 2 ;;

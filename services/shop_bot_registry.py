@@ -8,6 +8,7 @@ registration never inherits a platform-wide runtime or payment credential.
 from __future__ import annotations
 
 import re
+import unicodedata
 from uuid import uuid4
 
 from sqlalchemy import func, select
@@ -19,6 +20,9 @@ from models.shop_multibot import (
     ShopBotRegistryEvent,
     ShopStore,
 )
+from models.shop_multibot_receiver import ShopBotReceiver
+from models.shop_payment import ShopPaymentAttempt
+from models.shop_staff_store import ShopStaffStoreAccess
 from services import shop_admin_security as security
 from services.shop_bot_secrets import credential_status
 from services.shop_bot_operations import operation_data
@@ -49,12 +53,31 @@ def _safe_name(value: str) -> str:
     return value.strip()
 
 
+def _safe_company_name(value: str) -> str:
+    """Validate a readable Store label while preserving Persian joining marks."""
+    if not isinstance(value, str):
+        raise security.SecurityRejected("invalid_registry_name", 422)
+    normalized = unicodedata.normalize("NFC", value)
+    name = normalized.strip()
+    if (
+        not 2 <= len(name) <= 160
+        or not any(character.isalpha() for character in name)
+        or any(
+            character not in {"\u200c", "\u200d"}
+            and unicodedata.category(character).startswith(("C", "Zl", "Zp"))
+            for character in normalized
+        )
+    ):
+        raise security.SecurityRejected("invalid_registry_name", 422)
+    return name
+
+
 def create_store(
     db: Session, *, slug: str, name: str, actor_id: int,
 ) -> ShopStore:
     """Register a second inactive store without exposing global catalog data."""
     slug = _safe_slug(slug)
-    name = _safe_name(name)
+    name = _safe_company_name(name)
     existing = db.scalar(select(ShopStore.id).where(ShopStore.slug == slug))
     if existing:
         raise security.SecurityRejected("store_slug_exists", 409)
@@ -69,6 +92,54 @@ def create_store(
     # Only the creator gets manager access. Other users require explicit grants.
     grant_new_store_creator(db, staff_id=actor_id, store_id=store.id)
     security.audit(db, actor_id, "store.created", store.id)
+    db.flush()
+    return store
+
+
+def change_store_state(
+    db: Session, *, store_id: str, actor_id: int,
+    expected_state: str, state: str,
+) -> ShopStore:
+    """Transition the current Store without changing bots or payment records."""
+    if {expected_state, state} != {"active", "paused"}:
+        raise security.SecurityRejected("invalid_request", 422)
+    scope = current_context()
+    if scope is None or scope.staff_id != actor_id:
+        raise security.SecurityRejected("store_access_denied", 403)
+    scope.require(store_id, manage=True)
+    grant = db.scalar(select(ShopStaffStoreAccess).where(
+        ShopStaffStoreAccess.staff_id == actor_id,
+        ShopStaffStoreAccess.store_id == store_id,
+        ShopStaffStoreAccess.access_level == "manager",
+        ShopStaffStoreAccess.is_active.is_(True),
+    ).with_for_update())
+    if grant is None:
+        raise security.SecurityRejected("store_permission_denied", 403)
+    store = db.scalar(select(ShopStore).where(
+        ShopStore.id == store_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if store is None:
+        raise security.SecurityRejected("store_not_found", 404)
+    if store.state != expected_state:
+        raise security.SecurityRejected("configuration_changed", 409)
+    # Changing Store availability must neither resume a live receiver nor cut
+    # it off from payment callbacks. Receiver activation locks this same Store.
+    live_bot = db.scalar(select(ShopBot.id)
+        .outerjoin(ShopBotReceiver, ShopBotReceiver.bot_id == ShopBot.id)
+        .where(
+            ShopBot.store_id == store_id,
+            (ShopBot.status == "active") | ShopBotReceiver.state.in_(
+                ("active", "applying", "needs_review"),
+            ),
+        ).limit(1))
+    unsettled = state == "paused" and db.scalar(select(ShopPaymentAttempt.id).where(
+        ShopPaymentAttempt.store_id == store_id,
+        ShopPaymentAttempt.status.in_(("dispatching", "invoice_sent", "dispatch_unknown")),
+    ).limit(1)) is not None
+    if live_bot is not None or unsettled:
+        raise security.SecurityRejected("store_has_live_activity", 409)
+    store.state = state
+    security.audit(db, actor_id, f"store.{state}", store.id)
     db.flush()
     return store
 

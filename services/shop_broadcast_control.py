@@ -21,6 +21,7 @@ from models.shop_engagement import (
     ShopCampaignDelivery,
 )
 from models.shop_multibot import ShopBot
+from services.shop_service_controls import service_enabled
 from services.shop_broadcast_scope import ready_registry_bot, registry_dispatch_enabled
 from services.shop_campaigns import (
     CampaignRejected,
@@ -145,8 +146,7 @@ class BroadcastControl:
         the exact worst-case number of paid API messages before the first send.
         """
         if not (
-            config.SHOP_CAMPAIGN_DISPATCH_ENABLED
-            and config.SHOP_BROADCAST_WORKER_ENABLED
+            service_enabled("broadcast")
         ):
             raise CampaignRejected(
                 "Worker و ارسال کمپین تا پایان تست عملیاتی غیرفعال‌اند."
@@ -209,7 +209,7 @@ class BroadcastControl:
             if (
                 not recipients.get("bale")
                 or config.BALE_BROADCAST_MODE != "business"
-                or not config.BALE_BROADCAST_PAID_ENABLED
+                or not service_enabled("bale-paid-broadcast")
             ):
                 raise CampaignRejected(
                     "Bale Business API به تأیید و فعال‌سازی صریح نیاز دارد."
@@ -276,13 +276,12 @@ class BroadcastControl:
             campaign.paused_at = now
         elif action == "resume" and previous == "paused":
             if not (
-                config.SHOP_CAMPAIGN_DISPATCH_ENABLED
-                and config.SHOP_BROADCAST_WORKER_ENABLED
+                service_enabled("broadcast")
             ):
                 raise CampaignRejected("ارسال یا Worker غیرفعال است.")
             if (
                 campaign.bale_mode == "business"
-                and not config.BALE_BROADCAST_PAID_ENABLED
+                and not service_enabled("bale-paid-broadcast")
             ):
                 raise CampaignRejected("مجوز Business API بله غیرفعال است.")
             await _dispatch_bot(session, campaign)

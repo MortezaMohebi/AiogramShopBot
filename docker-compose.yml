@@ -19,11 +19,12 @@ services:
     env_file: [.env]
     environment:
       NEXT_ADMIN_BRIDGE_ENABLED: "true"
+      SHOP_DIGITAL_ROOT: "${SHOP_DIGITAL_ROOT:-/bot/private_data}"
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     networks: [private]
-    volumes: ["./media_data:/bot/media_data"]
+    volumes: ["./media_data:/bot/media_data", "private_data:/bot/private_data"]
     command: ["python", "-m", "uvicorn", "scripts.secure_app:app", "--host", "0.0.0.0", "--port", "5000", "--no-access-log"]
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:5000/healthz', timeout=4).status == 200"]
@@ -47,7 +48,6 @@ services:
 
   # One shared worker; provider dispatch is separately disabled by default.
   broadcast-worker:
-    profiles: [broadcast]
     build: {context: .}
     env_file: [.env]
     environment: {SHOP_PROCESS_ROLE: broadcast_worker}
@@ -57,6 +57,26 @@ services:
     networks: [private]
     volumes: ["./media_data:/bot/media_data"]
     command: ["python", "-m", "workers.shop_broadcast"]
+    restart: unless-stopped
+
+  digital-delivery-worker:
+    build: {context: .}
+    env_file: [.env]
+    environment: {SHOP_DIGITAL_ROOT: "${SHOP_DIGITAL_ROOT:-/bot/private_data}"}
+    depends_on:
+      bot: {condition: service_healthy}
+    networks: [private]
+    volumes: ["private_data:/bot/private_data"]
+    command: ["python", "-m", "workers.shop_digital_delivery"]
+    restart: unless-stopped
+
+  customer-notifications-worker:
+    build: {context: .}
+    env_file: [.env]
+    depends_on:
+      bot: {condition: service_healthy}
+    networks: [private]
+    command: ["python", "-m", "workers.shop_customer_notifications"]
     restart: unless-stopped
 
   next-admin:
@@ -104,5 +124,6 @@ services:
 
 volumes:
   redis_data:
+  private_data:
 networks:
   private: {driver: bridge}

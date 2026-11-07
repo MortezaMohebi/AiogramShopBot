@@ -43,6 +43,7 @@ export interface BotPaymentAccount extends PaymentAccount {
 export interface PaymentAccountList {
   store_id: string;
   items: PaymentAccount[];
+  telegram_fiat_enabled?: boolean;
 }
 
 export interface BotPaymentList {

@@ -281,20 +281,42 @@ async def test_worker_commits_before_send_and_never_replays_unknown_outcomes(
 
 
 @pytest.mark.asyncio
-async def test_disabled_worker_does_not_open_database_or_provider(
+async def test_disabled_worker_waits_for_activation_without_claiming_or_sending(
     worker, monkeypatch, purchase,
 ):
-    """Default-disabled startup cannot activate any provider or database work."""
+    """The idle worker watches controls but never claims or sends a delivery."""
     monkeypatch.setattr(config, "SHOP_DIGITAL_DELIVERY_ENABLED", False)
 
     async def forbidden(*args, **kwargs):
         """Fail if disabled startup crosses an external boundary."""
         raise AssertionError("Disabled worker must not start work.")
 
-    monkeypatch.setattr(worker, "create_db_and_tables", forbidden)
+    started = []
+
+    async def prepare():
+        started.append("schema")
+
+    @asynccontextmanager
+    async def watch(_factory):
+        started.append("controls")
+        yield
+
+    async def stop_after_idle(waiter, *, timeout):
+        waiter.close()
+        raise asyncio.CancelledError
+
+    async def dispose():
+        started.append("disposed")
+
+    monkeypatch.setattr(worker, "create_db_and_tables", prepare)
+    monkeypatch.setattr(worker, "watch_controls", watch)
+    monkeypatch.setattr(worker, "engine", SimpleNamespace(dispose=dispose))
+    monkeypatch.setattr(worker.asyncio, "wait_for", stop_after_idle)
     monkeypatch.setattr(worker, "_pending_bot_ids", forbidden)
     monkeypatch.setattr(worker, "_deliver_one", forbidden)
-    await worker.main()
+    with pytest.raises(asyncio.CancelledError):
+        await worker.main()
+    assert started == ["schema", "controls", "disposed"]
     assert purchase.delivery.claimed_at is None
 
 

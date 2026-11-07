@@ -13,22 +13,6 @@ function errorCode(error: unknown): string {
   return error.status === 409 ? "conflict" : "save";
 }
 
-/** Create a paused store, not a live tenant with shared catalog access. */
-export async function createStore(form: FormData): Promise<void> {
-  const name = String(form.get("name") ?? "").trim();
-  const slug = String(form.get("slug") ?? "").trim();
-  if (!name || name.length > 160 || !safe.test(slug)) {
-    redirect("/bots?error=validation");
-  }
-  try {
-    await adminFetch("/stores", "POST", { name, slug });
-  } catch (error) {
-    redirect(`/bots?error=${errorCode(error)}`);
-  }
-  revalidatePath("/bots");
-  redirect("/bots?saved=store");
-}
-
 /** Register a draft bot with no active Webhook, Telegram or Bale receiver. */
 export async function createBot(form: FormData): Promise<void> {
   const store_id = String(form.get("store_id") ?? "");

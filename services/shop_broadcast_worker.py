@@ -30,6 +30,7 @@ from models.shop_engagement import (
     ShopCampaignDelivery,
 )
 from models.shop_multibot import ShopBot
+from services.shop_service_controls import service_enabled
 from services.shop_broadcast_control import (
     _business_media_ready,
     delivery_counts,
@@ -402,8 +403,7 @@ class BroadcastWorker:
                 and campaign.bot_id == claim.bot_id
             )
             return (
-                config.SHOP_BROADCAST_WORKER_ENABLED
-                and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+                service_enabled("broadcast")
                 and same_owner
                 and runtime_allowed
                 and campaign.status == "sending"
@@ -438,8 +438,8 @@ class BroadcastWorker:
         if claim.platform != Platform.BALE or claim.bale_mode != "business":
             return
         if not (
-            config.SHOP_CAMPAIGN_DISPATCH_ENABLED
-            and config.BALE_BROADCAST_PAID_ENABLED
+            service_enabled("broadcast")
+            and service_enabled("bale-paid-broadcast")
             and config.BALE_BROADCAST_MODE == "business"
         ):
             raise CampaignRejected("مجوز پرداخت هزینه Business API غیرفعال است.")
@@ -656,8 +656,7 @@ class BroadcastWorker:
     async def process_next(self) -> bool:
         """Consume one available recipient; errors pause, never blindly retry."""
         if not (
-            config.SHOP_BROADCAST_WORKER_ENABLED
-            and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+            service_enabled("broadcast")
         ):
             return False
 
@@ -707,6 +706,9 @@ class BroadcastWorker:
         """Drain every active campaign, polling only when no work is queued."""
         while True:
             await self.heartbeat()
+            if not service_enabled("broadcast"):
+                await asyncio.sleep(config.SHOP_BROADCAST_POLL_SECONDS)
+                continue
             await self.quarantine_stale()
             did_work = False
             for _ in range(10):

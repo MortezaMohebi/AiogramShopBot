@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type {
@@ -32,7 +33,7 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
         <p>نوع دریافت: <strong>{receiver.mode === "webhook" ? "Webhook" : receiver.mode === "polling" ? "Polling" : "—"}</strong></p>
         <p>نسخه: <strong>{receiver.version ?? "—"}</strong></p>
         <p>Offset بعدی: <strong>{receiver.next_update_id ?? "—"}</strong></p>
-        <p>Runtime: <strong>{receiver.runtime_enabled ? "در سرور مجاز" : "در سرور غیرفعال"}</strong></p>
+        <p>Runtime: <strong>{receiver.runtime_enabled ? "مجاز به اجرا" : "متوقف"}</strong></p>
         <p>Lease اجرایی: <strong>{receiver.worker_ready ? "در دسترس" : "در دسترس نیست"}</strong></p>
         {receiver.last_error_code ? <p className="sm:col-span-2">
           کد آخرین خطا: <strong>{receiver.last_error_code}</strong>
@@ -69,7 +70,7 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
 
       {isDraft && receiver.state === "staged" && !canActivate ?
         <p className="rounded-lg border p-3 leading-7">
-          فعال‌سازی در دسترس نیست؛ سرویس دریافت پیام باید در سرور آماده و Token همین ربات تأیید شده باشد. ثبت اولیه، فروش را فعال نمی‌کند.
+          برای فعال‌سازی، سرویس دریافت پیام باید آماده و توکن ربات تأیید شده باشد. <Link className="underline" href="/services">وضعیت سرویس‌ها را بررسی کنید</Link>.
         </p> : null}
 
       {ambiguous ? <p role="alert" className="rounded-lg border p-3 leading-7">

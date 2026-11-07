@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from services.shop_mcp.contracts import McpRejected
 from services.shop_mcp.proofs import ProofConfiguration, decode_json_object
+from services.shop_service_controls import service_override
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,12 +52,18 @@ def _keys(value) -> dict[str, Ed25519PublicKey]:
 
 def from_environment() -> McpSettings:
     """Stay disabled until every required trust setting is configured."""
-    enabled = os.environ.get("SHOP_MCP_ENABLED", "false")
+    override = service_override("mcp")
+    enabled = os.environ.get("SHOP_MCP_ENABLED", "false") if override is None else str(override).lower()
     if enabled == "false":
         return McpSettings()
+    if enabled != "true":
+        raise McpRejected("mcp_configuration_invalid", 503)
+    return configured_trust()
+
+
+def configured_trust() -> McpSettings:
+    """Validate the deployment trust before a dashboard can enable MCP."""
     try:
-        if enabled != "true":
-            raise ValueError("invalid_enabled_flag")
         issuer = os.environ["SHOP_MCP_GATEWAY_ISSUER"].rstrip("/")
         parsed = urlsplit(issuer)
         if (

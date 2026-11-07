@@ -33,7 +33,7 @@ test("personal account and enrollment render without fetching StoreContext",asyn
  if(!legacy)assert(!existsSync(path.join(root,"app/(console)/account/page.tsx")),"account has exactly one route");
  const Page=f.load(legacy?"app/(console)/account/page.tsx":"app/account/page.tsx").default as ()=>Promise<ReactNode>;
  let content=await Page();if(legacy){const Layout=f.load("app/(console)/layout.tsx").default as (p:{children:ReactNode})=>Promise<ReactNode>;content=await Layout({children:content});}
- const html=renderToStaticMarkup(content);assert(html.includes("شروع فعال‌سازی MFA"));assert.deepEqual(f.calls,["/account"]);assert(!html.includes("فروشگاه فعال"));
+ const html=renderToStaticMarkup(content);assert(html.includes(legacy?"شروع فعال‌سازی MFA":"احراز هویت دومرحله‌ای"));assert.deepEqual(f.calls,["/account"]);assert(!html.includes("فروشگاه فعال"));
 });
 test("non-MFA permission failures keep their original enforcement",async()=>{
  const failure=new ApiError(403,"permission_denied"),f=fixture(failure),Layout=f.load("app/(console)/layout.tsx").default as (p:{children:ReactNode})=>Promise<ReactNode>;
@@ -41,6 +41,18 @@ test("non-MFA permission failures keep their original enforcement",async()=>{
 });
 test("required first enrollment exposes only its MFA controls",()=>{
  const f=fixture(),Panel=f.load("components/blocks/account-panel.tsx").AccountPanel as ComponentType<{initial:unknown}>;
- const html=renderToStaticMarkup(createElement(Panel,{initial:account}));assert(html.includes("شروع فعال‌سازی MFA"));assert(!html.includes("ذخیره مشخصات"));assert(!html.includes('name="new_password"'));
- assert(!html.includes('name="current_password"'), "the password just verified at login is not requested again for setup");
+ const html=renderToStaticMarkup(createElement(Panel,{initial:account}));
+ assert.match(html, />فعال‌سازی<\/button>/);
+ assert(!html.includes("ذخیره مشخصات"));assert(!html.includes('name="new_password"'));
+ assert(!html.includes('name="current_password"'), "the first wizard opens only after the user starts enrollment");
+});
+
+test("an enrolled administrator sees controls, not inline credentials or a stale enrollment warning",()=>{
+ const f=fixture(),Panel=f.load("components/blocks/account-panel.tsx").AccountPanel as ComponentType<{initial:unknown}>;
+ const html=renderToStaticMarkup(createElement(Panel,{initial:{...account,mfa_enabled:true}}));
+ assert(html.includes("فعال و الزامی برای نقش شما"));
+ assert(html.includes("تغییر رمز عبور"));
+ assert(!html.includes("برای ورود به داشبورد، احراز هویت دومرحله‌ای را فعال کنید"));
+ assert(!html.includes('name="current_password"'));
+ assert(!html.includes('name="second_factor"'));
 });

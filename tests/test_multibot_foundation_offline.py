@@ -97,6 +97,26 @@ def test_default_store_identity_is_stable_without_implicit_bots(db: Session) -> 
     assert db.scalars(select(ShopBotCredential)).all() == []
 
 
+@pytest.mark.parametrize("name", ["   ", "12345", "شرکت\nفروش", "شرکت\u202eفروش"])
+def test_store_company_name_rejects_unreadable_labels(db: Session, name: str) -> None:
+    """Reject blank, numeric and invisible formatting names before creating a Store."""
+    expect_code(
+        lambda: registry.create_store(
+            db, slug="invalid-company", name=name, actor_id=1,
+        ),
+        "invalid_registry_name",
+    )
+    assert db.scalar(select(ShopStore).where(ShopStore.slug == "invalid-company")) is None
+
+
+def test_store_company_name_accepts_persian_and_zwnj(db: Session) -> None:
+    """Preserve meaningful Persian typography and trim outer whitespace."""
+    store = registry.create_store(
+        db, slug="persian-company", name="  شرکت داده‌پرداز  ", actor_id=1,
+    )
+    assert store.name == "شرکت داده‌پرداز"
+
+
 def test_new_store_and_bot_are_not_live(db: Session) -> None:
     """Create only a paused store and draft bot, not a running receiver."""
     second = registry.create_store(
@@ -349,3 +369,46 @@ def test_registry_creation_defaults_to_current_store_instead_of_global_default(d
     with bind_context(context):
         result = registry.registry_snapshot(db)
     assert result["default_store_id"] == selected.id
+
+
+def test_store_state_requires_current_manager_and_leaves_bot_draft(db):
+    """Scope the transition and reject a stale Store state without changing bots."""
+    from services.shop_store_context import AuthorizedStore, StoreContext, bind_context
+
+    store = registry.create_store(db, slug="store-state", name="State Test", actor_id=1)
+    bot = registry.register_bot(
+        db, store_id=store.id, platform="telegram",
+        slug="draft-bot", name="Draft Bot", actor_id=1,
+    )
+    db.commit()
+    def change(expected, state):
+        return registry.change_store_state(
+            db, store_id=store.id, actor_id=1,
+            expected_state=expected, state=state,
+        )
+    expect_code(lambda: change("paused", "active"), "store_access_denied")
+    for access in ("editor", "manager"):
+        scope = StoreContext(
+            staff_id=1, session_id="qa-selection", active_store_ids=(store.id,),
+            current_store_id=store.id, default_store_id=store.id, version=1,
+            allowed_stores=(AuthorizedStore(
+                id=store.id, slug=store.slug, name=store.name,
+                state=store.state, access_level=access,
+            ),),
+        )
+        with bind_context(scope):
+            if access == "editor":
+                expect_code(lambda: change("paused", "active"), "store_permission_denied")
+                continue
+            assert change("paused", "active").state == "active"
+            db.commit()
+            assert bot.status == "draft"
+            assert bot.credential_version is None
+            assert db.get(ShopStore, DEFAULT_STORE_ID).state == "active"
+            expect_code(lambda: change("paused", "active"), "configuration_changed")
+            bot.status = "active"
+            db.commit()
+            expect_code(lambda: change("active", "paused"), "store_has_live_activity")
+            bot.status = "draft"
+            db.commit()
+            assert change("active", "paused").state == "paused"

@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 # Catch import-free syntax issues during Codespaces image construction.
 RUN python -m compileall -q /bot
-RUN groupadd --system --gid 10001 shop && useradd --system --uid 10001 --gid shop --home /bot shop     && mkdir -p /bot/static /bot/media_data && chown shop:shop /bot/static /bot/media_data
+RUN groupadd --system --gid 10001 shop && useradd --system --uid 10001 --gid shop --home /bot shop     && mkdir -p /bot/static /bot/media_data /bot/private_data && chown shop:shop /bot/static /bot/media_data /bot/private_data
 USER shop
 EXPOSE 5000
 CMD ["python", "-m", "uvicorn", "scripts.secure_app:app", "--host", "0.0.0.0", "--port", "5000"]

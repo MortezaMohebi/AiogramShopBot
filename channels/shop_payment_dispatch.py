@@ -18,6 +18,7 @@ from channels.bale import BaleApiError, BaleTransport
 from channels.contracts import Platform
 from models.shop_multibot import ShopBot
 from models.shop_scope import require_bot_id
+from services.shop_service_controls import service_enabled
 from services.shop_payment_accounts import decrypt_provider_token
 from services.shop_payment_rails import payment_account, rail_enabled
 from services.shop_payments import InvoicePlan, PaymentRejected, ShopPaymentService
@@ -64,20 +65,20 @@ async def send_order_invoice(
         raise PaymentRejected("پیام‌رسان پشتیبانی نمی‌شود.")
 
     bale_enabled = (
-        config.BALE_WALLET_CHECKOUT_ENABLED
+        service_enabled("bale-wallet")
         and bool(bale_token)
         and await rail_enabled(
             session, "bale", "bale_wallet", bot_id=owner,
         ) if platform == Platform.BALE else False
     )
     telegram_fiat_enabled = (
-        config.TELEGRAM_FIAT_CHECKOUT_ENABLED and bool(fiat_token)
+        service_enabled("telegram-fiat") and bool(fiat_token)
         and await rail_enabled(
             session, "telegram", "telegram_fiat", bot_id=owner,
         ) if platform == Platform.TELEGRAM else False
     )
     telegram_stars_enabled = (
-        config.TELEGRAM_STARS_CHECKOUT_ENABLED
+        service_enabled("telegram-stars")
         and await rail_enabled(
             session, "telegram", "telegram_stars", bot_id=owner,
         ) if platform == Platform.TELEGRAM else False

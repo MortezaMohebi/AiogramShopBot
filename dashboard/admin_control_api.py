@@ -27,6 +27,7 @@ from services import shop_staff_preferences as staff_preferences
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from services import shop_admin_security as security
+from services import shop_account_proof as account_proof
 from services.shop_mfa_qr import make_mfa_qr_data_uri, make_otpauth_uri
 from utils.utils import hash_password, verify_password
 
@@ -91,6 +92,37 @@ class Proof(StrictPayload):
     """Fresh proof, never an English confirmation phrase in lieu of a password."""
     current_password: str = Field(min_length=1, max_length=256)
     second_factor: str = Field(default="", max_length=64)
+
+
+class PasswordCheck(StrictPayload):
+    """Request proof for exactly one supported account operation."""
+
+    current_password: str = Field(min_length=1, max_length=256)
+    action: Literal["username", "password", "reauthenticate", "mfa-setup", "mfa-disable"]
+
+
+class VerifiedProof(StrictPayload):
+    """Present the proof issued after password verification."""
+
+    proof_token: str = Field(min_length=75, max_length=75)
+
+
+class VerifiedPasswordChange(VerifiedProof):
+    """Submit a new password without resending the current password."""
+
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+class VerifiedUsernameChange(VerifiedProof):
+    """Submit a new username after password verification."""
+
+    username: str = Field(min_length=3, max_length=80)
+
+
+class VerifiedMfaDisable(VerifiedProof):
+    """Disabling an existing factor also proves possession of that factor."""
+
+    second_factor: str = Field(min_length=1, max_length=64)
 
 
 class MfaSetup(Proof):
@@ -193,6 +225,53 @@ async def fresh_proof(
         profile = security.profile_for(sync, staff.id)
         security.verify_second_factor(sync, profile, payload.second_factor)
     await db.run_sync(verify)
+
+
+async def lock_account_session(db: AsyncSession, member: ShopStaff, request: Request) -> AdminSession:
+    """Revalidate the live session under the account's security write lock."""
+    await db.execute(select(ShopStaff.id).where(ShopStaff.id == member.id).with_for_update())
+    await db.refresh(member)
+    row = await db.run_sync(lambda sync: security.validate_session(
+        sync, member, request.headers.get("x-shop-session", ""),
+    ))
+    if row.id != own_session(request):
+        raise security.SecurityRejected("session_expired", 401)
+    return row
+
+
+@router.post("/account/verify-password")
+async def verify_account_password(payload: PasswordCheck, request: Request, staff: Staff, db: Db) -> dict:
+    """Check the password without unlocking unrelated privileged operations."""
+    member = required(staff)
+    await throttle("reauth:" + str(member.id), 8, 60)
+    row = await lock_account_session(db, member, request)
+    if not await asyncio.to_thread(verify_password, payload.current_password, member.password_hash):
+        raise security.SecurityRejected("invalid_credentials", 401)
+    if payload.action != "mfa-setup" and member.role in security.MFA_REQUIRED_ROLES:
+        profile = await db.run_sync(lambda sync: security.profile_for(sync, member.id))
+        if not profile.mfa_secret:
+            raise security.SecurityRejected("mfa_enrollment_required", 428)
+    proof = account_proof.issue(
+        config.NEXT_ADMIN_BRIDGE_SECRET, row.id, member.session_version, payload.action,
+    )
+    await db.commit()
+    return {"ok": True, "proof_token": proof}
+
+
+async def require_account_proof(
+    db: AsyncSession, member: ShopStaff, request: Request, action: str,
+    payload: Proof | VerifiedProof,
+) -> None:
+    """Validate wizard proof or the legacy password-and-factor contract."""
+    if isinstance(payload, Proof):
+        await fresh_proof(db, member, payload, request=request)
+        return
+    row = await lock_account_session(db, member, request)
+    if not account_proof.valid(
+        config.NEXT_ADMIN_BRIDGE_SECRET, payload.proof_token, row.id,
+        member.session_version, action,
+    ):
+        raise security.SecurityRejected("account_proof_expired", 403)
 
 
 @router.post("/auth/login")
@@ -326,7 +405,7 @@ async def save_preferences(
 
 @router.post("/account/username")
 async def change_username(
-    payload: UsernameChange, staff: Staff, db: Db,
+    payload: UsernameChange | VerifiedUsernameChange, request: Request, staff: Staff, db: Db,
 ) -> dict:
     """Rename the current staff subject, re-authenticate, and revoke sessions."""
     import re
@@ -335,7 +414,7 @@ async def change_username(
     name = payload.username.strip().casefold()
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,79}", name):
         raise security.SecurityRejected("invalid_request", 422)
-    await fresh_proof(db, member, payload)
+    await require_account_proof(db, member, request, "username", payload)
     if member.username == name:
         raise security.SecurityRejected("username_unchanged", 422)
     member.username = name
@@ -355,10 +434,10 @@ async def change_username(
 
 
 @router.post("/account/reauthenticate")
-async def reauthenticate(payload: Proof, request: Request, staff: Staff, db: Db) -> dict:
+async def reauthenticate(payload: Proof | VerifiedProof, request: Request, staff: Staff, db: Db) -> dict:
     """Grant a short recent-auth window without creating another session."""
     member = required(staff)
-    await fresh_proof(db, member, payload)
+    await require_account_proof(db, member, request, "reauthenticate", payload)
     row = await db.get(AdminSession, own_session(request))
     row.reauthenticated_at = datetime.now(timezone.utc)
     await db.run_sync(lambda sync: security.audit(sync, member.id, "account.reauthenticated"))
@@ -367,11 +446,16 @@ async def reauthenticate(payload: Proof, request: Request, staff: Staff, db: Db)
 
 
 @router.post("/account/password")
-async def password(payload: PasswordChange, request: Request, staff: Staff, db: Db) -> dict:
-    """Require the current password/MFA and invalidate every old session."""
+async def password(payload: PasswordChange | VerifiedPasswordChange, request: Request, staff: Staff, db: Db) -> dict:
+    """Require account proof and invalidate every old session."""
     member = required(staff)
-    await fresh_proof(db, member, payload)
-    if payload.new_password == payload.current_password:
+    await require_account_proof(db, member, request, "password", payload)
+    unchanged = (
+        payload.new_password == payload.current_password
+        if isinstance(payload, PasswordChange)
+        else await asyncio.to_thread(verify_password, payload.new_password, member.password_hash)
+    )
+    if unchanged:
         raise security.SecurityRejected("password_unchanged", 422)
     await db.run_sync(lambda sync: lifecycle.validate_password(sync, payload.new_password))
     member.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
@@ -402,11 +486,13 @@ async def revoke_all(request: Request, staff: Staff, db: Db) -> dict:
 
 @router.post("/account/mfa-setup")
 async def mfa_setup(
-    payload: MfaSetup, request: Request, staff: Staff, db: Db,
+    payload: MfaSetup | VerifiedProof, request: Request, staff: Staff, db: Db,
 ) -> dict:
     """Start first enrollment using this device's recently verified login."""
     member = required(staff)
-    if payload.current_password:
+    if isinstance(payload, VerifiedProof):
+        await require_account_proof(db, member, request, "mfa-setup", payload)
+    elif payload.current_password:
         # Keep the previous explicit-proof contract during dashboard rollout.
         await fresh_proof(db, member, payload, request=request)
     else:
@@ -425,7 +511,7 @@ async def mfa_setup(
         )
         if row.id != own_session(request):
             raise security.SecurityRejected("session_expired", 401)
-        if not payload.current_password:
+        if isinstance(payload, MfaSetup) and not payload.current_password:
             security.require_recent(row)
         return security.begin_mfa(sync, security.profile_for(sync, member.id))
 
@@ -458,14 +544,17 @@ async def mfa_confirm(payload: Code, request: Request, staff: Staff, db: Db) -> 
 
 
 @router.post("/account/mfa-disable")
-async def mfa_disable(payload: Proof, request: Request, staff: Staff, db: Db) -> dict:
-    """Disable MFA only with fresh password and current OTP/recovery proof."""
+async def mfa_disable(payload: Proof | VerifiedMfaDisable, request: Request, staff: Staff, db: Db) -> dict:
+    """Disable optional MFA after account proof and revoke other sessions."""
     member = required(staff)
     if member.role in security.MFA_REQUIRED_ROLES:
         raise security.SecurityRejected("mfa_required_by_role", 409)
-    await fresh_proof(db, member, payload)
+    await require_account_proof(db, member, request, "mfa-disable", payload)
     def disable(sync):
-        security.disable_mfa(sync, security.profile_for(sync, member.id))
+        profile = security.profile_for(sync, member.id)
+        if isinstance(payload, VerifiedMfaDisable):
+            security.verify_second_factor(sync, profile, payload.second_factor)
+        security.disable_mfa(sync, profile)
         security.revoke_others(sync, member.id, own_session(request))
     await db.run_sync(disable)
     await db.commit()

@@ -41,6 +41,7 @@ from models.shop_engagement import (
 )
 from models.shop_staff import ShopStaff
 from models.shop_product_visibility import ShopProductVisibility
+from services.shop_service_controls import service_enabled
 from services.shop_sequence import next_display_position
 from services.shop_store_context import StoreContext, current_context
 from services.shop_uom import validate_product_units
@@ -1090,21 +1091,19 @@ async def capabilities(staff: Staff) -> dict:
     require_staff(staff, *ALL_ROLES)
     return {
         "broadcast_worker_enabled": (
-            config.SHOP_BROADCAST_WORKER_ENABLED
-            and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+            service_enabled("broadcast")
         ),
         "broadcast_registry_enabled": bool(
-            config.SHOP_BROADCAST_WORKER_ENABLED
-            and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
+            service_enabled("broadcast")
             and registry_dispatch_enabled()
         ),
         "bale_business_enabled": (
             config.BALE_BROADCAST_MODE == "business"
-            and config.BALE_BROADCAST_PAID_ENABLED
+            and service_enabled("bale-paid-broadcast")
         ),
         "max_paid_calls": config.SHOP_BROADCAST_MAX_PAID_CALLS,
         "wallet_adjustment_limit_irr": str(config.SHOP_WALLET_MAX_ADMIN_ADJUSTMENT_IRR),
-        "telegram_stars_refunds_enabled": config.TELEGRAM_STARS_REFUNDS_ENABLED,
+        "telegram_stars_refunds_enabled": service_enabled("telegram-stars-refunds"),
         "media_photo_max_bytes": 10_000_000,
         "media_other_max_bytes": 50_000_000,
     }

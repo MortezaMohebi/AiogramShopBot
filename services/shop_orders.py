@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import Product, ShopIdentity, ShopOrder
+from services.shop_service_controls import service_enabled
 from services.shop_checkout_policy import legal_credit_for_items
 from services.shop_customer_orders import (
     order_owner_clause, verified_identity_keys,
@@ -174,19 +175,19 @@ class ShopOrdersFlow:
             )
         )
         bale_ready = (
-            config.BALE_WALLET_CHECKOUT_ENABLED
+            service_enabled("bale-wallet")
             and await rail_enabled(
                 session, "bale", "bale_wallet", bot_id=owner,
             )
         ) if event.platform == Platform.BALE else False
         stars_ready = (
-            config.TELEGRAM_STARS_CHECKOUT_ENABLED
+            service_enabled("telegram-stars")
             and await rail_enabled(
                 session, "telegram", "telegram_stars", bot_id=owner,
             )
         ) if event.platform == Platform.TELEGRAM else False
         fiat_ready = (
-            config.TELEGRAM_FIAT_CHECKOUT_ENABLED
+            service_enabled("telegram-fiat")
             and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
             and await rail_enabled(
                 session, "telegram", "telegram_fiat", bot_id=owner,

@@ -3,6 +3,7 @@ import { requestBrowserChallenge } from "@/lib/browser-challenge";
 /** Shared Persian status messages; raw backend errors never reach the UI. */
 const errors: Record<string, string> = {
   invalid_credentials: "رمز فعلی صحیح نیست.",
+  account_proof_expired: "مهلت تأیید رمز پایان یافته است. دوباره رمز فعلی را وارد کنید.",
   invalid_verification: "کد تأیید معتبر نیست یا قبلاً استفاده شده است.",
   mfa_required: "کد برنامهٔ احراز هویت یا یکی از کدهای بازیابی را وارد کنید.",
   mfa_not_configured: "کلید رمزنگاری MFA در سرور تنظیم نشده است؛ راهنمای راه‌اندازی را بررسی کنید.",
@@ -30,7 +31,7 @@ const errors: Record<string, string> = {
   invalid_operation_state: "وضعیت عملیات تغییر کرده است؛ فهرست را تازه‌سازی کنید.",
   configuration_changed: "تنظیم فعال تغییر کرده است؛ درخواست تازه‌ای ایجاد کنید.",
 };
-export interface ControlResult { ok?: boolean; code?: string; login_required?: boolean; secret?: string; qr_data_uri?: string; recovery_codes?: string[]; token?: string; expires_at?: string }
+export interface ControlResult { ok?: boolean; code?: string; login_required?: boolean; secret?: string; qr_data_uri?: string; recovery_codes?: string[]; proof_token?: string; token?: string; expires_at?: string }
 /** Preserve the safe machine code for contextual recovery without raw messages. */
 export class ControlActionError extends Error {
   constructor(readonly code: string, message: string) {
@@ -89,4 +90,10 @@ export const permissionLabels: Record<string, string> = {
   "campaigns.manage": "آماده‌سازی کمپین", "broadcast.approve": "تأیید ارسال انبوه", "staff.manage": "مدیریت کارکنان",
   "settings.manage": "تنظیم فروشگاه", "bots.read": "مشاهده اتصال ربات‌ها", "bots.configure": "ثبت تغییر اتصال",
   "bots.apply": "اعمال تغییر اتصال", "audit.read": "مشاهده رویدادهای مدیریتی",
+  "customers.import": "ورود اطلاعات مشتریان",
+  "actions.approve": "تأیید اقدامات",
+  "workflows.read": "مشاهده گردش‌های کار",
+  "workflows.write": "ویرایش گردش‌های کار",
+  "workflows.publish": "انتشار گردش‌های کار",
+  "workflows.runtime.manage": "مدیریت اجرای گردش‌های کار",
 };

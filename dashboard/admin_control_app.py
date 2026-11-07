@@ -40,6 +40,7 @@ from dashboard.shop_customer_experience_api import router as customer_experience
 from dashboard.shop_workflow_api import router as workflow_router
 from dashboard.shop_action_api import router as action_router
 from dashboard.shop_runtime_api import router as runtime_router
+from dashboard.shop_service_control_api import router as service_control_router
 from dashboard.mcp_api import router as mcp_router
 from dashboard.shop_mcp_admin_api import router as mcp_admin_router
 from dashboard.shop_mcp_admin_api import account_router as mcp_account_router
@@ -108,6 +109,7 @@ def permission_for(path: str, method: str) -> str | None:
         "wallets": "finance.read" if method == "GET" else "wallet.adjust",
         "refunds": "finance.read" if method == "GET" else "refund.execute",
         "settings": "settings.manage",
+        "services": "settings.manage",
         "referral-policy": "settings.manage",
         "stores": "bots.read" if method == "GET" else "bots.configure",
         "bot-registry": (
@@ -268,7 +270,7 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                     enrollment_routes = {
                         PREFIX + "/auth/me", PREFIX + "/auth/logout",
                         PREFIX + "/account", PREFIX + "/account/mfa-setup",
-                        PREFIX + "/account/mfa-confirm",
+                        PREFIX + "/account/mfa-confirm", PREFIX + "/account/verify-password",
                     }
                     if not enrolled and path not in enrollment_routes:
                         raise SecurityRejected("mfa_enrollment_required", 428)
@@ -278,13 +280,15 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                 if ((path.startswith(PREFIX + "/data-models") and path.endswith("/import")) or path.startswith(PREFIX + "/staff") or path.startswith(PREFIX + "/bot-registry") or path.startswith(PREFIX + "/relay-workers") or path.startswith(PREFIX + "/payment-accounts") or path.startswith(PREFIX + "/bot-catalog") or path.startswith(PREFIX + "/stores") or (path.startswith(PREFIX + "/products/") and path.endswith(("/digital-file", "/digital-licenses"))) or path.startswith(PREFIX + "/customer-retention") or (path.startswith(PREFIX + "/customers") and (request.method != "GET" or path.endswith("/export")))) and (request.method != "GET" or path.endswith("/export")):
                     if not bot_onboarding_route(path, request.method):
                         require_recent(row)
+                if resource == "services" and request.method != "GET":
+                    require_recent(row)
                 request.state.admin_session_id = row.id
                 # Only session-authenticated requests can acquire StoreContext.
                 # A user's allowed set is always re-read from active grants;
                 # no browser header, Cookie or query can widen it.
                 scope = None
                 resource = path.removeprefix(PREFIX).strip("/").split("/")[0]
-                if resource not in {"auth", "account"}:
+                if resource not in {"auth", "account", "services"}:
                     scope = await resolve_context(
                         db, staff_id=staff.id, session_id=row.id,
                     )
@@ -412,6 +416,7 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
     app.include_router(workflow_router)
     app.include_router(action_router)
     app.include_router(runtime_router)
+    app.include_router(service_control_router)
     app.include_router(mcp_router)
     app.include_router(mcp_admin_router)
     app.include_router(mcp_account_router)

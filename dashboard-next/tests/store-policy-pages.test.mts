@@ -24,8 +24,8 @@ const Box = ({ children }: { children?: ReactNode }) => createElement("div", nul
 const noop = async () => { throw Error("mutations_are_not_part_of_a_read_test"); };
 
 function fixture(page: "stores" | "payment-accounts", {
-  active = [currentId], role = "superadmin", failure,
-}: { active?: string[]; role?: string; failure?: Error } = {}) {
+  active = [currentId], role = "superadmin", failure, telegramFiat = false,
+}: { active?: string[]; role?: string; failure?: Error; telegramFiat?: boolean } = {}) {
   const calls: string[] = [];
   const selected = { ...context, active_store_ids: active };
   async function read(path: string) {
@@ -36,7 +36,7 @@ function fixture(page: "stores" | "payment-accounts", {
     assert(match, `Unexpected read ${path}`);
     if (!active.includes(match[1])) throw Object.assign(Error("store_access_denied"), { status: 403 });
     if (failure) throw failure;
-    if (match[2] === "payment-accounts") return { items: [] };
+    if (match[2] === "payment-accounts") return { items: [], telegram_fiat_enabled: telegramFiat };
     if (match[2] === "commerce") return { version: 1, cart_scope: "bot", credit_scope: "identity" };
     return {};
   }
@@ -53,6 +53,8 @@ function fixture(page: "stores" | "payment-accounts", {
     "@/components/ui/input": { Input: (props: Record<string, unknown>) => createElement("input", props) },
     "@/components/ui/card": { Card: Box, CardContent: Box, CardHeader: Box, CardTitle: Box },
     "@/components/blocks/customer-experience-policy-panel": { CustomerExperiencePolicyPanel: ({ id }: { id: string }) => createElement("span", null, id) },
+    "@/components/blocks/store-create-wizard": { StoreCreateWizard: Box },
+    "@/components/blocks/store-state-control": { StoreStateControl: Box },
     "@/lib/bridge": { adminFetch: read, currentStaff: async () => ({ role }) },
     "./actions": { createPaymentAccount: noop, setPaymentAccountState: noop },
     "./commerce-actions": { saveStoreCommercePolicy: noop },
@@ -91,20 +93,32 @@ test("an explicitly selected active payment Store remains readable", async () =>
   assert(f.calls.includes(`/stores/${defaultId}/payment-accounts`));
 });
 
+test("payment account creation offers Telegram IRR only on enabled installations", async () => {
+  const disabled = await fixture("payment-accounts").render();
+  assert(disabled.includes("Telegram Stars"));
+  assert(!disabled.includes('value="telegram_fiat"'));
+  const enabled = await fixture("payment-accounts", { telegramFiat: true }).render();
+  assert(enabled.includes('value="telegram_fiat"'));
+  assert(enabled.includes("پرداخت ریالی کالای فیزیکی"));
+});
+
 test("Stores reads policies only for the session's active Stores", async () => {
   const f = fixture("stores");
   const html = await f.render();
   assert(html.includes("STORE_2"));
-  assert(!html.includes("STORE_1"));
-  assert(!html.includes("STORE_3"));
+  assert(html.includes("STORE_1") && html.includes("STORE_3"));
+  assert(!html.includes(defaultId) && !html.includes(otherId));
   assert.deepEqual(new Set(f.calls), new Set(["/store-context", ...["commerce", "customer-menu", "checkout-policy"].map(part => `/stores/${currentId}/${part}`)]));
 });
 
-test("Stores preserves a selected multi-Store read without including other grants", async () => {
+test("Stores lists all grants but loads settings only for the selected Stores", async () => {
   const f = fixture("stores", { active: [defaultId, currentId] });
   const html = await f.render();
   assert(html.includes("STORE_1") && html.includes("STORE_2"));
-  assert(!html.includes("STORE_3"));
+  assert(html.includes("STORE_3"));
+  assert(!html.includes(otherId));
+  assert.deepEqual(new Set(f.calls), new Set(["/store-context", ...[defaultId, currentId].flatMap(id =>
+    ["commerce", "customer-menu", "checkout-policy"].map(part => `/stores/${id}/${part}`))]));
 });
 
 for (const page of ["stores", "payment-accounts"] as const) {

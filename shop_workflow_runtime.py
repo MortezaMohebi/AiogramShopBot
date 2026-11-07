@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import signal
 
-import config
 from db import create_db_and_tables, session_maker
 from services.shop_runtime.workers import run_workers
+from services.shop_service_controls import watch_controls
 
 
 async def main() -> None:
@@ -25,15 +24,9 @@ async def main() -> None:
         except NotImplementedError:
             # Windows development loops retain normal process termination.
             pass
-        if (
-            not config.SHOP_WORKFLOW_RUNTIME_ENABLED
-            or config.SHOP_WORKFLOW_RUNTIME_KILL_SWITCH
-        ):
-            logging.info("Workflow Runtime is disabled; shared worker is idle.")
-            await stop.wait()
-            return
         await create_db_and_tables()
-        await run_workers(session_maker, stop=stop)
+        async with watch_controls(session_maker):
+            await run_workers(session_maker, stop=stop)
     finally:
         if signal_installed:
             loop.remove_signal_handler(signal.SIGTERM)

@@ -17,7 +17,6 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
     ShopBot, ShopStore, ShopBotCredential, ShopBotRegistryEvent,
@@ -25,6 +24,7 @@ from models.shop_multibot import (
 from models.shop_multibot_receiver import (
     ShopBotReceiver, ShopBotReceiverEvent,
 )
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_bot_secrets import (
     decrypt_for_bot, decrypt_receiver_secret, encrypt_receiver_secret,
@@ -53,7 +53,7 @@ async def stage_receiver(
     bot = await db.scalar(select(ShopBot).where(
         ShopBot.id == bot_id,
     ).with_for_update())
-    store = await db.get(ShopStore, bot.store_id) if bot else None
+    store = await db.get(ShopStore, bot.store_id, with_for_update=True) if bot else None
     if (
         bot is None or store is None or store.state != "active"
         or bot.runtime_owner != "registry" or bot.status != "draft"
@@ -200,7 +200,7 @@ async def activate_receiver(
     """Activate one verified draft without taking over unrelated webhooks."""
     if supervisor is None or not supervisor.owns_lease:
         raise security.SecurityRejected("receiver_worker_unavailable", 503)
-    if not getattr(config, "MULTIBOT_V2_RUNTIME_ENABLED", False):
+    if not service_enabled("receivers"):
         raise security.SecurityRejected("multibot_runtime_disabled", 409)
     # A cached boolean is insufficient after PostgreSQL lease loss.
     await supervisor.check_lease()
@@ -213,6 +213,9 @@ async def activate_receiver(
     ).with_for_update())
     if bot is None or row is None or row.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
+    store = await db.get(ShopStore, bot.store_id, with_for_update=True)
+    if store is None or store.state != "active":
+        raise security.SecurityRejected("store_not_active", 409)
     if (
         bot.runtime_owner != "registry" or bot.status != "draft"
         or row.state != "staged" or bot.provider_bot_id is None

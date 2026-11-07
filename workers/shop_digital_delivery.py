@@ -13,14 +13,13 @@ import signal
 
 from sqlalchemy import select
 
-import config
 from db import create_db_and_tables, engine, session_maker
 from models.shop_digital_delivery import ShopDigitalDelivery
 from models.shop_multibot import ShopBot, ShopStore
 from services.shop_digital_fulfillment import (
     claim_one_delivery, complete_delivery, quarantine_delivery,
 )
-from services.shop_digital_storage import digital_root
+from services.shop_service_controls import service_enabled, watch_controls
 from workers.shop_customer_notifications import _transport_for_bot
 
 _logger = logging.getLogger(__name__)
@@ -86,13 +85,6 @@ async def _deliver_one(bot_id: str) -> bool:
 
 async def main() -> None:
     """Poll only after an operator explicitly enables verified digital delivery."""
-    if not config.SHOP_DIGITAL_DELIVERY_ENABLED:
-        _logger.warning("Digital worker is disabled; no provider calls.")
-        return
-    digital_root(
-        config.SHOP_DIGITAL_ROOT,
-        public_media_root=config.SHOP_MEDIA_ROOT,
-    )
     await create_db_and_tables()
 
     stop = asyncio.Event()
@@ -104,23 +96,25 @@ async def main() -> None:
             pass
 
     try:
-        while not stop.is_set():
-            for bot_id in await _pending_bot_ids():
-                if stop.is_set():
-                    break
+        async with watch_controls(session_maker):
+            while not stop.is_set():
+                bot_ids = await _pending_bot_ids() if service_enabled("digital-delivery") else []
+                for bot_id in bot_ids:
+                    if stop.is_set() or not service_enabled("digital-delivery"):
+                        break
+                    try:
+                        await _deliver_one(bot_id)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        _logger.exception(
+                            "Digital fulfillment worker stopped an unsafe attempt for Bot %s.",
+                            bot_id,
+                        )
                 try:
-                    await _deliver_one(bot_id)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    _logger.exception(
-                        "Digital fulfillment worker stopped an unsafe attempt for Bot %s.",
-                        bot_id,
-                    )
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                pass
+                    await asyncio.wait_for(stop.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
     finally:
         await engine.dispose()
 

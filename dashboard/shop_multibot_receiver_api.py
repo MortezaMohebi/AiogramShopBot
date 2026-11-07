@@ -14,10 +14,10 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
 from dashboard.admin_control_api import StrictPayload, throttle
 from dashboard.next_api import database, signed_staff
 from models.shop_staff import ShopStaff
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services import shop_multibot_receiver_control as control
 
@@ -56,7 +56,7 @@ async def receiver_info(
     supervisor = getattr(request.app.state, "multi_bot_supervisor", None)
     return {
         **snapshot,
-        "runtime_enabled": bool(config.MULTIBOT_V2_RUNTIME_ENABLED),
+        "runtime_enabled": bool(service_enabled("receivers")),
         "worker_ready": bool(
             supervisor is not None and supervisor.owns_lease
         ),

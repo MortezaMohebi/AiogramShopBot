@@ -12,46 +12,34 @@ import logging
 import signal
 
 
-import config
-from db import create_db_and_tables, engine
-from services.shop_broadcast_scope import registry_dispatch_enabled
+from db import create_db_and_tables, engine, session_maker
 from services.shop_broadcast_worker import BroadcastWorker, registry_transport
+from services.shop_service_controls import watch_controls
 
 LOG = logging.getLogger(__name__)
 
 
 async def main() -> None:
     """Open long-lived sessions and drain all explicitly started campaigns."""
-    if not (
-        config.SHOP_BROADCAST_WORKER_ENABLED and config.SHOP_CAMPAIGN_DISPATCH_ENABLED
-    ):
-        LOG.warning("Broadcast worker is disabled by configuration; no messages sent.")
-        return
-
     # Never let an old schema silently truncate paid budgets or recipient
     # receipts. The API process uses the same Alembic-head validation.
     await create_db_and_tables()
-    runner = BroadcastWorker(
-        registry_transport_factory=(
-            registry_transport if registry_dispatch_enabled() else None
-        ),
-    )
+    # The dispatch path checks the current Registry gate for every campaign.
+    runner = BroadcastWorker(registry_transport_factory=registry_transport)
 
-    task = asyncio.create_task(runner.run_forever(), name="shared-shop-broadcast")
-    loop = asyncio.get_running_loop()
     try:
-        # The runtime currently supports Linux Docker/Ubuntu; on shutdown
-        # a cancelled in-flight send is quarantined rather than repeated.
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, task.cancel)
-        await task
+        async with watch_controls(session_maker):
+            task = asyncio.create_task(runner.run_forever(), name="shared-shop-broadcast")
+            loop = asyncio.get_running_loop()
+            try:
+                # Cancelled in-flight sends are quarantined rather than repeated.
+                for sig in (signal.SIGTERM, signal.SIGINT):
+                    loop.add_signal_handler(sig, task.cancel)
+                await task
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
     finally:
-        if not task.done():
-            task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
         await engine.dispose()
 
 

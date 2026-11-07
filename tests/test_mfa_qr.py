@@ -62,13 +62,13 @@ def test_invalid_totp_secrets_are_rejected(value: str) -> None:
         make_otpauth_uri(value, "operator")
 
 
-def test_mfa_enrollment_api_and_panel_use_private_qr_data() -> None:
+def test_mfa_enrollment_api_and_wizard_use_private_qr_data() -> None:
     """Keep provisioning QR local and the manual secret behind disclosure."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     api = (root / "dashboard/admin_control_api.py").read_text("utf-8")
-    account = (root / "dashboard-next/components/blocks/account-panel.tsx").read_text(
+    wizard = (root / "dashboard-next/components/blocks/account-security-wizard.tsx").read_text(
         "utf-8"
     )
     types = (root / "dashboard-next/lib/account-control.ts").read_text("utf-8")
@@ -77,8 +77,6 @@ def test_mfa_enrollment_api_and_panel_use_private_qr_data() -> None:
     assert "make_mfa_qr_data_uri(uri)" in api
     assert '"qr_data_uri"' in api
     assert "qr_data_uri?: string" in types
-    assert "<Image" in account
-    assert "enrollment.qrDataUri" in account
-    assert "<details" in account
-    assert "enrollment.secret" in account
-    assert '<code dir="ltr" className="block break-all rounded-lg bg-muted p-3">{enrollment}</code>' not in account
+    assert "<Image src={step.qr}" in wizard
+    disclosure = wizard.split("<details", 1)[1].split("</details>", 1)[0]
+    assert "{step.secret}" in disclosure

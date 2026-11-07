@@ -16,6 +16,7 @@ function failure(error: unknown): never {
     "payment_token_not_supported", "payment_account_not_found",
     "bot_state_unchanged", "payment_access_store_mismatch",
     "invalid_credentials", "invalid_verification",
+    "telegram_fiat_unavailable",
   ]);
   redirect(`/payment-accounts?error=${error.code && codes.has(error.code) ? error.code : "save"}`);
 }

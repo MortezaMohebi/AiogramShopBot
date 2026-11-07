@@ -31,6 +31,7 @@ from models.shop_workflow_runtime import (
     WorkflowRun,
     WorkflowWait,
 )
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_action_bindings import resolve_inputs
 from services.shop_actions.context import customer_principal
@@ -63,7 +64,7 @@ def gate_key(store_id, bot_id=None):
 async def enabled(db, context) -> bool:
     """Recheck every opt-in and live Bot/Store operation state before doing work."""
     if (
-        not config.SHOP_WORKFLOW_RUNTIME_ENABLED
+        not service_enabled("workflow-runtime")
         or config.SHOP_WORKFLOW_RUNTIME_KILL_SWITCH
     ):
         return False

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import signal
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -27,6 +26,7 @@ from services.shop_customer_notification_dispatch import (
     NotificationTransport, deliver_once,
 )
 from services.shop_customer_notifications import prepare_stock_alerts
+from services.shop_service_controls import service_enabled, watch_controls
 
 _logger = logging.getLogger(__name__)
 _POLL_SECONDS = 5
@@ -97,11 +97,6 @@ async def _queue_stock_alerts() -> None:
 
 async def main() -> None:
     """Continuously dispatch bounded notifications only when opted in."""
-    if os.environ.get("SHOP_CUSTOMER_NOTIFICATIONS_ENABLED") != "true":
-        _logger.warning(
-            "Customer notifications worker disabled; no Provider calls."
-        )
-        return
     # The same database check used by the bot runtime rejects missing tables.
     await create_db_and_tables()
     stop = asyncio.Event()
@@ -113,34 +108,35 @@ async def main() -> None:
             pass
 
     try:
-        next_stock_scan = 0.0
-        while not stop.is_set():
-            now = loop.time()
-            if now >= next_stock_scan:
-                await _queue_stock_alerts()
-                next_stock_scan = now + 60.0
-            bot_ids = await _active_bot_ids()
-            for bot_id in bot_ids:
-                if stop.is_set():
-                    break
+        async with watch_controls(session_maker):
+            next_stock_scan = 0.0
+            while not stop.is_set():
+                now = loop.time()
+                if service_enabled("customer-notifications") and now >= next_stock_scan:
+                    await _queue_stock_alerts()
+                    next_stock_scan = now + 60.0
+                bot_ids = await _active_bot_ids() if service_enabled("customer-notifications") else []
+                for bot_id in bot_ids:
+                    if stop.is_set() or not service_enabled("customer-notifications"):
+                        break
+                    try:
+                        async with _transport_for_bot(bot_id) as transport:
+                            async with session_maker() as db:
+                                await deliver_once(
+                                    db, bot_id=bot_id, transport=transport,
+                                )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        _logger.exception(
+                            "Notification worker failed before a confirmed send; "
+                            "inspect Outbox before retry. bot_id=%s",
+                            bot_id,
+                        )
                 try:
-                    async with _transport_for_bot(bot_id) as transport:
-                        async with session_maker() as db:
-                            await deliver_once(
-                                db, bot_id=bot_id, transport=transport,
-                            )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    _logger.exception(
-                        "Notification worker failed before a confirmed send; "
-                        "inspect Outbox before retry. bot_id=%s",
-                        bot_id,
-                    )
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=_POLL_SECONDS)
-            except asyncio.TimeoutError:
-                pass
+                    await asyncio.wait_for(stop.wait(), timeout=_POLL_SECONDS)
+                except asyncio.TimeoutError:
+                    pass
     finally:
         await engine.dispose()
 

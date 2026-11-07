@@ -22,7 +22,7 @@ const PROVIDERS: {
   requiresToken: boolean;
 }[] = [
   { platform: "bale", rail: "bale_wallet", label: "کیف پول بله (ریال)", requiresToken: true },
-  { platform: "telegram", rail: "telegram_fiat", label: "پرداخت ریالی تلگرام", requiresToken: true },
+  { platform: "telegram", rail: "telegram_fiat", label: "پرداخت ریالی کالای فیزیکی در تلگرام", requiresToken: true },
   { platform: "telegram", rail: "telegram_stars", label: "Telegram Stars (XTR)", requiresToken: false },
 ];
 
@@ -57,6 +57,10 @@ export default async function PaymentAccountsPage({
   const accounts = await adminFetch<PaymentAccountList>(
     `/stores/${storeId}/payment-accounts`,
   );
+  const telegramFiatEnabled = accounts.telegram_fiat_enabled === true;
+  const availableProviders = PROVIDERS.filter(
+    provider => provider.rail !== "telegram_fiat" || telegramFiatEnabled,
+  );
 
   return <div className="space-y-6">
     <PageHeading title="حساب‌های پرداخت فروشگاه"
@@ -80,6 +84,7 @@ export default async function PaymentAccountsPage({
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
       {query.error === "reauth" ? "رمز فعلی و کد احراز هویت دومرحله‌ای را وارد کنید." :
+        query.error === "telegram_fiat_unavailable" ? "پرداخت ریالی تلگرام در این نصب آماده نیست." :
         "حساب پرداخت ذخیره نشد. ارائه‌دهنده، توکن و وضعیت فعلی حساب را بررسی کنید."}
     </p> : null}
     <Card>
@@ -90,18 +95,25 @@ export default async function PaymentAccountsPage({
         {!accounts.items.length ? <p className="text-sm text-muted-foreground">
           هنوز حساب پرداختی ثبت نشده است. از فرم زیر حساب اضافه کنید.
         </p> : null}
-        {accounts.items.map(account => <div key={account.id} className="space-y-3 rounded-xl border p-4">
+        <div className="grid items-start gap-3 md:grid-cols-2">
+        {accounts.items.map(account => <div key={account.id} className="min-w-0 space-y-3 rounded-xl border p-3">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <div>
-              <p className="font-semibold">{account.name}</p>
+              <p dir="auto" className="break-words font-semibold">{account.name}</p>
               <p className="text-xs text-muted-foreground">
                 {PROVIDERS.find(provider => provider.rail === account.rail_type)?.label ?? account.rail_type}
               </p>
+              {account.rail_type === "telegram_fiat" && !telegramFiatEnabled ?
+                <p className="text-xs text-muted-foreground">دریافت پرداخت ریالی در این نصب غیرفعال است.</p>
+                : null}
             </div>
             <span>{account.state === "active" ? "فعال" : account.state === "draft" ? "پیش‌نویس" : "غیرفعال"}</span>
           </div>
-          <form action={setPaymentAccountState}
-            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto] xl:items-end">
+          <details>
+            <summary className="w-fit cursor-pointer rounded-md px-1 text-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+              مدیریت حساب
+            </summary>
+            <form action={setPaymentAccountState} className="mt-3 space-y-3 border-t pt-3">
             <input type="hidden" name="account_id" value={account.id} />
             <input type="hidden" name="expected_version" value={account.version} />
             <label className="block space-y-2 text-sm">وضعیت هدف
@@ -120,8 +132,10 @@ export default async function PaymentAccountsPage({
                 maxLength={6} autoComplete="one-time-code" required />
             </label>
             <Button type="submit" variant="outline">تغییر وضعیت</Button>
-          </form>
+            </form>
+          </details>
         </div>)}
+        </div>
       </CardContent>
     </Card>
     <Card>
@@ -130,12 +144,19 @@ export default async function PaymentAccountsPage({
       </CardTitle></CardHeader>
       <CardContent className="space-y-6">
         <p className="text-sm leading-7 text-muted-foreground">
-          برای کیف پول بله و پرداخت ریالی تلگرام، توکن ارائه‌دهنده لازم است.
-          Telegram Stars به این توکن نیاز ندارد.
+          پرداخت کالای دیجیتال در تلگرام با Telegram Stars انجام می‌شود و به توکن درگاه نیاز ندارد.
+          برای کیف پول بله توکن ارائه‌دهنده لازم است.
         </p>
-        {PROVIDERS.map(provider => <form key={provider.rail}
-          action={createPaymentAccount} className="space-y-4 rounded-xl border p-4">
-          <p className="font-semibold">{provider.label}</p>
+        <div className="grid items-start gap-3 md:grid-cols-2">
+        {availableProviders.map(provider => <details key={provider.rail} className="rounded-xl border p-3">
+          <summary className="cursor-pointer rounded-md px-1 text-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+            {provider.label}
+          </summary>
+          <form action={createPaymentAccount} className="mt-3 space-y-4 border-t pt-3">
+          {provider.rail === "telegram_fiat" ?
+            <p className="text-sm text-muted-foreground">
+              این روش برای کالای فیزیکی است. درگاه متصل از طریق BotFather باید پرداخت به ریال ایران را پشتیبانی کند.
+            </p> : null}
           <input type="hidden" name="store_id" value={storeId} />
           <input type="hidden" name="platform" value={provider.platform} />
           <input type="hidden" name="rail_type" value={provider.rail} />
@@ -149,7 +170,9 @@ export default async function PaymentAccountsPage({
           </label> : null}
           <ProofFields />
           <Button type="submit" variant="outline">ایجاد حساب پیش‌نویس</Button>
-        </form>)}
+          </form>
+        </details>)}
+        </div>
       </CardContent>
     </Card>
   </div>;

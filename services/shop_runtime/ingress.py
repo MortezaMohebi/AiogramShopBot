@@ -6,12 +6,12 @@ from collections.abc import Mapping
 
 from sqlalchemy import select
 
-import config
 from channels.contracts import Platform
 from db import session_maker
 from models.shop_content import ShopIdentity
 from models.shop_delivery import ShopInboundUpdate
 from models.shop_workflow_runtime import WorkflowInbox
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_bot_context import resolve_bot_context
 from services.shop_bot_secrets import resolve_active_token
@@ -22,10 +22,7 @@ from services.shop_runtime import adapters, sessions
 
 def _deployment_enabled() -> bool:
     """Keep all receiver hooks inert under their default deployment flags."""
-    return bool(
-        getattr(config, "SHOP_WORKFLOW_RUNTIME_ENABLED", False)
-        and not getattr(config, "SHOP_WORKFLOW_RUNTIME_KILL_SWITCH", False)
-    )
+    return service_enabled("workflow-runtime")
 
 
 def _financial(payload) -> bool:

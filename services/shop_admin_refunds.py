@@ -10,7 +10,6 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import config
 from models.shop_content import ShopOrder
 from models.shop_multibot import (
     ShopBot,
@@ -18,6 +17,7 @@ from models.shop_multibot import (
 )
 from models.shop_payment import ShopPaymentAttempt, ShopRefundCase
 from models.shop_store_commerce import ShopPaymentAccount
+from services.shop_service_controls import service_enabled
 from services import shop_multibot_client
 from services.shop_admin_security import SecurityRejected
 from services.shop_bot_secrets import resolve_active_token
@@ -177,7 +177,7 @@ async def resolve_admin_refund(
 
     # Check the deployment gate before decryption, relay resolution or client
     # construction. Browser payloads cannot opt in to provider refunds.
-    if getattr(config, "TELEGRAM_STARS_REFUNDS_ENABLED", False) is not True:
+    if service_enabled("telegram-stars-refunds") is not True:
         raise PaymentRejected("بازپرداخت خودکار Stars غیرفعال است.")
     if case.status != "requested":
         raise PaymentRejected("این درخواست بازپرداخت آماده اقدام نیست.")

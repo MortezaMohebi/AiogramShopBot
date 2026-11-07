@@ -39,6 +39,13 @@ class StoreCreate(StrictPayload):
     slug: str = Field(min_length=3, max_length=64)
 
 
+class StoreStateChange(StrictPayload):
+    """Allow only the two reversible Store states and an expected prior state."""
+
+    expected_state: Literal["active", "paused"]
+    state: Literal["active", "paused"]
+
+
 class BotCreate(StrictPayload):
     """Register a disabled-by-default logical bot in the specified store."""
 
@@ -94,11 +101,30 @@ async def create_store(
 ) -> dict:
     """Create only a paused store until later catalog isolation is complete."""
     actor = require(staff, "bots.configure")
-    store = await db.run_sync(lambda sync: registry.create_store(
-        sync, slug=payload.slug, name=payload.name, actor_id=actor.id,
-    ))
+    try:
+        store = await db.run_sync(lambda sync: registry.create_store(
+            sync, slug=payload.slug, name=payload.name, actor_id=actor.id,
+        ))
+    except IntegrityError:
+        await db.rollback()
+        raise security.SecurityRejected("store_slug_exists", 409) from None
     await commit_safely(db, conflict_code="store_slug_exists")
     return {"ok": True, "store": registry.serialize_store(store)}
+
+
+@router.post("/stores/{store_id}/state")
+async def change_store_state(
+    store_id: UUID, payload: StoreStateChange, staff: Staff, db: Db,
+) -> dict:
+    """Update only the explicitly authorized Store after recent session proof."""
+    actor = require(staff, "bots.apply")
+    store = await db.run_sync(lambda sync: registry.change_store_state(
+        sync, store_id=str(store_id), actor_id=actor.id,
+        expected_state=payload.expected_state, state=payload.state,
+    ))
+    result = registry.serialize_store(store)
+    await db.commit()
+    return {"ok": True, "store": result}
 
 
 @router.get("/bot-registry")

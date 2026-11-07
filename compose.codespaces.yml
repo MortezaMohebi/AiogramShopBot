@@ -35,6 +35,7 @@ x-backend-env: &backend-env
   NEXT_ADMIN_BRIDGE_ENABLED: "true"
   NEXT_ADMIN_BRIDGE_SECRET: "${LIVE_BRIDGE_SECRET:?Run setup}"
   SHOP_MEDIA_ROOT: "/bot/media_data"
+  SHOP_DIGITAL_ROOT: "/bot/private_data"
   SHOP_MEDIA_MAX_BYTES: "50000000"
   SHOP_ADMIN_SECURE_COOKIES: "true"
   SHOP_DISPLAY_UNIT: "IRR"
@@ -96,7 +97,7 @@ services:
       bootstrap: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
     command: ["python", "-m", "uvicorn", "scripts.secure_app:app", "--host", "0.0.0.0", "--port", "5000", "--no-access-log"]
-    volumes: ["codespace_media:/bot/media_data", "codespace_static:/bot/static"]
+    volumes: ["codespace_media:/bot/media_data", "codespace_static:/bot/static", "codespace_private:/bot/private_data"]
     expose: ["5000"]
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:5000/healthz', timeout=4).status == 200"]
@@ -148,7 +149,7 @@ services:
       timeout: 5s
       retries: 12
     restart: unless-stopped
-  # One shared queue drainer; disabled Runtime exits cleanly without activation.
+  # One shared queue drainer; Runtime remains idle until explicitly enabled.
   runtime-worker:
     <<: *backend-service
     depends_on:
@@ -160,7 +161,6 @@ services:
     restart: on-failure
   broadcast-worker:
     <<: *backend-service
-    profiles: ["broadcast"]
     environment:
       <<: *backend-env
       SHOP_PROCESS_ROLE: "broadcast_worker"
@@ -169,7 +169,20 @@ services:
       redis: {condition: service_healthy}
     volumes: ["codespace_media:/bot/media_data"]
     command: ["python", "-m", "workers.shop_broadcast"]
-    restart: "no"
+    restart: unless-stopped
+  digital-delivery-worker:
+    <<: *backend-service
+    depends_on:
+      app: {condition: service_healthy}
+    volumes: ["codespace_private:/bot/private_data"]
+    command: ["python", "-m", "workers.shop_digital_delivery"]
+    restart: unless-stopped
+  customer-notifications-worker:
+    <<: *backend-service
+    depends_on:
+      app: {condition: service_healthy}
+    command: ["python", "-m", "workers.shop_customer_notifications"]
+    restart: unless-stopped
   pytest:
     <<: *backend-service
     profiles: ["qa"]
@@ -181,5 +194,6 @@ volumes:
   codespace_redis:
   codespace_media:
   codespace_static:
+  codespace_private:
 networks:
   private: {driver: bridge}

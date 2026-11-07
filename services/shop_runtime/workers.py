@@ -27,6 +27,7 @@ from models.shop_workflow_runtime import (
     WorkflowRun,
     WorkflowWait,
 )
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_action_bindings import write_outputs
 from services.shop_actions.approvals import issue_authorization
@@ -91,7 +92,7 @@ def eligible_bots():
         )
     )
     if (
-        not config.SHOP_WORKFLOW_RUNTIME_ENABLED
+        not service_enabled("workflow-runtime")
         or config.SHOP_WORKFLOW_RUNTIME_KILL_SWITCH
     ):
         query = query.where(False)
@@ -945,6 +946,12 @@ async def run_workers(session_factory, *, stop=None):
     """Run bounded cooperative batches; operational entry point never enables Runtime."""
     stop = stop or asyncio.Event()
     while not stop.is_set():
+        if not service_enabled("workflow-runtime"):
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=1)
+            except TimeoutError:
+                pass
+            continue
         await recover_sending(session_factory)
         progressed = False
         for work in (expire_once, action_once, inbox_once, timeout_once, deliver_once):

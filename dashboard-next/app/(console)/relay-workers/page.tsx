@@ -50,7 +50,7 @@ export default async function RelayWorkersPage({
     </div>
     <div className="rounded-xl border p-4 text-sm leading-7">
       <p>وضعیت Relay: <strong>
-        {data.enabled ? "فعال؛ فقط مسیرهای تأییدشده استفاده می‌شوند" : "در سرور غیرفعال است"}
+        {data.enabled ? "فعال؛ فقط مسیرهای تأییدشده استفاده می‌شوند" : "در بخش سرویس‌ها متوقف است"}
       </strong></p>
       <p>این پنل Worker را Deploy نمی‌کند و Secret را به Cloudflare ارسال نمی‌کند.
         ابتدا Secret هر ربات را جداگانه در Cloudflare پیکربندی کنید؛

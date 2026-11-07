@@ -9,11 +9,15 @@ import type { StoreContextSnapshot } from "@/lib/store-context";
 import type { StoreCommercePolicy } from "@/lib/store-commerce";
 import type { CustomerMenuPolicy, CheckoutPolicy } from "@/lib/customer-experience";
 import { CustomerExperiencePolicyPanel } from "@/components/blocks/customer-experience-policy-panel";
+import { StoreCreateWizard } from "@/components/blocks/store-create-wizard";
+import { StoreStateControl } from "@/components/blocks/store-state-control";
 import { saveStoreCommercePolicy } from "./commerce-actions";
 
 type Query = Promise<{
   saved?: string; error?: string; ux_saved?: string; ux_error?: string;
 }>;
+
+const storeStates = { active: "فعال", paused: "فروش متوقف", archived: "بایگانی‌شده" };
 
 /** Configured Store boundaries, with explicit and conservative sharing. */
 export default async function StoresPage({
@@ -40,12 +44,28 @@ export default async function StoresPage({
     : "";
 
   return <div className="space-y-6">
-    <PageHeading title="فروشگاه‌ها" />
+    <PageHeading title="فروشگاه‌های من" />
     <div className="flex flex-wrap gap-3">
       <Button asChild variant="outline"><Link href="/bots">مدیریت ربات‌ها</Link></Button>
       <Button asChild variant="outline"><Link href="/payment-accounts">حساب‌های پرداخت</Link></Button>
       <Button asChild variant="outline"><Link href="/store-customers">مشتریان فروشگاه</Link></Button>
     </div>
+    <section className="space-y-3" aria-labelledby="my-stores">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h2 id="my-stores" className="text-lg font-semibold">فهرست فروشگاه‌ها</h2>
+        <StoreCreateWizard />
+      </div>
+      {context.stores.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {context.stores.map(store => <li key={store.id} className="min-w-0 space-y-1 rounded-lg border p-3">
+          <p dir="auto" className="break-words font-medium">{store.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {storeStates[store.state]}{store.current ? " · فروشگاه جاری" : store.active ? " · انتخاب‌شده" : ""}
+          </p>
+          {store.current && store.access_level === "manager" && store.state !== "archived" ?
+            <StoreStateControl id={store.id} name={store.name} state={store.state} /> : null}
+        </li>)}
+      </ul> : <p className="text-sm text-muted-foreground">هنوز فروشگاهی ثبت نشده است.</p>}
+    </section>
     {query.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
       سیاست فروشگاه ذخیره شد؛ هیچ اعتبار یا سفارش قدیمی منتقل نشده است.
     </p> : null}
@@ -63,51 +83,51 @@ export default async function StoresPage({
       سبدهای قبلی جداگانه حفظ می‌شوند و هیچ ادغامی خودکار نیست. اعتبار مشترک هم
       تا انتقال حسابرسی‌شدهٔ مانده‌های موجود، فعال نخواهد شد.
     </p>
-    {!stores.length ? <p className="rounded-lg border p-4 text-sm">
-      هنوز فروشگاهی ثبت نشده است. <Link href="/bots" className="underline">فروشگاه ایجاد کنید</Link>.
-    </p> : null}
-    <div className="grid gap-4 xl:grid-cols-2">
-      {stores.map((store, index) => {
-        const policy = policies[index];
-        return <Card key={store.id}>
-          <CardHeader><CardTitle>{store.name}</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              <bdi>{store.slug}</bdi> · {({ active: "فعال", paused: "متوقف", disabled: "غیرفعال", draft: "پیش‌نویس", archived: "بایگانی‌شده" } as Record<string, string>)[store.state] ?? store.state} · نسخهٔ سیاست {policy.version}
-            </p>
-            <form action={saveStoreCommercePolicy} className="space-y-4">
-              <input type="hidden" name="store_id" value={store.id} />
-              <input type="hidden" name="expected_version" value={policy.version} />
-              <label className="block space-y-2 text-sm">مالکیت سبد خرید
-                <select name="cart_scope" defaultValue={policy.cart_scope}
-                  className="block h-10 w-full rounded-md border bg-background px-3">
-                  <option value="bot">هر ربات مستقل</option>
-                  <option value="customer">مشتری تأییدشده در فروشگاه مشترک</option>
-                </select>
-              </label>
-              <label className="block space-y-2 text-sm">مالکیت اعتبار داخلی
-                <select name="credit_scope" defaultValue={policy.credit_scope}
-                  className="block h-10 w-full rounded-md border bg-background px-3">
-                  <option value="identity">اعتبار مستقل هر هویت پیام‌رسان</option>
-                  <option value="customer">اعتبار مشترک مشتری پس از تطبیق موجودی</option>
-                </select>
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block space-y-2 text-sm">رمز فعلی مدیر
-                  <Input name="current_password" type="password" required
-                    autoComplete="current-password" />
+    <section className="space-y-3" aria-labelledby="selected-store-settings">
+      <h2 id="selected-store-settings" className="text-lg font-semibold">تنظیمات فروشگاه‌های انتخاب‌شده</h2>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {stores.map((store, index) => {
+          const policy = policies[index];
+          return <Card key={store.id}>
+            <CardHeader><CardTitle>{store.name}</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                <bdi>{store.slug}</bdi> · {storeStates[store.state]} · نسخهٔ سیاست {policy.version}
+              </p>
+              <form action={saveStoreCommercePolicy} className="space-y-4">
+                <input type="hidden" name="store_id" value={store.id} />
+                <input type="hidden" name="expected_version" value={policy.version} />
+                <label className="block space-y-2 text-sm">مالکیت سبد خرید
+                  <select name="cart_scope" defaultValue={policy.cart_scope}
+                    className="block h-10 w-full rounded-md border bg-background px-3">
+                    <option value="bot">هر ربات مستقل</option>
+                    <option value="customer">مشتری تأییدشده در فروشگاه مشترک</option>
+                  </select>
                 </label>
-                <label className="block space-y-2 text-sm">کد MFA
-                  <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
-                    maxLength={6} autoComplete="one-time-code" required />
+                <label className="block space-y-2 text-sm">مالکیت اعتبار داخلی
+                  <select name="credit_scope" defaultValue={policy.credit_scope}
+                    className="block h-10 w-full rounded-md border bg-background px-3">
+                    <option value="identity">اعتبار مستقل هر هویت پیام‌رسان</option>
+                    <option value="customer">اعتبار مشترک مشتری پس از تطبیق موجودی</option>
+                  </select>
                 </label>
-              </div>
-              <Button type="submit" variant="outline">ذخیره تنظیمات اشتراک</Button>
-            </form>
-          </CardContent>
-        </Card>;
-      })}
-    </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-2 text-sm">رمز فعلی مدیر
+                    <Input name="current_password" type="password" required
+                      autoComplete="current-password" />
+                  </label>
+                  <label className="block space-y-2 text-sm">کد MFA
+                    <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
+                      maxLength={6} autoComplete="one-time-code" required />
+                  </label>
+                </div>
+                <Button type="submit" variant="outline">ذخیره تنظیمات اشتراک</Button>
+              </form>
+            </CardContent>
+          </Card>;
+        })}
+      </div>
+    </section>
     <section className="space-y-4">
       <h2 className="text-lg font-semibold">منو و خرید هر فروشگاه</h2>
       {stores.map((store, index) =>

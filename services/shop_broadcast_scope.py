@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.sql import Select, SQLColumnExpression
 
-import config
+from services.shop_service_controls import registry_broadcast_allowed
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_multibot import (
     ShopBot,
@@ -17,7 +17,7 @@ from models.shop_multibot_receiver import ShopBotReceiver
 
 def registry_dispatch_enabled() -> bool:
     """Require an explicit deployment opt-in for Registry-owned campaigns."""
-    return getattr(config, "SHOP_BROADCAST_REGISTRY_ENABLED", False) is True
+    return registry_broadcast_allowed()
 
 
 def ready_registry_bot(

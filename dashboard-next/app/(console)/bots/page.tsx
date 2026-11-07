@@ -10,7 +10,7 @@ import { adminFetch, currentStaff } from "@/lib/bridge";
 import {
   type BotRegistrySnapshot, botPlatformLabel, botRuntimeLabel,
 } from "@/lib/bot-registry";
-import { createBot, createStore } from "@/app/(console)/bots/actions";
+import { createBot } from "@/app/(console)/bots/actions";
 
 type Params = Promise<{
   page?: string; platform?: string; store_id?: string;
@@ -19,7 +19,7 @@ type Params = Promise<{
 
 const problems: Record<string, string> = {
   validation: "اطلاعات فرم معتبر نیست؛ نام و شناسه‌ها را بررسی کنید.",
-  reauth: "برای ساخت ربات یا فروشگاه، در حساب من احراز هویت مجدد انجام دهید.",
+  reauth: "برای ساخت ربات، در حساب من هویت خود را دوباره تأیید کنید.",
   conflict: "شناسهٔ انتخاب‌شده قبلاً ثبت شده یا نسخهٔ اطلاعات تغییر کرده است.",
   save: "ثبت انجام نشد؛ سرویس و دسترسی حساب را بررسی کنید.",
 };
@@ -103,41 +103,27 @@ export default async function BotsPage({
       </CardContent>
     </Card>
 
-    <div className="grid gap-5 lg:grid-cols-2">
-      <Card><CardHeader><CardTitle><Plus className="me-2 inline size-5" /> ثبت ربات جدید</CardTitle></CardHeader><CardContent>
-        <form action={createBot} className="space-y-4">
-          <label className="block space-y-2 text-sm">فروشگاه
-            <select name="store_id" defaultValue={result.default_store_id} required className="h-10 w-full rounded-md border bg-background px-3">
-              {result.stores.map(store => <option key={store.id} value={store.id}>{store.name} ({({ active: "فعال", paused: "متوقف", disabled: "غیرفعال", draft: "پیش‌نویس", archived: "بایگانی‌شده" } as Record<string, string>)[store.state] ?? store.state})</option>)}
-            </select>
-          </label>
-          <label className="block space-y-2 text-sm">نام ربات
-            <Input name="name" maxLength={160} required placeholder="مثلاً ربات فروش محصولات صنعتی" />
-          </label>
-          <label className="block space-y-2 text-sm">شناسهٔ داخلی (Slug)
-            <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9\-]{2,63}" minLength={3} maxLength={64} required placeholder="industrial-telegram" />
-          </label>
-          <label className="block space-y-2 text-sm">نوع پیام‌رسان
-            <select name="platform" className="h-10 w-full rounded-md border bg-background px-3">
-              <option value="telegram">تلگرام</option><option value="bale">بله</option>
-            </select>
-          </label>
-          <p className="text-xs text-muted-foreground">ایجاد پیش‌نویس، ربات را فعال نمی‌کند.</p>
-          <Button type="submit">ایجاد ربات پیش‌نویس</Button>
-        </form>
-      </CardContent></Card>
-      <Card><CardHeader><CardTitle>تعریف فروشگاه جدید</CardTitle></CardHeader><CardContent>
-        <form action={createStore} className="space-y-4">
-          <label className="block space-y-2 text-sm">نام فروشگاه
-            <Input name="name" required maxLength={160} placeholder="نام نمایشی فروشگاه" />
-          </label>
-          <label className="block space-y-2 text-sm">شناسهٔ فروشگاه
-            <Input name="slug" dir="ltr" required pattern="[a-z][a-z0-9\-]{2,63}" placeholder="second-store" />
-          </label>
-          <p className="text-xs leading-7 text-muted-foreground">فروشگاه جدید با فروش متوقف‌شده ایجاد می‌شود. پیش از شروع فروش، محصولات و روش‌های پرداخت را تنظیم کنید.</p>
-          <Button type="submit" variant="outline">ایجاد فروشگاه</Button>
-        </form>
-      </CardContent></Card>
-    </div>
+    <Card><CardHeader><CardTitle><Plus aria-hidden="true" className="me-2 inline size-5" /> ثبت ربات جدید</CardTitle></CardHeader><CardContent>
+      <form action={createBot} className="space-y-4">
+        <label className="block space-y-2 text-sm">فروشگاه
+          <select name="store_id" defaultValue={result.default_store_id} required className="h-10 w-full rounded-md border bg-background px-3">
+            {result.stores.map(store => <option key={store.id} value={store.id}>{store.name} ({({ active: "فعال", paused: "متوقف", disabled: "غیرفعال", draft: "پیش‌نویس", archived: "بایگانی‌شده" } as Record<string, string>)[store.state] ?? store.state})</option>)}
+          </select>
+        </label>
+        <label className="block space-y-2 text-sm">نام ربات
+          <Input name="name" maxLength={160} required placeholder="مثلاً ربات فروش محصولات صنعتی" />
+        </label>
+        <label className="block space-y-2 text-sm">شناسهٔ داخلی (Slug)
+          <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9\-]{2,63}" minLength={3} maxLength={64} required placeholder="industrial-telegram" />
+        </label>
+        <label className="block space-y-2 text-sm">نوع پیام‌رسان
+          <select name="platform" className="h-10 w-full rounded-md border bg-background px-3">
+            <option value="telegram">تلگرام</option><option value="bale">بله</option>
+          </select>
+        </label>
+        <p className="text-xs text-muted-foreground">ایجاد پیش‌نویس، ربات را فعال نمی‌کند.</p>
+        <Button type="submit">ایجاد ربات پیش‌نویس</Button>
+      </form>
+    </CardContent></Card>
   </div>;
 }

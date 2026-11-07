@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker, Session
 import config
 from models.base import Base
 from models.shop_staff import ShopStaff
+from models.shop_service_control import ShopServiceControl
 from models.shop_admin_control import (
     AdminProfile, AdminSession, AdminEvent,
 )

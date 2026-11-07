@@ -511,7 +511,7 @@ async def test_campaign_mutations_require_the_trusted_current_store(
 
 
 @pytest.mark.asyncio
-async def test_cli_injects_registry_factory_only_when_explicitly_enabled(
+async def test_cli_injects_dynamically_gated_registry_factory(
     registry,
     monkeypatch,
 ):
@@ -547,8 +547,9 @@ async def test_cli_injects_registry_factory_only_when_explicitly_enabled(
     for enabled in (False, True):
         monkeypatch.setattr(config, "SHOP_BROADCAST_REGISTRY_ENABLED", enabled)
         await entrypoint.main()
-    assert recorded[0].get("registry_transport_factory") is None
-    assert callable(recorded[1].get("registry_transport_factory"))
+    assert [item["registry_transport_factory"] for item in recorded] == [
+        entrypoint.registry_transport, entrypoint.registry_transport,
+    ]
 
 
 @pytest.mark.asyncio

@@ -19,12 +19,12 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
-import config
 from channels.contracts import Platform
 from db import engine, session_maker
 from models.shop_multibot import ShopBot
 from models.shop_multibot_receiver import ShopBotReceiver
 from models.shop_delivery import ShopInboundUpdate
+from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services.shop_bot_context import resolve_bot_context
 from services.shop_bot_secrets import resolve_active_token
@@ -53,7 +53,7 @@ class MultiBotSupervisor:
 
     async def start(self) -> None:
         """Acquire an exclusive DB lease and restore only confirmed receivers."""
-        if not getattr(config, "MULTIBOT_V2_RUNTIME_ENABLED", False):
+        if not service_enabled("receivers"):
             LOG.info("Multi-bot v2 receiver is disabled by deployment policy")
             return
         self.lease = await engine.connect()

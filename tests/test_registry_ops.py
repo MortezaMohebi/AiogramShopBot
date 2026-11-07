@@ -169,42 +169,24 @@ def test_migration_preflight_retains_existing_revision():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("enabled,killed", [(False, False), (True, True)])
-async def test_disabled_runtime_worker_stays_idle_without_database_or_provider_work(
+async def test_disabled_runtime_worker_stays_idle_without_queue_or_provider_work(
     monkeypatch, enabled, killed,
 ):
-    """The default shared service stays alive until shutdown without activation."""
-    from types import SimpleNamespace
-    import shop_workflow_runtime as runtime
+    """An idle worker is ready for a later override but never claims queued work."""
+    import asyncio
+    import config
+    from services.shop_runtime import workers
 
-    calls = []
-
-    class Stop:
-        """Complete one bounded idle wait without sleeping in this offline test."""
-
+    class Stop(asyncio.Event):
         async def wait(self):
-            calls.append("idle_wait")
-
-        def set(self):
-            calls.append("stop")
-
-    class Loop:
-        """Record signal wiring without changing the test process handlers."""
-
-        def add_signal_handler(self, *_args):
-            calls.append("signal_installed")
-
-        def remove_signal_handler(self, *_args):
-            calls.append("signal_removed")
+            self.set()
 
     async def forbidden(*_args, **_kwargs):
-        raise AssertionError("Disabled Runtime must not initialize or drain")
+        raise AssertionError("Disabled Runtime must not drain queues")
 
-    monkeypatch.setattr(runtime, "asyncio", SimpleNamespace(
-        Event=Stop, get_running_loop=lambda: Loop(),
-    ))
-    monkeypatch.setattr(runtime.config, "SHOP_WORKFLOW_RUNTIME_ENABLED", enabled)
-    monkeypatch.setattr(runtime.config, "SHOP_WORKFLOW_RUNTIME_KILL_SWITCH", killed)
-    monkeypatch.setattr(runtime, "create_db_and_tables", forbidden)
-    monkeypatch.setattr(runtime, "run_workers", forbidden)
-    await runtime.main()
-    assert calls == ["signal_installed", "idle_wait", "signal_removed"]
+    monkeypatch.setattr(config, "SHOP_WORKFLOW_RUNTIME_ENABLED", enabled)
+    monkeypatch.setattr(config, "SHOP_WORKFLOW_RUNTIME_KILL_SWITCH", killed)
+    monkeypatch.setattr(workers, "recover_sending", forbidden)
+    stop = Stop()
+    await workers.run_workers(forbidden, stop=stop)
+    assert stop.is_set()

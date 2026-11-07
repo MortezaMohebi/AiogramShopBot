@@ -18,6 +18,7 @@ from dashboard.next_api import database
 from models.shop_admin_control import AdminSession
 from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
+from services import shop_account_proof
 from tests.test_campaign_admin_store_scope import campaign_app
 
 
@@ -180,6 +181,62 @@ async def test_older_client_explicit_password_contract_is_preserved(
 
 
 @pytest.mark.asyncio
+async def test_account_wizard_proof_checks_password_and_is_action_scoped(enrollment_app):
+    """The browser proof works with a password and cannot authorize another operation."""
+    app = enrollment_app
+    profile = security.profile_for(app.db, 7)
+    now = security.clock()
+    secret = security.begin_mfa(app.db, profile, now=now)
+    security.confirm_mfa(app.db, profile, security.totp(secret, now.timestamp()), now=now)
+    app.db.commit()
+    payload = {"action": "reauthenticate", "current_password": "incorrect"}
+    denied = await app.request("POST", "/account/verify-password", payload=payload)
+    assert denied.status_code == 401
+    verified = await app.request("POST", "/account/verify-password", payload={
+        **payload, "current_password": "Synthetic-enrollment-password-123",
+    })
+    assert verified.status_code == 200, verified.text
+    proof = {"proof_token": verified.json()["proof_token"]}
+    other_action = await app.request("POST", "/account/username", payload={
+        **proof, "username": "another-name",
+    })
+    assert other_action.status_code == 403
+    confirmed = await app.request("POST", "/account/reauthenticate", payload=proof)
+    assert confirmed.status_code == 200, confirmed.text
+
+
+def test_account_wizard_proof_expires_and_cannot_move_to_another_session():
+    """A proof cannot be reused after session rotation or outside its TTL."""
+    secret = "synthetic-bridge-secret-for-account-proof-tests"
+    issued = 1_800_000_000
+    proof = shop_account_proof.issue(secret, "session-a", 2, "password", now=issued)
+    assert shop_account_proof.valid(secret, proof, "session-a", 2, "password", now=issued)
+    assert not shop_account_proof.valid(secret, proof, "session-b", 2, "password", now=issued)
+    assert not shop_account_proof.valid(secret, proof, "session-a", 3, "password", now=issued)
+    assert not shop_account_proof.valid(
+        secret, proof, "session-a", 2, "password",
+        now=issued + shop_account_proof.PROOF_LIFETIME,
+    )
+
+
+@pytest.mark.asyncio
+async def test_unenrolled_admin_can_verify_only_for_enrollment(enrollment_app):
+    """A setup-only session can open the authenticator wizard, not step up."""
+    app = enrollment_app
+    password = "Synthetic-enrollment-password-123"
+    for action, status in [("reauthenticate", 428), ("mfa-setup", 200)]:
+        verified = await app.request("POST", "/account/verify-password", payload={
+            "action": action, "current_password": password,
+        })
+        assert verified.status_code == status, verified.text
+    staged = await app.request("POST", "/account/mfa-setup", payload={
+        "proof_token": verified.json()["proof_token"],
+    })
+    assert staged.status_code == 200, staged.text
+    assert staged.json()["qr_data_uri"].startswith("data:image/png;base64,")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["mfa-disable", "password", "username"])
 async def test_other_sensitive_actions_still_require_password(enrollment_app, action):
     """Removing duplicate proof at setup does not alter other action contracts."""
@@ -195,5 +252,5 @@ async def test_other_sensitive_actions_still_require_password(enrollment_app, ac
         "POST", "/account/" + action, payload={},
     )
     assert response.status_code == 422, response.text
-    assert any(error["loc"] == ["body", "current_password"]
+    assert any(error["loc"][-1] == "current_password"
                for error in response.json()["detail"])

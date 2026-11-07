@@ -11,10 +11,10 @@ from contextlib import asynccontextmanager
 
 from aiohttp import ClientSession, ClientTimeout
 
-import config
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from channels.bale import BaleTransport
+from services.shop_service_controls import service_enabled
 from utils.telegram import create_bot
 
 
@@ -26,7 +26,7 @@ async def provider_client(
     if not isinstance(bot_id, str) or not bot_id:
         raise ValueError("A registered bot ID is required for provider connections.")
     if platform == "telegram":
-        if config.SHOP_RELAY_POOL_ENABLED:
+        if service_enabled("relay-pool"):
             from services.shop_relay_routing import build_bot_relay_session
 
             transport = await build_bot_relay_session(bot_id)

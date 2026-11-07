@@ -1,39 +1,55 @@
 "use client";
+
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-import Link from "next/link";
+import { AccountSecurityWizard, type SecurityAction } from "@/components/blocks/account-security-wizard";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { type AccountData, ControlActionError, controlAction, permissionLabels } from "@/lib/account-control";
+import { type AccountData, controlAction, permissionLabels } from "@/lib/account-control";
 
-/** Each proof is entered by the owner; passwords are never trimmed or persisted. */
-function ProofFields({ factor, disabled }: { factor: boolean; disabled: boolean }) {
-  return <div className="grid gap-3 md:grid-cols-2">
-    <label className={factor ? "space-y-2 text-sm" : "space-y-2 text-sm md:col-span-2"}>رمز فعلی
-      <Input name="current_password" type="password" autoComplete="current-password" maxLength={256} required disabled={disabled} dir="ltr" />
-    </label>
-    {factor ? <label className="space-y-1 text-sm">کد احراز هویت یا بازیابی
-      <Input name="second_factor" autoComplete="one-time-code" maxLength={64} required disabled={disabled} dir="ltr" />
-    </label> : null}
-  </div>;
-}
-const eventLabels: Record<string, string> = {
-  "session.created": "ورود جدید", "session.revoked": "خروج از یک دستگاه", "session.others_revoked": "ابطال نشست‌های دیگر",
-  "account.profile_changed": "ویرایش مشخصات", "account.password_changed": "تغییر رمز", "mfa.enabled": "فعال‌سازی MFA",
-  "mfa.disabled": "غیرفعال‌سازی MFA", "mfa.recovery_used": "استفاده از کد بازیابی", "mfa.enrollment_started": "شروع فعال‌سازی MFA",
+const roleLabels: Record<string, string> = {
+  superadmin: "مدیر اصلی", finance: "مالی", sales: "فروش", content: "محتوا",
+  marketing: "بازاریابی", viewer: "مشاهده",
 };
-/** Self-service, revocable sessions and explicit security actions for every role. */
+const eventLabels: Record<string, string> = {
+  "staff.first_owner_created": "حساب مدیر اصلی ایجاد شد",
+  "session.created": "ورود جدید", "session.revoked": "خروج از یک دستگاه",
+  "session.others_revoked": "خروج از دستگاه‌های دیگر", "account.profile_changed": "ویرایش مشخصات",
+  "account.password_changed": "تغییر رمز عبور", "account.username_changed": "تغییر نام کاربری",
+  "account.reauthenticated": "تأیید مجدد هویت", "mfa.enabled": "فعال‌سازی احراز هویت دومرحله‌ای",
+  "mfa.disabled": "غیرفعال‌سازی احراز هویت دومرحله‌ای", "mfa.recovery_used": "استفاده از کد بازیابی",
+  "mfa.enrollment_started": "شروع فعال‌سازی احراز هویت دومرحله‌ای",
+};
+const permissionGroups = [
+  { name: "مدیریت حساب و فروشگاه", prefixes: ["account", "dashboard", "settings", "staff", "audit"] },
+  { name: "فروش و مشتریان", prefixes: ["catalog", "media", "customers", "orders", "shipping", "coupons"] },
+  { name: "امور مالی و گزارش‌ها", prefixes: ["finance", "wallet", "refund", "reports"] },
+  { name: "ربات‌ها و عملیات", prefixes: ["bots", "workflows", "actions", "campaigns", "broadcast"] },
+];
+
+/** Summarize browser identity without exposing the full user-agent string. */
+function deviceLabel(agent: string): string {
+  const browser = /Edg(?:e|A|iOS)?\//i.test(agent) ? "Edge"
+    : /OPR\//i.test(agent) ? "Opera" : /Firefox|FxiOS/i.test(agent) ? "Firefox"
+    : /Chrome|CriOS/i.test(agent) ? "Chrome" : /Safari/i.test(agent) ? "Safari" : "";
+  const system = /Windows/i.test(agent) ? "Windows" : /Android/i.test(agent) ? "Android"
+    : /iPhone|iPad|iPod/i.test(agent) ? "iOS" : /Macintosh|Mac OS/i.test(agent) ? "macOS"
+    : /Linux/i.test(agent) ? "Linux" : "";
+  return browser && system ? `${browser} در ${system}` : browser || system || "دستگاه ناشناس";
+}
+
+type SessionTarget = { action: "revoke-others" } | { action: "revoke-session"; id: string; current: boolean };
+
 export function AccountPanel({ initial }: { initial: AccountData }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false), [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  const [mfaLoginRequired, setMfaLoginRequired] = useState(false);
-  const [enrollment, setEnrollment] = useState<{
-    secret: string;
-    qrDataUri: string;
-  } | null>(null), [recovery, setRecovery] = useState<string[]>([]);
-  // The browser supplies a searchable, official list of IANA time zones.
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [wizard, setWizard] = useState<SecurityAction | null>(null);
+  const [sessionTarget, setSessionTarget] = useState<SessionTarget | null>(null);
+  const [sessionError, setSessionError] = useState("");
   const zones = typeof Intl.supportedValuesOf === "function"
     ? Intl.supportedValuesOf("timeZone")
     : ["Asia/Tehran", "Asia/Tokyo", "Europe/London", "UTC"];
@@ -42,123 +58,68 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
   const calendarLocale =
     initial.preferences.calendar === "gregorian" ? "fa-IR-u-ca-gregory" :
     initial.preferences.calendar === "jalali" ? "fa-IR-u-ca-persian" :
-    initial.preferences.language === "en" ? "en-US-u-ca-gregory" :
-    "fa-IR-u-ca-persian";
-  function date(value: string) {
-    return new Date(value).toLocaleString(calendarLocale, {
-      timeZone: initial.time_zone,
-    });
-  }
-  async function perform(action: string, payload: unknown, form?: HTMLFormElement) {
+    initial.preferences.language === "en" ? "en-US-u-ca-gregory" : "fa-IR-u-ca-persian";
+  const formatter = new Intl.DateTimeFormat(calendarLocale, {
+    timeZone: initial.time_zone, dateStyle: "short", timeStyle: "short",
+  });
+  const date = (value: string) => formatter.format(new Date(value));
+
+  async function perform(action: string, payload: unknown) {
     if (busy) return;
-    setBusy(true); setNotice(null);
+    setBusy(true);
+    setNotice(null);
+    setSessionError("");
     try {
       const result = await controlAction(action, payload);
-      if (result.login_required) { router.replace("/login?expired=1"); router.refresh(); return; }
-      if (action === "reauthenticate" || action === "mfa-setup") setMfaLoginRequired(false);
-      if (action === "mfa-setup") {
-        if (
-          !result.secret ||
-          !result.qr_data_uri?.startsWith("data:image/png;base64,")
-        ) {
-          throw new Error("کد QR دریافت نشد. دوباره فعال‌سازی را شروع کنید.");
-        }
-        setEnrollment({
-          secret: result.secret,
-          qrDataUri: result.qr_data_uri,
-        });
-      }
-      if (result.recovery_codes) { setRecovery(result.recovery_codes); setEnrollment(null); }
-      const successMessages: Record<string, string> = {
-        profile: "مشخصات ذخیره شد.",
-        preferences: "ترجیحات ذخیره شد.",
-        username: "نام کاربری تغییر کرد.",
-        password: "رمز عبور تغییر کرد.",
-        "mfa-setup": "کد برنامهٔ احراز هویت را برای تکمیل فعال‌سازی وارد کنید.",
-        "mfa-confirm": "احراز هویت دومرحله‌ای فعال شد.",
-        "mfa-disable": "احراز هویت دومرحله‌ای غیرفعال شد.",
-        reauthenticate: "هویت شما تأیید شد. این تأیید پنج دقیقه اعتبار دارد.",
-        "revoke-others": "نشست‌های دستگاه‌های دیگر بسته شد.",
-        "revoke-session": "نشست دستگاه بسته شد.",
+      if (result.login_required) { window.location.replace("/login"); return; }
+      setSessionTarget(null);
+      const messages: Record<string, string> = {
+        profile: "مشخصات ذخیره شد.", preferences: "ترجیحات ذخیره شد.",
+        "revoke-others": "از دستگاه‌های دیگر خارج شدید.", "revoke-session": "نشست دستگاه بسته شد.",
       };
-      setNotice({ ok: true, text: successMessages[action] ?? "تغییرات حساب ذخیره شد." });
-      if (action !== "profile" && action !== "preferences") form?.reset();
+      setNotice({ ok: true, text: messages[action] ?? "تغییرات حساب ذخیره شد." });
       router.refresh();
     } catch (error) {
-      if (action === "mfa-setup" && error instanceof ControlActionError && error.code === "reauthentication_required") {
-        setMfaLoginRequired(true);
-        setNotice({ ok: false, text: "زمان تأیید ورود پایان یافته است. دوباره وارد شوید و فعال‌سازی را ادامه دهید." });
-      } else {
-        setNotice({ ok: false, text: error instanceof Error ? error.message : "عملیات انجام نشد." });
-      }
-    }
-    finally { setBusy(false); }
+      const text = error instanceof Error ? error.message : "عملیات انجام نشد.";
+      if (sessionTarget) setSessionError(text);
+      else setNotice({ ok: false, text });
+    } finally { setBusy(false); }
   }
+
   function submit(event: FormEvent<HTMLFormElement>, action: string) {
-    event.preventDefault(); const form = event.currentTarget, values = new FormData(form);
-    const payload: Record<string, string> = {};
-    for (const [key, value] of values) if (typeof value === "string") payload[key] = value;
-    void perform(action, payload, form);
+    event.preventDefault();
+    void perform(action, Object.fromEntries(new FormData(event.currentTarget)));
   }
-  const noticeMessage = notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null;
-  const mfaCard = <Card><CardHeader><CardTitle>احراز هویت دومرحله‌ای</CardTitle></CardHeader><CardContent className="space-y-4">
-      <p className="text-sm">وضعیت: <strong>{initial.mfa_enabled ? "فعال" : "غیرفعال"}</strong></p>
-      {initial.mfa_required_by_role ? <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">برای نقش شما MFA اجباری است. تا زمان فعال‌سازی، دسترسی به امکانات مدیریتی محدود می‌ماند.</p> : null}
-      {recovery.length ? <div role="status" className="space-y-3 rounded-lg border p-4">
-        <p className="text-sm">این کدها فقط همین بار نمایش داده می‌شوند. در محلی امن ذخیره کنید؛ هر کد یک‌بار قابل استفاده است.</p>
-        <pre dir="ltr" className="overflow-auto text-xs">{recovery.join("\n")}</pre>
-        <Button type="button" variant="outline" onClick={() => setRecovery([])}>پنهان کردن کدها</Button>
-      </div> : null}
-      {enrollment ? <div className="space-y-4">
-        <p className="text-sm leading-7">
-          در برنامهٔ Authenticator گزینهٔ افزودن حساب و اسکن QR Code را
-          انتخاب کنید. سپس کد شش‌رقمی برنامه را برای فعال‌سازی وارد کنید.
-        </p>
-        {/* QR generation happens in our Backend; the TOTP secret is never
-            sent to a third-party image service or CDN. */}
-        <div className="mx-auto w-fit max-w-full rounded-xl border bg-white p-3 shadow-sm">
-          <Image
-            src={enrollment.qrDataUri}
-            alt="QR Code فعال‌سازی احراز هویت دومرحله‌ای"
-            width={260}
-            height={260}
-            unoptimized
-            className="h-auto w-full max-w-[260px]"
-          />
-        </div>
-        <details className="rounded-lg border p-3 text-sm">
-          <summary className="cursor-pointer font-medium">
-            امکان اسکن ندارم؛ نمایش کلید برای ورود دستی
-          </summary>
-          <p className="mt-3 text-xs leading-6 text-muted-foreground">
-            این کلید محرمانه است. آن را با دیگران به اشتراک نگذارید.
-          </p>
-          <code dir="ltr" className="mt-2 block select-all break-all rounded-md bg-muted p-3 text-xs">
-            {enrollment.secret}
-          </code>
-        </details>
-        <form onSubmit={(event) => submit(event, "mfa-confirm")} className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1 text-sm">کد تأیید<Input name="code" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="one-time-code" inputMode="numeric" required dir="ltr" disabled={busy} /></label>
-          <Button type="submit" disabled={busy}>تأیید و فعال‌سازی</Button>
-        </form>
-      </div> : !initial.mfa_enabled ? mfaLoginRequired ?
-        <Button asChild><Link href="/login">ورود دوباره</Link></Button> :
-        <form onSubmit={(event) => submit(event, "mfa-setup")} className="space-y-4">
-          <p className="text-sm leading-7">برای افزودن حساب به برنامهٔ Authenticator، فعال‌سازی را شروع کنید؛ سپس کد شش‌رقمی برنامه را وارد کنید.</p>
-          <Button type="submit" disabled={busy}>شروع فعال‌سازی MFA</Button>
-        </form> : <form onSubmit={(event) => submit(event, "mfa-disable")} className="space-y-4">
-        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        {!(initial.mfa_enabled && initial.mfa_required_by_role) ? <Button type="submit" variant={initial.mfa_enabled ? "destructive" : "default"} disabled={busy}>{initial.mfa_enabled ? "غیرفعال‌سازی MFA" : "شروع فعال‌سازی MFA"}</Button> : null}
-      </form>}
-    </CardContent></Card>;
-  // Only enrollment actions are allowed until the role’s mandatory factor exists.
-  if (initial.mfa_required_by_role && !initial.mfa_enabled) {
-    return <div className="mx-auto max-w-2xl space-y-5" aria-busy={busy}>{noticeMessage}{mfaCard}</div>;
-  }
+
+  const needsEnrollment = initial.mfa_required_by_role && !initial.mfa_enabled;
+  const sessions = [...initial.sessions].sort((a, b) =>
+    Number(b.current) - Number(a.current) || Number(b.active) - Number(a.active));
+  const mfaStatus = initial.mfa_enabled
+    ? initial.mfa_required_by_role ? "فعال و الزامی برای نقش شما" : "فعال"
+    : "غیرفعال";
+  const mfaCard = <Card><CardHeader><CardTitle>احراز هویت دومرحله‌ای</CardTitle></CardHeader>
+    <CardContent className="space-y-3">
+      <Badge tone={initial.mfa_enabled ? "success" : "neutral"}>{mfaStatus}</Badge>
+      {needsEnrollment ? <p className="text-sm leading-7 text-muted-foreground">برای ورود به داشبورد، احراز هویت دومرحله‌ای را فعال کنید.</p> : null}
+      {!initial.mfa_enabled ? <div><Button type="button" onClick={() => setWizard("mfa-setup")}>فعال‌سازی</Button></div>
+        : !initial.mfa_required_by_role ? <div><Button type="button" variant="outline" onClick={() => setWizard("mfa-disable")}>غیرفعال‌سازی</Button></div> : null}
+    </CardContent>
+  </Card>;
+
   return <div className="space-y-5" aria-busy={busy}>
-    {noticeMessage}
+    {wizard ? <AccountSecurityWizard key={wizard} action={wizard}
+      minimumPassword={initial.password_policy.min_length} onClose={() => setWizard(null)}
+      onSuccess={text => setNotice({ ok: true, text })} /> : null}
+    {notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null}
+    {needsEnrollment ? mfaCard : <>
+    <nav aria-label="بخش‌های حساب" className="flex flex-wrap gap-2">
+      <Button asChild variant="outline" size="sm"><a href="#account-profile">مشخصات و ترجیحات</a></Button>
+      <Button asChild variant="outline" size="sm"><a href="#account-security">ورود و امنیت</a></Button>
+      <Button asChild variant="outline" size="sm"><a href="#account-activity">فعالیت و دسترسی‌ها</a></Button>
+    </nav>
+    <section id="account-profile" aria-label="مشخصات و ترجیحات" className="scroll-mt-5 space-y-4">
     <Card><CardHeader><CardTitle>مشخصات من</CardTitle></CardHeader><CardContent>
-      <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b>{({superadmin:"مدیر اصلی",finance:"مالی",sales:"فروش",content:"محتوا",marketing:"بازاریابی",viewer:"مشاهده"} as Record<string,string>)[initial.role] ?? initial.role}</b></p>
+      <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b>{roleLabels[initial.role] ?? "کاربر"}</b></p>
       <form onSubmit={(event) => submit(event, "profile")} className="grid gap-4 md:grid-cols-2">
         <label className="block space-y-2 text-sm">نام نمایشی<Input className="h-10 w-full" name="display_name" defaultValue={initial.display_name} maxLength={120} disabled={busy} /></label>
         <label className="block space-y-2 text-sm">منطقهٔ زمانی
@@ -181,7 +142,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
           notify_campaigns: data.has("notify_campaigns"),
           notify_finance: data.has("notify_finance"),
           notify_system: data.has("notify_system"),
-        }, form);
+        });
       }} className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block space-y-2 text-sm">زبان ترجیحی پنل
@@ -218,46 +179,91 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
         <Button type="submit" variant="outline" disabled={busy}>ذخیره ترجیحات</Button>
       </form>
     </CardContent></Card>
-    <Card><CardHeader><CardTitle>تغییر نام کاربری</CardTitle></CardHeader><CardContent>
-      <form onSubmit={(event) => submit(event, "username")} className="space-y-4">
-        <p className="text-xs text-muted-foreground">تغییر نام کاربری نیازمند رمز فعلی و MFA است. پس از تغییر، تمام دستگاه‌ها خارج خواهند شد.</p>
-        <label className="block space-y-2 text-sm">نام کاربری جدید
-          <Input name="username" dir="ltr" minLength={3} maxLength={80}
-            pattern="[a-z0-9][a-z0-9_.\-]{2,79}" required disabled={busy}
-            autoCapitalize="none" autoCorrect="off" />
-        </label>
-        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <Button type="submit" variant="outline" disabled={busy}>تغییر نام کاربری و خروج از نشست‌ها</Button>
-      </form>
-    </CardContent></Card>
-    <Card><CardHeader><CardTitle>تغییر رمز عبور</CardTitle></CardHeader><CardContent>
-      <form onSubmit={(event) => submit(event, "password")} className="space-y-4">
-        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <label className="block space-y-1 text-sm">رمز تازه (حداقل {initial.password_policy.min_length} نویسه)<Input name="new_password" type="password" autoComplete="new-password" minLength={initial.password_policy.min_length} maxLength={256} dir="ltr" required disabled={busy} /></label>
-        <p className="text-xs leading-6 text-muted-foreground">بعد از تغییر رمز، تمام نشست‌ها بسته می‌شوند و باید دوباره وارد شوید.</p>
-        <Button type="submit" disabled={busy}>تغییر رمز و خروج از همه دستگاه‌ها</Button>
-      </form>
-    </CardContent></Card>
+    </section>
+    <section id="account-security" aria-label="ورود و امنیت" className="scroll-mt-5 space-y-4">
+    <Card>
+      <CardHeader><CardTitle>ورود و امنیت</CardTitle></CardHeader>
+      <CardContent className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={() => setWizard("username")}>تغییر نام کاربری</Button>
+        <Button type="button" variant="outline" onClick={() => setWizard("password")}>تغییر رمز عبور</Button>
+        <Button type="button" variant="outline" onClick={() => setWizard("reauthenticate")}>تأیید هویت برای عملیات حساس</Button>
+      </CardContent>
+    </Card>
     {mfaCard}
-    <Card><CardHeader><CardTitle>تأیید مجدد هویت برای عملیات حساس</CardTitle></CardHeader><CardContent>
-      <form onSubmit={(event) => submit(event, "reauthenticate")} className="space-y-4">
-        <ProofFields factor={initial.mfa_enabled} disabled={busy} />
-        <Button type="submit" variant="outline" disabled={busy}>تأیید هویت برای پنج دقیقه</Button>
-      </form>
-    </CardContent></Card>
-    <Card><CardHeader><CardTitle>نشست‌ها و دستگاه‌ها</CardTitle></CardHeader><CardContent className="space-y-3">
-      <p className="text-xs leading-6 text-muted-foreground">ورود عادی پس از ۳۰ دقیقه بی‌فعالیتی یا حداکثر ۸ ساعت پایان می‌یابد. با انتخاب «مرا به خاطر بسپار»، نشست تا ۳۰ روز اعتبار دارد. خروج از حساب یا تغییر رمز، نشست را زودتر می‌بندد.</p>
-      <Button type="button" variant="outline" disabled={busy} onClick={() => void perform("revoke-others", {})}>خروج از همه دستگاه‌های دیگر</Button>
-      {initial.sessions.map((session) => <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-xs">
-        <div className="min-w-0 space-y-1"><p dir="ltr" className="break-all">{session.label}</p><p>{session.current ? "این دستگاه · " : ""}{session.active ? "فعال" : "پایان‌یافته"} · آخرین فعالیت: {date(session.last_seen_at)}</p><p>پایان اعتبار: {date(session.expires_at)}</p></div>
-        {session.active ? <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void perform("revoke-session", { session_id: session.id })}>خروج از دستگاه</Button> : null}
-      </div>)}
-    </CardContent></Card>
-    <Card><CardHeader><CardTitle>دسترسی‌های مؤثر من</CardTitle></CardHeader><CardContent>
-      <div className="grid gap-2 sm:grid-cols-2">{initial.permissions.map((permission) => <p key={permission} className="rounded-md bg-muted p-2 text-xs">{permissionLabels[permission] ?? permission}</p>)}</div>
+    <Card>
+      <CardHeader><CardTitle>نشست‌ها و دستگاه‌ها</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">{sessions.filter(session => session.active).length.toLocaleString("fa-IR")} نشست فعال</p>
+          {sessions.some(session => session.active && !session.current) ?
+            <Button type="button" variant="outline" size="sm" disabled={busy}
+              onClick={() => { setSessionError(""); setSessionTarget({ action: "revoke-others" }); }}>
+              خروج از همهٔ دستگاه‌های دیگر
+            </Button> : null}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {sessions.map(session => <article key={session.id}
+            className={`min-w-0 space-y-1.5 rounded-lg border p-3 ${session.current ? "border-primary/50 bg-primary/5" : ""}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <strong className="text-sm"><bdi>{deviceLabel(session.label)}</bdi></strong>
+              {session.current ? <Badge tone="success">این دستگاه</Badge>
+                : !session.active ? <Badge tone="neutral">پایان‌یافته</Badge> : null}
+            </div>
+            <p className="text-xs text-muted-foreground">آخرین فعالیت {date(session.last_seen_at)}</p>
+            {session.active ? <div className="flex flex-wrap items-center justify-between gap-1">
+              <p className="text-xs text-muted-foreground">پایان اعتبار {date(session.expires_at)}</p>
+              <Button type="button" variant="ghost" size="sm" disabled={busy}
+                aria-label={session.current ? "خروج از این دستگاه" : `خروج از ${deviceLabel(session.label)}`} onClick={() => {
+                setSessionError("");
+                setSessionTarget({ action: "revoke-session", id: session.id, current: session.current });
+              }}>خروج</Button>
+            </div> : null}
+          </article>)}
+        </div>
+        {!sessions.length ? <p className="text-sm text-muted-foreground">نشستی ثبت نشده است.</p> : null}
+      </CardContent>
+    </Card>
+    </section>
+    <section id="account-activity" aria-label="فعالیت و دسترسی‌ها" className="scroll-mt-5 space-y-4">
+    <Card><CardHeader><CardTitle>دسترسی‌های حساب</CardTitle></CardHeader><CardContent>
+      <details className="space-y-3">
+        <summary className="cursor-pointer text-sm font-medium">مشاهدهٔ دسترسی‌های نقش {roleLabels[initial.role] ?? "کاربر"}</summary>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {permissionGroups.map(group => {
+            const entries = initial.permissions.filter(permission =>
+              group.prefixes.some(prefix => permission.startsWith(prefix + ".")) && Object.hasOwn(permissionLabels, permission));
+            return entries.length ? <div className="space-y-2 rounded-lg border p-3" key={group.name}>
+              <h3 className="text-sm font-medium">{group.name}</h3>
+              <ul className="list-inside list-disc space-y-1 text-xs text-muted-foreground">
+                {entries.map(permission => <li key={permission}>{permissionLabels[permission]}</li>)}
+              </ul>
+            </div> : null;
+          })}
+        </div>
+      </details>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>رویدادهای امنیتی اخیر</CardTitle></CardHeader><CardContent>
-      {initial.events.length ? initial.events.map((event) => <div key={event.id} className="flex flex-wrap justify-between gap-4 border-b py-2 text-xs"><span>{eventLabels[event.action] ?? event.action}</span><time>{date(event.created_at)}</time></div>) : <p className="text-sm text-muted-foreground">رویدادی ثبت نشده است.</p>}
+      {initial.events.length ? initial.events.map(event => <div key={event.id} className="flex flex-wrap justify-between gap-2 border-b py-2 text-sm">
+        <span>{eventLabels[event.action] ?? "رویداد امنیتی حساب"}</span><time dateTime={event.created_at} className="text-xs text-muted-foreground">{date(event.created_at)}</time>
+      </div>) : <p className="text-sm text-muted-foreground">رویدادی ثبت نشده است.</p>}
     </CardContent></Card>
+    </section>
+    </>}
+    {sessionTarget ? <Dialog open label="تأیید خروج از دستگاه" onClose={() => { if (!busy) setSessionTarget(null); }}>
+      <section className="space-y-4 p-5">
+        <h2 className="text-lg font-semibold">تأیید خروج از دستگاه</h2>
+        <p className="text-sm leading-7">{sessionTarget.action === "revoke-others"
+          ? "نشست دستگاه‌های دیگر بسته می‌شود. این دستگاه همچنان وارد می‌ماند."
+          : sessionTarget.current ? "از حساب در همین دستگاه خارج می‌شوید." : "برای استفاده از پنل در آن دستگاه باید دوباره وارد شوید."}</p>
+        {sessionError ? <p role="alert" className="text-sm text-destructive">{sessionError}</p> : null}
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="destructive" disabled={busy} onClick={() =>
+            void perform(sessionTarget.action, sessionTarget.action === "revoke-others" ? {} : { session_id: sessionTarget.id })}>
+            {busy ? "در حال خروج…" : "تأیید خروج"}
+          </Button>
+          <Button type="button" variant="outline" disabled={busy} onClick={() => setSessionTarget(null)}>انصراف</Button>
+        </div>
+      </section>
+    </Dialog> : null}
   </div>;
 }
