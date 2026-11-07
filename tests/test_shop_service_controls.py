@@ -44,11 +44,22 @@ def test_switch_is_versioned_and_audited_atomically(monkeypatch):
             assert [(event.action, event.target) for event in events] == [
                 ("services.enabled", "receivers"),
             ]
-            with pytest.raises(SecurityRejected, match="service_prerequisite_missing"):
-                controls.write_override(
-                    db, key="telegram-fiat", enabled=True, expected_version=0, actor_id=1,
-                )
-            assert controls.read_overrides(db) == {"receivers": True}
+            assert controls.blocked_reason("telegram-fiat") == "irr_provider_unconfigured"
+            controls.write_override(
+                db, key="telegram-fiat", enabled=True, expected_version=0, actor_id=1,
+            )
+            assert controls.read_overrides(db) == {"receivers": True, "telegram-fiat": True}
+            pending = next(item for item in controls.describe_controls(db)
+                           if item["key"] == "telegram-fiat")
+            assert pending["override"] is True
+            assert pending["enabled"] is False
+            assert pending["blocked_reason"] == "irr_provider_unconfigured"
+            monkeypatch.setattr(controls, "_snapshot", controls.ServiceSnapshot(
+                controls.read_overrides(db),
+            ))
+            assert not controls.service_enabled("telegram-fiat")
+            monkeypatch.setattr(config, "TELEGRAM_IRR_MINOR_MULTIPLIER", 1)
+            assert controls.service_enabled("telegram-fiat")
 
 
 @pytest.mark.asyncio

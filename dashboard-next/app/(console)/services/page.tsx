@@ -30,7 +30,7 @@ export default async function ServicesPage({ searchParams }: {
       وضعیت سرویس‌های این نصب را تغییر دهید. هر سرویس هنگام اجرا، تنظیمات و مجوزهای ربات و فروشگاه را بررسی می‌کند.
     </p>
     {query.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      تنظیم سرویس ذخیره شد. اعمال آن چند ثانیه طول می‌کشد.
+      تنظیم سرویس ذخیره شد. وضعیت اجرا و پیش‌نیازها را در کارت همان سرویس ببینید.
     </p> : null}
     {query.error ? <div role="alert" className="space-y-2 rounded-lg border border-destructive/40 p-3 text-sm">
       <p>{errors[query.error] ?? errors.save}</p>

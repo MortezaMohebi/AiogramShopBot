@@ -145,8 +145,6 @@ def write_override(
     """Serialize competing writes and audit the change in the same transaction."""
     if key not in FLAGS:
         raise security.SecurityRejected("service_control_not_found", 404)
-    if enabled is True and blocked_reason(key):
-        raise security.SecurityRejected("service_prerequisite_missing", 409)
     if db.get_bind().dialect.name == "postgresql":
         # An absent row cannot be locked with SELECT FOR UPDATE.
         db.execute(text("SELECT pg_advisory_xact_lock(90211034)"))
