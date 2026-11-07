@@ -200,7 +200,16 @@ async def test_product_card_callback_works_when_gallery_footer_is_active(
     scope, _ = await setup_dispatch(db, monkeypatch, platform)
 
     class CardClient(NativeClient):
-        """Represent provider markup editing when a callback is rejected."""
+        """Record provider edits as well as stale markup removal."""
+
+        async def edit_message_text(self, **kwargs):
+            """Accept Telegram's edit of the tracked footer message."""
+            self.messages.append(kwargs)
+
+        async def send(self, chat_id, reply, *, edit_message_id=None):
+            """Accept Bale's edit of the tracked footer message."""
+            self.messages.append({"text": reply.text, "rows": reply.rows})
+            return edit_message_id or 101
 
         async def edit_message_reply_markup(self, **kwargs):
             """Accept Telegram's request to remove obsolete buttons."""
@@ -213,17 +222,11 @@ async def test_product_card_callback_works_when_gallery_footer_is_active(
         expires_at=datetime.now(timezone.utc),
     ))
     db.session.commit()
-    delivered = []
-
-    async def capture_send(context, client, chat_id, reply, *, event=None):
-        """Capture the result after real dispatch and catalog authorization."""
-        delivered.append(reply)
-
-    monkeypatch.setattr("services.shop_multibot_dispatch._send", capture_send)
     payload = raw(callback=f"{action}:{product.id}:0:0")
     payload["callback_query"]["message"]["message_id"] = 99
     result = await dispatch(scope, native, payload)
 
     assert result["status"] == "processed"
     assert native.acks == ["cb"]
-    assert product.name in delivered[0].text
+    assert any(product.name in message.get("text", "") for message in native.messages)
+    assert db.session.get(ShopCustomerChatState, (scope.bot_id, 101)).ui_message_id == 100
