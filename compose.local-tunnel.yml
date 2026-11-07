@@ -1,0 +1,42 @@
+# Local Windows/WSL test overlay. Cloudflare routes terminate at these internal
+# Docker service names; only the dashboard remains bound to host 127.0.0.1.
+services:
+  webhook-gateway:
+    image: nginx:1.29-alpine
+    user: "101:101"
+    volumes:
+      - ./deploy/local-tunnel/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      bot:
+        condition: service_healthy
+    networks: [private]
+    expose: ["8080"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/_edge/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+    secrets: [cloudflare_tunnel_token]
+    depends_on:
+      next-admin:
+        condition: service_started
+      webhook-gateway:
+        condition: service_healthy
+    networks: [private]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: unless-stopped
+
+secrets:
+  cloudflare_tunnel_token:
+    file: ./.secrets/cloudflare-tunnel-token
