@@ -53,6 +53,9 @@ class BotReply:
     # Preview is the replaceable card image; attachments are persistent
     # on-demand messages and must never be deleted during navigation.
     preview: MediaAttachment | None = None
+    # A bounded gallery page contains independent photo/text cards. The
+    # outer reply carries its page controls and remains the tracked UI message.
+    cards: tuple[BotReply, ...] = ()
     # Official Telegram/Bale ReplyKeyboard request_contact, never an inline button.
     request_contact: bool = False
     show_main_keyboard: bool = False
@@ -63,6 +66,8 @@ class BotReply:
             raise ValueError("Bot message must contain 1–4096 characters.")
         if self.request_contact and self.rows:
             raise ValueError("Contact keyboard cannot mix with inline actions.")
+        if len(self.cards) > 4 or any(card.cards for card in self.cards):
+            raise ValueError("Gallery pages contain at most four flat cards.")
 
 
 @dataclass(frozen=True, slots=True)

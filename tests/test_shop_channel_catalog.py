@@ -101,9 +101,10 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
         event(platform, text="/catalog"), AsyncSessionProxy(session)
     )
     assert reply is not None
-    assert "کرم" in reply.text
-    assert any(button.callback_data == "shop:add:1" for row in reply.rows for button in row)
-    assert "پنهان" not in reply.text
+    assert len(reply.cards) == 1
+    assert "کرم" in reply.cards[0].text
+    assert reply.cards[0].rows[0][0].callback_data == "g:1:0:0"
+    assert "پنهان" not in str(reply.cards)
     detail = await flow.reply(
         event(platform, callback="shop:item:1"), AsyncSessionProxy(session)
     )
@@ -155,6 +156,100 @@ async def test_stock_eye_hides_number_but_not_availability(session, platform):
         event(platform, callback=f"shop:item:{product.id}"), proxy,
     )
     assert "ناموجود" in unavailable.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_gallery_shows_four_permitted_cards_and_restores_category_page(
+    session, platform,
+):
+    """Browse four photo or text cards and return to the same category page."""
+    category = ShopCategory(name="دسته آزمون", is_published=True, position=1)
+    session.add(category)
+    session.flush()
+    products = [
+        Product(
+            sku=f"G-{index}", name=f"کالا {index}", description="توضیح بلند",
+            price=index * 100, stock_quantity=10,
+            category_id=category.id, position=index, is_published=index != 6,
+        )
+        for index in range(1, 8)
+    ]
+    session.add_all(products)
+    session.flush()
+    session.add_all([
+        ProductMedia(
+            product_id=products[0].id, kind="photo",
+            storage_key="a" * 32 + ".png", original_filename="cover.png",
+            mime_type="image/png", size_bytes=20, is_published=True,
+        ),
+        ProductMedia(
+            product_id=products[2].id, kind="photo",
+            storage_key="b" * 32 + ".png", original_filename="hidden.png",
+            mime_type="image/png", size_bytes=20, is_published=False,
+        ),
+        ShopProductVisibility(
+            product_id=products[1].id, show_stock=False, show_media=False,
+        ),
+        ShopBotProductRule(
+            bot_id=TEST_BOT_IDS[platform.value], product_id=products[4].id,
+            effect="deny",
+        ),
+    ])
+    allow_test_catalog(session)
+    session.commit()
+    flow = CatalogFlow(bot_context=test_bot_context(platform))
+    proxy = AsyncSessionProxy(session)
+    prefix = f"shop:category:{category.id}:"
+
+    first = await flow.reply(event(platform, callback=prefix + "0"), proxy)
+    assert len(first.cards) == 4
+    assert [product.name for product in products[:4]] == [
+        card.text.splitlines()[0] for card in first.cards
+    ]
+    assert first.cards[0].preview is not None
+    assert first.cards[1].preview is None
+    assert "موجودی: 10" not in first.cards[1].text
+    assert first.cards[2].preview is None
+    assert all("توضیح بلند" not in card.text for card in first.cards)
+    assert first.rows[0][0].callback_data == prefix + "1"
+
+    second = await flow.reply(event(platform, callback=prefix + "1"), proxy)
+    assert len(second.cards) == 1
+    assert second.cards[0].text.startswith("کالا 7")
+    assert second.rows[0][0].callback_data == prefix + "0"
+    chosen = second.cards[0].rows[0][0].callback_data
+    detail = await flow.reply(event(platform, callback=chosen), proxy)
+    assert detail.rows[-1][0].callback_data == prefix + "1"
+    expanded = await flow.reply(
+        event(platform, callback=f"d:{products[6].id}:{category.id}:1"), proxy,
+    )
+    assert "توضیح بلند" in expanded.text
+    assert expanded.rows[0][0].callback_data == chosen
+    denied = await flow.reply(
+        event(platform, callback=f"g:{products[4].id}:{category.id}:0"), proxy,
+    )
+    assert "کالا 5" not in denied.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_gallery_bounds_out_of_range_page(session, platform):
+    """A stale page cursor resolves to the last available page."""
+    for number in range(5):
+        session.add(Product(
+            sku=f"B-{number}", name=f"کالا {number}", description="",
+            price=100, stock_quantity=1, position=number,
+            is_published=True,
+        ))
+    allow_test_catalog(session)
+    session.commit()
+    reply = await CatalogFlow(bot_context=test_bot_context(platform)).reply(
+        event(platform, callback="shop:list:999"), AsyncSessionProxy(session),
+    )
+    assert len(reply.cards) == 1
+    assert reply.cards[0].text.startswith("کالا 4")
+    assert reply.rows[0][0].callback_data == "shop:list:0"
 
 
 @pytest.mark.asyncio
@@ -247,7 +342,7 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
     flow = CatalogFlow(bot_context=test_bot_context(platform))
     proxy = AsyncSessionProxy(session)
     start = await flow.reply(event(platform, text="/catalog"), proxy)
-    assert "محصول" in start.text
+    assert "محصول" in start.cards[0].text
     assert not start.attachments
     categories = await flow.reply(event(platform, callback="shop:categories"), proxy)
     assert categories.rows[0][0].label == "محصولات مراقبتی"
@@ -255,7 +350,7 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
         event(platform, callback=f"shop:category:{category.id}:0"),
         proxy,
     )
-    assert "محصول" in category_page.text
+    assert "محصول" in category_page.cards[0].text
     listing = await flow.reply(
         event(platform, callback=f"shop:files:{product.id}:0"), proxy
     )

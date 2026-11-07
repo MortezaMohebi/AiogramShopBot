@@ -7,6 +7,7 @@ formatting and webhook authentication. Keep this transport independent.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -263,6 +264,15 @@ class BaleTransport:
         edit_message_id: int | None = None,
     ) -> int | None:
         """Send UTF-8 text with standard inline callback buttons."""
+        if reply.cards:
+            # Keep the former page in the chat, but disable its page controls.
+            # Each product is a separate photo with its own detail button.
+            if edit_message_id:
+                await self.clear_inline(chat_id, edit_message_id)
+            for card in reply.cards:
+                await self.send(chat_id, card)
+            return await self.send(chat_id, replace(reply, cards=()))
+
         for media in reply.attachments:
             await self.send_media(chat_id, media)
         payload: dict[str, Any] = {

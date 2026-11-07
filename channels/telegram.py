@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from channels.contracts import BotReply
@@ -296,6 +297,16 @@ class TelegramTransport:
             InlineKeyboardButton, InlineKeyboardMarkup,
             KeyboardButton, ReplyKeyboardMarkup,
         )
+
+        if reply.cards:
+            # The previous page's controls must not remain active after the
+            # next page is shown. Preserve its photo and all requested media.
+            if edit_message_id is not None:
+                await self.clear_inline(chat_id, edit_message_id)
+            for card in reply.cards:
+                await self.send(chat_id, card)
+            # Only the footer owns page navigation and the tracked UI ID.
+            return await self.send(chat_id, replace(reply, cards=()))
 
         main = ReplyKeyboardMarkup(
             keyboard=[
