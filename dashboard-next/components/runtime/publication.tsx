@@ -29,7 +29,7 @@ function BindingSummary({
         {`${item.kind}:${item.key} → ${item.node_id}`}
       </RuntimeId>
     </p>
-    <p>اولویت {item.priority} · {item.enabled ? "فعال" : "غیرفعال"} · {item.eligibility === "all" ? "همهٔ مشتریان" : "مشتری موجود"} · جایگزین {item.fallback === "legacy" ? "Legacy" : "بدون پاسخ"}</p>
+    <p>اولویت {item.priority} · {item.enabled ? "فعال" : "غیرفعال"} · {item.eligibility === "all" ? "همهٔ مشتریان" : "مشتری موجود"} · جایگزین {item.fallback === "legacy" ? "مسیر قبلی ربات" : "بدون پاسخ"}</p>
   </div>)}
 </div>;
 }
@@ -236,7 +236,7 @@ function ReviewForm({
         <Field label="مسیر جایگزین">
           <Select label={`جایگزین ${entry.key} در ${bot.name}`} value={chosen.fallback} options={[{
                 value: "legacy",
-                label: "Legacy"
+                label: "مسیر قبلی ربات"
               }, {
                 value: "ignore",
                 label: "بدون پاسخ"
@@ -251,7 +251,7 @@ function ReviewForm({
     </div>;
       })}
     {!choices.length && <RuntimeEmpty>ورودی اعلام‌شده و ربات واجد شرایطی برای این نسخه وجود ندارد. تنظیمات و ورودی‌های فرایند را بررسی کنید.</RuntimeEmpty>}
-    <Button type="button" disabled={!entries.length || locked || !canPublish} onClick={() => void createPreview()}>
+    <Button type="button" variant={preview ? "outline" : "default"} disabled={!entries.length || locked || !canPublish} onClick={() => void createPreview()}>
       {busy ? "در حال بررسی انتشار…" : "ساخت پیش‌نمایش انتشار"}
     </Button>
   </fieldset>

@@ -83,7 +83,7 @@ const messages: Record<string, string> = {
   workflow_media_not_available:
     "رسانهٔ انتخاب‌شده در این فروشگاه در دسترس نیست.",
   workflow_runtime_unavailable:
-    "فعال‌سازی از بخش Runtime و پس از بررسی نسخه و مجوز اجرا انجام می‌شود.",
+    "فعال‌سازی از بخش وضعیت اجرا و پس از بررسی نسخه و مجوز اجرا انجام می‌شود.",
   permission_denied: "مجوز این عملیات را ندارید.",
   session_expired: "نشست شما منقضی شده است؛ دوباره وارد شوید.",
   security_check_failed: "بررسی امنیت درخواست انجام نشد؛ صفحه را تازه کنید.",
@@ -93,7 +93,7 @@ const messages: Record<string, string> = {
 };
 export function errorText(error: unknown): string {
   return error instanceof WorkflowError
-    ? `${messages[error.code] ?? "عملیات تأیید نشد. دادهٔ محلی حفظ شده است."}${error.requestId ? ` (${error.requestId})` : ""}`
+    ? `${messages[error.code] ?? "عملیات تأیید نشد. دادهٔ محلی حفظ شده است."}`
     : error instanceof Error && messages[error.message]
       ? messages[error.message]
       : "عملیات تأیید نشد؛ دوباره وضعیت را بررسی کنید.";

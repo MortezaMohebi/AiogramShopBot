@@ -8,6 +8,10 @@ import type { ShipmentRecord } from "@/lib/customer-experience";
 import { advanceFulfillment } from "./actions";
 
 type Query = Promise<{ saved?: string; error?: string }>;
+const STATUS_LABELS: Record<string, string> = {
+  not_started: "شروع‌نشده", processing: "در حال آماده‌سازی",
+  ready: "آمادهٔ ارسال", shipped: "تحویل به حمل‌کننده", delivered: "تحویل‌شده",
+};
 
 /** Customer fulfillment events are a separate ledger from payment settlement. */
 export default async function FulfillmentsPage({
@@ -25,18 +29,18 @@ export default async function FulfillmentsPage({
       مرحله انجام سفارش ثبت شد؛ وضعیت مالی تغییر نکرد.
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      مرحله ثبت نشد؛ وضعیت فعلی، Store جاری یا کد رهگیری را بررسی کنید.
+      مرحله ثبت نشد؛ وضعیت سفارش، فروشگاه فعلی و کد رهگیری را بررسی کنید.
     </p> : null}
     <div className="grid gap-4 xl:grid-cols-2">
       {records.items.map(order => <Card key={order.order_id}>
         <CardHeader><CardTitle>سفارش #{order.order_id}</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <p>Store: <span dir="ltr">{order.store_id}</span></p>
-          <p>وضعیت انجام: <strong>{order.status}</strong></p>
-          <p>نوع: {order.kind ?? "تعیین‌نشده"} · مبلغ: {order.total_irr} IRR</p>
+          <p>فروشگاه: <span dir="ltr">{order.store_id}</span></p>
+          <p>وضعیت انجام: <strong>{STATUS_LABELS[order.status] ?? order.status}</strong></p>
+          <p>نوع: {order.kind === "physical" ? "فیزیکی" : order.kind === "digital" ? "دیجیتال" : "تعیین‌نشده"} · مبلغ: <bdi dir="ltr">{order.total_irr} IRR</bdi></p>
           {order.tracking_code ? <p>مرجع رهگیری: {order.tracking_code} / {order.carrier}</p> : null}
           {order.kind === "digital" ? <p className="rounded-lg border p-3 text-sm text-muted-foreground">
-            تحویل فایل یا لایسنس از صف امن انجام می‌شود و رسید آن جداگانه ثبت می‌شود.
+            وضعیت تحویل فایل یا لایسنس را از رسید آن بررسی کنید.
             <Link href="/digital-deliveries" className="ms-1 underline underline-offset-4">مشاهدهٔ رسید تحویل</Link>
           </p> : null}
           {canEdit && order.kind !== "digital" && order.status !== "delivered"
@@ -62,7 +66,7 @@ export default async function FulfillmentsPage({
                 <Input name="carrier" maxLength={80} placeholder="شرکت حمل" />
               </label>
               <label className="block space-y-2">کد رهگیری
-                <Input name="tracking_code" maxLength={120} placeholder="کد واقعی، نه ساختگی" />
+                <Input name="tracking_code" maxLength={120} dir="ltr" />
               </label>
             </>
             <Button type="submit" variant="outline">ثبت مرحله</Button>

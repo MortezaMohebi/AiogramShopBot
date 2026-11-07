@@ -27,6 +27,7 @@ from models.shop_admin_control import AdminEvent, AdminProfile, AdminSession
 UTC = timezone.utc
 IDLE_LIMIT = timedelta(minutes=30)
 ABSOLUTE_LIMIT = timedelta(hours=8)
+REMEMBERED_LIMIT = timedelta(days=30)
 MFA_REQUIRED_ROLES = frozenset({"superadmin", "finance"})
 REAUTH_LIMIT = timedelta(minutes=5)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
@@ -118,7 +119,9 @@ def update_profile(db: Session, staff_id: int, display_name: str, time_zone: str
     return profile
 
 
-def issue_session(db: Session, staff, label: str, *, now=None) -> str:
+def issue_session(
+    db: Session, staff, label: str, *, remember_me: bool = False, now=None,
+) -> str:
     """Mint a 256-bit bearer and store only its SHA-256 digest."""
     instant = clock(now)
     token = secrets.token_urlsafe(32)
@@ -133,11 +136,23 @@ def issue_session(db: Session, staff, label: str, *, now=None) -> str:
         staff_id=staff.id, version=staff.session_version,
         label=" ".join(label.split())[:160] or "Browser",
         created_at=instant, last_seen_at=instant,
-        expires_at=instant + ABSOLUTE_LIMIT, reauthenticated_at=instant,
+        expires_at=instant + (REMEMBERED_LIMIT if remember_me else ABSOLUTE_LIMIT),
+        reauthenticated_at=instant,
     ))
     audit(db, staff.id, "session.created", now=instant)
     db.flush()
     return token
+
+
+def session_idle_limit(row: AdminSession) -> timedelta:
+    """Identify opt-in persistence from the server-issued session duration.
+
+    Existing rows keep their short idle limit without a schema migration.
+    Only the issuing backend can grant the longer duration.
+    """
+    if utc(row.expires_at) - utc(row.created_at) > ABSOLUTE_LIMIT:
+        return REMEMBERED_LIMIT
+    return IDLE_LIMIT
 
 
 def validate_session(db: Session, staff, token: str, *, now=None) -> AdminSession:
@@ -151,7 +166,7 @@ def validate_session(db: Session, staff, token: str, *, now=None) -> AdminSessio
     if (row is None or not staff.is_active or row.staff_id != staff.id
             or row.version != staff.session_version or row.revoked_at is not None
             or utc(row.expires_at) <= instant
-            or utc(row.last_seen_at) + IDLE_LIMIT <= instant):
+            or utc(row.last_seen_at) + session_idle_limit(row) <= instant):
         raise SecurityRejected("session_expired", 401)
     if instant > utc(row.last_seen_at):
         row.last_seen_at = instant
@@ -210,7 +225,13 @@ def totp(secret: str, timestamp: float) -> str:
 
 def matching_step(secret: str, code: str, instant: datetime) -> int | None:
     """Accept a narrow clock-skew window, never arbitrary OTP strings."""
-    if not re.fullmatch(r"\d{6}", code):
+    # Authenticator codes copied from Persian/Arabic interfaces use the same
+    # six decimal digits. Convert only those alphabets before constant-time
+    # comparison; other Unicode numerals must fail without raising TypeError.
+    code = "".join(code.split()).translate(str.maketrans(
+        "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789",
+    ))
+    if not re.fullmatch(r"[0-9]{6}", code):
         return None
     step = int(instant.timestamp()) // 30
     for candidate in (step, step - 1, step + 1):

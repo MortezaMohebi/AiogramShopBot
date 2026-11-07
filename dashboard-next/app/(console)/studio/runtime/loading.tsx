@@ -1,8 +1,10 @@
+import { ActivityIndicator } from "@/components/ui/activity-indicator";
+
 /** Unavailable data is never presented as zero. */
 export default function Loading() {
-  return <div role="status" aria-live="polite" className="space-y-5">
-  <p className="text-sm text-muted-foreground">در حال دریافت وضعیت Runtime فروشگاه…</p>
-  <div className="h-12 animate-pulse rounded-xl bg-muted" />
-  <div className="h-80 animate-pulse rounded-xl border bg-muted/40" />
+  return <div className="space-y-5">
+  <ActivityIndicator label="در حال دریافت وضعیت اجرا فروشگاه…" className="text-sm text-muted-foreground" />
+  <div aria-hidden="true" className="h-12 rounded-xl bg-muted" />
+  <div aria-hidden="true" className="h-80 rounded-xl border bg-muted/40" />
 </div>;
 }

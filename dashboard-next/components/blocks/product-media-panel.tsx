@@ -9,10 +9,11 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CheckCircle2, FileAudio, FileImage, FileText,
+  FileAudio, FileImage, FileText,
   FileVideo, LoaderCircle, Trash2, UploadCloud,
 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
+import { MediaThumbnail } from "@/components/blocks/media-thumbnail";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -41,7 +42,17 @@ const formError: Record<string, string> = {
   conflict: "این فایل در وضعیت فعلی قابل حذف نیست؛ ابتدا لغو انتشار کنید.",
   upload: "بارگذاری کامل نشد؛ وضعیت رسانه را بررسی کنید.",
   service_unavailable: "سرویس رسانه در دسترس نیست. وضعیت را بررسی کنید.",
+  network_unavailable: "ارتباط با سرویس رسانه برقرار نشد.",
 };
+
+/** Keep transport errors out of user copy and preserve an uncertain result. */
+function mediaError(error: unknown): string {
+  if (error instanceof Error) {
+    if (Object.hasOwn(formError, error.message)) return formError[error.message];
+    if (error.name === "Error") return error.message;
+  }
+  return "نتیجهٔ تغییر رسانه مشخص نشد. پیش از تکرار، فهرست رسانه‌ها را بررسی کنید.";
+}
 
 const maxSize = (file: File) => file.type.startsWith("image/")
   ? PHOTO_LIMIT : MEDIA_LIMIT;
@@ -153,7 +164,7 @@ export function ProductMediaPanel({
       setNotice("فایل‌های جدید خصوصی ذخیره شدند؛ برای نمایش به مشتری انتشارشان را تأیید کنید.");
       router.refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "بارگذاری ناموفق بود.");
+      setNotice(mediaError(error));
       router.refresh();
     } finally {
       setBusy(false);
@@ -196,10 +207,10 @@ export function ProductMediaPanel({
       }
       setNotice(action === "delete"
         ? "فایل پیش‌نویس حذف شد."
-        : "وضعیت انتشار در پایگاه داده تغییر کرد.");
+        : "وضعیت انتشار تغییر کرد.");
       router.refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "عملیات انجام نشد.");
+      setNotice(mediaError(error));
     } finally {
       setBusy(false);
     }
@@ -214,8 +225,7 @@ export function ProductMediaPanel({
       <CardHeader>
         <CardTitle>رسانه‌های این محصول</CardTitle>
         <CardDescription>
-          افزودن تصاویر، ویدیو، صدا و PDF به محصول فعلی؛ بدون واردکردن شناسه.
-          همهٔ فایل‌ها ابتدا خصوصی هستند.
+          فایل‌های جدید تا زمان تأیید انتشار به مشتری نمایش داده نمی‌شوند.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -236,7 +246,6 @@ export function ProductMediaPanel({
             className="inline-flex cursor-pointer items-center rounded-md border bg-background px-4 py-2 text-sm hover:bg-accent focus-within:outline-2"
           >
             انتخاب فایل‌ها
-          </label>
           <input
             ref={input}
             id={id}
@@ -247,6 +256,7 @@ export function ProductMediaPanel({
             onChange={filesChanged}
             disabled={busy}
           />
+          </label>
           <p className="mt-3 text-xs text-muted-foreground">
             تصاویر حداکثر ۱۰ مگابایت؛ سایر رسانه‌ها حداکثر ۵۰ مگابایت
           </p>
@@ -287,6 +297,7 @@ export function ProductMediaPanel({
                 className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
               >
                 <div className="flex min-w-0 items-center gap-3">
+                  <MediaThumbnail mediaId={item.id} mimeType={item.mime_type} alt={item.caption || item.filename} />
                   <KindIcon kind={item.kind} />
                   <div className="min-w-0">
                     <p dir="ltr" className="max-w-xs break-all text-xs font-semibold">{item.filename}</p>
@@ -296,7 +307,7 @@ export function ProductMediaPanel({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <a
                     target="_blank"
                     rel="noopener noreferrer"
@@ -329,10 +340,6 @@ export function ProductMediaPanel({
         ) : (
           <p className="text-sm text-muted-foreground">هنوز رسانه‌ای برای این محصول وجود ندارد.</p>
         )}
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <CheckCircle2 aria-hidden="true" className="size-4" />
-          فقط فایل‌های تأییدشده در Telegram و Bale قابل مشاهده‌اند.
-        </p>
       </CardContent>
     </Card>
   );

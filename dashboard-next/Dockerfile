@@ -1,10 +1,9 @@
 # Separate, optional dashboard runtime. Python/Telegram/Bale remain untouched.
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json ./
-# Generate a lockfile in the isolated build until a reviewed lockfile is
-# committed during final integration; exact runtime dependencies are pinned.
-RUN npm install --no-audit --no-fund
+COPY package*.json ./
+COPY scripts/patch-next-themes.mjs ./scripts/patch-next-themes.mjs
+RUN npm ci --no-audit --no-fund
 
 FROM node:22-alpine AS builder
 WORKDIR /app
@@ -25,6 +24,7 @@ ENV PORT=3000
 RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nextjs /app/THIRD_PARTY_NOTICES.txt ./THIRD_PARTY_NOTICES.txt
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]

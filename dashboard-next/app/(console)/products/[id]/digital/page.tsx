@@ -47,12 +47,12 @@ export default async function DigitalProductPage({
       <Link href={`/products/${id}/edit`}>بازگشت به ویرایش محصول</Link>
     </Button>
     <PageHeading title={`تحویل دیجیتال محصول #${id}`}
-      description="فایل فروشی یا لایسنس یک‌بارمصرف فقط بعد از پرداخت معتبر در Telegram/Bale تحویل می‌شود." />
+      description="فایل یا لایسنس یک‌بارمصرف فقط پس از تأیید پرداخت به مشتری تحویل می‌شود." />
     {query.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      لایسنس‌ها رمزنگاری و وارد موجودی شدند؛ مقدار اصلی هیچ‌وقت دوباره نمایش داده نمی‌شود.
+      لایسنس‌ها به موجودی اضافه شدند. کدهای ثبت‌شده دوباره نمایش داده نمی‌شوند.
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      ثبت انجام نشد. محتوای ورودی، مجوز Store و احراز هویت مجدد را بررسی کنید.
+      ثبت انجام نشد. کدها، دسترسی فروشگاه و تأیید مجدد هویت را بررسی کنید.
     </p> : null}
     {snapshot.product_type !== "digital" ? <Card>
       <CardContent className="p-5 text-sm">
@@ -83,8 +83,7 @@ export default async function DigitalProductPage({
           <CardContent className="space-y-3">
             <DigitalFileUploader productId={snapshot.product_id} />
             <p className="text-xs leading-6 text-muted-foreground">
-              فایل در مسیر مجزای غیرعمومی با نام تصادفی ذخیره می‌شود؛
-              جایگزینی نسخه فایل، نسخهٔ ارجاع‌شده در سفارش قبلی را حذف نمی‌کند.
+              جایگزینی فایل، نسخهٔ مربوط به سفارش‌های قبلی را حذف نمی‌کند.
             </p>
           </CardContent>
         </Card> : null}
@@ -99,8 +98,7 @@ export default async function DigitalProductPage({
                   autoComplete="off" placeholder="CODE-ONE&#10;CODE-TWO" />
               </label>
               <p className="text-xs leading-6 text-muted-foreground">
-                کدها با کلید اختصاصی Store/Product رمزنگاری می‌شوند.
-                موجودی این حالت از کدهای استفاده‌نشده تعیین می‌شود؛
+                موجودی از کدهای استفاده‌نشده تعیین می‌شود؛
                 موجودی را از فرم عمومی محصول ویرایش نکنید.
               </p>
               <label className="block space-y-1 text-sm">
@@ -109,12 +107,12 @@ export default async function DigitalProductPage({
                   required autoComplete="current-password" />
               </label>
               <label className="block space-y-1 text-sm">
-                کد MFA
+                کد احراز هویت دومرحله‌ای
                 <Input name="second_factor" inputMode="numeric"
                   pattern="[0-9]{6}" maxLength={6} required
                   autoComplete="one-time-code" />
               </label>
-              <Button type="submit">رمزنگاری و ثبت لایسنس‌ها</Button>
+              <Button type="submit">افزودن لایسنس‌ها</Button>
             </form>
           </CardContent>
         </Card> : null}

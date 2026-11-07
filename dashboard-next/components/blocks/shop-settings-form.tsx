@@ -28,7 +28,7 @@ const messages: Record<Code, string> = {
   security_check_failed: "بررسی امنیتی انجام نشد. این صفحه را دوباره باز و تلاش کنید.",
   session_expired: "نشست شما پایان یافته است. ابتدا دوباره وارد حساب خود شوید.",
   permission_denied: "حساب شما مجوز تغییر تنظیمات فروشگاه را ندارد.",
-  service_unavailable: "ارتباط امن با سرور برقرار نشد. از وضعیت داده‌ها اطمینان حاصل کنید.",
+  service_unavailable: "پاسخ سرور دریافت نشد. پیش از تلاش دوباره، تنظیمات فعلی را بررسی کنید.",
   save_failed: "پاسخ ذخیره تأیید نشد. قبل از تلاش دوباره وضعیت فعلی را بررسی کنید.",
 };
 
@@ -90,7 +90,7 @@ export function ShopSettingsForm({ initial }: { initial: ShopSettings }) {
         });
         return;
       }
-      setOutcome({ ok: true, text: "تنظیمات با موفقیت در پایگاه داده ذخیره شد." });
+      setOutcome({ ok: true, text: "تنظیمات ذخیره شد." });
     } catch {
       setOutcome({
         ok: false,
@@ -138,7 +138,7 @@ export function ShopSettingsForm({ initial }: { initial: ShopSettings }) {
           <div>
             <p>{outcome.text}</p>
             {outcome.requestId ? (
-              <p dir="ltr" className="mt-2 text-xs">Request ID: {outcome.requestId}</p>
+              <details className="mt-2 text-xs"><summary className="cursor-pointer">اطلاعات پیگیری</summary><p dir="ltr" className="mt-2 break-all">Request ID: {outcome.requestId}</p></details>
             ) : null}
             {outcome.ok === false && outcome.text === messages.session_expired ? (
               <a href="/login" className="mt-2 inline-block underline">ورود مجدد</a>
@@ -150,7 +150,7 @@ export function ShopSettingsForm({ initial }: { initial: ShopSettings }) {
         {saving ? (
           <>
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-            در حال ذخیره و تأیید...
+            در حال ذخیره…
           </>
         ) : "ذخیره تنظیمات"}
       </Button>

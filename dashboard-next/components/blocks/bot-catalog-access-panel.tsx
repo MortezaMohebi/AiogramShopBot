@@ -36,12 +36,12 @@ export function BotCatalogAccessPanel({
 
   return <Card>
     <CardHeader>
-      <CardTitle id="catalog-access">دسترسی محصولات و دسته‌بندی‌ها به این بات</CardTitle>
+      <CardTitle id="catalog-access">دسترسی محصولات و دسته‌بندی‌ها به این ربات</CardTitle>
     </CardHeader>
     <CardContent className="space-y-5">
       <p className="text-sm leading-7 text-muted-foreground">
-        اولویت تصمیم: ممنوعیت صریح محصول، مجوز صریح محصول، قانون دسته‌بندی و سپس پیش‌فرض بات.
-        پیش‌فرض این بات <strong>{catalogEffectLabels[data.default_effect]}</strong> است.
+        اولویت تصمیم: ممنوعیت صریح محصول، مجوز صریح محصول، قانون دسته‌بندی و سپس پیش‌فرض ربات.
+        پیش‌فرض این ربات <strong>{catalogEffectLabels[data.default_effect]}</strong> است.
         {data.policy_ready ? null : " این فروشگاه هنوز کاتالوگ عملیاتی ندارد."}
       </p>
       <div className="flex flex-wrap gap-2">
@@ -62,7 +62,7 @@ export function BotCatalogAccessPanel({
         <Button type="submit" variant="outline">جست‌وجو</Button>
         <Button asChild variant="outline">
           <Link href={`/bots/${botId}?acl_kind=${data.kind}#catalog-access`}>
-            پاک‌کردن
+            پاک کردن جست‌وجو
           </Link>
         </Button>
       </form>
@@ -73,7 +73,7 @@ export function BotCatalogAccessPanel({
         <input type="hidden" name="kind" value={data.kind} />
         <p className="text-xs text-muted-foreground">
           {data.total.toLocaleString("fa-IR")} مورد؛ چند ردیف را انتخاب کنید و یک قانون مشترک به آن‌ها بدهید.
-          حذف قانون (ارث‌بری) ردیف قدیمی را پاک می‌کند و Audit آن باقی می‌ماند.
+          حذف قانون، تنظیمات پیش‌فرض را برمی‌گرداند؛ تاریخچهٔ تغییر باقی می‌ماند.
         </p>
         <div className="max-h-[420px] overflow-auto rounded-lg border">
           {data.items.map(item => <label
@@ -95,16 +95,16 @@ export function BotCatalogAccessPanel({
             </span> : null}
           </label>)}
           {!data.items.length ? <p className="p-8 text-center text-sm text-muted-foreground">
-            موردی مطابق فیلتر یافت نشد.
+            {query ? "موردی با این جست‌وجو پیدا نشد." : category ? "هنوز دسته‌بندی ثبت نشده است." : "هنوز محصولی ثبت نشده است."}
           </p> : null}
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="space-y-2 text-sm">قانون انتخاب‌شده‌ها
             <select name="effect" defaultValue="allow"
               className="block h-10 min-w-44 rounded-md border bg-background px-3">
-              <option value="allow">مجاز — Allow</option>
-              <option value="deny">ممنوع — Deny</option>
-              <option value="inherit">حذف قانون — Inherit</option>
+              <option value="allow">مجاز</option>
+              <option value="deny">ممنوع</option>
+              <option value="inherit">حذف قانون — استفاده از پیش‌فرض</option>
             </select>
           </label>
           <Button type="submit" disabled={!data.policy_ready || !data.items.length}>
@@ -112,7 +112,7 @@ export function BotCatalogAccessPanel({
           </Button>
         </div>
       </form>
-      <nav aria-label="صفحه‌بندی قوانین بات"
+      <nav aria-label="صفحه‌بندی قوانین ربات"
         className="flex flex-wrap items-center justify-between gap-2 text-sm">
         {data.page > 1
           ? <Button asChild variant="outline" size="sm"><Link href={href(data.page - 1)}>قبلی</Link></Button>

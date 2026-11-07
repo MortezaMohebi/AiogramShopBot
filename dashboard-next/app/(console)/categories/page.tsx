@@ -22,9 +22,9 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <PageHeading title="دسته‌بندی‌ها" description="نام، ترتیب و انتشار دسته‌بندی‌ها از دیتابیس مدیریت می‌شود؛ منوی اصلی ربات ثابت باقی می‌ماند." />
-      {params.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-4 text-sm text-destructive">عملیات ذخیره نشد؛ احتمالاً نام دسته‌بندی تکراری یا مقدار نامعتبر است.</p> : null}
-      {params.saved ? <p role="status" className="mb-5 rounded-lg bg-accent p-4 text-sm text-accent-foreground">تغییرات دسته‌بندی ثبت شد.</p> : null}
+      <PageHeading title="دسته‌بندی‌ها" />
+      {params.error ? <p role="alert" className="mb-5 rounded-lg bg-destructive/10 p-4 text-sm text-destructive">دسته‌بندی ذخیره نشد. نام و ترتیب نمایش را بررسی کنید.</p> : null}
+      {params.saved ? <p role="status" className="mb-5 rounded-lg bg-accent p-4 text-sm text-accent-foreground">دسته‌بندی ذخیره شد.</p> : null}
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_1.6fr]">
         {edit ? (
           <Card>
@@ -62,17 +62,21 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
                 {edit ? (
                   <form action={saveCategory} className="mt-4 grid gap-3 rounded-lg bg-muted/50 p-4 sm:grid-cols-[1fr_90px_auto]">
                     <input type="hidden" name="id" value={category.id} />
-                    <Input name="name" defaultValue={category.name} required maxLength={255} aria-label="نام دسته‌بندی" />
-                    <Input type="number" name="position" defaultValue={category.position} min={0} max={1000000} aria-label="ترتیب" />
-                    <label className="flex items-center gap-2 text-xs">
-                      <input type="checkbox" name="is_published" defaultChecked={category.is_published} className="accent-primary" /> فعال
+                    <label className="block space-y-2 text-sm">نام دسته‌بندی
+                      <Input name="name" defaultValue={category.name} required maxLength={255} />
                     </label>
-                    <Button size="sm" type="submit">ثبت تغییر</Button>
+                    <label className="block space-y-2 text-sm">ترتیب
+                      <Input type="number" name="position" defaultValue={category.position} min={0} max={1000000} dir="ltr" />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs">
+                      <input type="checkbox" name="is_published" defaultChecked={category.is_published} className="accent-primary" /> انتشار
+                    </label>
+                    <Button size="sm" type="submit">ذخیرهٔ تغییرات</Button>
                   </form>
                 ) : null}
               </details>
             ))}
-            {categories.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">دسته‌بندی‌ای تعریف نشده است.</p> : null}
+            {categories.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">هنوز دسته‌بندی‌ای تعریف نشده است.</p> : null}
           </CardContent>
         </Card>
       </div>

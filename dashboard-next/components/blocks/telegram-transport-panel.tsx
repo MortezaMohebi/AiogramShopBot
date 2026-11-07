@@ -2,7 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
-  CheckCircle2, CircleHelp, LockKeyhole, Network, RefreshCcw,
+  CheckCircle2, Network, RefreshCcw,
   RotateCcw, ShieldAlert, ShieldCheck, TestTube2, Wifi,
 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
@@ -64,7 +64,7 @@ const errorText: Record<string, string> = {
   invalid_request: "مشخصات درخواست یا فیلدهای انتخابی معتبر نیستند.",
   invalid_transport_mode: "نوع اتصال انتخاب‌شده پشتیبانی نمی‌شود.",
   invalid_proxy_endpoint: "آدرس Proxy نامعتبر است؛ باید HTTP یا SOCKS5 با پورت مشخص باشد.",
-  transport_endpoint_not_approved: "این آدرس هنوز در Allowlist امن Deployment تأیید نشده است.",
+  transport_endpoint_not_approved: "این آدرس در فهرست مجاز سرور نیست.",
   invalid_proxy_credentials: "نام کاربری و رمز Proxy باید باهم و بدون نویسه‌های کنترلی وارد شوند.",
   invalid_worker_origin: "آدرس Worker باید HTTPS Origin معتبر و بدون مسیر یا Query باشد.",
   invalid_worker_secret: "Relay Key حداقل ۳۲ نویسه لازم دارد؛ کلید را در فرم وارد کنید.",
@@ -218,7 +218,7 @@ export function TelegramTransportPanel({
     // Never store passwords in component state or include them in redirects.
     void submit(
       "stage", payload,
-      "پیشنهاد رمزنگاری و ثبت شد. مسیر فعال هنوز تغییر نکرده است؛ ابتدا تست و سپس تأیید کنید.",
+      "پیشنهاد ثبت شد؛ مسیر فعال تغییر نکرده است. اتصال جدید را تست و سپس تأیید کنید.",
     ).finally(() => {
       form.querySelectorAll<HTMLInputElement>('input[type="password"]')
         .forEach((field) => { field.value = ""; });
@@ -236,14 +236,14 @@ export function TelegramTransportPanel({
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         <Network className="size-5 text-primary" />
-        مسیر API تلگرام: Direct، Proxy و Cloudflare Worker
+        مسیر اتصال API تلگرام
       </CardTitle>
     </CardHeader>
     <CardContent className="space-y-6">
       <div className="grid gap-3 rounded-xl border bg-muted/30 p-4 text-sm md:grid-cols-2">
         <p>مسیر فعال: <strong dir="ltr">{modeText[data.active.mode]}</strong></p>
         <p>نسخهٔ تأییدشده: <strong>{data.active.version}</strong></p>
-        <p>منبع تنظیم: {data.active.source === "deployment" ? "Deployment / ENV" : "PostgreSQL رمزنگاری‌شده"}</p>
+        <p>منبع تنظیم: {data.active.source === "deployment" ? "تنظیمات سرور" : "تنظیمات پنل"}</p>
         <p>آخرین تأیید: {data.active.verified_at
           ? new Date(data.active.verified_at).toLocaleString("fa-IR") : "فعلاً فقط تنظیم اولیه"}</p>
         <p className="md:col-span-2">آدرس فعال: <span dir="ltr" className="break-all">
@@ -260,7 +260,7 @@ export function TelegramTransportPanel({
         <ShieldCheck className="mt-1 size-4 shrink-0" />
         این قسمت فقط مسیر خروجی Telegram Bot API را تغییر می‌دهد؛ روش دریافت
         Webhook/getUpdates و اتصال بله، به‌صورت مستقل مدیریت می‌شوند.
-        Token ربات در پنل دریافت یا نمایش داده نمی‌شود.
+
       </p>
 
       {notice ? <p role={notice.ok ? "status" : "alert"}
@@ -282,19 +282,19 @@ export function TelegramTransportPanel({
           </label>
 
           {mode === "http_proxy" ? <div className="grid gap-4 rounded-lg border p-4 sm:grid-cols-2">
-            <label className="block space-y-2 text-sm sm:col-span-2">Proxy Endpoint
+            <label className="block space-y-2 text-sm sm:col-span-2">آدرس Proxy
               <select value={proxyUrl} onChange={(event) => setProxyUrl(event.target.value)}
                 required className="h-10 w-full rounded-md border bg-background px-3 text-sm" dir="ltr">
                 <option value="">انتخاب Proxy تأییدشده</option>
                 {proxyOptions.map((url) => <option key={url} value={url}>{url}</option>)}
               </select>
             </label>
-            <label className="block space-y-2 text-sm">Proxy Username (اختیاری)
+            <label className="block space-y-2 text-sm">نام کاربری Proxy (اختیاری)
               <Input name="proxy_username" dir="ltr" maxLength={128} autoComplete="off"
                 defaultValue={data.active.proxy_username}
                 placeholder="username" />
             </label>
-            <label className="block space-y-2 text-sm">Proxy Password
+            <label className="block space-y-2 text-sm">رمز Proxy
               <Input name="proxy_password" type="password" dir="ltr" maxLength={256}
                 autoComplete="new-password"
                 placeholder={data.active.has_proxy_password
@@ -307,7 +307,7 @@ export function TelegramTransportPanel({
           </div> : null}
 
           {mode === "cloudflare_worker" ? <div className="space-y-4 rounded-lg border p-4">
-            <label className="block space-y-2 text-sm">Worker HTTPS Origin
+            <label className="block space-y-2 text-sm">آدرس HTTPS سرویس Worker
               <select value={workerUrl} onChange={(event) => setWorkerUrl(event.target.value)}
                 required className="h-10 w-full rounded-md border bg-background px-3 text-sm" dir="ltr">
                 <option value="">انتخاب Worker تأییدشده</option>
@@ -326,10 +326,7 @@ export function TelegramTransportPanel({
             </p> : null}
           </div> : null}
           <p className="text-xs leading-7 text-muted-foreground">
-            <LockKeyhole className="me-1 inline size-4" />
-            آدرس‌های مجاز از تنظیمات امن سرور انتخاب می‌شوند تا Token به
-            Proxy یا Worker دلخواه و تأییدنشده فرستاده نشود.
-            رمزها در PostgreSQL با Fernet نگهداری می‌شوند.
+            فقط آدرس‌های تأییدشده در تنظیمات سرور قابل انتخاب‌اند.
           </p>
           <Button type="submit" disabled={busy || Boolean(pending)}>
             <ShieldCheck className="size-4" /> ثبت پیشنهاد (بدون فعال‌سازی)
@@ -342,7 +339,7 @@ export function TelegramTransportPanel({
           <strong className="text-sm">آخرین پیشنهاد: {modeText[pending.proposed.mode]}</strong>
           <span className="text-xs text-muted-foreground">{stateText[pending.status]}</span>
         </div>
-        <p className="text-xs text-muted-foreground" dir="ltr">{pending.id}</p>
+        <p className="break-all text-xs text-muted-foreground" dir="ltr">{pending.id}</p>
         {pending.status === "pending" ? <>
           <p className="text-xs leading-7 text-muted-foreground">
             ابتدا «تست getMe» را اجرا کنید. تست به‌تنهایی مسیر فعال را
@@ -421,7 +418,7 @@ export function TelegramTransportPanel({
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <strong className="text-sm">تاریخچهٔ تغییرات رمزنگاری‌شده</strong>
+          <strong className="text-sm">تاریخچهٔ تغییر مسیر</strong>
           <Button type="button" size="sm" variant="outline" disabled={busy}
             onClick={() => void load().then(() => setNotice({
               ok: true, text: "وضعیت ثبت‌شدهٔ سرور تازه‌سازی شد.",
@@ -439,9 +436,10 @@ export function TelegramTransportPanel({
               {new Date(change.updated_at).toLocaleString("fa-IR")} ·
               {change.operation === "rollback" ? " بازگشت ثبت‌شده" : " تغییر جدید"}
             </p>
-            {change.error_code ? <p className="mt-1 text-xs text-destructive" dir="ltr">
-              {change.error_code}
-            </p> : null}
+            {change.error_code ? <details className="mt-1 text-xs text-destructive">
+              <summary className="cursor-pointer">جزئیات خطا</summary>
+              <p className="mt-1 break-all" dir="ltr">{change.error_code}</p>
+            </details> : null}
           </div>
           {change.status === "succeeded" && !pending
             ? <Button type="button" variant="outline" size="sm" disabled={busy}
@@ -457,12 +455,6 @@ export function TelegramTransportPanel({
         </p> : null}
       </div>
 
-      <p className="flex items-start gap-2 text-xs leading-7 text-muted-foreground">
-        <CircleHelp className="mt-1 size-4 shrink-0" />
-        تغییر Direct / Proxy / Worker فقط مسیر خروجی تلگرام را عوض می‌کند.
-        تنظیمات دریافت Webhook و getUpdates در بخش پایین مستقل هستند.
-        در صورت خطای Timeout، نتیجهٔ عملیات را پیش از تلاش دوباره بررسی کنید.
-      </p>
     </CardContent>
   </Card>;
 }

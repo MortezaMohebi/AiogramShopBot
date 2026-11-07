@@ -90,8 +90,9 @@ try {
     assert.equal(new URL(page.url()).pathname, "/login");
     await page.getByLabel("نام کاربری", { exact: true }).fill("shopadmin");
     await page.getByLabel("رمز عبور", { exact: true }).fill(env.LIVE_ADMIN_PASSWORD);
-    await page.getByLabel("کد احراز هویت یا بازیابی (اگر فعال است)", { exact: true }).fill(await freshOtp());
-    await page.getByRole("button", { name: "ورود امن", exact: true }).click();
+    await page.getByRole("button", { name: "ادامه", exact: true }).click();
+    await page.getByLabel("کد تأیید", { exact: true }).fill(await freshOtp());
+    await page.getByRole("button", { name: "ورود", exact: true }).click();
     await page.waitForURL("**/dashboard");
   });
   await check("exact pending Native identity and explicit consent", async () => {
@@ -165,7 +166,7 @@ asyncio.run(main())`, fixture));
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.goto(base + "/dashboard");
       if (new URL(page.url()).pathname !== "/login") {
-        await page.getByRole("button", { name: "خروج امن", exact: true }).click({ timeout: 10000 });
+        await page.getByRole("button", { name: "خروج", exact: true }).click({ timeout: 10000 });
         await page.waitForURL("**/login", { timeout: 10000 });
       }
     } catch { evidence.cleanup_unconfirmed = true; }

@@ -11,6 +11,8 @@ import {
   revokeRelayCredential, stageRelayCredential,
 } from "@/app/(console)/bots/[id]/relay-actions";
 
+const stateLabels: Record<string, string> = { staged: "ثبت اولیه", active: "فعال", paused: "متوقف", draft: "پیش‌نویس", disabled: "غیرفعال", retiring: "در حال جایگزینی", revoked: "لغوشده" };
+
 interface Props {
   bot: BotRecord;
   workers: RelayWorkersSnapshot;
@@ -24,7 +26,7 @@ function CredentialProof() {
         autoComplete="current-password" maxLength={256} required />
     </label>
     <label className="block space-y-2 text-sm">کد MFA
-      <Input name="second_factor" inputMode="numeric" pattern="[0-9]{6}"
+      <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
         maxLength={6} autoComplete="one-time-code" required />
     </label>
   </div>;
@@ -43,12 +45,12 @@ function RouteControls({
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="font-semibold">{route.worker_name}</p>
       <p className="text-xs text-muted-foreground">
-        اولویت {route.priority} · {route.status} · نسخه {route.version}
+        اولویت {route.priority} · {stateLabels[route.status]} · نسخه {route.version}
       </p>
     </div>
     <p className="text-xs text-muted-foreground">
-      وضعیت Worker: {route.worker_status} · آخرین کلید:
-      {route.credential_version ?? "ثبت نشده"} ({route.credential_state ?? "—"})
+      وضعیت Worker: {stateLabels[route.worker_status]} · آخرین کلید:
+      {route.credential_version ?? "ثبت نشده"} ({route.credential_state ? stateLabels[route.credential_state] : "—"})
     </p>
     {route.status !== "active" ? <form action={assignRelayRoute}
       className="flex flex-wrap items-end gap-3">
@@ -66,16 +68,16 @@ function RouteControls({
       <input type="hidden" name="bot_id" value={bot.id} />
       <input type="hidden" name="worker_id" value={route.worker_id} />
       <label className="block space-y-2 text-sm">
-        Secret مستقل همین بات در این Worker
+        Secret مستقل همین ربات در این Worker
         <Input name="secret" type="password" minLength={32} maxLength={256}
           autoComplete="new-password" dir="ltr" required
           placeholder="همان کلید نسخه‌دار در Cloudflare Secret" />
       </label>
-      <Button type="submit" variant="outline">Stage کلید جدید</Button>
+      <Button type="submit" variant="outline">ثبت کلید جدید</Button>
     </form>
     {canActivate ? <form action={activateRelayRoute}
       className="space-y-3 rounded-lg border p-3">
-      <p className="text-sm leading-7">پس از Provision همان Version و Token SHA-256 در Cloudflare،
+      <p className="text-sm leading-7">پس از تنظیم همان نسخهٔ کلید و Token SHA-256 در Cloudflare،
         getMe تأییدشده اجرا می‌شود. این مرحله فقط Key و Route را فعال می‌کند؛
         هیچ پیام یا پرداختی ارسال نمی‌شود.</p>
       <input type="hidden" name="bot_id" value={bot.id} />
@@ -83,11 +85,11 @@ function RouteControls({
       <input type="hidden" name="expected_version" value={route.version} />
       <input type="hidden" name="credential_version" value={route.credential_version ?? ""} />
       <CredentialProof />
-      <Button type="submit">تأیید getMe و فعال‌سازی / Resume مسیر</Button>
+      <Button type="submit">تأیید getMe و فعال‌سازی مسیر</Button>
     </form> : null}
     {route.status === "active" ? <form action={pauseRelayRoute}
       className="space-y-3 rounded-lg border p-3">
-      <p className="text-sm leading-7">Pause فقط ارسالهای جدید را از این مسیر برمی‌دارد.
+      <p className="text-sm leading-7">توقف مسیر فقط بر ارسال‌های جدید اثر می‌گذارد.
         ارسال دارای نتیجهٔ نامشخص روی Worker دیگری تکرار نمی‌شود.</p>
       <input type="hidden" name="bot_id" value={bot.id} />
       <input type="hidden" name="worker_id" value={route.worker_id} />
@@ -102,9 +104,9 @@ function RouteControls({
       <input type="hidden" name="bot_id" value={bot.id} />
       <input type="hidden" name="worker_id" value={route.worker_id} />
       <input type="hidden" name="version" value={item.version} />
-      <p className="text-xs leading-6">کلید نسخهٔ {item.version} ({item.state}):
-        ابتدا این Version را از RELAY_CLIENTS_JSON Worker حذف کنید، سپس
-        با MFA آن را در Registry لغو کنید.</p>
+      <p className="text-xs leading-6">کلید نسخهٔ {item.version} ({stateLabels[item.state]}):
+        ابتدا این نسخه را از RELAY_CLIENTS_JSON Worker حذف کنید، سپس
+        با MFA آن را در این پنل لغو کنید.</p>
       <CredentialProof />
       <Button type="submit" variant="outline">لغو نسخهٔ {item.version}</Button>
     </form>)}
@@ -121,12 +123,10 @@ export function BotRelayRoutesPanel({ bot, workers, routes }: Props) {
     !assignedIds.has(row.id) && row.status !== "disabled",
   );
   return <Card>
-    <CardHeader><CardTitle>اتصال بات به Relay Worker Pool</CardTitle></CardHeader>
+    <CardHeader><CardTitle>مسیرهای Relay ربات</CardTitle></CardHeader>
     <CardContent className="space-y-5 text-sm">
-      <p className="leading-7">هر بات می‌تواند چند Worker با اولویت متفاوت داشته باشد.
-        هر Worker نیز هم‌زمان چند بات را با Secret مجزا مدیریت می‌کند.
-        Failover صرفاً برای متدهای خواندنی و بدون Side Effect است.</p>
-      <p>وضعیت Pool:
+      <p className="leading-7">برای هر ربات می‌توانید چند Worker با اولویت متفاوت تعیین کنید. جابه‌جایی خودکار مسیر فقط برای درخواست‌های خواندنی انجام می‌شود.</p>
+      <p>وضعیت Relay:
         <strong> {workers.enabled ? "فعال در سرور" : "خاموش در سرور"}</strong>
         {" "}· <Link href="/relay-workers" className="underline">فهرست Workerها و ظرفیت</Link>
       </p>
@@ -151,12 +151,10 @@ export function BotRelayRoutesPanel({ bot, workers, routes }: Props) {
         <RouteControls key={route.worker_id} bot={bot}
           route={route} enabled={workers.enabled} />) :
         <p className="rounded-lg border p-3 text-muted-foreground">
-          برای این بات هنوز هیچ Worker ثبت نشده است.
+          برای این ربات هنوز هیچ Worker ثبت نشده است.
         </p>}
       <p className="text-xs leading-7 text-muted-foreground">
-        Rotation مرحله‌ای است: ابتدا کلید جدید را در Cloudflare provision کنید،
-        سپس در این پنل Stage و با getMe تأیید کنید و بعد از حذف کلید قبلی در
-        Cloudflare نسخهٔ Retiring را Revoke کنید. هیچ Secret در پاسخ‌ها برگردانده نمی‌شود.
+        برای تعویض کلید، ابتدا کلید جدید را در Cloudflare تنظیم کنید، سپس آن را در این پنل ثبت و با getMe تأیید کنید. پس از حذف کلید قبلی از Cloudflare، نسخهٔ قبلی را در این صفحه لغو کنید.
       </p>
     </CardContent>
   </Card>;

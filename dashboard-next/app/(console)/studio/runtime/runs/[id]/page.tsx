@@ -29,7 +29,7 @@ export default async function RuntimeRunPage({
   }
   return <div className="min-w-0 space-y-5">
   <StudioHomeNav current="runtime" />
-  <PageHeading title="جزئیات اجرا" description="وضعیت پایدار اجرا، متغیرهای خصوصی، رویدادهای امن و رسیدهای Action و تحویل را بررسی کنید." action={<RuntimeRefresh />} />
+  <PageHeading title="جزئیات اجرا" action={<RuntimeRefresh />} />
   <Link className="inline-block text-sm text-primary underline" href="/studio/runtime?tab=runs">بازگشت به اجراها</Link>
   <RuntimePanel title="وضعیت اجرا">
     <RuntimeStatus status={run.status} />
@@ -84,7 +84,7 @@ export default async function RuntimeRunPage({
       </div>)}
       {!run.variables.length && <RuntimeEmpty>متغیری در تعریف این نسخه نیست.</RuntimeEmpty>}
     </RuntimePanel>
-    <RuntimePanel title="بازیابی امن">
+    <RuntimePanel title="بازیابی اجرا">
       <RecoverRun key={`${run.id}-${run.lock_version}`} run={{id:run.id,status:run.status,lock_version:run.lock_version,expires_at:run.expires_at,actions:run.actions.map(action=>({status:action.status})),outbox:run.outbox.map(item=>({status:item.status,error_code:item.error_code}))}} canManage={overview.can_manage} />
     </RuntimePanel>
   </div>
@@ -99,10 +99,10 @@ export default async function RuntimeRunPage({
       <p className="text-xs">گره <RuntimeId>
           {action.node_id}
         </RuntimeId> · تلاش {action.attempts}</p>
-      <p className="text-xs">Job <RuntimeId>
+      <p className="text-xs">شناسهٔ عملیات <RuntimeId>
           {action.id}
         </RuntimeId></p>
-      <p className="text-xs">رسید Layer 2 <RuntimeId>
+      <p className="text-xs">رسید اجرای عملیات <RuntimeId>
           {action.receipt_id ?? "هنوز ثبت نشده"}
         </RuntimeId></p>
       {action.error_code && <p className="text-xs">کد خطا <RuntimeId>
@@ -112,7 +112,7 @@ export default async function RuntimeRunPage({
     </article>)}
     {!run.actions.length && <RuntimeEmpty>Actionی در این اجرا ثبت نشده است.</RuntimeEmpty>}
   </RuntimePanel>
-  <RuntimePanel title="رویدادهای امن">
+  <RuntimePanel title="رویدادها">
     <p className="text-xs leading-6 text-muted-foreground">حداکثر ۲۰۰ رویداد اخیر؛ متن مشتری، شماره تماس، فایل و دادهٔ تأیید نمایش داده نمی‌شوند.</p>
     <ol className="space-y-3">
       {run.events.map(event => <li key={event.id} className="min-w-0 space-y-2 rounded-lg border p-3">

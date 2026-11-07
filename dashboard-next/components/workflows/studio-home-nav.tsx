@@ -7,14 +7,14 @@ export function StudioHomeNav({
 }) {
   return (
     <nav
-      aria-label="بخش‌های Studio"
+      aria-label="بخش‌های فرایندها"
       className="mb-5 flex flex-wrap gap-2 text-sm"
     >
       {[
         { key: "workflows", href: "/studio/workflows", label: "فرایندها" },
-        { key: "runtime", href: "/studio/runtime", label: "Runtime" },
-        { key: "actions", href: "/studio/actions", label: "Action Catalog" },
-        { key: "mcp", href: "/studio/mcp", label: "MCP connections" },
+        { key: "runtime", href: "/studio/runtime", label: "وضعیت اجرا" },
+        { key: "actions", href: "/studio/actions", label: "عملیات آماده" },
+        { key: "mcp", href: "/studio/mcp", label: "اتصال‌های MCP" },
       ].map((item) => (
         <Link
           key={item.key}

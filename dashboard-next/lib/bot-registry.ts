@@ -117,19 +117,19 @@ export function botPlatformLabel(platform: BotPlatform): string {
 
 export function botRuntimeLabel(bot: BotRecord): string {
   if (bot.runtime_owner === "registry" && bot.status === "draft") {
-    return "Draft — بدون Receiver فعال";
+    return "پیش‌نویس — دریافت پیام فعال نیست";
   }
   const state = bot.operations.desired_state;
   if (bot.runtime_owner === "registry") {
     return ({
-      active: "فعال — Runtime مستقل",
+      active: "فعال — اتصال مستقل",
       paused: "متوقف — تسویه محفوظ",
       maintenance: "نگهداری — تسویه محفوظ",
       disabled: "غیرفعال — تسویه محفوظ",
     } as const)[state];
   }
   return ({
-    active: "فعال در Runtime فعلی",
+    active: "فعال — اتصال قدیمی",
     paused: "متوقف؛ تسویه‌ها محفوظ‌اند",
     maintenance: "حالت نگهداری",
     disabled: "غیرفعال؛ رسیدهای قبلی محفوظ‌اند",

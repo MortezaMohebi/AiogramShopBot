@@ -1,0 +1,167 @@
+# React component tree
+# Columns: depth id parent name [key=...]
+# Use `react inspect <id>` for props/hooks/state. IDs valid until next navigation.
+0 46 - Root
+1 47 46 HeadManagerContext.Provider
+2 48 47 Root
+3 49 48 ServerRoot
+4 50 49 Context.Provider
+5 51 50 AppRouter
+6 52 51 RootErrorBoundary
+7 53 52 ErrorBoundary
+8 54 53 ErrorBoundaryHandler
+9 55 54 Router
+10 56 55 HistoryUpdater
+10 57 55 NavigationPromisesContext.Provider
+11 58 57 PathParamsContext.Provider
+12 59 58 PathnameContext.Provider
+13 60 59 SearchParamsContext.Provider
+14 61 60 GlobalLayoutRouterContext.Provider
+15 62 61 AppRouterContext.Provider
+16 63 62 LayoutRouterContext.Provider
+17 64 63 HotReload
+18 65 64 AppDevOverlayErrorBoundary
+19 66 65 ReplaySsrOnlyErrors
+19 67 65 DevRootHTTPAccessFallbackBoundary
+20 68 67 HTTPAccessFallbackBoundary
+21 69 68 HTTPAccessFallbackErrorBoundary
+22 70 69 RedirectBoundary
+23 71 70 RedirectErrorBoundary
+24 72 71 Head key="[\"/!KGF1dGgp/login/__PAGE__/_head\",\"\"]"
+25 73 72 Fragment key="h"
+26 74 73 Server(ViewportWrapper)
+27 75 74 __next_viewport_boundary__
+28 76 75 meta key="0"
+28 77 75 meta key="1"
+26 78 73 Server(MetadataWrapper)
+27 79 78 __next_metadata_boundary__
+28 80 79 div
+29 81 80 Suspense
+30 207 81 title key="0"
+30 208 81 meta key="1"
+30 209 81 meta key="2"
+24 82 71 __next_root_layout_boundary__
+25 83 82 SegmentViewNode key="layout"
+26 84 83 SegmentTrieNode key="layout"
+26 85 83 Fragment key="c"
+27 86 85 link key="0"
+27 87 85 script key="script-0"
+27 88 85 Server(RootLayout)
+28 89 88 html
+29 90 89 body
+30 91 90 Providers
+31 92 91 J
+32 93 92 V
+33 94 93 Context.Provider
+34 95 94 Memo(Anonymous)
+34 96 94 DirectionProvider
+35 97 96 Context.Provider
+36 98 97 OuterLayoutRouter
+37 99 98 SegmentStateProvider key="(auth)"
+38 100 99 Context.Provider key="0"
+39 101 100 TemplateContext.Provider key="(auth)"
+40 102 101 RenderFromTemplateContext
+41 103 102 ScrollHandler
+42 104 103 InnerScrollHandler
+43 105 104 ErrorBoundary
+44 106 105 ErrorBoundaryHandler
+45 107 106 LoadingBoundary
+46 108 107 HTTPAccessFallbackBoundary
+47 109 108 HTTPAccessFallbackErrorBoundary
+48 110 109 RedirectBoundary
+49 111 110 RedirectErrorBoundary
+50 112 111 InnerLayoutRouter
+51 113 112 LayoutRouterContext.Provider
+52 114 113 NavigationPromisesContext.Provider
+53 115 114 Fragment key="c"
+54 116 115 OuterLayoutRouter
+55 117 116 SegmentStateProvider key="login"
+56 118 117 Context.Provider key="0"
+57 119 118 TemplateContext.Provider key="login"
+58 120 119 RenderFromTemplateContext
+59 121 120 ScrollHandler
+60 122 121 InnerScrollHandler
+61 123 122 ErrorBoundary
+62 124 123 LoadingBoundary
+63 125 124 HTTPAccessFallbackBoundary
+64 126 125 HTTPAccessFallbackErrorBoundary
+65 127 126 RedirectBoundary
+66 128 127 RedirectErrorBoundary
+67 129 128 InnerLayoutRouter
+68 130 129 LayoutRouterContext.Provider
+69 131 130 NavigationPromisesContext.Provider
+70 132 131 Fragment key="c"
+71 133 132 OuterLayoutRouter
+72 134 133 SegmentStateProvider key="__PAGE__"
+73 135 134 Context.Provider key="0"
+74 136 135 TemplateContext.Provider key="__PAGE__"
+75 137 136 RenderFromTemplateContext
+76 138 137 ScrollHandler
+77 139 138 InnerScrollHandler
+78 140 139 ErrorBoundary
+79 141 140 LoadingBoundary
+80 142 141 HTTPAccessFallbackBoundary
+81 143 142 RedirectBoundary
+82 144 143 RedirectErrorBoundary
+83 145 144 InnerLayoutRouter
+84 146 145 LayoutRouterContext.Provider
+85 147 146 Fragment key="c"
+86 148 147 SegmentViewNode key="c-page"
+87 149 148 SegmentTrieNode key="page"
+87 150 148 Server(LoginPage)
+88 151 150 main
+89 152 151 section
+90 153 152 div
+91 154 153 span
+92 155 154 Server(MessageSquareMore)
+93 156 155 ForwardRef(Anonymous)
+94 157 156 svg
+95 158 157 path key="18887p"
+95 159 157 path key="z322tv"
+95 160 157 path key="xkw8gn"
+95 161 157 path key="1dfujw"
+91 162 153 span
+90 163 152 LoginForm
+91 164 163 form
+92 165 164 h1
+92 166 164 div
+93 167 166 label
+93 168 166 Input
+94 169 168 input
+92 170 164 div
+93 171 170 label
+93 172 170 div
+94 173 172 Input
+95 174 173 input
+94 175 172 button
+95 176 175 Eye
+96 177 176 ForwardRef(Anonymous)
+97 178 177 svg
+98 179 178 path key="1nclc0"
+98 180 178 circle key="1v7zrd"
+92 181 164 label
+93 182 181 input
+92 183 164 ForwardRef(CaptchaChallenge)
+92 184 164 Button
+93 185 184 button
+92 186 164 span
+86 187 147 script key="script-0"
+86 188 147 script key="script-1"
+86 189 147 Server(Next.MetadataOutlet)
+87 190 189 __next_outlet_boundary__
+88 191 190 Suspense
+83 192 144 SegmentBoundaryTriggerNode
+78 193 139 SegmentViewStateNode key="/login"
+67 194 128 SegmentBoundaryTriggerNode
+61 195 122 SegmentViewStateNode key="/login"
+57 196 118 SegmentViewNode
+58 197 196 SegmentTrieNode key="boundary:not-found"
+50 198 111 SegmentBoundaryTriggerNode
+43 199 104 SegmentViewStateNode key="/login"
+39 200 100 SegmentViewNode
+40 201 200 SegmentTrieNode key="boundary:not-found"
+39 202 100 SegmentViewNode
+40 203 202 SegmentTrieNode key="boundary:error"
+39 204 100 SegmentViewNode
+40 205 204 SegmentTrieNode key="boundary:global-error"
+24 206 71 AppRouterAnnouncer

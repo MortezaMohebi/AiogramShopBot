@@ -19,7 +19,7 @@ type Params = Promise<{
 
 const problems: Record<string, string> = {
   validation: "اطلاعات فرم معتبر نیست؛ نام و شناسه‌ها را بررسی کنید.",
-  reauth: "برای ساخت بات یا فروشگاه، در حساب من احراز هویت مجدد انجام دهید.",
+  reauth: "برای ساخت ربات یا فروشگاه، در حساب من احراز هویت مجدد انجام دهید.",
   conflict: "شناسهٔ انتخاب‌شده قبلاً ثبت شده یا نسخهٔ اطلاعات تغییر کرده است.",
   save: "ثبت انجام نشد؛ سرویس و دسترسی حساب را بررسی کنید.",
 };
@@ -53,20 +53,20 @@ export default async function BotsPage({
   }
 
   return <div className="space-y-6">
-    <PageHeading title="مدیریت ربات‌ها" description="چندین ربات تلگرام و بله برای یک فروشگاه؛ هویت، دسترسی و وضعیت عملیاتی مستقل." />
+    <PageHeading title="مدیریت ربات‌ها" />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-4 text-sm">
-      <p className="max-w-3xl leading-7">دو بات قبلی با Runtime موجود حفظ می‌شوند. بات تازه در وضعیت Draft ایجاد می‌شود و فقط بعد از تأیید هویت Provider، تنظیم Receiver و فعال‌سازی دستی مدیر به Runtime مستقل می‌پیوندد؛ هیچ اتصال خودکاری انجام نمی‌شود.</p>
+      <p className="max-w-3xl leading-7">ربات جدید ابتدا به‌صورت پیش‌نویس ایجاد می‌شود. برای شروع کار، Token را تأیید و دریافت پیام را فعال کنید.</p>
       <Button asChild variant="outline"><Link href="/bot-connections">زیرساخت Webhook و Worker</Link></Button>
     </div>
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2 text-sm">
       <ShieldCheck className="size-4 text-primary" />
-      <span>ساخت، تأیید Token و تغییر وضعیت بات به احراز هویت مجدد مدیر نیاز دارد.</span>
+      <span>ساخت، تأیید Token و تغییر وضعیت ربات به احراز هویت مجدد مدیر نیاز دارد.</span>
       <Button asChild variant="outline" size="sm"><Link href="/account">تأیید هویت</Link></Button>
     </div>
     {query.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">ثبت اطلاعات انجام شد.</p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[query.error] ?? problems.save}</p> : null}
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Bot className="size-5" /> فهرست بات‌ها</CardTitle></CardHeader>
+    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Bot className="size-5" /> فهرست ربات‌ها</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <form method="get" className="flex flex-wrap items-end gap-3">
           <label className="space-y-2 text-sm">پیام‌رسان
@@ -81,13 +81,13 @@ export default async function BotsPage({
             </select>
           </label>
           <Button type="submit" variant="outline">فیلتر</Button>
-          <Button asChild variant="outline"><Link href="/bots">پاک‌کردن</Link></Button>
+          <Button asChild variant="outline"><Link href="/bots">پاک کردن فیلترها</Link></Button>
         </form>
-        <p className="text-xs text-muted-foreground">{result.total_bots.toLocaleString("fa-IR")} بات ثبت‌شده</p>
+        <p className="text-xs text-muted-foreground">{result.total_bots.toLocaleString("fa-IR")} ربات ثبت‌شده</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
-              <th className="p-3">نام بات</th><th className="p-3">پیام‌رسان</th>
+              <th className="p-3">نام ربات</th><th className="p-3">پیام‌رسان</th>
               <th className="p-3">وضعیت عملیاتی</th><th className="p-3">هویت تأییدشده</th>
               <th className="p-3">تنظیمات</th>
             </tr></thead>
@@ -96,12 +96,12 @@ export default async function BotsPage({
               <td className="p-3">{botPlatformLabel(bot.platform)}</td>
               <td className="p-3"><Badge tone={bot.runtime_owner === "legacy" && bot.operations.desired_state === "active" ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge></td>
               <td className="p-3 text-xs">{bot.provider_bot_id ?? "هنوز تأیید نشده"}</td>
-              <td className="p-3"><Button asChild variant="outline" size="sm"><Link href={`/bots/${bot.id}`}>مدیریت بات</Link></Button></td>
+              <td className="p-3"><Button asChild variant="outline" size="sm"><Link href={`/bots/${bot.id}`}>مدیریت ربات</Link></Button></td>
             </tr>)}</tbody>
           </table>
-          {!result.bots.length ? <p className="py-8 text-center text-sm text-muted-foreground">باتی مطابق فیلتر پیدا نشد.</p> : null}
+          {!result.bots.length ? <p className="py-8 text-center text-sm text-muted-foreground">{platform || store_id ? "رباتی با این فیلترها پیدا نشد." : "هنوز رباتی ثبت نشده است. از فرم زیر ربات ایجاد کنید."}</p> : null}
         </div>
-        <nav className="flex justify-between gap-3 text-sm" aria-label="صفحه‌بندی بات‌ها">
+        <nav className="flex justify-between gap-3 text-sm" aria-label="صفحه‌بندی ربات‌ها">
           {page > 1 ? <Button asChild variant="outline" size="sm"><Link href={pageUrl(page - 1)}>قبلی</Link></Button> : <span />}
           <span>صفحه {page.toLocaleString("fa-IR")} از {pages.toLocaleString("fa-IR")}</span>
           {page < pages ? <Button asChild variant="outline" size="sm"><Link href={pageUrl(page + 1)}>بعدی</Link></Button> : <span />}
@@ -110,26 +110,26 @@ export default async function BotsPage({
     </Card>
 
     <div className="grid gap-5 lg:grid-cols-2">
-      <Card><CardHeader><CardTitle><Plus className="me-2 inline size-5" /> ثبت بات جدید</CardTitle></CardHeader><CardContent>
+      <Card><CardHeader><CardTitle><Plus className="me-2 inline size-5" /> ثبت ربات جدید</CardTitle></CardHeader><CardContent>
         <form action={createBot} className="space-y-4">
           <label className="block space-y-2 text-sm">فروشگاه
             <select name="store_id" defaultValue={result.default_store_id} required className="h-10 w-full rounded-md border bg-background px-3">
-              {result.stores.map(store => <option key={store.id} value={store.id}>{store.name} ({store.state})</option>)}
+              {result.stores.map(store => <option key={store.id} value={store.id}>{store.name} ({({ active: "فعال", paused: "متوقف", disabled: "غیرفعال", draft: "پیش‌نویس", archived: "بایگانی‌شده" } as Record<string, string>)[store.state] ?? store.state})</option>)}
             </select>
           </label>
-          <label className="block space-y-2 text-sm">نام بات
-            <Input name="name" maxLength={160} required placeholder="مثلاً بات فروش محصولات صنعتی" />
+          <label className="block space-y-2 text-sm">نام ربات
+            <Input name="name" maxLength={160} required placeholder="مثلاً ربات فروش محصولات صنعتی" />
           </label>
           <label className="block space-y-2 text-sm">شناسهٔ داخلی (Slug)
             <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9-]{2,63}" minLength={3} maxLength={64} required placeholder="industrial-telegram" />
           </label>
           <label className="block space-y-2 text-sm">نوع پیام‌رسان
             <select name="platform" className="h-10 w-full rounded-md border bg-background px-3">
-              <option value="telegram">Telegram</option><option value="bale">Bale</option>
+              <option value="telegram">تلگرام</option><option value="bale">بله</option>
             </select>
           </label>
-          <p className="text-xs text-muted-foreground">ساخت بات هیچ پیام یا درخواست Provider ارسال نمی‌کند و Receiver را راه‌اندازی نمی‌کند.</p>
-          <Button type="submit">ایجاد بات Draft</Button>
+          <p className="text-xs text-muted-foreground">ایجاد پیش‌نویس، ربات را فعال نمی‌کند.</p>
+          <Button type="submit">ایجاد ربات پیش‌نویس</Button>
         </form>
       </CardContent></Card>
       <Card><CardHeader><CardTitle>تعریف فروشگاه جدید</CardTitle></CardHeader><CardContent>
@@ -140,8 +140,8 @@ export default async function BotsPage({
           <label className="block space-y-2 text-sm">شناسهٔ فروشگاه
             <Input name="slug" dir="ltr" required pattern="[a-z][a-z0-9-]{2,63}" placeholder="second-store" />
           </label>
-          <p className="text-xs leading-7 text-muted-foreground">فروشگاه جدید در وضعیت Paused ساخته می‌شود. اتصال کاتالوگ، فروش و پرداخت مستقل پس از فاز Runtime انجام می‌شود.</p>
-          <Button type="submit" variant="outline">ساخت فروشگاه غیرفعال</Button>
+          <p className="text-xs leading-7 text-muted-foreground">فروشگاه جدید با فروش متوقف‌شده ایجاد می‌شود. پیش از شروع فروش، محصولات و روش‌های پرداخت را تنظیم کنید.</p>
+          <Button type="submit" variant="outline">ایجاد فروشگاه</Button>
         </form>
       </CardContent></Card>
     </div>

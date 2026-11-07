@@ -105,7 +105,7 @@ export function WorkflowPreview({
     <div className="min-w-0 space-y-5">
       <h1 className="text-2xl font-bold">شبیه‌ساز · {record.name}</h1>
       <p className="text-sm text-muted-foreground">
-        Revision {record.revision} · داده و مشتری ساختگی
+        نسخهٔ {record.revision} · داده و مشتری آزمایشی
       </p>
       <StudioNav id={record.id} current="preview" />
       <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm leading-7">
@@ -393,7 +393,7 @@ export function WorkflowPreview({
                       (۱KB)
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      فقط Metadata ساختگی؛ فایلی بارگذاری نمی‌شود.
+                      فایلی بارگذاری نمی‌شود؛ فقط اطلاعات آزمایشی شبیه‌سازی می‌شوند.
                     </p>
                   </div>
                 )}

@@ -31,6 +31,9 @@ const nextConfig: NextConfig = {
   assetPrefix: assetCdnOrigin(),
   reactStrictMode: true,
   poweredByHeader: false,
+  // Keep development chrome clear of mobile controls and verification widgets.
+  // Compile/runtime diagnostics remain available through Next.js and its MCP.
+  devIndicators: false,
   // Permit exactly this Codespaces hostname for reverse-proxied Server Actions.
   experimental: {
     serverActions: {

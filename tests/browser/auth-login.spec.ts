@@ -62,19 +62,19 @@ test("Rejected credentials stay on the Persian login page", async ({ page }, tes
     "Only one real FastAPI login probe, to avoid Redis throttle collisions",
   );
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "ورود به داشبورد" }))
+  await expect(page.getByRole("heading", { name: "ورود به پنل مدیریت" }))
     .toBeVisible();
 
   // Random never-provisioned staff identity; no real admin credential used.
   const username = "invalid_smoke_" + Math.random().toString(36).slice(2, 12);
   await page.getByLabel("نام کاربری").fill(username);
   await page.locator("#password").fill("invalid-smoke-password");
-  await page.getByRole("button", { name: /ورود امن/ }).click();
+  await page.getByRole("button", { name: /ورود/ }).click();
 
-  const alert = page.getByRole("alert");
+  const alert = page.locator("main").getByRole("alert");
   await expect(alert).toContainText("نام کاربری یا رمز عبور صحیح نیست");
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
-  await expect(page.getByRole("heading", { name: "ورود به داشبورد" }))
+  await expect(page.getByRole("heading", { name: "ورود به پنل مدیریت" }))
     .toBeVisible();
   await expect(page.locator("#password")).toHaveValue("");
 });
@@ -114,9 +114,9 @@ test("Unavailable auth endpoint shows an inline recoverable error", async ({
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("exampleadmin");
   await page.locator("#password").fill("not-a-real-password");
-  await page.getByRole("button", { name: /ورود امن/ }).click();
+  await page.getByRole("button", { name: /ورود/ }).click();
 
-  await expect(page.getByRole("alert"))
+  await expect(page.locator("main").getByRole("alert"))
     .toContainText("سرویس ورود در دسترس نیست");
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
 });
@@ -126,6 +126,6 @@ test("Opening the API directly redirects to the login page", async ({
 }) => {
   await page.goto("/api/auth/login");
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
-  await expect(page.getByRole("heading", { name: "ورود به داشبورد" }))
+  await expect(page.getByRole("heading", { name: "ورود به پنل مدیریت" }))
     .toBeVisible();
 });

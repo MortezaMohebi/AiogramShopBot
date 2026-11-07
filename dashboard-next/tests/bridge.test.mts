@@ -16,7 +16,8 @@ const key = "synthetic-signing-key-that-is-not-a-real-secret";
 const identity = { id: 11, version: 2 };
 type Bridge = {
   bridgeFetch: (p: string, m: string, d: unknown, i: unknown, t?: number) => Promise<unknown>;
-  adminFetch: (p: string) => Promise<unknown>;
+  adminFetch: (p: string, method?: string, data?: unknown) => Promise<unknown>;
+  optionalStoreRead: (p: string) => Promise<unknown>;
 };
 
 function load(send: typeof fetch, authenticated = true) {
@@ -99,6 +100,23 @@ test("role rejection remains a 403 instead of becoming a login redirect", async 
   await assert.rejects(bridge.adminFetch("/settings"), hasStatus(403));
 });
 
+test("parallel protected page and layout reads both redirect mandatory MFA enrollment", async () => {
+  const bridge = load(async () => Response.json({ detail: "mfa_enrollment_required" }, { status: 428 }));
+  const results = await Promise.allSettled([bridge.adminFetch("/store-context"), bridge.adminFetch("/overview")]);
+  for (const result of results) {
+    assert.equal(result.status, "rejected");
+    assert.equal((result as PromiseRejectedResult).reason.destination, "/account?enroll=1");
+  }
+});
+
+test("unrelated 428 and enrollment write failures remain errors", async () => {
+  const bridge = load(async () => Response.json({ detail: "reauthentication_required" }, { status: 428 }));
+  await assert.rejects(bridge.adminFetch("/settings"), hasStatus(428));
+  const enrollment = load(async () => Response.json({ detail: "mfa_enrollment_required" }, { status: 428 }));
+  await assert.rejects(enrollment.adminFetch("/settings", "POST", {}), hasStatus(428));
+  await assert.rejects(enrollment.adminFetch("/account"), hasStatus(428));
+});
+
 test("malformed upstream success body is reported as protocol error", async () => {
   const bridge = load(async () => new Response("<html>proxy failure</html>", { status: 200 }));
   await assert.rejects(bridge.bridgeFetch("/overview", "GET", null, identity), hasStatus(502));
@@ -154,3 +172,15 @@ test("Runtime replay denial preserves its safe code and discards private upstrea
     }
   }
 });
+
+
+test("expected Store restriction becomes unavailable without exposing raw errors",async()=>{
+  const bridge=load(async()=>Response.json({detail:"store_scope_not_supported"},{status:409}));
+  assert.equal(await bridge.optionalStoreRead("/channel-features"),null);
+});
+for(const [status,detail] of [[403,"permission_denied"],[409,"configuration_changed"],[500,"PRIVATE_DATABASE_ERROR"]] as const) {
+  test(`optional Store read preserves unrelated failure ${status}/${detail}`,async()=>{
+    const bridge=load(async()=>Response.json({detail},{status}));
+    await assert.rejects(bridge.optionalStoreRead("/channel-features"),hasStatus(status));
+  });
+}

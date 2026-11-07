@@ -1,11 +1,11 @@
+import { ActivityIndicator } from "@/components/ui/activity-indicator";
+
 export default function Loading() {
   return (
-    <div role="status" aria-live="polite" className="space-y-5">
-      <p className="text-sm text-muted-foreground">
-        در حال دریافت فرایندهای فروشگاه…
-      </p>
-      <div className="h-12 animate-pulse rounded-xl bg-muted" />
-      <div className="h-80 animate-pulse rounded-xl border bg-muted/40" />
+    <div className="space-y-5">
+      <ActivityIndicator label="در حال دریافت فرایندهای فروشگاه…" className="text-sm text-muted-foreground" />
+      <div aria-hidden="true" className="h-12 rounded-xl bg-muted" />
+      <div aria-hidden="true" className="h-80 rounded-xl border bg-muted/40" />
     </div>
   );
 }

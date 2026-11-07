@@ -22,7 +22,7 @@ test("Saving shop settings persists across a fresh page load", async ({
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("labadmin");
   await page.locator("#password").fill(process.env.LAB_ADMIN_PASSWORD!);
-  await page.getByRole("button", { name: /ورود امن/ }).click();
+  await page.getByRole("button", { name: /ورود/ }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 
   await page.goto("/settings");

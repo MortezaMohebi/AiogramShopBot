@@ -15,7 +15,6 @@ export default async function NewWorkflow({
     <>
       <PageHeading
         title={source ? "کپی فرایند" : "فرایند جدید"}
-        description="نام و کلید پایدار را انتخاب کنید. تعریف فرایند و چیدمان آن جداگانه ذخیره می‌شوند."
       />
       {catalog.can_write &&
       (!original || original.store_id === catalog.store_id) ? (

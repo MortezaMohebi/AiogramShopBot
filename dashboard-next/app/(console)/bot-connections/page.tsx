@@ -1,3 +1,4 @@
+import { StoreScopeNotice } from "@/components/blocks/store-scope-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
@@ -5,14 +6,14 @@ import {
   ConnectionControlPanel, type ConnectionData,
 } from "@/components/blocks/connection-control-panel";
 import { TelegramTransportPanel, type TelegramTransportData } from "@/components/blocks/telegram-transport-panel";
-import { adminFetch, currentStaff } from "@/lib/bridge";
+import { optionalStoreRead, currentStaff } from "@/lib/bridge";
 
 type Params = Promise<{ saved?: string; verified?: string; error?: string }>;
 const problems: Record<string, string> = {
   validation: "اطلاعات فرم معتبر نیست؛ فیلدها را بررسی کنید.",
   reauth: "برای اعمال تغییرات، ابتدا در حساب من هویت خود را مجدداً تأیید کنید.",
-  identity: "هویت بات با Provider فعلی مغایرت دارد یا Credential معتبر نیست؛ هیچ توکنی تغییر نکرد.",
-  probe: "تأیید هویت بات انجام نشد؛ API و اتصال شبکه را بررسی کنید.",
+  identity: "شناسهٔ ربات مطابقت ندارد یا Token معتبر نیست؛ Token تغییر نکرد.",
+  probe: "تأیید هویت ربات انجام نشد؛ API و اتصال شبکه را بررسی کنید.",
   save: "ذخیرهٔ تنظیمات انجام نشد؛ وضعیت سرویس را بررسی کنید.",
 };
 
@@ -23,16 +24,17 @@ export default async function BotConnectionsPage({
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
   const [operations, telegramTransport, params] = await Promise.all([
-    adminFetch<ConnectionData>("/connection-changes"),
-    adminFetch<TelegramTransportData>("/telegram-transport"),
+    optionalStoreRead<ConnectionData>("/connection-changes"),
+    optionalStoreRead<TelegramTransportData>("/telegram-transport"),
     searchParams,
   ]);
+  if (!operations || !telegramTransport) return <StoreScopeNotice title="تنظیمات اتصال ربات‌ها" />;
   return <div className="space-y-6">
-    <PageHeading title="اتصال و مدیریت ربات‌ها" description="هویت پایدار، سلامت دریافت و پردازش، Maintenance Mode، Webhook و getUpdates دو پیام‌رسان." />
-    {params.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">تنظیمات بات ثبت شد.</p> : null}
-    {params.verified ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">شناسهٔ Provider با getMe تأیید شد.</p> : null}
+    <PageHeading title="تنظیمات اتصال ربات‌ها" />
+    {params.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">تنظیمات ربات ثبت شد.</p> : null}
+    {params.verified ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">شناسهٔ ربات با getMe تأیید شد.</p> : null}
     {params.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{problems[params.error] ?? "درخواست انجام نشد."}</p> : null}
-    <p className="rounded-lg border bg-muted/30 p-4 text-sm">تنظیمات هر بات، روشن/خاموش‌کردن و تأیید هویت اکنون در <Link className="font-semibold underline" href="/bots">مدیریت ربات‌ها</Link> قرار دارند. این صفحه فقط زیرساخت اتصال و مسیرهای API را کنترل می‌کند.</p>
+    <p className="rounded-lg border bg-muted/30 p-4 text-sm">برای ویرایش مشخصات، تغییر وضعیت و تأیید هویت هر ربات به <Link className="font-semibold underline" href="/bots">مدیریت ربات‌ها</Link> بروید.</p>
     <TelegramTransportPanel initial={telegramTransport} />
     <ConnectionControlPanel initial={operations} />
   </div>;

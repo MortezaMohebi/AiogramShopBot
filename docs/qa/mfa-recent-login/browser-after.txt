@@ -1,0 +1,1 @@
+PASS enrollment/theme: 12 checks; 10 captures; zero real auth writes

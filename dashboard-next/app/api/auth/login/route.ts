@@ -9,9 +9,9 @@ import { createSession, sessionCookieName } from "@/lib/session";
 import { controlJson } from "@/lib/control-request";
 
 export const runtime = "nodejs";
-interface StaffLogin { id: number; session_version: number; session_token: string; mfa_setup_required?: boolean }
-function failure(request: NextRequest, code: string, status: number): NextResponse {
-  const requestId = randomUUID();
+interface StaffLogin { id: number; session_version: number; session_token: string; mfa_setup_required?: boolean; session_ttl_seconds?: number }
+function failure(request: NextRequest, code: string, status: number, correlation?: string): NextResponse {
+  const requestId = correlation && /^[a-f0-9-]{36}$/i.test(correlation) ? correlation : randomUUID();
   console.warn("[shop-admin/auth]", { requestId, code, status });
   const origin = publicOrigin(request), accept = request.headers.get("accept") ?? "";
   if (origin && accept.includes("text/html") && !accept.includes("application/json")) {
@@ -30,6 +30,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const credentials = raw as Record<string, unknown>;
   const username = typeof credentials.username === "string" ? credentials.username.trim().toLowerCase() : "";
   const password = credentials.password, factor = credentials.second_factor ?? "";
+  const rememberMe = credentials.remember_me ?? false;
+  if (typeof rememberMe !== "boolean") return failure(request, "invalid_request", 422);
   if (!/^[a-z0-9][a-z0-9_.-]{2,79}$/.test(username) || typeof password !== "string" || !password || password.length > 256 || typeof factor !== "string" || factor.length > 64) return failure(request, "invalid_request", 422);
   let captchaConfig;
   try { captchaConfig = serverCaptchaConfig(); } catch { return failure(request, "captcha_unavailable", 503); }
@@ -38,20 +40,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const account = await bridgeFetch<StaffLogin>("/auth/login", "POST", {
       username, password, second_factor: factor,
+      ...(rememberMe ? { remember_me: true } : {}),
       device: (request.headers.get("user-agent") ?? "Browser").slice(0, 160),
     }, null);
     if (!account || !Number.isSafeInteger(account.id) || account.id < 1 || !Number.isSafeInteger(account.session_version) || account.session_version < 1 || !/^[A-Za-z0-9_-]{43}$/.test(account.session_token)) return failure(request, "service_unavailable", 503);
+    const duration = rememberMe ? 30 * 24 * 60 * 60 : 8 * 60 * 60;
+    // Older short-session backends remain compatible; persistence requires an
+    // explicit matching backend lifetime, never just a longer browser Cookie.
+    if ((rememberMe || account.session_ttl_seconds !== undefined) && account.session_ttl_seconds !== duration) return failure(request, "service_unavailable", 503);
     const response = NextResponse.json({ ok: true, redirect: account.mfa_setup_required ? "/account?enroll=1" : "/dashboard" }, { headers: { "Cache-Control": "no-store" } });
-    response.cookies.set(sessionCookieName(), createSession(account.id, account.session_version, account.session_token), { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 8 * 60 * 60 });
+    response.cookies.set(sessionCookieName(), createSession(account.id, account.session_version, account.session_token, rememberMe), { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", ...(rememberMe ? { maxAge: duration } : {}) });
     response.cookies.set(loginChallengeCookieName(), "", { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
     return response;
   } catch (error) {
     if (error instanceof ApiError) {
-      if (error.status === 428) return failure(request, "mfa_required", 428);
-      if (error.status === 401) return failure(request, error.code === "invalid_verification" ? "invalid_verification" : "invalid_credentials", 401);
-      if (error.status === 429) return failure(request, "temporarily_locked", 429);
+      if (error.status === 428 && error.code === "mfa_required") return failure(request, "mfa_required", 428, error.requestId);
+      if (error.status === 401 && ["invalid_credentials", "invalid_verification"].includes(error.code ?? "")) return failure(request, error.code!, 401, error.requestId);
+      if (error.status === 429) return failure(request, "temporarily_locked", 429, error.requestId);
+      if (error.status === 503 && ["mfa_unavailable", "mfa_not_configured"].includes(error.code ?? "")) return failure(request, "mfa_unavailable", 503);
     }
-    return failure(request, "service_unavailable", 503);
+    return failure(request, "service_unavailable", 503, error instanceof ApiError ? error.requestId : undefined);
   }
 }
 export async function GET(request: NextRequest): Promise<NextResponse> {

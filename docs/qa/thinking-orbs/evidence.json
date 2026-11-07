@@ -1,0 +1,174 @@
+{
+  "status": "PASS",
+  "fixture": "isolated UI only; no business data",
+  "checks": [
+    {
+      "check": "RTL and reflow",
+      "mode": "light",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "light",
+      "width": 1024,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "light",
+      "width": 768,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "light",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "light",
+      "width": 320,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "dark",
+      "width": 1440,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "dark",
+      "width": 1024,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "dark",
+      "width": 768,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "dark",
+      "width": 390,
+      "status": "PASS"
+    },
+    {
+      "check": "RTL and reflow",
+      "mode": "dark",
+      "width": 320,
+      "status": "PASS"
+    },
+    {
+      "check": "reduced motion renders a stable painted frame",
+      "status": "PASS"
+    },
+    {
+      "check": "animation resumes when reduced motion is disabled",
+      "status": "PASS"
+    },
+    {
+      "check": "real login pending UI and offline failure recovery",
+      "mode": "light",
+      "status": "PASS"
+    },
+    {
+      "check": "real login pending UI and offline failure recovery",
+      "mode": "dark",
+      "status": "PASS"
+    }
+  ],
+  "screenshots": [
+    "primary-light-1440.png",
+    "dashboard-light-1440.png",
+    "workflows-light-1440.png",
+    "runtime-light-1440.png",
+    "mcp-light-1440.png",
+    "long-light-1440.png",
+    "primary-light-1024.png",
+    "dashboard-light-1024.png",
+    "workflows-light-1024.png",
+    "runtime-light-1024.png",
+    "mcp-light-1024.png",
+    "long-light-1024.png",
+    "primary-light-768.png",
+    "dashboard-light-768.png",
+    "workflows-light-768.png",
+    "runtime-light-768.png",
+    "mcp-light-768.png",
+    "long-light-768.png",
+    "primary-light-390.png",
+    "dashboard-light-390.png",
+    "workflows-light-390.png",
+    "runtime-light-390.png",
+    "mcp-light-390.png",
+    "long-light-390.png",
+    "primary-light-320.png",
+    "dashboard-light-320.png",
+    "workflows-light-320.png",
+    "runtime-light-320.png",
+    "mcp-light-320.png",
+    "long-light-320.png",
+    "primary-dark-1440.png",
+    "dashboard-dark-1440.png",
+    "workflows-dark-1440.png",
+    "runtime-dark-1440.png",
+    "mcp-dark-1440.png",
+    "long-dark-1440.png",
+    "primary-dark-1024.png",
+    "dashboard-dark-1024.png",
+    "workflows-dark-1024.png",
+    "runtime-dark-1024.png",
+    "mcp-dark-1024.png",
+    "long-dark-1024.png",
+    "primary-dark-768.png",
+    "dashboard-dark-768.png",
+    "workflows-dark-768.png",
+    "runtime-dark-768.png",
+    "mcp-dark-768.png",
+    "long-dark-768.png",
+    "primary-dark-390.png",
+    "dashboard-dark-390.png",
+    "workflows-dark-390.png",
+    "runtime-dark-390.png",
+    "mcp-dark-390.png",
+    "long-dark-390.png",
+    "primary-dark-320.png",
+    "dashboard-dark-320.png",
+    "workflows-dark-320.png",
+    "runtime-dark-320.png",
+    "mcp-dark-320.png",
+    "long-dark-320.png",
+    "login-pending-light-320.png",
+    "login-pending-dark-320.png"
+  ],
+  "errors": [],
+  "auth_backend_calls": 0,
+  "browser": "156.0.8078.4",
+  "palettes": {
+    "light": {
+      "primary": {
+        "ink": 52,
+        "mean": 177.34615384615384
+      },
+      "normal": {
+        "ink": 29,
+        "mean": 69.37931034482759
+      }
+    },
+    "dark": {
+      "primary": {
+        "ink": 52,
+        "mean": 72.59615384615384
+      },
+      "normal": {
+        "ink": 29,
+        "mean": 184.48275862068965
+      }
+    }
+  },
+  "fixture_cleanup": "PASS"
+}

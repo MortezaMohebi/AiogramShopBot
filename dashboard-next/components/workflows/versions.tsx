@@ -74,21 +74,28 @@ export function WorkflowVersions({
       setBusy(false);
     }
   };
+  const actionLabels: Record<string, string> = {
+    create: "ایجاد",
+    save: "ذخیره",
+    archive: "بایگانی",
+    delete: "حذف",
+    restore: "بازیابی",
+    duplicate: "ایجاد کپی",
+  };
   const options = versions.items.map((v) => ({
     value: String(v.revision),
-    label: `r${v.revision} · ${v.action}`,
+    label: `r${v.revision} · ${actionLabels[v.action] ?? v.action}`,
   }));
   return (
     <div className="min-w-0 space-y-5">
       <div>
         <h1 className="text-2xl font-bold">نسخه‌ها · {record.name}</h1>
         <p className="mt-2 text-sm leading-7 text-muted-foreground">
-          هر ذخیره یک Snapshot مستقل دارد. Restore یک Revision جدید می‌سازد؛
-          نسخهٔ قبلی تغییر نمی‌کند.
+          بازیابی، یک نسخهٔ جدید از پیش‌نویس می‌سازد و نسخه‌های قبلی را تغییر نمی‌دهد.
         </p>
       </div>
       <StudioNav id={initial.id} current="versions" />
-      <div className="rounded-xl border bg-card p-5">
+      <div className="min-w-0 rounded-xl border bg-card p-5">
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-0 flex-1 space-y-2 text-xs">
             نسخهٔ مبنا
@@ -126,23 +133,23 @@ export function WorkflowVersions({
         </div>
         {diff && (
           <div className="mt-5 space-y-3">
-            <p className="text-sm">
+            <p className="text-sm" dir="ltr">
               r{diff.left_revision} → r{diff.right_revision}
             </p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[420px] text-start text-xs">
                 <thead>
                   <tr className="border-b">
-                    <th className="p-2 text-start">بخش</th>
-                    <th className="p-2 text-start">افزوده</th>
-                    <th className="p-2 text-start">حذف</th>
-                    <th className="p-2 text-start">تغییر</th>
+                    <th scope="col" className="p-2 text-start">بخش</th>
+                    <th scope="col" className="p-2 text-start">افزوده</th>
+                    <th scope="col" className="p-2 text-start">حذف</th>
+                    <th scope="col" className="p-2 text-start">تغییر</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(["nodes", "edges", "variables"] as const).map((key) => (
                     <tr key={key} className="border-b">
-                      <th className="p-2 text-start">{key}</th>
+                      <th scope="row" className="p-2 text-start">{{ nodes: "گره‌ها", edges: "اتصال‌ها", variables: "متغیرها" }[key]}</th>
                       {(["added", "removed", "changed"] as const).map(
                         (change) => (
                           <td
@@ -160,9 +167,9 @@ export function WorkflowVersions({
               </table>
             </div>
             <p className="text-xs">
-              Metadata: {diff.metadata_changed.join(", ") || "بدون تغییر"} ·
+              مشخصات: {diff.metadata_changed.join(", ") || "بدون تغییر"} ·
               چیدمان: {diff.layout_changed ? "تغییر کرده" : "بدون تغییر"} ·
-              Definition:{" "}
+              تعریف فرایند:{" "}
               {diff.definition_changed ? "تغییر کرده" : "بدون تغییر"}
             </p>
           </div>
@@ -176,9 +183,9 @@ export function WorkflowVersions({
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-semibold">
-                Revision {v.revision}{" "}
+                نسخهٔ {v.revision}{" "}
                 <span className="text-xs font-normal text-muted-foreground">
-                  · {v.action}
+                  · {actionLabels[v.action] ?? v.action}
                 </span>
               </h2>
               <span className="text-xs text-muted-foreground">
@@ -187,12 +194,10 @@ export function WorkflowVersions({
                 })}
               </span>
             </div>
-            <p
-              className="break-all text-[10px] text-muted-foreground"
-              dir="ltr"
-            >
-              SHA-256: {v.sha256}
-            </p>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">شناسهٔ بررسی یکپارچگی نسخه</summary>
+              <p className="mt-2 break-all" dir="ltr">SHA-256: {v.sha256}</p>
+            </details>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
@@ -200,7 +205,7 @@ export function WorkflowVersions({
                 disabled={busy}
                 onClick={() => void inspect(v.revision)}
               >
-                مشاهدهٔ Snapshot
+                مشاهدهٔ نسخه
               </Button>
               {record.can_write && (
                 <Button
@@ -223,7 +228,7 @@ export function WorkflowVersions({
                     })
                   }
                 >
-                  Restore به پیش‌نویس جدید
+                  بازیابی در پیش‌نویس جدید
                 </Button>
               )}
             </div>
@@ -261,7 +266,7 @@ export function WorkflowVersions({
       {snapshot && (
         <section className="min-w-0 rounded-xl border bg-card p-5">
           <div className="flex justify-between gap-3">
-            <h2 className="font-semibold">Snapshot r{snapshot.revision}</h2>
+            <h2 className="font-semibold">نسخهٔ r{snapshot.revision}</h2>
             <Button variant="ghost" size="sm" onClick={() => setSnapshot(null)}>
               بستن
             </Button>

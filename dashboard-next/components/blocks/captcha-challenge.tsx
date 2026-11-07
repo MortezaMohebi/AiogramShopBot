@@ -23,6 +23,7 @@ interface TurnstileAPI {
       sitekey: string;
       action: string;
       theme: "auto";
+      size: "compact";
     },
   ) => string;
   reset: (widgetId: string) => void;
@@ -33,7 +34,7 @@ interface RecaptchaAPI {
   ready: (callback: () => void) => void;
   render: (
     target: HTMLElement,
-    options: WidgetCallbacks & { sitekey: string },
+    options: WidgetCallbacks & { sitekey: string; size: "compact" },
   ) => number;
   reset: (widgetId: number) => void;
   execute: (siteKey: string, options: { action: string }) => Promise<string>;
@@ -145,6 +146,8 @@ export const CaptchaChallenge = forwardRef<
           sitekey: siteKey,
           action: "login",
           theme: "auto",
+          // The login content is 280px wide at the 320px viewport.
+          size: "compact",
           ...callbacks,
         });
       } catch {
@@ -162,6 +165,7 @@ export const CaptchaChallenge = forwardRef<
           try {
             widgetRef.current = api.render(target, {
               sitekey: siteKey,
+              size: "compact",
               ...callbacks,
             });
           } catch {

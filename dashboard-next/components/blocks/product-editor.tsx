@@ -149,7 +149,7 @@ export function ProductEditor({
         // same product-editing experience, without typing a numeric ID.
         router.push("/products/" + result.id + "/edit?created=1#media");
       } else {
-        setNotice({ ok: true, message: "تغییرات محصول در پایگاه داده ذخیره شد." });
+        setNotice({ ok: true, message: "تغییرات محصول ذخیره شد." });
         router.refresh();
       }
     } catch (cause) {
@@ -200,7 +200,7 @@ export function ProductEditor({
               </div>
               <div className="space-y-2">
                 <label htmlFor="product-external-ref" className="text-sm font-medium">
-                  External Reference (برای Import/Export اختیاری)
+                  شناسهٔ خارجی (اختیاری، برای ورود و خروج داده)
                 </label>
                 <Input id="product-external-ref" name="external_ref"
                   maxLength={80} dir="ltr" defaultValue={product?.external_ref ?? ""}
@@ -258,8 +258,7 @@ export function ProductEditor({
                   </label>
                 </div>
                 <p className="text-xs leading-6 text-muted-foreground">
-                  قیمت به ازای یک واحد فروش است. موجودی و Cart فعلاً تعداد صحیح
-                  می‌پذیرند؛ مقدار اعشاری تنها بعد از Migration کامل موجودی مجاز می‌شود.
+                  قیمت برای یک واحد فروش است. موجودی و سبد خرید فقط تعداد صحیح می‌پذیرند.
                 </p>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -285,7 +284,7 @@ export function ProductEditor({
                     defaultValue={product?.stock_quantity ?? 0} className="text-start" />
                   <p className="text-xs text-muted-foreground">
                     {product?.digital_delivery_mode === "license"
-                      ? "موجودی این محصول از لایسنس‌های رمزنگاری‌شده محاسبه می‌شود."
+                      ? "موجودی این محصول از لایسنس‌های استفاده‌نشده محاسبه می‌شود."
                       : "هنگام ناموجودشدن، پیام «ناموجود» همیشه به مشتری نمایش داده می‌شود."}
                   </p>
                 </div>
@@ -319,8 +318,7 @@ export function ProductEditor({
               <CardHeader><CardTitle>نمایش و انتشار</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-xs leading-6 text-muted-foreground">
-                  ترتیب محصولات به‌صورت خودکار با Sequence تعیین می‌شود.
-                  فیلدهای پنهان‌شده در پیام‌رسان‌ها ارسال نمی‌شوند.
+                  فیلدهای پنهان‌شده به مشتری نمایش داده نمی‌شوند.
                 </p>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm">تصاویر و فایل‌های محصول</span>
@@ -360,7 +358,10 @@ export function ProductEditor({
             : <TriangleAlert aria-hidden="true" className="size-4" />}
           <div>
             <p>{notice.message}</p>
-            {notice.requestId ? <p dir="ltr">Request ID: {notice.requestId}</p> : null}
+            {notice.requestId ? <details className="mt-2 text-xs">
+              <summary className="cursor-pointer">اطلاعات پیگیری</summary>
+              <p dir="ltr" className="mt-1 break-all">{notice.requestId}</p>
+            </details> : null}
           </div>
         </div>
       ) : null}

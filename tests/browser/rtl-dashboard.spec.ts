@@ -9,7 +9,7 @@ test("Login UI uses RTL Persian at the requested viewport", async ({
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator("html")).toHaveAttribute("lang", "fa");
   await expect(
-    page.getByRole("heading", { name: "ورود به داشبورد" }),
+    page.getByRole("heading", { name: "ورود به پنل مدیریت" }),
   ).toBeVisible();
   await expect(page.getByLabel("نام کاربری")).toBeVisible();
 
@@ -34,7 +34,7 @@ test("Real staff login, dashboard, media and dark mode", async ({
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("labadmin");
   await page.getByLabel("رمز عبور").fill(password);
-  await page.getByRole("button", { name: /ورود امن/ }).click();
+  await page.getByRole("button", { name: /ورود/ }).click();
 
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/);
   await expect(
@@ -69,7 +69,7 @@ test("A viewer cannot access the finance console", async ({
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("labviewer");
   await page.getByLabel("رمز عبور").fill(password);
-  await page.getByRole("button", { name: /ورود امن/ }).click();
+  await page.getByRole("button", { name: /ورود/ }).click();
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/);
 
   // The authoritative FastAPI role check is independent of sidebar links.

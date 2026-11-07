@@ -21,7 +21,7 @@ function MfaFields() {
         autoComplete="current-password" maxLength={256} />
     </label>
     <label className="block space-y-2 text-sm">کد MFA
-      <Input name="second_factor" inputMode="numeric" pattern="[0-9]{6}"
+      <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
         maxLength={6} autoComplete="one-time-code" required />
     </label>
   </div>;
@@ -31,15 +31,13 @@ function MfaFields() {
 export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
   const isRegistry = bot.runtime_owner === "registry";
   return <Card>
-    <CardHeader><CardTitle>مجوزهای فروش و حساب‌های پرداخت این بات</CardTitle></CardHeader>
+    <CardHeader><CardTitle>مجوزهای فروش و حساب‌های پرداخت این ربات</CardTitle></CardHeader>
     <CardContent className="space-y-6 text-sm">
       <p className="leading-7 text-muted-foreground">
-        Store مالک Customer، Catalog، Stock و اعتبار داخلی است. بات تنها
-        دسترسی مجاز به قابلیت‌های فروش و Providerهای پرداخت را دارد.
-        هیچ Token و موجودی کیف پول خارجی از این صفحه خوانده نمی‌شود.
+        سبد خرید، اعتبار داخلی و حساب‌های پرداخت مجاز این ربات را تنظیم کنید.
       </p>
       <form action={saveBotCommercePolicy} className="space-y-4 rounded-xl border p-4">
-        <p className="font-semibold">Cart و Store Credit — نسخه {policy.version}</p>
+        <p className="font-semibold">سبد خرید و اعتبار داخلی — نسخه {policy.version}</p>
         <input type="hidden" name="bot_id" value={bot.id} />
         <input type="hidden" name="expected_version" value={policy.version} />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -47,7 +45,7 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
             <select name="cart_enabled"
               defaultValue={policy.cart_enabled === null ? "inherit" : String(policy.cart_enabled)}
               className="block h-10 w-full rounded-md border bg-background px-3">
-              <option value="inherit">{isRegistry ? "بدون تنظیم — غیرفعال" : "ارث‌بری Legacy"}</option>
+              <option value="inherit">{isRegistry ? "بدون تنظیم — غیرفعال" : "استفاده از تنظیمات اتصال قدیمی"}</option>
               <option value="true">فعال</option>
               <option value="false">غیرفعال</option>
             </select>
@@ -56,33 +54,32 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
             <select name="credit_enabled"
               defaultValue={policy.credit_enabled === null ? "inherit" : String(policy.credit_enabled)}
               className="block h-10 w-full rounded-md border bg-background px-3">
-              <option value="inherit">{isRegistry ? "بدون تنظیم — غیرفعال" : "ارث‌بری Legacy"}</option>
+              <option value="inherit">{isRegistry ? "بدون تنظیم — غیرفعال" : "استفاده از تنظیمات اتصال قدیمی"}</option>
               <option value="true">فعال</option>
               <option value="false">غیرفعال</option>
             </select>
           </label>
-          <label className="block space-y-2 sm:col-span-2">عنوان اعتبار داخلی در بات
+          <label className="block space-y-2 sm:col-span-2">عنوان اعتبار داخلی در ربات
             <Input name="credit_label" maxLength={80}
               defaultValue={policy.credit_label ?? ""} placeholder="اعتبار فروشگاه" />
           </label>
         </div>
         <MfaFields />
-        <Button type="submit" variant="outline">ذخیرهٔ مجوزهای این بات</Button>
+        <Button type="submit" variant="outline">ذخیرهٔ مجوزهای این ربات</Button>
       </form>
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="font-semibold">Payment Accounts مجاز</p>
+          <p className="font-semibold">حساب‌های پرداخت مجاز</p>
           <Button asChild variant="outline" size="sm">
-            <Link href="/payment-accounts">تعریف حساب در Store</Link>
+            <Link href="/payment-accounts">افزودن حساب پرداخت</Link>
           </Button>
         </div>
         {!isRegistry ? <p className="text-muted-foreground">
-          Providerهای بات Legacy در بخش تنظیمات اتصال قدیمی مدیریت می‌شوند؛
-          هیچ Token فعالی خودکار به مدل جدید منتقل نمی‌شود.
+          روش‌های پرداخت ربات قدیمی در تنظیمات اتصال مدیریت می‌شوند. Token فعال آن به‌صورت خودکار منتقل نمی‌شود.
         </p> : null}
         {isRegistry && !paymentAccounts.items.length ? <p className="rounded-lg border p-3 text-muted-foreground">
-          حسابی برای این Store و پیام‌رسان ثبت نشده است؛ پرداخت جدید غیرفعال می‌ماند.
+          حساب پرداختی برای این فروشگاه و پیام‌رسان ثبت نشده است. ابتدا حساب پرداخت اضافه کنید.
         </p> : null}
         {isRegistry && paymentAccounts.items.map(account => <form
           key={account.id} action={setBotPaymentAccess}
@@ -91,10 +88,10 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
           <input type="hidden" name="account_id" value={account.id} />
           <div className="flex flex-wrap justify-between gap-2">
             <p className="font-medium">{account.name} · {account.rail_type}</p>
-            <span className="text-xs text-muted-foreground">{account.state} · {account.currency}</span>
+            <span className="text-xs text-muted-foreground">{({ draft: "پیش‌نویس", active: "فعال", disabled: "غیرفعال" } as const)[account.state]} · <bdi>{account.currency}</bdi></span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-2">دسترسی بات به این حساب
+            <label className="block space-y-2">دسترسی ربات به این حساب
               <select name="enabled" defaultValue={account.granted ? "true" : "false"}
                 className="block h-10 w-full rounded-md border bg-background px-3">
                 <option value="false">غیرفعال</option>
@@ -107,9 +104,9 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
             </label>
           </div>
           <MfaFields />
-          <Button type="submit" variant="outline">ذخیرهٔ مجوز Provider</Button>
+          <Button type="submit" variant="outline">ذخیره دسترسی حساب پرداخت</Button>
           <p className="text-xs text-muted-foreground">
-            برای فعال‌کردن، Account باید Active باشد؛ مبلغ و وضعیت مالی سابق تغییر نمی‌کند.
+            برای فعال‌کردن دسترسی، حساب پرداخت باید فعال باشد. سوابق مالی تغییر نمی‌کنند.
           </p>
         </form>)}
       </div>

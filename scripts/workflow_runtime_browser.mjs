@@ -543,9 +543,11 @@ async function login(session, username, password, factor = false) {
   requireSafe(new URL(page.url()).pathname === "/login", "normal_login_not_required");
   await page.getByLabel("نام کاربری", { exact: true }).fill(username);
   await page.getByLabel("رمز عبور", { exact: true }).fill(password);
-  if (factor)
-    await page.getByLabel("کد احراز هویت یا بازیابی (اگر فعال است)", { exact: true }).fill(await freshOtp());
-  await page.getByRole("button", { name: "ورود امن", exact: true }).click();
+  await page.getByRole("button", { name: "ادامه", exact: true }).click();
+  if (factor) {
+    await page.getByLabel("کد تأیید", { exact: true }).fill(await freshOtp());
+    await page.getByRole("button", { name: "ورود", exact: true }).click();
+  }
   await page.waitForURL("**/dashboard");
   session.loggedIn = true;
   session.username = username;
@@ -735,7 +737,7 @@ async function uncertainGate(mode) {
   await setOwnGate(admin, { enabled: false, killed: true });
   const page = await open(admin, "/studio/runtime?tab=overview");
   const row = gateRow(page, fixture.bot_name);
-  await row.getByRole("checkbox", { name: "توقف اضطراری و بازگشت مسیریابی به Legacy", exact: true }).uncheck();
+  await row.getByRole("checkbox", { name: "توقف اضطراری و بازگشت به مسیر قبلی ربات", exact: true }).uncheck();
   await row.getByRole("checkbox", { name: "تغییر مجوز همین محدوده را تأیید می‌کنم.", exact: true }).check();
   const path = "/api/admin/workflow-runtime/gates";
   const before = countWrites(path);
@@ -763,10 +765,10 @@ async function uncertainGate(mode) {
   };
   await admin.context.route(base + path, routeHandler);
   try {
-    await row.getByRole("button", { name: "ثبت تنظیم اجرا", exact: true }).click();
+    await row.getByRole("button", { name: "ذخیرهٔ تنظیم اجرا", exact: true }).click();
     await row.getByRole("button", { name: "بررسی نتیجه در تاریخچه", exact: true }).waitFor();
     requireSafe((await row.getByRole("alert").innerText()).includes("نامعلوم"), "malformed_receipt_not_unknown");
-    requireSafe(await row.getByRole("button", { name: "ثبت تنظیم اجرا", exact: true }).isDisabled(), "unknown_write_not_locked");
+    requireSafe(await row.getByRole("button", { name: "ذخیرهٔ تنظیم اجرا", exact: true }).isDisabled(), "unknown_write_not_locked");
     requireSafe(intercepted === 1 && countWrites(path) === before + 1, "unknown_write_replayed");
     await capture(admin, `unknown-${mode}`);
     await admin.context.route(base + "/api/admin/workflow-runtime/history", historyHandler);
@@ -776,7 +778,7 @@ async function uncertainGate(mode) {
       // A completed RSC refresh must not erase a frozen unknown operation.
       await page.waitForLoadState("networkidle");
       requireSafe(await row.getByRole("button", { name: "بررسی نتیجه در تاریخچه", exact: true }).isVisible(), "unmatched_audit_lost_unknown_state");
-      requireSafe(await row.getByRole("button", { name: "ثبت تنظیم اجرا", exact: true }).isDisabled(), "unmatched_audit_unlocked_write");
+      requireSafe(await row.getByRole("button", { name: "ذخیرهٔ تنظیم اجرا", exact: true }).isDisabled(), "unmatched_audit_unlocked_write");
       requireSafe(countWrites(path) === before + 1, "history_inspection_replayed_write");
     } finally {
       await admin.context.unroute(base + "/api/admin/workflow-runtime/history", historyHandler);
@@ -886,7 +888,7 @@ async function logout(session) {
     await bff(session, "/api/admin/workflow-runtime", { status: 401 });
   } else {
     await ready(page);
-    const control = page.getByRole("button", { name: "خروج امن", exact: true });
+    const control = page.getByRole("button", { name: "خروج", exact: true });
     await control.waitFor({ state: "visible" });
     await control.click();
     await page.waitForURL("**/login");
@@ -942,7 +944,7 @@ try {
   await check(checks[2], async () => {
     for (const tab of ["overview", "publications", "bindings", "runs", "outbox", "history"]) {
       const page = await open(admin, "/studio/runtime?tab=" + tab);
-      requireSafe(await page.getByRole("navigation", { name: "بخش‌های Runtime", exact: true }).getByRole("link").count() === 6, "runtime_tabs_missing");
+      requireSafe(await page.getByRole("navigation", { name: "بخش‌های وضعیت اجرا", exact: true }).getByRole("link").count() === 6, "runtime_tabs_missing");
       if (tab === "overview") await assertOperationalOverview(page, await bff(admin, "/api/admin/workflow-runtime"));
       await capture(admin, "initial-" + tab);
     }
@@ -986,7 +988,7 @@ try {
     const row = gateRow(page, "فروشگاه جاری");
     await row.getByText("غیرفعال", { exact: true }).waitFor();
     requireSafe((await row.innerText()).includes("۰"), "absent_gate_version_not_zero");
-    requireSafe(await page.locator("main input[type=checkbox]").count() === 0 && await page.getByRole("button", { name: "ثبت تنظیم اجرا", exact: true }).count() === 0, "readonly_gate_controls_present");
+    requireSafe(await page.locator("main input[type=checkbox]").count() === 0 && await page.getByRole("button", { name: "ذخیرهٔ تنظیم اجرا", exact: true }).count() === 0, "readonly_gate_controls_present");
     await capture(viewer, "readonly-default-absent-store");
     const result = await bff(viewer, "/api/admin/workflow-runtime/gates", { method: "POST", status: 403, body: { bot_id: null, expected_version: 0, enabled: true, killed: false, operation_id: randomUUID() } });
     requireSafe(result.code === "permission_denied", "viewer_write_not_denied");
@@ -1061,11 +1063,11 @@ try {
     const page = await open(admin, "/studio/runtime?tab=overview");
     const row = gateRow(page, fixture.bot_name);
     const existing = await currentGate(admin, fixture.bot_id);
-    await row.getByRole("checkbox", { name: "توقف اضطراری و بازگشت مسیریابی به Legacy", exact: true }).setChecked(!existing.killed);
+    await row.getByRole("checkbox", { name: "توقف اضطراری و بازگشت به مسیر قبلی ربات", exact: true }).setChecked(!existing.killed);
     await row.getByRole("checkbox", { name: "تغییر مجوز همین محدوده را تأیید می‌کنم.", exact: true }).check();
     expectedUiFailures.add("/api/admin/workflow-runtime/gates");
     const responsePromise = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/workflow-runtime/gates" && response.request().method() === "POST");
-    await row.getByRole("button", { name: "ثبت تنظیم اجرا", exact: true }).click();
+    await row.getByRole("button", { name: "ذخیرهٔ تنظیم اجرا", exact: true }).click();
     const response = await responsePromise;
     requireSafe(response.status() === 403 && (await response.json()).code === "reauthentication_required", "stale_auth_not_denied");
     await row.getByRole("link", { name: "تأیید دوبارهٔ هویت در حساب من", exact: true }).waitFor();

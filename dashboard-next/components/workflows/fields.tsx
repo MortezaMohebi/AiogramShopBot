@@ -375,7 +375,7 @@ export function ChoicesEditor({
         }
       >
         <Plus />
-        گزینه
+        افزودن گزینه
       </Button>
     </div>
   );
@@ -411,69 +411,79 @@ export function ButtonsEditor({
             {i + 1}. {b.label}
           </summary>
           <div className="mt-3 space-y-3">
-            <Input
-              aria-label={`متن دکمه ${i + 1}`}
-              value={b.label}
-              maxLength={80}
-              onChange={(e) => update(i, { label: e.target.value })}
-            />
-            <Select
-              label={`نوع دکمه ${i + 1}`}
-              value={b.type}
-              options={[
-                { value: "callback", label: "رفتن به مرحله" },
-                { value: "url", label: "لینک HTTPS" },
-                { value: "action", label: "Action آماده" },
-                { value: "request_contact", label: "درخواست Contact" },
-                { value: "back", label: "بازگشت" },
-                { value: "cancel", label: "لغو" },
-                { value: "main_menu", label: "منوی اصلی" },
-              ]}
-              onChange={(type) =>
-                update(i, {
-                  type: type as WorkflowButton["type"],
-                  target: "",
-                  url: "",
-                  action: "",
-                })
-              }
-            />
-            {["callback", "action"].includes(b.type) && (
-              <Select
-                label={`مقصد دکمه ${i + 1}`}
-                value={b.target}
-                options={[
-                  { value: "", label: "مقصد انتخاب نشده" },
-                  ...definition.nodes.map((n) => ({
-                    value: n.id,
-                    label: n.label || n.id,
-                  })),
-                ]}
-                onChange={(target) => update(i, { target })}
+            <Field label="متن دکمه">
+              <Input
+                aria-label={`متن دکمه ${i + 1}`}
+                value={b.label}
+                maxLength={80}
+                onChange={(e) => update(i, { label: e.target.value })}
               />
+            </Field>
+            <Field label="نوع دکمه">
+              <Select
+                label={`نوع دکمه ${i + 1}`}
+                value={b.type}
+                options={[
+                  { value: "callback", label: "رفتن به مرحله" },
+                  { value: "url", label: "لینک HTTPS" },
+                  { value: "action", label: "Action آماده" },
+                  { value: "request_contact", label: "درخواست شماره تماس" },
+                  { value: "back", label: "بازگشت" },
+                  { value: "cancel", label: "لغو" },
+                  { value: "main_menu", label: "منوی اصلی" },
+                ]}
+                onChange={(type) =>
+                  update(i, {
+                    type: type as WorkflowButton["type"],
+                    target: "",
+                    url: "",
+                    action: "",
+                  })
+                }
+              />
+            </Field>
+            {["callback", "action"].includes(b.type) && (
+              <Field label="مقصد دکمه">
+                <Select
+                  label={`مقصد دکمه ${i + 1}`}
+                  value={b.target}
+                  options={[
+                    { value: "", label: "مقصد انتخاب نشده" },
+                    ...definition.nodes.map((n) => ({
+                      value: n.id,
+                      label: n.label || n.id,
+                    })),
+                  ]}
+                  onChange={(target) => update(i, { target })}
+                />
+              </Field>
             )}{" "}
             {b.type === "url" && (
-              <Input
-                aria-label={`لینک دکمه ${i + 1}`}
-                type="url"
-                dir="ltr"
-                placeholder="https://example.com"
-                value={b.url}
-                onChange={(e) => update(i, { url: e.target.value })}
-              />
+              <Field label="لینک دکمه">
+                <Input
+                  aria-label={`لینک دکمه ${i + 1}`}
+                  type="url"
+                  dir="ltr"
+                  placeholder="https://example.com"
+                  value={b.url}
+                  onChange={(e) => update(i, { url: e.target.value })}
+                />
+              </Field>
             )}{" "}
             {b.type === "action" && (
-              <Select
-                label={`Action دکمه ${i + 1}`}
-                value={b.action}
-                options={[
-                  { value: "", label: "انتخاب Action" },
-                  ...catalog.nodes
-                    .filter((n) => n.action_contract.simulation_only)
-                    .map((n) => ({ value: n.type, label: n.label })),
-                ]}
-                onChange={(action) => update(i, { action })}
-              />
+              <Field label="عملیات دکمه">
+                <Select
+                  label={`Action دکمه ${i + 1}`}
+                  value={b.action}
+                  options={[
+                    { value: "", label: "انتخاب Action" },
+                    ...catalog.nodes
+                      .filter((n) => n.action_contract.simulation_only)
+                      .map((n) => ({ value: n.type, label: n.label })),
+                  ]}
+                  onChange={(action) => update(i, { action })}
+                />
+              </Field>
             )}
             <Field label="ردیف صفحه‌کلید">
               <Input
@@ -576,10 +586,7 @@ export function ButtonsEditor({
         <Plus />
         افزودن دکمه
       </Button>
-      <p className="text-xs leading-6 text-muted-foreground">
-        مقصد به شناسهٔ گره متصل است. Callback واقعی هنگام اجرای نسخهٔ منتشرشده، با وضعیت سرور اعتبارسنجی
-        می‌شود.
-      </p>
+
     </div>
   );
 }
@@ -637,56 +644,68 @@ export function VariablesEditor({
             <bdi>{v.name}</bdi> · {v.type}
           </summary>
           <div className="mt-3 space-y-3">
-            <Input
-              aria-label={`نام متغیر ${i + 1}`}
-              dir="ltr"
-              pattern="[a-z][a-z0-9_]{0,47}"
-              value={v.name}
-              maxLength={48}
-              onChange={(e) => update(i, { name: e.target.value })}
-            />
-            <Input
-              aria-label={`عنوان متغیر ${i + 1}`}
-              value={v.label}
-              onChange={(e) => update(i, { label: e.target.value })}
-            />
-            <Select
-              label={`نوع متغیر ${i + 1}`}
-              value={v.type}
-              options={variableTypes.map((t) => ({ value: t, label: t }))}
-              onChange={(type) =>
-                update(i, {
-                  type: type as VariableType,
-                  default: null,
-                  choices: [],
-                })
-              }
-            />
-            <Select
-              label={`دامنه متغیر ${i + 1}`}
-              value={v.scope}
-              options={[
-                { value: "workflow", label: "Workflow" },
-                { value: "input", label: "Input" },
-              ]}
-              onChange={(scope) =>
-                update(i, { scope: scope as Variable["scope"] })
-              }
-            />
-            {v.type === "enum" && (
-              <EnumOptions
-                label={`مقادیر enum ${i + 1}`}
-                value={v.choices}
-                onChange={(choices) => update(i, { choices })}
+            <Field label="نام متغیر">
+              <Input
+                aria-label={`نام متغیر ${i + 1}`}
+                dir="ltr"
+                pattern="[a-z][a-z0-9_]{0,47}"
+                value={v.name}
+                maxLength={48}
+                onChange={(e) => update(i, { name: e.target.value })}
               />
+            </Field>
+            <Field label="عنوان متغیر">
+              <Input
+                aria-label={`عنوان متغیر ${i + 1}`}
+                value={v.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+              />
+            </Field>
+            <Field label="نوع متغیر">
+              <Select
+                label={`نوع متغیر ${i + 1}`}
+                value={v.type}
+                options={variableTypes.map((t) => ({ value: t, label: t }))}
+                onChange={(type) =>
+                  update(i, {
+                    type: type as VariableType,
+                    default: null,
+                    choices: [],
+                  })
+                }
+              />
+            </Field>
+            <Field label="دامنهٔ متغیر">
+              <Select
+                label={`دامنه متغیر ${i + 1}`}
+                value={v.scope}
+                options={[
+                  { value: "workflow", label: "فرایند" },
+                  { value: "input", label: "ورودی" },
+                ]}
+                onChange={(scope) =>
+                  update(i, { scope: scope as Variable["scope"] })
+                }
+              />
+            </Field>
+            {v.type === "enum" && (
+              <Field label="مقادیر مجاز">
+                <EnumOptions
+                  label={`مقادیر enum ${i + 1}`}
+                  value={v.choices}
+                  onChange={(choices) => update(i, { choices })}
+                />
+              </Field>
             )}
-            <ValueField
-              label={`پیش‌فرض متغیر ${i + 1}`}
-              type={v.type}
-              choices={v.choices}
-              value={v.default}
-              onChange={(value) => update(i, { default: value })}
-            />
+            <Field label="مقدار پیش‌فرض">
+              <ValueField
+                label={`پیش‌فرض متغیر ${i + 1}`}
+                type={v.type}
+                choices={v.choices}
+                value={v.default}
+                onChange={(value) => update(i, { default: value })}
+              />
+            </Field>
             <Button
               type="button"
               variant="ghost"
@@ -720,7 +739,7 @@ export function VariablesEditor({
         }}
       >
         <Plus />
-        متغیر
+        افزودن متغیر
       </Button>
     </div>
   );

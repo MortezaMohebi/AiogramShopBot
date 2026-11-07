@@ -10,9 +10,9 @@ const errors: Record<string, string> = {
   mfa_enrollment_expired: "زمان فعال‌سازی پایان یافته است؛ دوباره شروع کنید.",
   session_expired: "نشست پایان یافته است؛ دوباره وارد شوید.",
   permission_denied: "این حساب مجوز این عملیات را ندارد.",
-  reauthentication_required: "برای این عملیات، در بخش امنیت رمز فعلی خود را دوباره تأیید کنید.",
-  connection_worker_unavailable: "پردازشگر اتصال آماده نیست؛ سلامت Backend را بررسی کنید.",
-  reconciliation_required: "نتیجه نامشخص است؛ ابتدا وضعیت Provider را تطبیق دهید.",
+  reauthentication_required: "برای این تغییر، در حساب من هویت خود را دوباره تأیید کنید.",
+  connection_worker_unavailable: "سرویس اتصال آماده نیست؛ وضعیت سرور را بررسی کنید.",
+  reconciliation_required: "نتیجهٔ عملیات مشخص نیست؛ پیش از تلاش دوباره، وضعیت اتصال را بررسی کنید.",
   invalid_request: "اطلاعات فرم معتبر نیست؛ فیلدها را بررسی کنید.",
   invalid_timezone: "منطقهٔ زمانی معتبر نیست؛ نمونه: Asia/Tehran.",
   username_unchanged: "نام کاربری جدید با نام فعلی یکسان است.",
@@ -20,7 +20,7 @@ const errors: Record<string, string> = {
   password_policy_failed: "رمز عبور با سیاست امنیتی فعلی مطابقت ندارد.",
   mfa_enrollment_required: "برای استفاده از این نقش ابتدا احراز هویت دومرحله‌ای را در حساب من فعال کنید.",
   mfa_required_by_role: "احراز هویت دومرحله‌ای برای این نقش اجباری است و قابل غیرفعال‌سازی نیست.",
-  invitation_only: "ساخت حساب فقط از طریق دعوت‌نامهٔ امن امکان‌پذیر است.",
+  invitation_only: "ساخت حساب فقط با دعوت‌نامه امکان‌پذیر است.",
   invitation_not_found: "دعوت‌نامه یافت نشد یا قبلاً استفاده شده است.",
   invalid_link: "لینک نامعتبر، لغوشده یا منقضی شده است.",
   password_unchanged: "رمز تازه باید با رمز فعلی متفاوت باشد.",
@@ -31,19 +31,39 @@ const errors: Record<string, string> = {
   configuration_changed: "تنظیم فعال تغییر کرده است؛ درخواست تازه‌ای ایجاد کنید.",
 };
 export interface ControlResult { ok?: boolean; code?: string; login_required?: boolean; secret?: string; qr_data_uri?: string; recovery_codes?: string[]; token?: string; expires_at?: string }
+/** Preserve the safe machine code for contextual recovery without raw messages. */
+export class ControlActionError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "ControlActionError";
+  }
+}
 /** Exact allowlisted route names are enforced again by the server. */
 export async function controlAction(action: string, data: unknown): Promise<ControlResult> {
-  const token = await requestBrowserChallenge();
+  let token: string;
+  try {
+    token = await requestBrowserChallenge();
+  } catch {
+    throw new Error("بررسی امنیتی انجام نشد. صفحه را دوباره باز کنید.");
+  }
   const response = await fetch(`/api/account/${action}`, {
     method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "Content-Type": "application/json", Accept: "application/json", "X-Shop-Login-Challenge": token },
     body: JSON.stringify(data), signal: AbortSignal.timeout(25_000),
+  }).catch(() => {
+    // A lost response does not establish whether the change was applied.
+    throw new Error("پاسخ نهایی دریافت نشد. پیش از تلاش دوباره، وضعیت فعلی را بررسی کنید.");
   });
   if (!(response.headers.get("content-type") ?? "").includes("application/json")) throw new Error("پاسخ سرویس معتبر نیست؛ اتصال را بررسی کنید.");
-  const value: unknown = await response.json();
+  const value: unknown = await response.json().catch(() => {
+    throw new Error("پاسخ نهایی قابل خواندن نیست. پیش از تلاش دوباره، وضعیت فعلی را بررسی کنید.");
+  });
   if (!value || typeof value !== "object") throw new Error("پاسخ سرویس معتبر نیست.");
   const result = value as ControlResult;
-  if (!response.ok || result.ok !== true) throw new Error(errors[result.code ?? ""] ?? "عملیات کامل نشد؛ وضعیت فعلی را بررسی و سپس دوباره تلاش کنید.");
+  if (!response.ok || result.ok !== true) {
+    const code = typeof result.code === "string" ? result.code : "";
+    throw new ControlActionError(code, errors[code] ?? "عملیات کامل نشد؛ وضعیت فعلی را بررسی و سپس دوباره تلاش کنید.");
+  }
   return result;
 }
 export interface AccountData {

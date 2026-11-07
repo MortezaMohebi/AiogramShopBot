@@ -14,20 +14,20 @@ test("Connection settings show actual modes without leaking bot credentials", as
   await page.goto("/login");
   await page.getByLabel("نام کاربری").fill("labadmin");
   await page.locator("#password").fill(process.env.LAB_ADMIN_PASSWORD!);
-  await page.getByRole("button", { name: /ورود امن/ }).click();
+  await page.getByRole("button", { name: /ورود/ }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 
   await page.goto("/bot-connections");
-  await expect(page.getByRole("heading", { name: "اتصال ربات‌ها و Webhook" }))
+  await expect(page.getByRole("heading", { name: "تنظیمات اتصال ربات‌ها" }))
     .toBeVisible();
-  await expect(page.getByText("روش فعال دریافت")).toBeVisible();
+  await expect(page.getByText("روش ثبت‌شده:").first()).toBeVisible();
   await expect(page.getByRole("combobox", { name: "روش موردنظر" }))
     .toHaveValue("webhook");
   await expect(page.locator('option[value="polling"]'))
     .toHaveText("getUpdates — Long Polling");
   await expect(page.getByText("مسیر Webhook بله (Secret مخفی)"))
     .toHaveCount(0);
-  await expect(page.getByRole("button", { name: "ثبت درخواست تغییر حالت" }))
+  await expect(page.getByRole("button", { name: "ثبت پیشنهاد تغییر" }))
     .toBeVisible();
 });
 

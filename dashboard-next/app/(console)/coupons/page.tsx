@@ -24,7 +24,7 @@ export default async function CouponsPage() {
   const edit = ["superadmin", "marketing"].includes(staff.role);
   return (
     <div>
-      <PageHeading title="کدهای تخفیف" description="قوانین تخفیف درصدی و مبلغی با حداقل خرید، تاریخ اعتبار و تعداد استفاده؛ موجودی کیف پول تغییر نمی‌کند." />
+      <PageHeading title="کدهای تخفیف" />
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_1.5fr]">
         {edit ? (
           <Card><CardHeader><CardTitle>کد تخفیف جدید</CardTitle></CardHeader><CardContent>
@@ -70,21 +70,33 @@ export default async function CouponsPage() {
                 {edit ? (
                   <form action={saveCoupon} className="mt-3 grid gap-3 rounded-lg bg-muted/60 p-4 sm:grid-cols-2">
                     <input type="hidden" name="id" value={coupon.id} />
-                    <Input name="code" defaultValue={coupon.code} required minLength={3} maxLength={32} dir="ltr" aria-label="کد تخفیف" />
-                    <select name="discount_type" defaultValue={coupon.discount_type} className="h-10 rounded-md border border-input bg-background px-3">
-                      <option value="percent">درصدی</option><option value="fixed">ریالی</option>
-                    </select>
-                    <Input name="value" type="number" defaultValue={coupon.value} min={1} step={1} required aria-label="مقدار تخفیف" />
-                    <Input name="minimum_subtotal_irr" type="number" defaultValue={coupon.minimum_subtotal_irr} min={0} step={1} aria-label="حداقل مبلغ" />
-                    <Input name="max_uses" type="number" defaultValue={coupon.max_uses ?? ""} min={1} step={1} aria-label="سقف استفاده" />
-                    <Input name="expires_at" type="date" defaultValue={coupon.expires_at?.slice(0, 10) ?? ""} dir="ltr" aria-label="تاریخ انقضا" />
+                    <label className="block space-y-2 text-sm">کد تخفیف
+                      <Input name="code" defaultValue={coupon.code} required minLength={3} maxLength={32} dir="ltr" />
+                    </label>
+                    <label className="block space-y-2 text-sm">نوع تخفیف
+                      <select name="discount_type" defaultValue={coupon.discount_type} className="h-10 w-full rounded-md border border-input bg-background px-3">
+                        <option value="percent">درصدی</option><option value="fixed">ریالی</option>
+                      </select>
+                    </label>
+                    <label className="block space-y-2 text-sm">مقدار (درصد یا ریال)
+                      <Input name="value" type="number" defaultValue={coupon.value} min={1} step={1} required dir="ltr" />
+                    </label>
+                    <label className="block space-y-2 text-sm">حداقل مبلغ خرید (ریال)
+                      <Input name="minimum_subtotal_irr" type="number" defaultValue={coupon.minimum_subtotal_irr} min={0} step={1} dir="ltr" />
+                    </label>
+                    <label className="block space-y-2 text-sm">حداکثر دفعات استفاده
+                      <Input name="max_uses" type="number" defaultValue={coupon.max_uses ?? ""} min={1} step={1} placeholder="بدون سقف" dir="ltr" />
+                    </label>
+                    <label className="block space-y-2 text-sm">تاریخ انقضا (UTC)
+                      <Input name="expires_at" type="date" defaultValue={coupon.expires_at?.slice(0, 10) ?? ""} dir="ltr" />
+                    </label>
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked={coupon.is_active} className="accent-primary" /> فعال</label>
-                    <Button size="sm" type="submit">ثبت ویرایش</Button>
+                    <Button size="sm" type="submit">ذخیرهٔ تغییرات</Button>
                   </form>
                 ) : null}
               </details>
             ))}
-            {!coupons.length ? <p className="py-8 text-center text-muted-foreground">کدی ثبت نشده است.</p> : null}
+            {!coupons.length ? <p className="py-8 text-center text-muted-foreground">هنوز کد تخفیفی ثبت نشده است.</p> : null}
           </div>
         </CardContent></Card>
       </div>

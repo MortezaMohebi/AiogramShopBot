@@ -29,8 +29,7 @@ export default function GlobalError({
         <main style={{ maxWidth: 540, width: "100%", lineHeight: 2 }}>
           <h1 style={{ fontSize: 24 }}>خطا در بارگذاری داشبورد</h1>
           <p role="alert">
-            صفحه در حال حاضر در دسترس نیست. اتصال Codespaces یا سرویس
-            مدیریت را بررسی و دوباره تلاش کنید.
+            صفحه در دسترس نیست. دوباره بارگذاری کنید.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             <button
@@ -42,7 +41,7 @@ export default function GlobalError({
                 cursor: "pointer",
               }}
             >
-              تلاش دوباره
+              بارگذاری دوباره
             </button>
             <a
               href="/login"

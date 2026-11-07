@@ -48,12 +48,19 @@ class Login(StrictPayload):
     password: str = Field(min_length=1, max_length=256)
     second_factor: str = Field(default="", max_length=64)
     device: str = Field(default="Browser", max_length=160)
+    remember_me: bool = Field(default=False, strict=True)
 
 
 class Proof(StrictPayload):
     """Fresh proof, never an English confirmation phrase in lieu of a password."""
     current_password: str = Field(min_length=1, max_length=256)
     second_factor: str = Field(default="", max_length=64)
+
+
+class MfaSetup(Proof):
+    """Reuse recent login proof; accept explicit proof from older clients."""
+
+    current_password: str = Field(default="", max_length=256)
 
 
 class PasswordChange(Proof):
@@ -141,11 +148,22 @@ def own_session(request: Request) -> str:
     return identifier
 
 
-async def fresh_proof(db: AsyncSession, staff: ShopStaff, payload: Proof) -> None:
+async def fresh_proof(
+    db: AsyncSession, staff: ShopStaff, payload: Proof, *,
+    request: Request | None = None,
+) -> None:
     """Serialize security changes against password rotation and MFA replay."""
     await throttle("reauth:" + str(staff.id), 8, 60)
     await db.execute(select(ShopStaff.id).where(ShopStaff.id == staff.id).with_for_update())
     await db.refresh(staff)
+    if request is not None:
+        # Setup subsequently writes this session. Lock it before Profile to
+        # match middleware's Session -> Profile order and avoid a lock cycle.
+        row = await db.run_sync(lambda sync: security.validate_session(
+            sync, staff, request.headers.get("x-shop-session", ""),
+        ))
+        if row.id != own_session(request):
+            raise security.SecurityRejected("session_expired", 401)
     if not await asyncio.to_thread(verify_password, payload.current_password, staff.password_hash):
         raise security.SecurityRejected("invalid_credentials", 401)
     def verify(sync):
@@ -180,7 +198,10 @@ async def login(payload: Login, staff: Staff, db: Db) -> dict:
             def complete(sync):
                 profile = security.profile_for(sync, account.id)
                 security.verify_second_factor(sync, profile, payload.second_factor)
-                return security.issue_session(sync, account, payload.device), bool(profile.mfa_secret)
+                return security.issue_session(
+                    sync, account, payload.device,
+                    remember_me=payload.remember_me,
+                ), bool(profile.mfa_secret)
             token, has_mfa = await db.run_sync(complete)
         except security.SecurityRejected as error:
             if error.status == 401:
@@ -190,6 +211,10 @@ async def login(payload: Login, staff: Staff, db: Db) -> dict:
         await limiter.delete(failure_key)
         return {"id": account.id, "username": account.username, "role": account.role,
                 "session_version": account.session_version, "session_token": token,
+                "session_ttl_seconds": int((
+                    security.REMEMBERED_LIMIT if payload.remember_me
+                    else security.ABSOLUTE_LIMIT
+                ).total_seconds()),
                 "mfa_setup_required": account.role in security.MFA_REQUIRED_ROLES
                     and not has_mfa}
     except (security.SecurityRejected, HTTPException):
@@ -242,7 +267,7 @@ async def account(request: Request, staff: Staff, db: Db) -> dict:
             "last_seen_at": row.last_seen_at.isoformat(), "expires_at": row.expires_at.isoformat(),
             "revoked": row.revoked_at is not None,
             "active": row.revoked_at is None and row.version == member.session_version and security.utc(row.expires_at) > security.clock()
-                and security.utc(row.last_seen_at) + security.IDLE_LIMIT > security.clock()} for row in rows],
+                and security.utc(row.last_seen_at) + security.session_idle_limit(row) > security.clock()} for row in rows],
         "events": [{"id": row.id, "action": row.action,
                     "created_at": row.created_at.isoformat()} for row in events],
     }
@@ -353,12 +378,34 @@ async def revoke_all(request: Request, staff: Staff, db: Db) -> dict:
 
 
 @router.post("/account/mfa-setup")
-async def mfa_setup(payload: Proof, staff: Staff, db: Db) -> dict:
-    """Reveal a fresh enrollment secret only after current-password proof."""
+async def mfa_setup(
+    payload: MfaSetup, request: Request, staff: Staff, db: Db,
+) -> dict:
+    """Start first enrollment using this device's recently verified login."""
     member = required(staff)
-    await fresh_proof(db, member, payload)
+    if payload.current_password:
+        # Keep the previous explicit-proof contract during dashboard rollout.
+        await fresh_proof(db, member, payload, request=request)
+    else:
+        await throttle("reauth:" + str(member.id), 8, 60)
+        await db.execute(select(ShopStaff.id).where(
+            ShopStaff.id == member.id,
+        ).with_for_update())
+        await db.refresh(member)
+
     def start(sync):
+        """Stage first enrollment only after checking this locked session."""
+        # Recheck live authority under the security-write lock. A remembered
+        # session, browser flag or intervening revocation cannot grant proof.
+        row = security.validate_session(
+            sync, member, request.headers.get("x-shop-session", ""),
+        )
+        if row.id != own_session(request):
+            raise security.SecurityRejected("session_expired", 401)
+        if not payload.current_password:
+            security.require_recent(row)
         return security.begin_mfa(sync, security.profile_for(sync, member.id))
+
     secret = await db.run_sync(start)
     await db.commit()
     uri = make_otpauth_uri(secret, member.username)

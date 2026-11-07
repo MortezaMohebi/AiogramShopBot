@@ -18,8 +18,8 @@
   --accent: #e8f4ef;
   --accent-foreground: #146b66;
   --border: #e0e6eb;
-  --input: #d9e1e6;
-  --ring: #58a9a0;
+  --input: #80909b;
+  --ring: #2b8277;
   --destructive: #b93741;
   --destructive-foreground: #ffffff;
   --radius: 0.85rem;
@@ -42,7 +42,7 @@
   --accent: #203b37;
   --accent-foreground: #9cdbd0;
   --border: #2a3845;
-  --input: #3b4b58;
+  --input: #627787;
   --ring: #6fcbbb;
   --destructive: #e17983;
   --destructive-foreground: #251011;
@@ -78,7 +78,7 @@
 @layer base {
   * { border-color: var(--border); }
   /* Keep focused and scrolled controls below the fixed-height console header. */
-  html { scroll-behavior: smooth; scroll-padding-block-start: 5rem; }
+  html { scroll-padding-block-start: 5rem; }
   body {
     min-height: 100vh;
     background: var(--background);
@@ -117,5 +117,5 @@
   --xy-handle-border-color-default: var(--card);
 }
 @media (prefers-reduced-motion: reduce) {
-  .studio-canvas *, .studio-canvas *::before, .studio-canvas *::after { animation: none !important; transition: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }

@@ -67,7 +67,7 @@ export default async function CustomerDetailPage({
     <div className="flex flex-wrap gap-2 text-sm">
       <Badge tone={customer.is_blocked ? "danger" : "success"}>{customer.is_blocked ? "محدود در فروشگاه" : "فعال در فروشگاه"}</Badge>
       <Badge tone={customer.allow_announcements ? "success" : "neutral"}>{customer.allow_announcements ? "رضایت تبلیغاتی" : "بدون رضایت تبلیغاتی"}</Badge>
-      <Badge tone="neutral">Block بات توسط مشتری: {customer.bot_blocked_by_customer === null ? "نامشخص" : customer.bot_blocked_by_customer ? "تأیید شده" : "ثبت نشده"}</Badge>
+      <Badge tone="neutral">مسدودکردن ربات توسط مشتری: {customer.bot_blocked_by_customer === null ? "نامشخص" : customer.bot_blocked_by_customer ? "تأیید شده" : "ثبت نشده"}</Badge>
       {actor.role === "superadmin" ? <Button asChild variant="outline" size="sm"><a href={`/api/admin/customers/${id}/export`}>خروجی JSON اطلاعات مشتری</a></Button> : null}
     </div>
     <Card><CardContent className="pt-5 text-sm">
@@ -105,7 +105,7 @@ export default async function CustomerDetailPage({
         </form>
       </CardContent></Card>
       <Card><CardHeader><CardTitle>محدودسازی فروشگاه</CardTitle></CardHeader><CardContent className="space-y-4">
-        <p className="text-xs leading-7 text-muted-foreground">این محدودیت فقط مربوط به فروشگاه است و به معنای Block شدن بات توسط مشتری نیست. تأثیری روی سفارش‌های تسویه‌شده ندارد.</p>
+        <p className="text-xs leading-7 text-muted-foreground">این محدودیت فقط مربوط به فروشگاه است و به معنای مسدودشدن ربات توسط مشتری نیست. تأثیری روی سفارش‌های تسویه‌شده ندارد.</p>
         <p className="text-xs">دلیل فعلی: {customer.restriction_reason || "ثبت نشده"} · انقضا: {customer.restriction_until ? fmt(customer.restriction_until) : "بدون انقضا"}</p>
         <form action={restrictCustomer} className="space-y-3">
           <input type="hidden" name="customer_id" value={id} />
@@ -163,7 +163,7 @@ export default async function CustomerDetailPage({
         </p>)}
         {!data.consent.length ? <p className="text-sm text-muted-foreground">اطلاعات تاریخی رضایت موجود نیست؛ وضعیت فعلی بالا نمایش داده شده است.</p> : null}
       </CardContent></Card>
-      <Card><CardHeader><CardTitle>Audit پرونده</CardTitle></CardHeader><CardContent className="space-y-2">
+      <Card><CardHeader><CardTitle>سوابق تغییرات پرونده</CardTitle></CardHeader><CardContent className="space-y-2">
         {data.activity.map((entry, idx) => <p key={idx} className="border-b py-2 text-xs">
           {entry.action} · {entry.actor ? names.get(entry.actor) ?? entry.actor : "—"} · {entry.created_at ? fmt(entry.created_at) : "—"}
         </p>)}

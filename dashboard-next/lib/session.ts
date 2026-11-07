@@ -19,11 +19,12 @@ function signature(payload: string): Buffer {
   return createHmac("sha256", key).update(payload).digest();
 }
 /** Keep the signed browser envelope bound to a revocable backend session. */
-export function createSession(id: number, version: number, sid: string): string {
+export function createSession(id: number, version: number, sid: string, rememberMe = false): string {
   if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(version) || version < 1 || !TOKEN.test(sid)) {
     throw new Error("Invalid administrator session");
   }
-  const claims: SessionClaims = { id, version, sid, expires: Math.floor(Date.now() / 1000) + 8 * 60 * 60 };
+  const duration = rememberMe ? 30 * 24 * 60 * 60 : 8 * 60 * 60;
+  const claims: SessionClaims = { id, version, sid, expires: Math.floor(Date.now() / 1000) + duration };
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
   return `${payload}.${signature(payload).toString("base64url")}`;
 }

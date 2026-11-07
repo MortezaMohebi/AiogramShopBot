@@ -20,10 +20,10 @@ import {
   Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ActivityIndicator } from "@/components/ui/activity-indicator";
+import { FormSkeleton } from "@/components/data/skeletons";
 import { Input } from "@/components/ui/input";
-import { Inspector } from "./inspector";
 import { WorkflowActions } from "./workflow-actions";
-import { WorkflowSettings } from "./settings-form";
 import { StudioNav } from "./studio-nav";
 import { useDraftSave } from "./use-draft-save";
 import {
@@ -45,6 +45,21 @@ import type {
   WorkflowButton,
   WorkflowRecord,
 } from "@/lib/workflows/types";
+
+// Draft and save state stay in the editor while these optional forms load.
+const Inspector = dynamic(
+  () => import("./inspector").then((module) => module.Inspector),
+  {
+    loading: () => <FormSkeleton label="در حال دریافت ویژگی‌های مرحله…" />,
+  },
+);
+const WorkflowSettings = dynamic(
+  () => import("./settings-form").then((module) => module.WorkflowSettings),
+  {
+    loading: () => <FormSkeleton label="در حال دریافت تنظیمات فرایند…" />,
+  },
+);
+
 const WorkflowCanvas = dynamic(
   () => import("./canvas").then((m) => m.WorkflowCanvas),
   {
@@ -52,9 +67,8 @@ const WorkflowCanvas = dynamic(
     loading: () => (
       <div
         className="flex h-[620px] items-center justify-center rounded-xl border text-sm"
-        role="status"
       >
-        در حال آماده‌سازی Canvas…
+        <ActivityIndicator label="در حال آماده‌سازی نمودار…" />
       </div>
     ),
   },
@@ -333,7 +347,7 @@ export function WorkflowEditor({
           </Link>
           <h1 className="mt-2 break-words text-2xl font-bold">{doc.name}</h1>
           <p className="mt-2 text-xs text-muted-foreground">
-            <bdi className="break-all">{initial.key}</bdi> · Revision{" "}
+            <bdi className="break-all">{initial.key}</bdi> · نسخهٔ{" "}
             {saving.record.revision} ·{" "}
             {saving.record.status === "draft"
               ? "پیش‌نویس"
@@ -366,13 +380,13 @@ export function WorkflowEditor({
             variant="outline"
             asChild
           >
-            <Link href={`/studio/runtime?tab=publications&workflow_id=${initial.id}`}>بررسی انتشار در Runtime</Link>
+            <Link href={`/studio/runtime?tab=publications&workflow_id=${initial.id}`}>بررسی انتشار</Link>
           </Button>
         </div>
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-lg border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
         <span>
-          Store: <bdi className="break-all">{initial.store_id}</bdi>
+          فروشگاه: <bdi className="break-all">{initial.store_id}</bdi>
         </span>
         <span>
           ربات‌ها:{" "}
@@ -415,10 +429,10 @@ export function WorkflowEditor({
                   ? "ذخیره انجام نشد"
                   : saving.dirty
                     ? "تغییر ذخیره‌نشده · ذخیرهٔ خودکار"
-                    : "همهٔ تغییرات تأیید شده‌اند"}
+                    : "همهٔ تغییرات ذخیره شده‌اند"}
         </span>
         <span className="text-muted-foreground">
-          Studio فقط پیش‌نویس و شبیه‌سازی
+          تغییرات پیش‌نویس روی نسخهٔ فعال ربات اعمال نمی‌شوند
         </span>
       </div>
       {saving.error && (
@@ -505,7 +519,7 @@ export function WorkflowEditor({
             <Button
               size="icon"
               variant="outline"
-              aria-label="Undo"
+              aria-label="واگرد"
               disabled={disabled || !state.past.length}
               onClick={() => dispatch({ type: "undo" })}
             >
@@ -514,7 +528,7 @@ export function WorkflowEditor({
             <Button
               size="icon"
               variant="outline"
-              aria-label="Redo"
+              aria-label="انجام دوباره"
               disabled={disabled || !state.future.length}
               onClick={() => dispatch({ type: "redo" })}
             >
@@ -540,7 +554,7 @@ export function WorkflowEditor({
               disabled={disabled}
               onClick={paste}
             >
-              Paste
+              جای‌گذاری
             </Button>
             <Button
               size="icon"
@@ -580,7 +594,7 @@ export function WorkflowEditor({
               className="xl:hidden"
               onClick={() => setShowCanvas((v) => !v)}
             >
-              {showCanvas ? "فهرست مراحل" : "نمایش Canvas"}
+              {showCanvas ? "فهرست مراحل" : "نمایش نمودار"}
             </Button>
           </div>
           <div className="grid min-w-0 gap-4 xl:grid-cols-[200px_minmax(0,1fr)_300px]">
@@ -639,11 +653,10 @@ export function WorkflowEditor({
               ) : (
                 <div className="space-y-3 text-xs leading-7 text-muted-foreground">
                   <p>
-                    افزودن با کلیک یا Drag & Drop. چندانتخاب با Shift؛ Undo با
-                    Ctrl+Z.
+                    افزودن با کلیک یا کشیدن گره. انتخاب چند گره با Shift؛ واگرد با Ctrl+Z.
                   </p>
                   <p>
-                    متغیرها، Entry Point و تخصیص ربات در تنظیمات همین فرایند
+                    متغیرها، ورودی‌ها و تخصیص ربات در تنظیمات همین فرایند
                     ویرایش می‌شوند.
                   </p>
                   <p dir="ltr" className="break-all">
@@ -742,7 +755,7 @@ export function WorkflowEditor({
                     ویژگی‌های مرحله
                   </p>
                   <p>
-                    یک گره را در Canvas یا فهرست مراحل انتخاب کنید. اتصال
+                    یک گره را در نمودار یا فهرست مراحل انتخاب کنید. اتصال
                     خروجی‌ها با کنترل مقصد در همین بخش نیز ممکن است.
                   </p>
                 </div>
@@ -795,7 +808,7 @@ export function WorkflowEditor({
           ))}
           {!validation.issues.length && (
             <p className="text-sm text-emerald-600 dark:text-emerald-400">
-              تعریف در آخرین بررسی معتبر بود. آمادگی انتشار در Runtime جداگانه بررسی می‌شود.
+              در آخرین بررسی خطایی پیدا نشد. آمادگی انتشار جداگانه بررسی می‌شود.
             </p>
           )}
         </div>

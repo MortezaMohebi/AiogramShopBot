@@ -286,7 +286,7 @@ function FlowCanvas(props: Props) {
           "controls.zoomIn.ariaLabel": "بزرگ‌نمایی",
           "controls.zoomOut.ariaLabel": "کوچک‌نمایی",
           "controls.fitView.ariaLabel": "نمایش همهٔ گره‌ها",
-          "controls.interactive.ariaLabel": "تغییر قفل Canvas",
+          "controls.interactive.ariaLabel": "تغییر قفل نمودار",
           "minimap.ariaLabel": "نقشهٔ فرایند",
           "node.a11yDescription.default":
             "برای انتخاب Enter و برای جابه‌جایی کلیدهای جهت را بزنید. اتصال از بخش ویژگی‌ها نیز در دسترس است.",

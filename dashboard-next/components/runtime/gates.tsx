@@ -53,13 +53,13 @@ function GateRow({
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={e => {
             setEnabled(e.target.checked);
             setApproved(false);
-          }} className="mt-1" />مجوز اجرای Runtime</label>
+          }} className="mt-1" />مجوز اجرای فرایند</label>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={killed} onChange={e => {
             setKilled(e.target.checked);
             setApproved(false);
-          }} className="mt-1" />توقف اضطراری و بازگشت مسیریابی به Legacy</label>
+          }} className="mt-1" />توقف اضطراری و بازگشت به مسیر قبلی ربات</label>
       {dirty && <label className="flex items-start gap-2 text-xs leading-6"><input type="checkbox" checked={approved} onChange={e => setApproved(e.target.checked)} className="mt-1" />تغییر مجوز همین محدوده را تأیید می‌کنم.</label>}
-      <Button type="submit" size="sm" variant={killed ? "destructive" : "outline"} disabled={!dirty || !approved}>ثبت تنظیم اجرا</Button>
+      <Button type="submit" size="sm" variant={killed ? "destructive" : "outline"} disabled={!dirty || !approved}>ذخیرهٔ تنظیم اجرا</Button>
     </fieldset>
   </form>}
   <RuntimeMutationNotice mutation={mutation} />

@@ -47,6 +47,8 @@ export default async function CustomersPage({
   filters.set("restriction", restriction);
   filters.set("consent", consent);
   if (params.owner && /^[1-9][0-9]*$/.test(params.owner)) filters.set("owner", params.owner);
+  const hasFilters = Boolean(q || tag || filters.has("owner") ||
+    platform !== "all" || restriction !== "all" || consent !== "all");
 
   const [result, operators] = await Promise.all([
     adminFetch<Paginated<CustomerRow>>(`/customers?${filters}`),
@@ -61,15 +63,15 @@ export default async function CustomersPage({
   }
 
   return <div className="space-y-5">
-    <PageHeading title="مدیریت مشتریان" description="پروندهٔ مشتری، فیلتر، رضایت تبلیغاتی، یادداشت‌های پشتیبانی و محدودسازی مستند؛ هویت تلگرام و بله جداست." />
+    <PageHeading title="مدیریت مشتریان" />
     <div className="flex flex-wrap gap-2">
       <Button asChild variant="outline" size="sm">
-        <Link href="/data-models/customers">Customer Search / Import / Export</Link>
+        <Link href="/data-models/customers">جست‌وجوی پیشرفته و ورود و خروج مشتریان</Link>
       </Button>
     </div>
     <Card><CardContent className="pt-5">
       <form method="get" className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <label className="space-y-2 text-sm xl:col-span-2">نام، Username یا شناسه
+        <label className="space-y-2 text-sm xl:col-span-2">نام، نام کاربری یا شناسه
           <Input name="q" maxLength={100} defaultValue={q} placeholder="جست‌وجوی مشتری…" />
         </label>
         <label className="space-y-2 text-sm">پیام‌رسان
@@ -117,7 +119,7 @@ export default async function CustomersPage({
           </td>
           <td className="p-3">{customer.platform === "telegram" ? "تلگرام" : "بله"}</td>
           <td className="p-3"><Badge tone={customer.is_blocked ? "danger" : "neutral"}>{customer.is_blocked ? "محدود" : "فعال"}</Badge>
-            <p className="mt-1 text-xs text-muted-foreground">Block بات: {customer.bot_blocked_by_customer === null ? "نامشخص" : customer.bot_blocked_by_customer ? "تأییدشده" : "ثبت‌نشده"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">مسدودکردن ربات توسط مشتری: {customer.bot_blocked_by_customer === null ? "نامشخص" : customer.bot_blocked_by_customer ? "تأییدشده" : "ثبت‌نشده"}</p>
           </td>
           <td className="p-3"><Badge tone={customer.allow_announcements ? "success" : "neutral"}>{customer.allow_announcements ? "دارای رضایت" : "بدون رضایت"}</Badge></td>
           <td className="p-3"><p className="text-xs">{customer.owner_staff_id ? usernames.get(customer.owner_staff_id) ?? "—" : "بدون مسئول"}</p>
@@ -126,7 +128,9 @@ export default async function CustomersPage({
           <td className="p-3"><Button asChild variant="outline" size="sm"><Link href={`/customers/${customer.id}`}>مشاهده و ویرایش</Link></Button></td>
         </tr>)}</tbody>
       </table>
-      {!result.items.length ? <p className="py-9 text-center text-sm text-muted-foreground">موردی پیدا نشد.</p> : null}
+      {!result.items.length ? <p className="py-9 text-center text-sm text-muted-foreground">{hasFilters
+        ? "مشتری‌ای با این فیلترها پیدا نشد. فیلترها را تغییر دهید یا پاک کنید."
+        : "هنوز مشتری‌ای ثبت نشده است."}</p> : null}
       <nav className="mt-5 flex flex-wrap items-center justify-between gap-2 text-sm" aria-label="صفحه‌بندی مشتریان">
         {page > 1 ? <Button asChild variant="outline" size="sm"><Link href={pageUrl(page - 1)}>قبلی</Link></Button> : <span />}
         <span>صفحه {page.toLocaleString("fa-IR")} از {maxPages.toLocaleString("fa-IR")}</span>

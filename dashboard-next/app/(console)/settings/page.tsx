@@ -6,7 +6,7 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { adminFetch, currentStaff } from "@/lib/bridge";
+import { adminFetch, currentStaff, optionalStoreRead } from "@/lib/bridge";
 import type { ShopSettings } from "@/lib/types";
 
 type Params = Promise<{ saved?: string; error?: string }>;
@@ -19,23 +19,23 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
   if (staff.role !== "superadmin") notFound();
   const [settings, policy, channels, paymentRails, params] = await Promise.all([
     adminFetch<ShopSettings>("/settings"),
-    adminFetch<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
-    adminFetch<{ items: ChannelFeature[] }>("/channel-features"),
-    adminFetch<{ items: PaymentRail[] }>("/payment-rails"),
+    optionalStoreRead<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
+    optionalStoreRead<{ items: ChannelFeature[] }>("/channel-features"),
+    optionalStoreRead<{ items: PaymentRail[] }>("/payment-rails"),
     searchParams,
   ]);
   return (
     <div>
-      <PageHeading title="تنظیمات فروشگاه" description="متن خوش‌آمدگویی، پرسش‌های متداول و پشتیبانی، بدون تغییر کد هر دو پیام‌رسان." />
-      {params.saved ? <p role="status" className="mb-4 rounded-lg bg-accent p-3 text-sm text-accent-foreground">تنظیمات ذخیره شدند.</p> : null}
+      <PageHeading title="تنظیمات فروشگاه" />
+      {params.saved ? <p role="status" className="mb-4 rounded-lg bg-accent p-3 text-sm text-accent-foreground">تنظیمات ذخیره شد.</p> : null}
       {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ذخیره تنظیمات انجام نشد؛ ابتدا MFA و تأیید مجدد هویت، سپس دسترسی و داده‌ها را بررسی کنید.</p> : null}
       <Card className="max-w-4xl">
-        <CardHeader><CardTitle>محتوای مشترک</CardTitle><CardDescription>تغییرات بعد از ذخیره از پایگاه داده هر دو ربات خوانده می‌شوند.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>متن‌های تلگرام و بله</CardTitle></CardHeader>
         <CardContent>
           <ShopSettingsForm initial={settings} />
         </CardContent>
       </Card>
-      <Card className="mt-6 max-w-4xl">
+      {channels ? <Card className="mt-6 max-w-4xl">
         <CardHeader>
           <CardTitle>قابلیت‌های تلگرام و بله</CardTitle>
           <CardDescription>سبد خرید و اعتبار داخلی برای هر پیام‌رسان مستقل است. غیرفعال‌سازی سوابق خرید، موجودی یا دفتر مالی را پاک نمی‌کند.</CardDescription>
@@ -57,19 +57,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
                 <Input name={`${channel.platform}_store_credit_label`} defaultValue={channel.store_credit_label} maxLength={80} required />
               </label>
             </fieldset>)}
-            <Button type="submit">ذخیره تنظیمات دو پیام‌رسان</Button>
+            <Button type="submit">ذخیره قابلیت‌های پیام‌رسان‌ها</Button>
           </form>
         </CardContent>
-      </Card>
-      <Card className="mt-6 max-w-4xl">
+      </Card> : null}
+      {paymentRails ? <Card className="mt-6 max-w-4xl">
         <CardHeader>
-          <CardTitle>کیف پول‌ها و روش‌های پرداخت قابل پشتیبانی</CardTitle>
-          <CardDescription>تعریف نام، فعال/غیرفعال‌سازی مستقل و کنترل آماده‌بودن واقعی هر Provider.</CardDescription>
+          <CardTitle>روش‌های پرداخت</CardTitle>
+
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs leading-7 text-muted-foreground">
-            فقط روش‌هایی که Backend آن‌ها را پشتیبانی می‌کند قابل ثبت‌اند. فعال‌کردن ظاهری یک روش، بدون Secret و مجوز عملیاتی Provider، پرداخت واقعی را فعال نمی‌کند.
-            اطلاعات محرمانهٔ پرداخت از این فرم دریافت نمی‌شوند.
+            برای استفاده از هر روش پرداخت، تنظیمات اتصال آن نیز باید تکمیل شده باشد.
           </p>
           <form action={savePaymentRails} className="space-y-5">
             {(["telegram", "bale"] as const).map((platform) => <fieldset key={platform} className="space-y-3 rounded-xl border p-4">
@@ -84,16 +83,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
                 </label>
                 <p className="text-xs text-muted-foreground md:col-span-2">
                   {item.runtime_ready ? (item.effective_enabled ? "قابل استفاده با پیکربندی فعلی" : "در تنظیمات غیرفعال است") :
-                    "Runtime یا Credential این روش هنوز آماده نیست؛ فعال‌شدن واقعی نیازمند تنظیمات Deployment است."}
+                    "اتصال این روش پرداخت آماده نیست؛ تنظیمات آن در سرور باید تکمیل شود."}
                 </p>
               </div>)}
             </fieldset>)}
             <Button type="submit">ذخیره روش‌های پرداخت</Button>
           </form>
         </CardContent>
-      </Card>
-      <Card className="mt-6 max-w-4xl">
-        <CardHeader><CardTitle>سیاست پاداش معرفی مشتری</CardTitle><CardDescription>پاداش خرید اول از اعتبار داخلی فروشگاه تأمین می‌شود؛ هیچ موجودی بله یا رمز ارز تغییر نمی‌کند.</CardDescription></CardHeader>
+      </Card> : null}
+      {policy ? <Card className="mt-6 max-w-4xl">
+        <CardHeader><CardTitle>پاداش معرفی مشتری</CardTitle><CardDescription>پاداش خرید اول از اعتبار داخلی فروشگاه تأمین می‌شود؛ هیچ موجودی بله یا رمز ارز تغییر نمی‌کند.</CardDescription></CardHeader>
         <CardContent>
           <form action={saveReferralPolicy} className="grid gap-4 md:grid-cols-2">
             <label className="flex items-center gap-2 text-sm md:col-span-2">
@@ -109,10 +108,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
             <label className="space-y-2 text-sm">سقف پاداش به ریال
               <Input type="number" name="max_bonus_irr" min={0} max={100000000000} defaultValue={policy.max_bonus_irr} required />
             </label>
-            <div className="md:col-span-2"><Button type="submit">ذخیره سیاست معرفی</Button></div>
+            <div className="md:col-span-2"><Button type="submit">ذخیره پاداش معرفی</Button></div>
           </form>
         </CardContent>
-      </Card>
+      </Card> : null}
+      {(!channels || !paymentRails || !policy) ? <Card className="mt-6 max-w-4xl">
+        <CardHeader><CardTitle>تنظیمات ربات و پرداخت</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button asChild variant="outline"><Link href="/bots">تنظیمات ربات‌ها</Link></Button>
+          <Button asChild variant="outline"><Link href="/payment-accounts">حساب‌های پرداخت</Link></Button>
+        </CardContent>
+      </Card> : null}
     </div>
   );
 }

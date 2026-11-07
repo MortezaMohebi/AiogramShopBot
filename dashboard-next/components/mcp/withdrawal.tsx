@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { connectionReceipt, type ConnectionMutation } from "@/lib/mcp/connection-state";
 import { mcpMutation } from "@/lib/mcp/client";
 
@@ -58,14 +59,14 @@ export function McpWithdrawal({ initialId }: { initialId: string }) {
       setNotice("دسترسی همین اتصال لغو شد. اثرهای ثبت‌شدهٔ قبلی برگردانده نمی‌شوند.");
     } catch {
       setMutation({ request, status: "unknown" });
-      setNotice("پاسخ قطعی دریافت نشد. وضعیت همین شناسه را بخوانید؛ لغو دوباره‌ای خودکار ارسال نمی‌شود.");
+      setNotice("پاسخ قطعی دریافت نشد. وضعیت همین اتصال را بررسی کنید؛ درخواست لغو دوباره ارسال نمی‌شود.");
     } finally { busy.current = false; }
   }
 
   return <section className="min-w-0 space-y-5 rounded-xl border border-border bg-card p-5 sm:p-7">
     <form className="space-y-3" onSubmit={(event) => { event.preventDefault();void inspect(); }}>
-      <label className="block space-y-2"><span className="text-sm">شناسهٔ Grant در Native</span>
-        <input className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" dir="ltr" value={id}
+      <label className="block space-y-2"><span className="text-sm">شناسهٔ دسترسی اتصال (Grant)</span>
+        <Input dir="ltr" value={id}
           onChange={(event) => { setId(event.target.value);setGrant(null);setConfirmed(false);setNotice("");setMutation(null); }} disabled={unresolved || reading}
           required maxLength={36} autoComplete="off" /></label>
       <Button variant="outline" type="submit" disabled={reading || mutation?.status === "sending" || !uuid.test(id)}>
@@ -77,7 +78,7 @@ export function McpWithdrawal({ initialId }: { initialId: string }) {
         <div key={name}><dt className="text-muted-foreground">{name}</dt><dd className="break-all"><bdi>{value}</bdi></dd></div>)}</dl>
       <p className="text-sm">وضعیت: <strong>{grant.revoked ? "لغوشده" : "لغو نشده"}</strong></p>
       {!grant.revoked && <div className="space-y-4 border-t pt-4">
-        <p className="text-sm leading-7">این کار درخواست‌های تازهٔ این Grant را متوقف می‌کند. عملیات پذیرفته‌شده یا اثر ثبت‌شدهٔ قبلی برگردانده نمی‌شود.</p>
+        <p className="text-sm leading-7">این کار درخواست‌های تازهٔ این اتصال را متوقف می‌کند. عملیات پذیرفته‌شده یا اثر ثبت‌شدهٔ قبلی برگردانده نمی‌شود.</p>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={unresolved}
           onChange={(event) => setConfirmed(event.target.checked)} />لغو دسترسی همین اتصال را تأیید می‌کنم</label>
         <Button variant="destructive" disabled={!confirmed || unresolved} onClick={revoke}>لغو دسترسی همین اتصال</Button>

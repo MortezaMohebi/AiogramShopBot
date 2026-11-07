@@ -8,9 +8,9 @@ const icons = [Boxes, CheckCircle2, ClipboardList, ShieldAlert];
 export function SectionCards({ overview }: { overview: Overview }) {
   const totalOrders = overview.channels.reduce((sum, item) => sum + item.orders, 0);
   const metrics = [
-    { label: "محصولات تعریف‌شده", value: overview.products, note: "تعداد واقعی کاتالوگ" },
-    { label: "محصولات منتشرشده", value: overview.published_products, note: "در دسترس هر دو ربات" },
-    { label: "سفارش‌های ۳۰ روز", value: totalOrders, note: "تلگرام و بله" },
+    { label: "محصولات تعریف‌شده", value: overview.products },
+    { label: "محصولات منتشرشده", value: overview.published_products },
+    { label: "سفارش‌های ۳۰ روز گذشته", value: totalOrders },
     { label: "پرونده بازپرداخت باز", value: overview.open_refunds, note: "نیازمند بررسی مالی" },
   ];
   return (
@@ -29,7 +29,7 @@ export function SectionCards({ overview }: { overview: Overview }) {
               <p className="tabular text-3xl font-extrabold tracking-tight">
                 {new Intl.NumberFormat("fa-IR").format(item.value)}
               </p>
-              <p className="mt-2 text-xs text-muted-foreground">{item.note}</p>
+              {item.note ? <p className="mt-2 text-xs text-muted-foreground">{item.note}</p> : null}
             </CardContent>
           </Card>
         );
