@@ -1,0 +1,180 @@
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.27kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.codespaces
+#2 transferring dockerfile: 1.24kB 0.0s done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/node:22-alpine
+#3 DONE 0.2s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 101B 0.0s done
+#4 DONE 0.1s
+
+#5 [deps 1/5] FROM docker.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
+#5 resolve docker.io/library/node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 0.0s done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 26.03kB 0.7s done
+#6 DONE 0.7s
+
+#7 [build 4/7] COPY . .
+#7 CACHED
+
+#8 [build 5/7] RUN npm run typecheck
+#8 CACHED
+
+#9 [deps 2/5] WORKDIR /app
+#9 CACHED
+
+#10 [deps 3/5] COPY package*.json ./
+#10 CACHED
+
+#11 [deps 4/5] COPY scripts/patch-next-themes.mjs ./scripts/patch-next-themes.mjs
+#11 CACHED
+
+#12 [deps 5/5] RUN npm ci --no-audit --no-fund
+#12 CACHED
+
+#13 [build 3/7] COPY --from=deps /app/node_modules ./node_modules
+#13 CACHED
+
+#14 [build 6/7] RUN npm run lint
+#14 CACHED
+
+#15 [build 7/7] RUN npm run build
+#15 2.424
+#15 2.424 > dual-messenger-shop-admin@0.1.0 build
+#15 2.424 > next build
+#15 2.424
+#15 4.403 ▲ Next.js 16.4.3 (Turbopack)
+#15 4.939 ✓ Running next.config.ts took 535ms
+#15 4.970 - Experiments (use with caution):
+#15 4.970   · serverActions
+#15 4.970
+#15 5.095   Creating an optimized production build ...
+#15 33.39 ✓ Compiled successfully in 28.3s
+#15 33.39   Running TypeScript ...
+#15 56.96   Finished TypeScript in 23.6s ...
+#15 56.97   Collecting page data using 1 worker ...
+#15 60.01   Generating static pages using 1 worker (0/48) ...
+#15 60.35   Generating static pages using 1 worker (12/48)
+#15 60.42   Generating static pages using 1 worker (24/48)
+#15 60.50   Generating static pages using 1 worker (36/48)
+#15 60.59 ✓ Generating static pages using 1 worker (48/48) in 578ms
+#15 60.60   Finalizing page optimization ...
+#15 62.46
+#15 62.46 Route (app)
+#15 62.46 ┌ ○ /
+#15 62.46 ├ ○ /_not-found
+#15 62.46 ├ ƒ /account
+#15 62.46 ├ ƒ /account/mcp
+#15 62.46 ├ ○ /activate
+#15 62.46 ├ ƒ /api/account/[action]
+#15 62.46 ├ ƒ /api/admin/actions/[[...path]]
+#15 62.46 ├ ƒ /api/admin/categories
+#15 62.46 ├ ƒ /api/admin/customers/[id]/export
+#15 62.46 ├ ƒ /api/admin/data-models/[model]/[action]
+#15 62.46 ├ ƒ /api/admin/data-models/[model]/import
+#15 62.46 ├ ƒ /api/admin/digital-assets/[id]
+#15 62.46 ├ ƒ /api/admin/mcp/[[...path]]
+#15 62.46 ├ ƒ /api/admin/preview/[kind]/[id]
+#15 62.46 ├ ƒ /api/admin/product-media/[id]
+#15 62.46 ├ ƒ /api/admin/products
+#15 62.46 ├ ƒ /api/admin/shop-settings
+#15 62.46 ├ ƒ /api/admin/upload
+#15 62.46 ├ ƒ /api/admin/workflow-runtime/[[...path]]
+#15 62.46 ├ ƒ /api/admin/workflows/[[...path]]
+#15 62.46 ├ ƒ /api/auth/challenge
+#15 62.46 ├ ƒ /api/auth/login
+#15 62.46 ├ ƒ /api/auth/logout
+#15 62.46 ├ ƒ /api/auth/redeem
+#15 62.46 ├ ƒ /audit
+#15 62.46 ├ ƒ /bots
+#15 62.46 ├ ƒ /bots/[id]
+#15 62.46 ├ ƒ /campaigns
+#15 62.46 ├ ƒ /campaigns/[id]
+#15 62.46 ├ ƒ /campaigns/new
+#15 62.46 ├ ƒ /categories
+#15 62.46 ├ ƒ /coupons
+#15 62.46 ├ ƒ /customer-notifications
+#15 62.46 ├ ƒ /customers
+#15 62.46 ├ ƒ /customers/[id]
+#15 62.46 ├ ƒ /customers/retention
+#15 62.46 ├ ƒ /dashboard
+#15 62.46 ├ ƒ /data-models/[model]
+#15 62.46 ├ ƒ /digital-deliveries
+#15 62.46 ├ ƒ /finance
+#15 62.46 ├ ƒ /fulfillments
+#15 62.46 ├ ƒ /login
+#15 62.46 ├ ƒ /media
+#15 62.46 ├ ƒ /orders
+#15 62.46 ├ ƒ /payment-accounts
+#15 62.46 ├ ƒ /permissions
+#15 62.46 ├ ƒ /products
+#15 62.46 ├ ƒ /products/[id]/digital
+#15 62.46 ├ ƒ /products/[id]/edit
+#15 62.46 ├ ƒ /products/new
+#15 62.46 ├ ƒ /relay-workers
+#15 62.46 ├ ƒ /reports
+#15 62.46 ├ ƒ /reviews
+#15 62.46 ├ ƒ /settings
+#15 62.46 ├ ƒ /shipping
+#15 62.46 ├ ƒ /staff
+#15 62.46 ├ ƒ /staff/[id]/stores
+#15 62.46 ├ ƒ /store-customers
+#15 62.46 ├ ƒ /store-customers/[id]
+#15 62.46 ├ ƒ /stores
+#15 62.46 ├ ƒ /studio/actions
+#15 62.46 ├ ƒ /studio/mcp
+#15 62.46 ├ ƒ /studio/runtime
+#15 62.46 ├ ƒ /studio/runtime/runs/[id]
+#15 62.46 ├ ƒ /studio/workflows
+#15 62.46 ├ ƒ /studio/workflows/[id]
+#15 62.46 ├ ƒ /studio/workflows/[id]/preview
+#15 62.46 ├ ƒ /studio/workflows/[id]/settings
+#15 62.46 ├ ƒ /studio/workflows/[id]/versions
+#15 62.46 ├ ƒ /studio/workflows/new
+#15 62.46 ├ ƒ /support-tickets
+#15 62.46 ├ ƒ /support-tickets/[id]
+#15 62.46 └ ƒ /uoms
+#15 62.46
+#15 62.46
+#15 62.46 ƒ Proxy (Middleware)
+#15 62.46
+#15 62.46 ○  (Static)   prerendered as static content
+#15 62.46 ƒ  (Dynamic)  server-rendered on demand
+#15 62.46
+#15 DONE 63.2s
+
+#16 [runner 3/6] RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+#16 CACHED
+
+#17 [runner 4/6] COPY --from=build --chown=nextjs:nextjs /app/.next/standalone ./
+#17 DONE 3.2s
+
+#18 [runner 5/6] COPY --from=build --chown=nextjs:nextjs /app/.next/static ./.next/static
+#18 DONE 1.1s
+
+#19 [runner 6/6] COPY --from=build --chown=nextjs:nextjs /app/THIRD_PARTY_NOTICES.txt ./THIRD_PARTY_NOTICES.txt
+#19 DONE 0.2s
+
+#20 exporting to image
+#20 exporting layers
+#20 exporting layers 2.1s done
+#20 exporting manifest sha256:b3b1683b20c624abce1d62fb89bdf2bb402266cbe31b878b8c8522750dcefd93 0.0s done
+#20 exporting config sha256:3a03a811ad02efa5cc76ad0266c1f85442f7e12dce0741cb2ede5f74ca0250af 0.0s done
+#20 exporting attestation manifest sha256:cb2ab3d765c47418eeac8044268a380397482e7186e1e746af8ad686f8e89cdb
+#20 exporting attestation manifest sha256:cb2ab3d765c47418eeac8044268a380397482e7186e1e746af8ad686f8e89cdb 0.0s done
+#20 exporting manifest list sha256:a9518e59bcbe69a840460b26cf31b67c6195bb1f83bb52ff74dc82adeb0848be 0.0s done
+#20 naming to docker.io/library/aiogram-registry-dashboard:current done
+#20 unpacking to docker.io/library/aiogram-registry-dashboard:current
+#20 unpacking to docker.io/library/aiogram-registry-dashboard:current 0.9s done
+#20 DONE 3.3s
+
+#21 resolving provenance for metadata file
+#21 DONE 0.1s
+ aiogram-registry-dashboard:current  Built

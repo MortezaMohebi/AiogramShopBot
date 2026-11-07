@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
 import { loginChallengeCookieName, safeLoginFetchMetadata, verifyLoginChallenge } from "@/lib/login-challenge";
-import { publicOrigin } from "@/lib/public-origin";
+import { loginRedirect } from "@/lib/login-redirect";
 import { readSession, sessionCookieName } from "@/lib/session";
 export const runtime = "nodejs";
 /** Revoke the server session before telling the browser that logout succeeded. */
@@ -20,6 +20,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   for (const name of [sessionCookieName(), loginChallengeCookieName()]) response.cookies.set(name, "", { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
   return response;
 }
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  return NextResponse.redirect(new URL("/login", publicOrigin(request) ?? request.url), 303);
+export async function GET(): Promise<NextResponse> {
+  return loginRedirect();
 }

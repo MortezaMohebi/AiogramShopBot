@@ -36,6 +36,8 @@ test("initial login asks for credentials without an MFA field or recovery code",
   assert(checkbox);assert(!/\bchecked(?:=|\s|>)/.test(checkbox));
   assert(!html.includes('name="second_factor"'), "MFA belongs to the verified second screen");
   assert(!html.includes('autocomplete="one-time-code"'));
+  const submit = html.match(/<button(?=[^>]*type="submit")[^>]*>/)?.[0];
+  assert(submit?.includes("disabled"), "Native submission must wait for the secure client handler to hydrate");
 });
 test("authenticator input accepts Persian/Arabic digits and copied groups", () => {
   const { normalizeAuthenticatorCode } = load("components/blocks/login-form") as { normalizeAuthenticatorCode: (value: string) => string };
