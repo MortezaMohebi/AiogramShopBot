@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { type FormEvent, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +20,6 @@ export function OwnerSetupForm() {
   const hydrated = useSyncExternalStore(subscribe, ready, notReady);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<"created" | "configured" | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,12 +47,12 @@ export function OwnerSetupForm() {
         signal: AbortSignal.timeout(20_000),
       });
       const reply = await response.json() as { ok?: boolean; code?: string };
-      if (response.status === 201 && reply.ok === true) {
+      const created = response.status === 201 && reply.ok === true;
+      const configured = response.status === 409 && reply.code === "owner_already_configured";
+      if (created || configured) {
         form.reset();
-        setResult("created");
-      } else if (response.status === 409 && reply.code === "owner_already_configured") {
-        form.reset();
-        setResult("configured");
+        // A fresh request sees the committed owner instead of a cached setup page.
+        window.location.replace("/login");
       } else {
         setError(errors[reply.code ?? ""] ?? "نتیجه مشخص نیست. صفحه را دوباره بارگذاری کنید.");
       }
@@ -64,15 +62,6 @@ export function OwnerSetupForm() {
       setWorking(false);
     }
   }
-
-  if (result) return (
-    <div className="space-y-3">
-      <p role="status">
-        {result === "created" ? "حساب اولین مدیر ساخته شد." : "حساب مدیر قبلاً ساخته شده است."}
-      </p>
-      <Button asChild><Link href="/login" prefetch={false}>ورود به پنل مدیریت</Link></Button>
-    </div>
-  );
 
   return (
     <form method="post" onSubmit={submit} className="space-y-4" aria-busy={working}>
