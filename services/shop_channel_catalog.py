@@ -129,7 +129,9 @@ class CatalogFlow:
             if match:
                 return await self._file(session, int(match.group(1)), scope)
             if data == "shop:home":
-                return await self._home(session, event.platform.value)
+                return await self._home(
+                    session, event.platform.value, returning=True,
+                )
             if data == "shop:help":
                 return await self._settings_text(session, key="support", platform=event.platform.value)
             if data == "shop:faq":
@@ -159,8 +161,10 @@ class CatalogFlow:
             return await self._settings_text(session, key="faq", platform=event.platform.value)
         return None
 
-    async def _home(self, session: AsyncSession, platform: str) -> BotReply:
-        """Build a small fixed menu, with all business copy from settings."""
+    async def _home(
+        self, session: AsyncSession, platform: str, *, returning: bool = False,
+    ) -> BotReply:
+        """Show the welcome once at entry and a compact title on return."""
         store_id = self.bot_context.store_id
         settings = await session.get(ShopStoreSettings, store_id)
         per_bot = await session.get(
@@ -188,7 +192,11 @@ class CatalogFlow:
                 "shop:list:0", "shop:cart", "shop:orders", "ux:support",
             }
         )
-        return BotReply(text=welcome[:4096], rows=rows)
+        title = (settings.brand_name or "").strip() if settings else ""
+        return BotReply(
+            text=(f"🛍 {title or 'فروشگاه'}" if returning else welcome[:4096]),
+            rows=rows,
+        )
 
     async def _settings_text(
         self, session: AsyncSession, *, key: str, platform: str

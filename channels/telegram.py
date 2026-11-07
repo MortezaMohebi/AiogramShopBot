@@ -332,7 +332,7 @@ class TelegramTransport:
             )
         if reply.show_main_keyboard and reply.rows:
             await self.bot.send_message(
-                chat_id=chat_id, text="منوی اصلی در دسترس است.",
+                chat_id=chat_id, text="🛍 فروشگاه",
                 reply_markup=main, parse_mode=None,
             )
         elif reply.show_main_keyboard and not reply.request_contact:

@@ -144,35 +144,32 @@ async def _send(
             TelegramTransport(client, bot_id=context.bot_id)
             if context.platform == Platform.TELEGRAM else client
         )
-        delivered = 0
         for attachment in reply.attachments:
             key = (context.bot_id, event.user_id, attachment.storage_key)
             async with session_maker() as db:
                 receipt = await db.get(ShopCustomerMediaReceipt, key)
                 if receipt is not None and receipt.store_id != context.store_id:
                     raise ValueError("Customer media ownership mismatch.")
-            if receipt is not None:
-                continue
+            # A receipt records the latest delivery, not permission to skip a
+            # customer's explicit request for this file again.
             message_id = await transport.send_media(chat_id, attachment)
-            delivered += 1
             if type(message_id) is int and message_id > 0:
                 async with session_maker() as db:
-                    db.add(ShopCustomerMediaReceipt(
-                        bot_id=context.bot_id,
-                        platform_user_id=event.user_id,
-                        storage_key=attachment.storage_key,
-                        store_id=context.store_id,
-                        message_id=message_id,
-                    ))
+                    stored = await db.get(ShopCustomerMediaReceipt, key)
+                    if stored is not None:
+                        if stored.store_id != context.store_id:
+                            raise ValueError("Customer media ownership mismatch.")
+                        stored.message_id = message_id
+                    else:
+                        db.add(ShopCustomerMediaReceipt(
+                            bot_id=context.bot_id,
+                            platform_user_id=event.user_id,
+                            storage_key=attachment.storage_key,
+                            store_id=context.store_id,
+                            message_id=message_id,
+                        ))
                     await db.commit()
-        reply = replace(
-            reply, attachments=(),
-            text=(
-                "این رسانه قبلاً در همین گفتگو ارسال شده است؛ در تاریخچهٔ گفتگو در دسترس است."
-                if not delivered and (event.callback_data or "").startswith("shop:file:")
-                else reply.text
-            ),
-        )
+        reply = replace(reply, attachments=())
     edit_id = previous or (event.message_id if event and event.is_callback else None)
     new_event = bool(
         event and (event.callback_data or "").startswith((

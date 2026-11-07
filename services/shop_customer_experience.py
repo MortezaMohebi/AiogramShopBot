@@ -222,7 +222,7 @@ class CustomerExperienceFlow:
 
             return await CatalogFlow(
                 bot_context=context,
-            )._home(db, event.platform.value)
+            )._home(db, event.platform.value, returning=True)
 
         if action == "ux:search" or text in {
             "/search", "🔎 جستجوی محصول",

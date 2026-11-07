@@ -301,7 +301,7 @@ class BaleTransport:
             }
             if reply.rows:
                 await self._call("sendMessage", {
-                    "chat_id": chat_id, "text": "منوی اصلی در دسترس است.",
+                    "chat_id": chat_id, "text": "🛍 فروشگاه",
                     "reply_markup": main,
                 })
             elif not reply.request_contact:

@@ -273,7 +273,7 @@ export function ProductEditor({
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <label htmlFor="product-stock" className="text-sm font-medium">موجودی</label>
+                    <label htmlFor="product-stock" className="text-sm font-medium">تعداد موجودی</label>
                     <FieldEye name="show_stock" label="تعداد موجودی"
                       initial={product?.show_stock ?? true} />
                   </div>
@@ -285,7 +285,7 @@ export function ProductEditor({
                   <p className="text-xs text-muted-foreground">
                     {product?.digital_delivery_mode === "license"
                       ? "موجودی این محصول از لایسنس‌های استفاده‌نشده محاسبه می‌شود."
-                      : "هنگام ناموجودشدن، پیام «ناموجود» همیشه به مشتری نمایش داده می‌شود."}
+                      : "با دکمهٔ چشم، نمایش تعداد موجودی به مشتری را در تلگرام و بله تنظیم کنید. پیام «ناموجود» همیشه نمایش داده می‌شود."}
                   </p>
                 </div>
                 <label className="block space-y-2 text-sm font-medium">

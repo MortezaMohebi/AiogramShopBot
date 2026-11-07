@@ -134,7 +134,7 @@ async def test_home_return_uses_store_title_instead_of_welcome(session, platform
 async def test_stock_eye_hides_number_but_not_availability(session, platform):
     """The product dashboard policy hides quantity across both providers."""
     product = Product(
-        sku="STOCK-1", name="محصول آزمون", price=250,
+        sku="STOCK-1", name="محصول آزمون", description="", price=250,
         stock_quantity=12, is_published=True,
     )
     session.add(product)
