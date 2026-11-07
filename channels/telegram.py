@@ -153,9 +153,10 @@ class TelegramTransport:
             message = await self.bot.send_animation(
                 chat_id, value, caption=caption, parse_mode=None,
             )
-            remote_id = (
-                message.animation.file_id if message.animation else None
-            )
+            # Telegram may report a GIF as a document after sendAnimation.
+            # Keep the returned ID in this bot's animation namespace.
+            remote_file = message.animation or message.document
+            remote_id = remote_file.file_id if remote_file else None
         else:
             message = await self.bot.send_document(
                 chat_id, value, caption=caption, parse_mode=None

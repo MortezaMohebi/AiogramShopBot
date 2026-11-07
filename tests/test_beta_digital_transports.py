@@ -274,3 +274,51 @@ def test_animation_cache_accepts_provider_file_id() -> None:
             "uploaded-animation"
         )
     engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_telegram_animation_caches_document_shaped_reply(
+    monkeypatch, tmp_path,
+) -> None:
+    """Some GIF sends return a document field instead of animation."""
+    key = "b" * 32 + ".gif"
+    (tmp_path / key).write_bytes(b"GIF89a" + b"x" * 10)
+    monkeypatch.setattr(config, "SHOP_MEDIA_ROOT", str(tmp_path))
+    cached = []
+
+    async def cached_file_id(**kwargs):
+        """Simulate the first upload for this bot and asset."""
+        return None
+
+    async def remember_file_id(**kwargs):
+        """Capture the provider ID without using a database or network."""
+        cached.append(kwargs)
+
+    monkeypatch.setattr(
+        "services.shop_media_delivery.cached_file_id", cached_file_id,
+    )
+    monkeypatch.setattr(
+        "services.shop_media_delivery.remember_file_id", remember_file_id,
+    )
+
+    class FakeBot:
+        """Return a valid Telegram animation reply shaped as a document."""
+
+        token = FAKE_TOKEN
+
+        async def send_animation(self, chat_id, value, **kwargs):
+            """Confirm an upload while omitting the animation field."""
+            assert chat_id == 101
+            assert value.filename == "qa_animation.gif"
+            return SimpleNamespace(
+                message_id=202, animation=None,
+                document=SimpleNamespace(file_id="gif-document-file-id"),
+            )
+
+    transport = TelegramTransport(FakeBot(), bot_id=str(uuid4()))
+    assert await transport.send_media(101, MediaAttachment(
+        storage_key=key, kind="animation", mime_type="image/gif",
+        filename="qa_animation.gif",
+    )) == 202
+    assert cached[0]["kind"] == "animation"
+    assert cached[0]["file_id"] == "gif-document-file-id"
