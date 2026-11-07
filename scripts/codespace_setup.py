@@ -146,7 +146,7 @@ def init() -> None:
     write_env(data)
     print("Codespaces service secrets created (mode 0600); no bots registered.")
     show_urls(data)
-    print("After start, run 'python3 scripts/codespace_setup.py owner-setup'.")
+    print("After start, run 'python3 scripts/codespace_setup.py owner-setup-code' for browser setup.")
 
 
 def show_urls(data: dict[str, str]) -> None:
@@ -280,7 +280,8 @@ def main() -> int:
         "command",
         choices=(
             "info", "init", "config", "start", "build-dashboard", "ports",
-            "doctor", "auth-smoke", "dashboard-probe", "owner-setup", "smtp-config", "smtp-test", "demo", "status", "logs", "test",
+            "doctor", "auth-smoke", "dashboard-probe", "owner-setup",
+            "owner-setup-code", "smtp-config", "smtp-test", "demo", "status", "logs", "test",
             "stop", "reset",
         ),
         nargs="?",
@@ -299,6 +300,7 @@ def main() -> int:
         print("  python3 scripts/codespace_setup.py auth-smoke")
         print("  python3 scripts/codespace_setup.py dashboard-probe")
         print("  python3 scripts/codespace_setup.py owner-setup")
+        print("  python3 scripts/codespace_setup.py owner-setup-code")
         print("  python3 scripts/codespace_setup.py smtp-config")
         print("  python3 scripts/codespace_setup.py smtp-test")
         print("  python3 scripts/codespace_setup.py demo")
@@ -308,6 +310,11 @@ def main() -> int:
         return 0
     if args.command == "owner-setup":
         return compose("run", "--rm", "--no-deps", "app", "python", "-m", "scripts.first_owner_setup")
+    if args.command == "owner-setup-code":
+        return compose(
+            "exec", "-T", "app", "python", "-m",
+            "scripts.first_owner_setup", "--browser-code",
+        )
     if args.command == "smtp-config":
         configure_smtp()
         return 0
@@ -333,7 +340,7 @@ def main() -> int:
         if code == 0:
             show_urls(read_env())
             print("Services started with zero new bots. Register through Dashboard > Bots.")
-            print("If this is a new database, run owner-setup to create your first administrator.")
+            print("For first-run browser setup, get your code with owner-setup-code.")
         return code
     if args.command == "ports":
         set_ports()

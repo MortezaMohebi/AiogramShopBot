@@ -16,6 +16,90 @@ from services.shop_smtp import configured_settings, send_email
 from tests.schema_support import create_shop_schema
 
 
+def test_browser_setup_code_expires_and_cannot_be_forged():
+    """Only a code issued with the installation secret opens first-run setup."""
+    from scripts.first_owner_setup import issue_browser_code, verify_browser_code
+
+    secret = "synthetic-installation-secret-" * 2
+    issued = 1_800_000_000
+    code = issue_browser_code(secret, now=issued)
+    assert verify_browser_code(secret, code, now=issued + 899)
+    assert not verify_browser_code(secret, code, now=issued + 900)
+    assert not verify_browser_code(secret, code, now=issued - 1)
+    assert not verify_browser_code(secret + "other", code, now=issued)
+    assert not verify_browser_code(secret, code.replace(str(issued), str(issued + 1)),
+                                   now=issued + 1)
+    assert not verify_browser_code("", code, now=issued)
+
+
+@pytest.mark.asyncio
+async def test_browser_setup_requires_signed_bridge_and_closes_after_creation(monkeypatch):
+    """Exercise the real setup endpoint without a configured server."""
+    import json
+    import time
+
+    import httpx
+    from fastapi import FastAPI
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import config
+    from dashboard.admin_control_api import router
+    from dashboard.admin_control_app import create_app
+    from dashboard.next_api import database
+    from scripts.first_owner_setup import issue_browser_code
+    from tests.test_next_admin_bridge import SECRET, signed
+
+    monkeypatch.setattr(config, "NEXT_ADMIN_BRIDGE_ENABLED", True)
+    monkeypatch.setattr(config, "NEXT_ADMIN_BRIDGE_SECRET", SECRET)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sessions = async_sessionmaker(engine)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(create_shop_schema)
+        async with sessions.begin() as db:
+            db.add(ShopStore(id=DEFAULT_STORE_ID, slug="default", name="Store", state="active"))
+
+        async def isolated_db():
+            async with sessions() as session:
+                yield session
+
+        base = FastAPI()
+        base.include_router(router)
+        app = create_app(base)
+        app.dependency_overrides[database] = isolated_db
+        target = "/internal/admin/v1/auth/owner-setup"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://offline.test",
+        ) as client:
+            async def request(method, payload=None):
+                body = json.dumps(payload).encode() if payload is not None else b""
+                stamp = str(int(time.time()))
+                headers = {
+                    "content-type": "application/json", "x-shop-time": stamp,
+                    "x-shop-staff": "0", "x-shop-version": "0",
+                    "x-shop-signature": signed(method=method, path=target, body=body,
+                                               user_id=0, version=0, stamp=stamp),
+                }
+                return await client.request(method, target, content=body, headers=headers)
+
+            payload = {
+                "username": "browser.owner", "password": "synthetic-password-long-enough",
+                "setup_code": issue_browser_code(SECRET),
+            }
+            assert (await client.get(target)).status_code == 401
+            assert (await client.post(target, json=payload)).status_code == 401
+            assert (await request("GET")).json() == {"pending": True}
+            rejected = await request("POST", payload | {"setup_code": "0" * 75})
+            assert rejected.json() == {"detail": "invalid_setup_code"}
+            created = await request("POST", payload)
+            assert created.status_code == 201 and created.json() == {"ok": True}
+            assert (await request("GET")).json() == {"pending": False}
+            assert (await request("POST", payload)).status_code == 409
+    finally:
+        await engine.dispose()
+
+
 def test_fresh_bootstrap_does_not_require_an_admin_password(monkeypatch):
     """Schema initialization cannot create a hardcoded dashboard user."""
     from scripts.codespace_bootstrap import REQUIRED

@@ -80,6 +80,7 @@ const SAFE_CODES = new Set([
   "connection_change_in_progress", "configuration_changed",
   "connection_worker_unavailable", "reconciliation_required",
   "invitation_only", "invalid_link", "password_policy_failed", "mfa_enrollment_required",
+  "invalid_setup_code", "owner_already_configured",
   "mfa_required_by_role", "invitation_not_found", "staff_username_exists",
   "staff_not_found", "last_admin_protected", "use_my_account",
   "username_unchanged", "customer_not_found", "restriction_reason_required",

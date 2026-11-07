@@ -19,6 +19,9 @@ from models.shop_staff import ShopStaff
 from models.shop_admin_control import AdminEvent, AdminSession
 from models.shop_staff_security import ShopStaffInvitation, ShopStaffPasswordReset
 from models.shop_staff_state import ShopStaffState
+from scripts.first_owner_setup import (
+    create_first_owner, lock_owner_setup, verify_browser_code,
+)
 from services import shop_staff_lifecycle as lifecycle
 from services import shop_staff_preferences as staff_preferences
 from sqlalchemy import func
@@ -46,6 +49,42 @@ class Login(StrictPayload):
     second_factor: str = Field(default="", max_length=64)
     device: str = Field(default="Browser", max_length=160)
     remember_me: bool = Field(default=False, strict=True)
+
+
+class FirstOwner(StrictPayload):
+    """Accept only the credentials and proof needed for first-run setup."""
+
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=1, max_length=256)
+    setup_code: str = Field(min_length=75, max_length=75)
+
+
+@router.get("/auth/owner-setup")
+async def owner_setup_status(staff: Staff, db: Db) -> dict:
+    """Expose setup readiness only to the signed dashboard bridge."""
+    if staff is not None:
+        raise security.SecurityRejected("permission_denied", 403)
+    return {"pending": await db.scalar(select(ShopStaff.id).limit(1)) is None}
+
+
+@router.post("/auth/owner-setup", status_code=201)
+async def setup_owner(payload: FirstOwner, staff: Staff, db: Db) -> dict:
+    """Create the first owner only with a valid setup code and an empty DB."""
+    if staff is not None:
+        raise security.SecurityRejected("permission_denied", 403)
+    if not verify_browser_code(config.NEXT_ADMIN_BRIDGE_SECRET, payload.setup_code):
+        raise security.SecurityRejected("invalid_setup_code", 403)
+    if not lifecycle.USERNAME_RE.fullmatch(payload.username.strip().casefold()):
+        raise security.SecurityRejected("invalid_request", 422)
+    await lock_owner_setup(db)
+    if await db.scalar(select(ShopStaff.id).limit(1)) is not None:
+        raise security.SecurityRejected("owner_already_configured", 409)
+    owner = await db.run_sync(
+        lambda sync: create_first_owner(sync, payload.username, payload.password)
+    )
+    await db.run_sync(lambda sync: security.audit(sync, owner.id, "staff.first_owner_created"))
+    await db.commit()
+    return {"ok": True}
 
 
 class Proof(StrictPayload):

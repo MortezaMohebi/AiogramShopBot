@@ -195,7 +195,11 @@ async def signed_staff(request: Request, session: Db) -> ShopStaff | None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if staff_id == 0 and version == 0:
-        if request.url.path not in {"/internal/admin/v1/auth/login", "/internal/admin/v1/auth/redeem"}:
+        if request.url.path not in {
+            "/internal/admin/v1/auth/login",
+            "/internal/admin/v1/auth/redeem",
+            "/internal/admin/v1/auth/owner-setup",
+        }:
             raise HTTPException(status_code=401, detail="Unauthorized")
         return None
 

@@ -222,7 +222,11 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
             or (path.startswith(PREFIX + "/") and resource in retired)
         ):
             return JSONResponse({"detail": "Not found"}, status_code=404)
-        if not path.startswith(PREFIX + "/") or path in {PREFIX + "/auth/login", PREFIX + "/auth/redeem"}:
+        if not path.startswith(PREFIX + "/") or path in {
+            PREFIX + "/auth/login",
+            PREFIX + "/auth/redeem",
+            PREFIX + "/auth/owner-setup",
+        }:
             return await call_next(request)
         try:
             if not config.NEXT_ADMIN_BRIDGE_ENABLED or len(config.NEXT_ADMIN_BRIDGE_SECRET) < 32:
