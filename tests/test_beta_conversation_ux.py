@@ -116,22 +116,23 @@ async def test_other_contact_and_manual_phone_do_not_verify_account(
 
 
 @pytest.mark.asyncio
-async def test_requested_media_is_sent_once_and_remains_in_chat(db, monkeypatch):
-    """A repeated media callback reuses its history instead of resending."""
-    scope, _ = await setup_dispatch(db, monkeypatch, Platform.BALE)
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_requested_media_is_resent_on_every_click(db, monkeypatch, platform):
+    """Repeat requests deliver a new file while retaining older messages."""
+    scope, _ = await setup_dispatch(db, monkeypatch, platform)
 
     class MediaClient:
         """Simulate confirmed delivery receipts from Bale."""
 
         def __init__(self):
-            """Track exactly one media send and edit the navigational text."""
+            """Track each media send and the navigational text."""
             self.media = []
             self.messages = []
 
         async def send_media(self, chat_id, attachment):
             """Record a persistent on-demand file."""
             self.media.append(attachment.storage_key)
-            return 88
+            return 87 + len(self.media)
 
         async def send(self, chat_id, reply, *, edit_message_id=None):
             """Record the mutable UI separately from the file."""
@@ -139,8 +140,13 @@ async def test_requested_media_is_sent_once_and_remains_in_chat(db, monkeypatch)
             return edit_message_id or 89
 
     client = MediaClient()
+    if platform == Platform.TELEGRAM:
+        monkeypatch.setattr(
+            "services.shop_multibot_dispatch.TelegramTransport",
+            lambda *args, **kwargs: client,
+        )
     event = InboundEvent(
-        platform=Platform.BALE, chat_id=101, user_id=101,
+        platform=platform, chat_id=101, user_id=101,
         callback_data="shop:file:1",
     )
     key = "a" * 32 + ".pdf"
@@ -151,9 +157,9 @@ async def test_requested_media_is_sent_once_and_remains_in_chat(db, monkeypatch)
     )
     await _send(scope, client, 101, reply, event=event)
     await _send(scope, client, 101, reply, event=event)
-    assert client.media == [key]
-    assert "قبلاً" in client.messages[-1]
-    assert db.session.get(ShopCustomerMediaReceipt, (scope.bot_id, 101, key)).message_id == 88
+    assert client.media == [key, key]
+    assert "قبلاً" not in client.messages[-1]
+    assert db.session.get(ShopCustomerMediaReceipt, (scope.bot_id, 101, key)).message_id == 89
 
 
 @pytest.mark.asyncio

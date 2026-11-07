@@ -20,6 +20,7 @@ from models.shop_product_visibility import ShopProductVisibility
 from models.shop_multibot import (
     DEFAULT_STORE_ID, ShopBot, ShopStore,
 )
+from models.shop_store_commerce import ShopStoreSettings
 from models.shop_staff import ShopStaff
 from services.shop_channel_catalog import CatalogFlow
 
@@ -109,6 +110,51 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
     assert "توضیح" in detail.text
     assert "250" in detail.text
     assert "ریال" in detail.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_home_return_uses_store_title_instead_of_welcome(session, platform):
+    """The configured welcome is shown at entry, not on every return Home."""
+    session.add(ShopStoreSettings(
+        store_id=DEFAULT_STORE_ID, brand_name="فروشگاه آزمون",
+        welcome_message="به منوی اصلی برگشتید.",
+    ))
+    session.commit()
+    flow = CatalogFlow(bot_context=test_bot_context(platform))
+    proxy = AsyncSessionProxy(session)
+    entry = await flow.reply(event(platform, text="/start"), proxy)
+    returned = await flow.reply(event(platform, callback="shop:home"), proxy)
+    assert entry.text == "به منوی اصلی برگشتید."
+    assert returned.text == "🛍 فروشگاه آزمون"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_stock_eye_hides_number_but_not_availability(session, platform):
+    """The product dashboard policy hides quantity across both providers."""
+    product = Product(
+        sku="STOCK-1", name="محصول آزمون", price=250,
+        stock_quantity=12, is_published=True,
+    )
+    session.add(product)
+    session.flush()
+    session.add(ShopProductVisibility(product_id=product.id, show_stock=False))
+    allow_test_catalog(session)
+    session.commit()
+    flow = CatalogFlow(bot_context=test_bot_context(platform))
+    proxy = AsyncSessionProxy(session)
+    hidden = await flow.reply(
+        event(platform, callback=f"shop:item:{product.id}"), proxy,
+    )
+    assert "موجودی: 12" not in hidden.text
+    assert "افزودن به سبد" in str(hidden.rows)
+    product.stock_quantity = 0
+    session.commit()
+    unavailable = await flow.reply(
+        event(platform, callback=f"shop:item:{product.id}"), proxy,
+    )
+    assert "ناموجود" in unavailable.text
 
 
 @pytest.mark.asyncio

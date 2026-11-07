@@ -95,5 +95,6 @@ async def test_main_keyboard_is_persistent_and_inline_actions_stay_on_screen():
         ),
     )
     assert len(bot.sent) == 2
+    assert bot.sent[0]["text"] == "🛍 فروشگاه"
     assert bot.sent[0]["reply_markup"].keyboard[0][0].text == "🛍 فروشگاه"
     assert bot.sent[1]["reply_markup"].inline_keyboard[0][0].callback_data == "ux:search"
