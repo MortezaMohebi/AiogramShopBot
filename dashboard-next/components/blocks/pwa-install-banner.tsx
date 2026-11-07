@@ -49,6 +49,8 @@ function subscribeToEnvironment(listener: () => void): () => void {
 
 export function PwaInstallBanner() {
   const platform = useSyncExternalStore(subscribeToEnvironment, eligiblePlatform, () => null);
+  const codespace = typeof window !== "undefined"
+    && window.location.hostname.endsWith(".app.github.dev") && platform !== null;
   const [dismissed, setDismissed] = useState(false);
   const [prompt, setPrompt] = useState<NativeInstallPrompt | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -112,20 +114,22 @@ export function PwaInstallBanner() {
   }
 
   const suggestion = installSuggestion(platform, dismissed, false, prompt !== null);
-  if (!suggestion) return null;
+  if (!suggestion && !codespace) return null;
 
   return <aside aria-label="نصب پنل روی گوشی" className="border-b border-border bg-card px-4 py-3 text-card-foreground">
     <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2">
       <div className="min-w-0 flex-1 basis-40">
         <p className="text-sm font-semibold">پنل فروشگاه روی صفحهٔ اصلی</p>
-        <p className="text-xs leading-6 text-muted-foreground">برای دسترسی سریع، پنل را به گوشی اضافه کنید.</p>
+        <p className="text-xs leading-6 text-muted-foreground">{codespace
+          ? "این آدرس آزمایشی برای بازشدن روی گوشی به ورود GitHub نیاز دارد و دسترسی آن منقضی می‌شود. برای نصب پایدار، پنل را روی دامنهٔ HTTPS مستقل قرار دهید."
+          : "برای دسترسی سریع، پنل را به گوشی اضافه کنید."}</p>
       </div>
       {suggestion === "android" ? <Button type="button" size="sm" disabled={installing} onClick={() => void install()}>
         <Download aria-hidden="true" />{installing ? "در حال باز کردن نصب…" : "نصب پنل"}
-      </Button> : <Button type="button" size="sm" variant="outline" aria-controls="pwa-ios-install-help"
+      </Button> : suggestion === "ios" ? <Button type="button" size="sm" variant="outline" aria-controls="pwa-ios-install-help"
         aria-expanded={showInstructions} onClick={() => setShowInstructions((visible) => !visible)}>
         <Share aria-hidden="true" />راهنمای نصب
-      </Button>}
+      </Button> : null}
       <Button type="button" size="icon" variant="ghost" aria-label="دیگر پیشنهاد نصب را نشان نده"
         onClick={dismiss}>
         <X aria-hidden="true" />

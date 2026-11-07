@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { saveReferralPolicy } from "@/app/(console)/settings/actions";
+import { savePwaAppearance, saveReferralPolicy } from "@/app/(console)/settings/actions";
 import { ShopSettingsForm } from "@/components/blocks/shop-settings-form";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { adminFetch, currentStaff, optionalStoreRead } from "@/lib/bridge";
 import type { ShopSettings } from "@/lib/types";
+import type { PwaAppearance } from "@/lib/pwa-appearance";
 
 type Params = Promise<{ saved?: string; error?: string }>;
 
@@ -15,9 +16,10 @@ type Params = Promise<{ saved?: string; error?: string }>;
 export default async function SettingsPage({ searchParams }: { searchParams: Params }) {
   const staff = await currentStaff();
   if (staff.role !== "superadmin") notFound();
-  const [settings, policy, params] = await Promise.all([
+  const [settings, policy, appearance, params] = await Promise.all([
     adminFetch<ShopSettings>("/settings"),
     optionalStoreRead<{is_enabled: boolean; percent: number; min_order_irr: string; max_bonus_irr: string}>("/referral-policy"),
+    adminFetch<PwaAppearance>("/pwa-settings"),
     searchParams,
   ]);
   return (
@@ -29,6 +31,28 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
         <CardHeader><CardTitle>متن‌های تلگرام و بله</CardTitle></CardHeader>
         <CardContent>
           <ShopSettingsForm initial={settings} />
+        </CardContent>
+      </Card>
+      <Card className="mt-6 max-w-4xl">
+        <CardHeader><CardTitle>نام و ظاهر برنامهٔ نصب‌شده</CardTitle>
+          <CardDescription>این نام و رنگ روی صفحهٔ اصلی گوشی نمایش داده می‌شوند.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={savePwaAppearance} className="grid gap-4 sm:grid-cols-2">
+            <input type="hidden" name="version" value={appearance.version} />
+            <label className="space-y-2 text-sm">نام کامل برنامه
+              <Input name="name" defaultValue={appearance.name} minLength={2} maxLength={80} required />
+            </label>
+            <label className="space-y-2 text-sm">نام کوتاه زیر آیکون
+              <Input name="short_name" defaultValue={appearance.short_name} minLength={2} maxLength={24} required />
+            </label>
+            <label className="space-y-2 text-sm">رنگ آیکون
+              <Input type="color" name="theme_color" defaultValue={appearance.theme_color} required
+                className="h-11 w-24 cursor-pointer" />
+            </label>
+            <div className="sm:col-span-2"><Button type="submit">ذخیره ظاهر برنامه</Button></div>
+          </form>
+          <p className="mt-4 text-xs leading-6 text-muted-foreground">اگر برنامه از قبل نصب شده، برای دیدن نام و آیکون تازه آن را از صفحهٔ اصلی حذف و دوباره نصب کنید.</p>
         </CardContent>
       </Card>
       {policy ? <Card className="mt-6 max-w-4xl">

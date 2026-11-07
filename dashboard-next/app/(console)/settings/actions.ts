@@ -27,3 +27,25 @@ export async function saveReferralPolicy(form: FormData) {
   revalidatePath("/settings");
   redirect("/settings?saved=referral");
 }
+
+/** Persist the installation name and accent chosen by the administrator. */
+export async function savePwaAppearance(form: FormData) {
+  const name = String(form.get("name") ?? "").trim();
+  const shortName = String(form.get("short_name") ?? "").trim();
+  const color = String(form.get("theme_color") ?? "");
+  const version = String(form.get("version") ?? "");
+  if (name.length < 2 || name.length > 80 || shortName.length < 2 || shortName.length > 24
+    || !/^#[0-9a-fA-F]{6}$/.test(color) || !/^\d{1,9}$/.test(version)) {
+    redirect("/settings?error=pwa");
+  }
+  try {
+    await adminFetch("/pwa-settings", "PATCH", {
+      name, short_name: shortName, theme_color: color, expected_version: Number(version),
+    });
+  } catch {
+    redirect("/settings?error=pwa");
+  }
+  revalidatePath("/settings");
+  revalidatePath("/manifest.webmanifest");
+  redirect("/settings?saved=pwa");
+}

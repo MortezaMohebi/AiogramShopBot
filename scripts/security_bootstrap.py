@@ -39,6 +39,7 @@ async def main() -> None:
     from models.shop_admin_control import CONTROL_TABLE_NAMES
     from models.shop_service_control import ShopServiceControl
     from models.shop_staff_security import STAFF_SECURITY_TABLE_NAMES
+    from models.shop_pwa_settings import ShopPwaSettings
     from models.shop_customer_crm import CRM_TABLE_NAMES
     from models.shop_staff_preferences import STAFF_PREFERENCES_TABLES
     from models.shop_customer_links import CUSTOMER_LINK_TABLES
@@ -102,7 +103,8 @@ async def main() -> None:
             SUPPORT_FULFILLMENT_TABLES,
             CUSTOMER_NOTIFICATION_TABLES,
             {ShopUom.__tablename__, ShopUomCategory.__tablename__,
-             "shop_product_visibility", ShopServiceControl.__tablename__},
+             "shop_product_visibility", ShopServiceControl.__tablename__,
+             ShopPwaSettings.__tablename__},
         )
         missing = permitted_missing(tables, set(Base.metadata.tables), additions)
         if missing:

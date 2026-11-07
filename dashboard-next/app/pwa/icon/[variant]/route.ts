@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { ImageResponse } from "next/og";
+import { publicAppearance } from "../../../../lib/pwa-appearance";
 
 const iconSizes = new Map([
   ["192", 192],
@@ -8,12 +9,7 @@ const iconSizes = new Map([
   ["apple", 180],
 ]);
 
-export const dynamic = "force-static";
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-  return Array.from(iconSizes.keys(), (variant) => ({ variant }));
-}
+export const dynamic = "force-dynamic";
 
 /** Generate first-party PNG artwork without a remote font or asset dependency. */
 export async function GET(
@@ -23,18 +19,24 @@ export async function GET(
   const { variant } = await params;
   const size = iconSizes.get(variant);
   if (size === undefined) return new Response(null, { status: 404 });
-  const glyph = Math.round(size * 0.65);
+  const settings = await publicAppearance();
+  const glyph = Math.round(size * (variant === "maskable" ? 0.51 : 0.62));
 
   return new ImageResponse(createElement("div", {
     style: {
       width: "100%", height: "100%", display: "flex",
-      alignItems: "center", justifyContent: "center", backgroundColor: "#146b66",
+      alignItems: "center", justifyContent: "center",
+      background: `linear-gradient(145deg, ${settings.theme_color} 0%, #101e31 100%)`,
     },
   }, createElement("svg", {
-    width: glyph, height: glyph, viewBox: "0 0 24 24", fill: "none",
-    stroke: "#fff", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round",
+    width: glyph, height: glyph, viewBox: "0 0 100 100", fill: "none",
+    stroke: "#fff", strokeWidth: 6, strokeLinecap: "round", strokeLinejoin: "round",
   },
-  createElement("path", { d: "M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-5 4v-4a2.5 2.5 0 0 1-2-2.5z" }),
-  createElement("path", { d: "M8 9h8m-8 3.5h5" }),
-  )), { width: size, height: size });
+  createElement("path", { d: "M22 38h56l-4 43a8 8 0 0 1-8 7H34a8 8 0 0 1-8-7z" }),
+  createElement("path", { d: "M37 39v-8a13 13 0 0 1 26 0v8" }),
+  createElement("path", { d: "M40 59h21m-21 12h15" }),
+  createElement("circle", { cx: 72, cy: 67, r: 10, fill: "#bce9d8", stroke: "none" }),
+  )), { width: size, height: size, headers: {
+    "Cache-Control": "no-store, max-age=0", "X-Content-Type-Options": "nosniff",
+  } });
 }

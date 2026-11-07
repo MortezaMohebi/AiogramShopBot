@@ -22,6 +22,7 @@ async function page(mode:"supported"|"restricted"|"failure") {
   async function read(path:string):Promise<unknown> {
     requests.push(path);
     if(path==="/settings")return {brand_name:"CURRENT_STORE_BRAND"};
+    if(path==="/pwa-settings")return {name:"مدیریت فروشگاه",short_name:"فروشگاه",theme_color:"#146b66",version:0};
     if(mode==="restricted")throw new ApiError(409,"store_scope_not_supported");
     if(mode==="failure")throw new ApiError(503,"service_unavailable");
     return path==="/referral-policy"?{is_enabled:false,percent:0,min_order_irr:"0",max_bonus_irr:"0"}:{items:[]};
@@ -30,7 +31,7 @@ async function page(mode:"supported"|"restricted"|"failure") {
   const Link=({href,children}:{href:string;children:ReactNode})=>createElement("a",{href},children);
   const deps:Record<string,unknown>={
     "react/jsx-runtime":jsx,"next/link":{default:Link},"next/navigation":{notFound(){throw Error("404");}},
-    "@/app/(console)/settings/actions":{saveChannelFeatures(){},savePaymentRails(){},saveReferralPolicy(){}},
+    "@/app/(console)/settings/actions":{saveChannelFeatures(){},savePaymentRails(){},saveReferralPolicy(){},savePwaAppearance(){}},
     "@/components/blocks/shop-settings-form":{ShopSettingsForm:({initial}:{initial:{brand_name:string}})=>createElement("p",{"data-brand":true},initial.brand_name)},
     "@/components/blocks/page-heading":{PageHeading:({title}:{title:string})=>createElement("h1",null,title)},
     "@/components/ui/card":{Card:Box,CardHeader:Box,CardContent:Box,CardTitle:Box,CardDescription:Box},

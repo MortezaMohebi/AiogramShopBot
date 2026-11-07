@@ -17,6 +17,7 @@ import config
 from models.base import Base
 from models.shop_staff import ShopStaff
 from models.shop_service_control import ShopServiceControl
+from models.shop_pwa_settings import ShopPwaSettings
 from models.shop_admin_control import (
     AdminProfile, AdminSession, AdminEvent,
 )

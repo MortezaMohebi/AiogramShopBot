@@ -80,6 +80,16 @@ base = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=Non
 base.include_router(admin_router)
 
 
+@base.get("/pwa/appearance", include_in_schema=False)
+async def public_pwa_appearance() -> dict:
+    """Serve only public install labels to the private dashboard container."""
+    from models.shop_pwa_settings import ShopPwaSettings
+    from dashboard.shop_pwa_api import values
+
+    async with session_maker() as session:
+        return values(await session.get(ShopPwaSettings, 1))
+
+
 @base.get("/healthz", include_in_schema=False)
 async def health() -> dict:
     """Check PostgreSQL and Redis without contacting either messenger."""
