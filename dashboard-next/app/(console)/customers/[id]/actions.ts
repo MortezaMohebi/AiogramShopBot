@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, adminFetch } from "@/lib/bridge";
+import { parseCalendarDate } from "@/lib/persian-calendar";
 
 /** Only a positive integer internal CRM identity is accepted. */
 function customerId(form: FormData): string {
@@ -57,8 +58,11 @@ export async function restrictCustomer(form: FormData): Promise<void> {
   }
   let expires: string | null = null;
   if (until) {
-    const date = new Date(until);
-    if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) {
+    // Interpret calendar dates as the end of the day in the same timezone as legacy local timestamps.
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(until)
+      ? parseCalendarDate(until) && new Date(`${until}T23:59:59.999`)
+      : new Date(until);
+    if (!date || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
       redirect(`/customers/${id}?error=validation`);
     }
     expires = date.toISOString();

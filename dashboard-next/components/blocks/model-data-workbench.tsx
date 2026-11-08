@@ -7,6 +7,7 @@ import { FileDown, FileSpreadsheet, Filter, Layers3, Search, Upload } from "luci
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PersianDatePicker } from "@/components/ui/persian-date-picker";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import {
   groupDataModel, searchDataModel,
@@ -51,6 +52,10 @@ const ERRORS: Record<string, string> = {
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
+function dateFilterLabel(value: string) {
+  return new Date(value).toLocaleString("fa-IR", { dateStyle: "medium", timeStyle: "short" });
+}
+
 /** One reusable UI driven entirely by backend ModelRegistry metadata. */
 export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
   const router = useRouter();
@@ -70,6 +75,8 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
   const [value, setValue] = useState("");
   const [sortBy, setSortBy] = useState(sortable[0]?.key ?? "id");
   const selectedField = searchable.find((item) => item.key === field);
+  const isDateTime = selectedField?.kind === "datetime";
+  const dateList = isDateTime && op === "in" ? value.split(",").filter(Boolean) : null;
   const textField = selectedField?.kind === "string" || selectedField?.kind === "enum";
   const applicableOps = OPS.filter(([name]) => (
     textField || (name !== "contains" && name !== "starts")
@@ -252,6 +259,7 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
             <select value={field} onChange={(event) => {
               setField(event.target.value);
               const next = searchable.find((item) => item.key === event.target.value);
+              if (isDateTime || next?.kind === "datetime") setValue("");
               setOp(next?.kind === "string" || next?.kind === "enum" ? "contains" : "eq");
             }}
               className="h-10 w-full rounded-md border bg-background px-3">
@@ -259,27 +267,52 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
             </select>
           </label>
           <label className="space-y-2 text-sm">عملگر
-            <select value={op} onChange={(event) => setOp(event.target.value as FieldOperator)}
+            <select value={op} onChange={(event) => {
+              const next = event.target.value as FieldOperator;
+              if (isDateTime && op === "in" && next !== "in") setValue(dateList?.[0] ?? "");
+              setOp(next);
+            }}
               className="h-10 rounded-md border bg-background px-3">
               {applicableOps.map(([key, label]) =>
                 <option key={key} value={key}>{label}</option>)}
             </select>
           </label>
-          <label className="space-y-2 text-sm">عبارت / مقدار
-            <Input value={value} onChange={(event) => setValue(event.target.value)}
-              placeholder="برای تاریخ از UTC استفاده کنید" maxLength={200} />
-          </label>
+          {isDateTime ?
+            <PersianDatePicker label={dateList ? "افزودن تاریخ و زمان" : "تاریخ و زمان"}
+              value={dateList ? "" : value} withTime onChange={(next) => {
+                if (!dateList) setValue(next);
+                else if (next && !dateList.includes(next)) {
+                  if (dateList.length >= 20) setNotice("حداکثر ۲۰ زمان می‌توانید اضافه کنید.");
+                  else setValue([...dateList, next].join(","));
+                }
+              }} /> :
+            <label className="space-y-2 text-sm">عبارت / مقدار
+              <Input value={value} onChange={(event) => setValue(event.target.value)} maxLength={200} />
+            </label>}
           <Button type="button" disabled={busy} variant="outline" onClick={addFilter}>
             افزودن فیلتر
           </Button>
         </div>
+        {dateList?.length ? <div className="flex flex-wrap gap-2" aria-label="زمان‌های انتخاب‌شده">
+          {dateList.map((date) => <Button key={date} type="button" size="sm" variant="outline"
+            onClick={() => setValue(dateList.filter((item) => item !== date).join(","))}
+            aria-label={`حذف ${dateFilterLabel(date)}`}>
+            {dateFilterLabel(date)} ×
+          </Button>)}
+        </div> : null}
         {filters.length ? <div className="flex flex-wrap gap-2">
-          {filters.map((filter, index) => <button key={index} type="button"
+          {filters.map((filter, index) => {
+            const filterField = metadata.fields.find((item) => item.key === filter.field);
+            const display = filterField?.kind === "datetime"
+              ? (Array.isArray(filter.value) ? filter.value : [filter.value]).map((item) => dateFilterLabel(String(item))).join("، ")
+              : String(filter.value);
+            return <button key={index} type="button"
             disabled={busy} onClick={() => setFilters(filters.filter((_, i) => i !== index))}
             className="rounded-lg border px-3 py-2 text-xs hover:bg-muted"
-            aria-label={`حذف فیلتر ${metadata.fields.find((item) => item.key === filter.field)?.title ?? filter.field}`}>
-            {metadata.fields.find((item) => item.key === filter.field)?.title ?? filter.field} · {OPS.find(([key]) => key === filter.op)?.[1] ?? filter.op} · <bdi>{String(filter.value)}</bdi> ×
-          </button>)}
+            aria-label={`حذف فیلتر ${filterField?.title ?? filter.field}`}>
+              {filterField?.title ?? filter.field} · {OPS.find(([key]) => key === filter.op)?.[1] ?? filter.op} · <bdi>{display}</bdi> ×
+            </button>;
+          })}
           <Button type="button" size="sm" variant="outline"
             onClick={() => setFilters([])} disabled={busy}>پاک کردن فیلترها</Button>
         </div> : null}

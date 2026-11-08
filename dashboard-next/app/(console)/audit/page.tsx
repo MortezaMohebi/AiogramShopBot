@@ -4,7 +4,9 @@ import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PersianDatePicker } from "@/components/ui/persian-date-picker";
 import { adminFetch, currentStaff } from "@/lib/bridge";
+import { parseCalendarDate } from "@/lib/persian-calendar";
 
 type Filter = { actor?: string; action?: string; since?: string; until?: string; page?: string };
 type AuditEntry = { id: string; actor: number; action: string; target: string; created_at: string };
@@ -17,11 +19,16 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   if (staff.role !== "superadmin") notFound();
   const query = await searchParams;
   const page = Math.max(1, Math.min(10000, Number.parseInt(query.page ?? "1", 10) || 1));
-  const filters = new URLSearchParams({ page: String(page) });
-  if (query.actor && /^[1-9][0-9]*$/.test(query.actor)) filters.set("actor", query.actor);
-  if (query.action && /^[a-z._]{1,80}$/.test(query.action)) filters.set("action", query.action);
-  if (query.since && /^\d{4}-\d{2}-\d{2}$/.test(query.since)) filters.set("since", `${query.since}T00:00:00Z`);
-  if (query.until && /^\d{4}-\d{2}-\d{2}$/.test(query.until)) filters.set("until", `${query.until}T23:59:59Z`);
+  const pageQuery = new URLSearchParams({ page: String(page) });
+  if (query.actor && /^[1-9][0-9]*$/.test(query.actor)) pageQuery.set("actor", query.actor);
+  if (query.action && /^[a-z._]{1,80}$/.test(query.action)) pageQuery.set("action", query.action);
+  const since = typeof query.since === "string" && parseCalendarDate(query.since) ? query.since : "";
+  const until = typeof query.until === "string" && parseCalendarDate(query.until) ? query.until : "";
+  if (since) pageQuery.set("since", since);
+  if (until) pageQuery.set("until", until);
+  const filters = new URLSearchParams(pageQuery);
+  if (since) filters.set("since", `${since}T00:00:00Z`);
+  if (until) filters.set("until", `${until}T23:59:59Z`);
   const [history, members] = await Promise.all([
     adminFetch<AuditResult>(`/account/audit?${filters.toString()}`),
     adminFetch<Member[]>("/staff"),
@@ -29,7 +36,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const names = new Map(members.map((member) => [member.id, member.username]));
   const last = Math.max(1, Math.ceil(history.total / history.page_size));
   const pageLink = (target: number) => {
-    const next = new URLSearchParams(filters);
+    const next = new URLSearchParams(pageQuery);
     next.set("page", String(target));
     // The browser does not submit auth credentials or tokens through URLs.
     return `/audit?${next.toString()}`;
@@ -48,12 +55,8 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
         <label className="space-y-2 text-sm">نوع رویداد
           <Input name="action" dir="ltr" placeholder="staff.invitation_issued" defaultValue={query.action ?? ""} />
         </label>
-        <label className="space-y-2 text-sm">از تاریخ
-          <Input type="date" name="since" defaultValue={query.since ?? ""} />
-        </label>
-        <label className="space-y-2 text-sm">تا تاریخ
-          <Input type="date" name="until" defaultValue={query.until ?? ""} />
-        </label>
+        <PersianDatePicker key={`since:${since}`} name="since" label="از تاریخ" defaultValue={since} />
+        <PersianDatePicker key={`until:${until}`} name="until" label="تا تاریخ" defaultValue={until} />
         <Button type="submit" className="md:col-span-4 md:justify-self-start">اعمال فیلترها</Button>
       </form>
     </CardContent></Card>

@@ -3,6 +3,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PersianDatePicker } from "@/components/ui/persian-date-picker";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   Catalog,
@@ -142,16 +143,21 @@ export function ValueField({
         }
       />
     );
+  if (type === "date" || type === "datetime") {
+    const props = {
+      label,
+      value: typeof value === "string" ? value : "",
+      onChange: (next: string) => onChange(next || null),
+    };
+    return <PersianDatePicker {...props} withTime={type === "datetime"} />;
+  }
   return (
     <Input
       aria-label={label}
       dir={type === "string" ? undefined : "ltr"}
-      type={type === "date" ? "date" : type === "integer" ? "number" : "text"}
+      type={type === "integer" ? "number" : "text"}
       inputMode={type === "decimal" ? "decimal" : undefined}
       value={typeof value === "object" ? "" : String(value ?? "")}
-      placeholder={
-        type === "datetime" ? "2026-11-05T12:00:00+03:30" : undefined
-      }
       onChange={(e) =>
         onChange(
           e.target.value === ""

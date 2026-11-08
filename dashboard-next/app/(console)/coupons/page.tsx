@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PersianDatePicker } from "@/components/ui/persian-date-picker";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import { formatIrr } from "@/lib/utils";
 
@@ -47,9 +48,7 @@ export default async function CouponsPage() {
               <label className="block space-y-2 text-sm">حداکثر دفعات استفاده
                 <Input name="max_uses" type="number" min={1} step={1} placeholder="بدون سقف" dir="ltr" />
               </label>
-              <label className="block space-y-2 text-sm">تاریخ انقضا (UTC)
-                <Input name="expires_at" type="date" dir="ltr" />
-              </label>
+              <PersianDatePicker name="expires_at" label="تاریخ انقضا (UTC)" />
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked className="accent-primary" /> فعال</label>
               <Button type="submit">ایجاد کد تخفیف</Button>
             </form>
@@ -87,9 +86,8 @@ export default async function CouponsPage() {
                     <label className="block space-y-2 text-sm">حداکثر دفعات استفاده
                       <Input name="max_uses" type="number" defaultValue={coupon.max_uses ?? ""} min={1} step={1} placeholder="بدون سقف" dir="ltr" />
                     </label>
-                    <label className="block space-y-2 text-sm">تاریخ انقضا (UTC)
-                      <Input name="expires_at" type="date" defaultValue={coupon.expires_at?.slice(0, 10) ?? ""} dir="ltr" />
-                    </label>
+                    <PersianDatePicker key={coupon.expires_at} name="expires_at" label="تاریخ انقضا (UTC)"
+                      defaultValue={coupon.expires_at?.slice(0, 10) ?? ""} />
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked={coupon.is_active} className="accent-primary" /> فعال</label>
                     <Button size="sm" type="submit">ذخیرهٔ تغییرات</Button>
                   </form>

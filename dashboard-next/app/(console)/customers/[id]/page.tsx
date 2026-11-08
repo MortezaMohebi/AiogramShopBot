@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PersianDatePicker } from "@/components/ui/persian-date-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 
@@ -113,9 +114,7 @@ export default async function CustomerDetailPage({
           <label className="block space-y-2 text-sm">دلیل محدودسازی
             <Textarea name="reason" rows={3} minLength={8} maxLength={500} required />
           </label>
-          <label className="block space-y-2 text-sm">انقضا (اختیاری)
-            <Input name="until" type="datetime-local" />
-          </label>
+          <PersianDatePicker name="until" label="انقضا (اختیاری)" withTime />
           <Button type="submit" variant="destructive">ثبت محدودیت</Button>
         </form>
         {customer.is_blocked ? <form action={restrictCustomer}>
