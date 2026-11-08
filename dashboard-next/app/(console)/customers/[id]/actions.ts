@@ -13,7 +13,7 @@ function customerId(form: FormData): string {
 function fail(id: string, error: unknown): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  redirect(`/customers/${id}?error=${error.status === 428 ? "reauth" : error.status === 422 ? "validation" : error.status === 403 ? "permission" : "save"}`);
+  redirect(`/customers/${id}?error=${error.code === "reauthentication_required" || error.status === 428 ? "reauth" : error.status === 422 ? "validation" : error.status === 403 ? "permission" : "save"}`);
 }
 
 /** Append an immutable support note after server-side RBAC. */

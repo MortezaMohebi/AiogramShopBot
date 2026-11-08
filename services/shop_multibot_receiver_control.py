@@ -132,7 +132,7 @@ async def receiver_snapshot(db: AsyncSession, bot_id: str) -> dict:
 
 async def _guard_existing_provider_webhook(
     client, *, platform: str, target: str, mode: str,
-) -> None:
+) -> str:
     """Never adopt or delete an external endpoint owned by someone else."""
     if platform == "telegram":
         info = await asyncio.wait_for(client.get_webhook_info(), 12)
@@ -142,23 +142,19 @@ async def _guard_existing_provider_webhook(
             client._call("getWebhookInfo", {}), 12,
         )
         actual = info.get("url") if isinstance(info, dict) else None
-        if not isinstance(actual, str):
-            raise security.SecurityRejected("provider_state_unavailable", 503)
+    if not isinstance(actual, str):
+        raise security.SecurityRejected("provider_state_unavailable", 503)
     if actual and actual != target:
         raise security.SecurityRejected("webhook_owned_elsewhere", 409)
     if mode == "polling" and actual:
         raise security.SecurityRejected("webhook_owned_elsewhere", 409)
+    return actual
 
 
 async def _apply_provider(
-    client, *, platform: str, mode: str, url: str, secret: str,
+    client, *, platform: str, url: str, secret: str,
 ) -> None:
-    """Register exactly one webhook, or validate an already empty poll route."""
-    await _guard_existing_provider_webhook(
-        client, platform=platform, target=url, mode=mode,
-    )
-    if mode == "polling":
-        return
+    """Register the webhook and require a matching provider receipt."""
     if platform == "telegram":
         await asyncio.wait_for(client.set_webhook(
             url=url,
@@ -173,9 +169,24 @@ async def _apply_provider(
         await asyncio.wait_for(client._call(
             "setWebhook", {"url": url},
         ), 15)
-    await _guard_existing_provider_webhook(
-        client, platform=platform, target=url, mode=mode,
+    actual = await _guard_existing_provider_webhook(
+        client, platform=platform, target=url, mode="webhook",
     )
+    if actual != url:
+        raise security.SecurityRejected("provider_outcome_unknown", 503)
+
+
+async def _restore_staged_after_preflight(
+    db: AsyncSession, bot_id: str, expected_version: int, actor_id: int, code: str,
+) -> None:
+    """Release an activation that failed before sending a provider mutation."""
+    row = await db.get(ShopBotReceiver, bot_id, with_for_update=True, populate_existing=True)
+    if row is not None and row.state == "applying" and row.version == expected_version:
+        row.state = "staged"
+        row.last_error_code = code
+        row.version += 1
+        _event(db, bot_id, actor_id, "staged", code)
+    await db.commit()
 
 
 async def _mark_needs_review(
@@ -247,6 +258,7 @@ async def activate_receiver(
 
     # All requests to the provider are outside the database transaction;
     # a crash or timeout never results in an automatic replay of setWebhook.
+    webhook_attempted = False
     try:
         async with provider_client(
             bot.platform, token, bot_id=bot.id,
@@ -261,23 +273,31 @@ async def activate_receiver(
                 actual_id = identity.get("id")
             if actual_id != bot.provider_bot_id:
                 raise security.SecurityRejected("bot_identity_mismatch", 409)
-            await _apply_provider(
-                client, platform=bot.platform,
-                mode=row.mode, url=url, secret=secret,
+            await _guard_existing_provider_webhook(
+                client, platform=bot.platform, target=url, mode=row.mode,
             )
+            if row.mode == "webhook":
+                webhook_attempted = True
+                await _apply_provider(client, platform=bot.platform, url=url, secret=secret)
             await supervisor.check_lease()
     except BaseException as error:
-        code = (
-            error.code if isinstance(error, security.SecurityRejected)
-            else "provider_outcome_unknown"
-        )
+        code = "provider_outcome_unknown" if webhook_attempted else "provider_state_unavailable"
+        if isinstance(error, security.SecurityRejected):
+            code = error.code
         try:
-            await _mark_needs_review(bot_id, actor_id, code)
+            if webhook_attempted:
+                await _mark_needs_review(bot_id, actor_id, code)
+            else:
+                await _restore_staged_after_preflight(db, bot_id, expected_version, actor_id, code)
         except Exception:
             # A remaining applying row is quarantined on restart.
             pass
         if isinstance(error, asyncio.CancelledError):
             raise
+        if not webhook_attempted:
+            if isinstance(error, security.SecurityRejected):
+                raise
+            raise security.SecurityRejected(code, 503) from None
         raise security.SecurityRejected(
             "receiver_needs_review", 503,
         ) from None

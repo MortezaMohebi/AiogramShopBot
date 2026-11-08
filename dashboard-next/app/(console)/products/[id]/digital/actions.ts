@@ -29,7 +29,7 @@ export async function saveDigitalLicenses(form: FormData): Promise<void> {
     if (!(error instanceof ApiError)) throw error;
     if (error.status === 401) redirect("/login?expired=1");
     redirect(`/products/${id}/digital?error=${
-      error.status === 428 ? "reauth" : "save"
+      error.code === "reauthentication_required" || error.status === 428 ? "reauth" : "save"
     }`);
   }
   revalidatePath(`/products/${id}/digital`);

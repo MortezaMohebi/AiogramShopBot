@@ -35,7 +35,7 @@ test("stale fresh-auth result preserves reauthentication requirement without rep
  try{await c.runtimeRequest("/publications/activate","POST",{preview_id:"p",approved:true});}catch(error){captured=error;}
  assert.equal((captured as {status:number}).status,428);
  assert.equal((captured as {code:string}).code,"reauthentication_required");
- assert.match(c.runtimeErrorText(captured),/MFA/);assert.equal(calls,1);
+ assert.match(c.runtimeErrorText(captured),/همین صفحه/);assert.equal(calls,1);
 });
 test("GET reads do not request a challenge",async()=>{
  const c=client(async()=>Response.json({items:[]}),async()=>{throw Error("must not request challenge");});

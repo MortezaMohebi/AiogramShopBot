@@ -146,12 +146,13 @@ def change_store_state(
 
 def register_bot(
     db: Session, *, store_id: str, platform: str,
-    slug: str, name: str, actor_id: int,
+    name: str, actor_id: int, slug: str | None = None,
 ) -> ShopBot:
     """Create an inert draft bot with no default access to any product."""
     if platform not in _ALLOWED_PLATFORMS:
         raise security.SecurityRejected("invalid_bot_platform", 422)
-    slug = _safe_slug(slug)
+    bot_id = uuid4()
+    slug = f"{platform}-{bot_id.hex}" if slug is None else _safe_slug(slug)
     name = _safe_name(name)
     store = db.get(ShopStore, store_id)
     if store is None or store.state == "archived":
@@ -163,7 +164,7 @@ def register_bot(
     if existing:
         raise security.SecurityRejected("bot_slug_exists", 409)
     bot = ShopBot(
-        id=str(uuid4()), store_id=store.id,
+        id=str(bot_id), store_id=store.id,
         platform=platform, slug=slug, name=name,
         status="draft", runtime_owner="registry",
         version=1, credential_version=None,

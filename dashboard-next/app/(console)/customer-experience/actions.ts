@@ -23,14 +23,14 @@ function target(form: FormData): { scope: "store" | "bot"; id: string; url: stri
   };
 }
 
-function proof(form: FormData): {
+function proof(form: FormData, destination: string): {
   current_password: string; second_factor: string;
 } {
   const current_password = String(form.get("current_password") ?? "");
   const second_factor = String(form.get("second_factor") ?? "").trim();
   if (!current_password || current_password.length > 256 ||
     !/^[0-9]{6}$/.test(second_factor)) {
-    redirect("/account?error=reauth");
+    redirect(`${destination}?ux_error=validation`);
   }
   return { current_password, second_factor };
 }
@@ -71,7 +71,7 @@ export async function saveCustomerMenu(form: FormData): Promise<void> {
     : `/bot-registry/${selection.id}/customer-menu`;
   try {
     await adminFetch(prefix, "POST", {
-      expected_version: version, actions, ...proof(form),
+      expected_version: version, actions, ...proof(form, selection.url),
     });
   } catch (error) { failure(error, selection.url); }
   revalidatePath(selection.url);
@@ -103,12 +103,12 @@ export async function saveCheckoutPolicy(form: FormData): Promise<void> {
       mode,
       terms_version,
       terms_text,
-      ...proof(form),
+      ...proof(form, selection.url),
     }
     : {
       expected_version,
       mode_override: mode === "inherit" ? null : mode,
-      ...proof(form),
+      ...proof(form, selection.url),
     };
   if (selection.scope === "store" && mode === "inherit") {
     redirect(`${selection.url}?ux_error=validation`);

@@ -18,7 +18,7 @@ export async function saveRetentionPolicy(form: FormData): Promise<void> {
     });
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
-    redirect(`/customers/retention?error=${error.status === 428 ? "reauth" : "save"}`);
+    redirect(`/customers/retention?error=${error.code === "reauthentication_required" || error.status === 428 ? "reauth" : "save"}`);
   }
   revalidatePath("/customers/retention");
   redirect("/customers/retention?saved=1");
@@ -38,7 +38,7 @@ export async function purgeCustomerNotes(form: FormData): Promise<void> {
     });
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
-    redirect(`/customers/retention?error=${error.status === 428 ? "reauth" : "purge"}`);
+    redirect(`/customers/retention?error=${error.code === "reauthentication_required" || error.status === 428 ? "reauth" : "purge"}`);
   }
   // Show the backend's confirmed count for the requested mode, never a guessed
   // deletion count or a dry-run response as proof that deletion completed.

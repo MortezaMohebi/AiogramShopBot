@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { notFound } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { StaffSecurityPanel, type StaffInviteRecord, type StaffMember, type PasswordPolicy } from "@/components/blocks/staff-security-panel";
@@ -8,7 +9,7 @@ import { adminFetch, currentStaff } from "@/lib/bridge";
 
 type Params = Promise<{ saved?: string; error?: string }>;
 const errors: Record<string, string> = {
-  reauthentication_required: "ابتدا در حساب من، تأیید مجدد هویت را انجام دهید.",
+  reauthentication_required: "هویت خود را در همین صفحه تأیید کنید.",
   staff_username_exists: "نام کاربری از قبل وجود دارد.",
   last_admin_protected: "آخرین مدیر اصلی فعال را نمی‌توان غیرفعال کرد.",
   use_my_account: "برای تغییر حساب خودتان به حساب من بروید.",
@@ -29,8 +30,8 @@ export default async function StaffPage({ searchParams }: { searchParams: Params
     <PageHeading title="کارکنان" />
     <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4 text-sm">
       <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
-      <span className="min-w-0 flex-1 leading-7">برای تغییر دسترسی‌ها، هویت خود را در حساب من تأیید کنید. تأیید هویت پنج دقیقه اعتبار دارد.</span>
-      <Button asChild variant="outline"><Link href="/account">تأیید هویت در حساب من</Link></Button>
+      <span className="min-w-0 flex-1 leading-7">تأیید هویت برای تغییر دسترسی‌ها پنج دقیقه اعتبار دارد.</span>
+      <ReauthenticateButton />
       <Button asChild variant="outline"><Link href="/audit">گزارش تغییرات مدیران</Link></Button>
     </div>
     {params.saved ? <p role="status" className="rounded-lg bg-accent p-3 text-sm">تغییرات ثبت شد.</p> : null}

@@ -6,7 +6,7 @@ import { ApiError, adminFetch } from "@/lib/bridge";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATUSES = new Set(["active", "maintenance", "paused", "disabled"]);
-const ENVIRONMENTS = new Set(["staging", "codespaces", "production"]);
+const ENVIRONMENTS = new Set(["staging", "production"]);
 const SAFE_ERRORS = new Set([
   "bot_runtime_not_ready", "configuration_changed", "duplicate_provider_bot",
   "duplicate_bot_credential", "bot_identity_mismatch", "invalid_bot_token_format",
@@ -30,7 +30,7 @@ function idFrom(form: FormData): string {
 function failure(error: unknown, id: string): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect(`/bots/${id}?error=reauth`);
+  if (error.code === "reauthentication_required" || error.status === 428) redirect(`/bots/${id}?error=reauth`);
   const code = error.code && SAFE_ERRORS.has(error.code)
     ? error.code : "save";
   redirect(`/bots/${id}?error=${code}`);
@@ -135,6 +135,18 @@ export async function stageBotReceiver(form: FormData): Promise<void> {
   } catch (error) { failure(error, id); }
   revalidatePath(`/bots/${id}`);
   redirect(`/bots/${id}?saved=receiver_staged`);
+}
+
+export async function revealBotWebhookUrl(id: string): Promise<
+  { url: string } | { error: string }
+> {
+  if (typeof id !== "string" || !UUID.test(id)) return { error: "bot_not_found" };
+  try {
+    return await adminFetch<{ url: string }>(`/bot-registry/${id}/receiver/webhook-url`, "POST", {});
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+    return { error: error.code ?? "save" };
+  }
 }
 
 /** Activate a verified draft using the authenticated administrator session. */

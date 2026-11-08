@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -116,7 +116,7 @@ export function RuntimeMutationNotice({
   <p>
     {state.message}
   </p>
-  {state.reauth && <Link className="text-primary underline" href="/account" target="_blank" rel="noopener noreferrer">تأیید دوبارهٔ هویت در حساب من</Link>}
+  {state.reauth && <ReauthenticateButton />}
   {state.status === "unknown" && <Button type="button" variant="outline" size="sm" disabled={mutation.checking} onClick={() => void mutation.inspect()}>
     {mutation.checking ? "در حال بررسی…" : "بررسی نتیجه در تاریخچه"}
   </Button>}

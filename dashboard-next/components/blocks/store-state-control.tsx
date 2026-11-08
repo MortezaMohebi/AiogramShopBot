@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { useState, useTransition } from "react";
 import { changeStoreState } from "@/app/(console)/stores/actions";
 import { Button } from "@/components/ui/button";
@@ -41,8 +41,7 @@ export function StoreStateControl({ id, name, state }: Props) {
         </p>
         <p dir="auto" className="break-words rounded-md bg-muted p-3 text-sm">{name}</p>
         {issue ? <p role="alert" className="text-sm text-destructive">{issue.message}</p> : null}
-        {issue?.reauthenticate ? <Link href="/account" target="_blank" rel="noopener"
-          className="block text-sm underline">تأیید هویت در حساب من (زبانهٔ جدید)</Link> : null}
+        {issue?.reauthenticate ? <ReauthenticateButton /> : null}
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={() => setOpen(false)}>انصراف</Button>
           <Button type="button" variant={next === "paused" ? "destructive" : "default"}

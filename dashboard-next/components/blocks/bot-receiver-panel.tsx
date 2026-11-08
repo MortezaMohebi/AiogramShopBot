@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BotWebhookUrl } from "@/components/blocks/bot-webhook-url";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type {
@@ -22,12 +23,12 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
     receiver.runtime_enabled && receiver.worker_ready && Boolean(pending?.verified_at);
   const ambiguous = receiver.state === "needs_review" || receiver.state === "applying";
 
-  return <Card>
+  return <Card id="bot-receiver" className="scroll-mt-6">
     <CardHeader><CardTitle>دریافت پیام و فعال‌سازی ربات</CardTitle></CardHeader>
     <CardContent className="space-y-5 text-sm">
-      <p className="leading-7">
+      {isDraft && receiver.state !== "active" ? <p className="leading-7">
         روش دریافت پیام هر ربات را جداگانه تنظیم کنید. ثبت اولیه، اتصال را فعال نمی‌کند.
-      </p>
+      </p> : null}
       <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
         <p>وضعیت: <strong>{receiver.configured ? ({ staged: "ثبت اولیه", applying: "در حال اعمال تغییر", active: "فعال", paused: "متوقف", disabled: "غیرفعال", needs_review: "نتیجه نامشخص؛ نیازمند بررسی" } as const)[receiver.state] : "راه‌اندازی نشده"}</strong></p>
         <p>نوع دریافت: <strong>{receiver.mode === "webhook" ? "Webhook" : receiver.mode === "polling" ? "Polling" : "—"}</strong></p>
@@ -77,6 +78,9 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
         نتیجهٔ آخرین تغییر اتصال مشخص نیست؛ اتصال قرنطینه شده و تا
         بررسی دستی، انتقال یا تلاش مجدد مجاز نیست.
       </p> : null}
+
+      {receiver.state === "active" && receiver.mode === "webhook" ?
+        <BotWebhookUrl key={`${bot.id}:${receiver.version}`} botId={bot.id} /> : null}
 
       {receiver.state === "active" ? <p className="leading-7">
         دریافت پیام فعال است؛ توقف فروش را از کنترل وضعیت ربات انجام دهید.

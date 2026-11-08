@@ -11,7 +11,7 @@ const errors: Record<string, string> = {
   mfa_enrollment_expired: "زمان فعال‌سازی پایان یافته است؛ دوباره شروع کنید.",
   session_expired: "نشست پایان یافته است؛ دوباره وارد شوید.",
   permission_denied: "این حساب مجوز این عملیات را ندارد.",
-  reauthentication_required: "برای این تغییر، در حساب من هویت خود را دوباره تأیید کنید.",
+  reauthentication_required: "برای این تغییر، هویت خود را دوباره تأیید کنید.",
   connection_worker_unavailable: "سرویس اتصال آماده نیست؛ وضعیت سرور را بررسی کنید.",
   reconciliation_required: "نتیجهٔ عملیات مشخص نیست؛ پیش از تلاش دوباره، وضعیت اتصال را بررسی کنید.",
   invalid_request: "اطلاعات فرم معتبر نیست؛ فیلدها را بررسی کنید.",

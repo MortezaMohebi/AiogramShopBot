@@ -30,7 +30,7 @@ function hook(fetcher:(url:string,request:RequestInit)=>Promise<Response>,refres
   if(key==="react")return react;
   if(key==="react/jsx-runtime")return jsx;
   if(key==="next/navigation")return {useRouter:()=>({refresh})};
-  if(key==="next/link")return {default:()=>null};
+  if(key==="@/components/blocks/reauthentication")return {ReauthenticateButton:()=>null};
   if(key==="@/components/ui/button")return {Button:()=>null};
   if(key==="@/lib/runtime/client")return clientModule.exports;
   if(key==="@/lib/runtime/receipts")return receipts();

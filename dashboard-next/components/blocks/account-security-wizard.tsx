@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,6 @@ import { ControlActionError, controlAction } from "@/lib/account-control";
 export const securityActions = {
   username: "تغییر نام کاربری",
   password: "تغییر رمز عبور",
-  reauthenticate: "تأیید هویت برای عملیات حساس",
   "mfa-setup": "فعال‌سازی احراز هویت دومرحله‌ای",
   "mfa-disable": "غیرفعال‌سازی احراز هویت دومرحله‌ای",
 } as const;
@@ -20,26 +20,34 @@ export type SecurityAction = keyof typeof securityActions;
 type Step =
   | { name: "proof" }
   | { name: "operation"; token: string }
+  | { name: "enrollment" }
+  | { name: "sign-in" }
   | { name: "authenticator"; secret: string; qr: string }
   | { name: "recovery"; codes: string[] };
 
 export function AccountSecurityWizard({
-  action, minimumPassword, onClose, onSuccess,
+  action, reuseLoginProof, minimumPassword, onClose, onSuccess,
 }: {
   action: SecurityAction;
+  reuseLoginProof: boolean;
   minimumPassword: number;
   onClose: () => void;
   onSuccess: (message: string) => void;
 }) {
   const router = useRouter();
   const heading = useRef<HTMLHeadingElement>(null);
-  const [step, setStep] = useState<Step>({ name: "proof" });
+  const firstStep: Step = action === "mfa-setup" && reuseLoginProof
+    ? { name: "enrollment" }
+    : { name: "proof" };
+  const [step, setStep] = useState<Step>(firstStep);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const title = {
     proof: "تأیید رمز فعلی",
     operation: securityActions[action],
+    enrollment: securityActions["mfa-setup"],
+    "sign-in": "تأیید دوبارهٔ ورود",
     authenticator: "اتصال برنامهٔ احراز هویت",
     recovery: "ذخیرهٔ کدهای بازیابی",
   }[step.name];
@@ -53,7 +61,7 @@ export function AccountSecurityWizard({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || step.name === "recovery") return;
+    if (busy || step.name === "recovery" || step.name === "sign-in") return;
     const form = event.currentTarget;
     const fields = new FormData(form);
     const get = (field: string) => String(fields.get(field) ?? "");
@@ -83,7 +91,7 @@ export function AccountSecurityWizard({
         setStep({ name: "recovery", codes: result.recovery_codes });
         return;
       }
-      const result = await controlAction(action, {
+      const result = await controlAction(action, step.name === "enrollment" ? {} : {
         proof_token: step.token,
         ...(action === "username" ? { username: get("username").trim().toLowerCase() } : {}),
         ...(action === "password" ? { new_password: get("new_password") } : {}),
@@ -98,14 +106,18 @@ export function AccountSecurityWizard({
         }
         setStep({ name: "authenticator", secret: result.secret, qr: result.qr_data_uri });
       } else {
-        finish(action === "reauthenticate" ? "هویت شما برای پنج دقیقه تأیید شد."
-          : "احراز هویت دومرحله‌ای غیرفعال شد.");
+        finish("احراز هویت دومرحله‌ای غیرفعال شد.");
       }
     } catch (issue) {
-      if (issue instanceof ControlActionError
-        && ["account_proof_expired", "mfa_enrollment_expired"].includes(issue.code)) {
-        form.reset();
-        setStep({ name: "proof" });
+      if (issue instanceof ControlActionError) {
+        if (firstStep.name === "enrollment" && ["reauthentication_required", "session_expired"].includes(issue.code)) {
+          setStep({ name: "sign-in" });
+          return;
+        }
+        if (["account_proof_expired", "mfa_enrollment_expired"].includes(issue.code)) {
+          form.reset();
+          setStep(firstStep);
+        }
       }
       setError(issue instanceof Error ? issue.message : "عملیات انجام نشد.");
     } finally {
@@ -129,6 +141,12 @@ export function AccountSecurityWizard({
           <Button type="button" onClick={() => finish("احراز هویت دومرحله‌ای فعال شد.")}>کدها را ذخیره کردم</Button>
         </div>
         {copied ? <p role="status" className="text-sm">کدها کپی شدند.</p> : null}
+      </> : step.name === "sign-in" ? <>
+        <p role="alert" className="text-sm text-muted-foreground">زمان تأیید ورود پایان یافته است. دوباره وارد شوید و فعال‌سازی را ادامه دهید.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild><Link href="/login">ورود دوباره</Link></Button>
+          <Button type="button" variant="outline" onClick={onClose}>انصراف</Button>
+        </div>
       </> : <form key={step.name} method="post" onSubmit={submit} className="space-y-4" aria-busy={busy}>
         {step.name === "proof" ? <>
           <p className="text-sm text-muted-foreground">برای «{securityActions[action]}»، رمز فعلی حساب را وارد کنید.</p>
@@ -167,7 +185,6 @@ export function AccountSecurityWizard({
             </label>
           </div> : null}
           {action === "username" || action === "password" ? <p className="text-sm text-muted-foreground">پس از ثبت، از همهٔ دستگاه‌ها خارج می‌شوید و باید دوباره وارد شوید.</p> : null}
-          {action === "reauthenticate" ? <p className="text-sm text-muted-foreground">پس از تأیید، این نشست تا پنج دقیقه برای عملیات حساس آماده است.</p> : null}
           {action === "mfa-setup" ? <p className="text-sm text-muted-foreground">برنامهٔ Authenticator را آماده کنید. در مرحلهٔ بعد QR نمایش داده می‌شود.</p> : null}
           {action === "mfa-disable" ? <label className="block space-y-2 text-sm">کد برنامه یا کد بازیابی
             <Input name="second_factor" dir="ltr" autoComplete="one-time-code" maxLength={64}
@@ -177,7 +194,6 @@ export function AccountSecurityWizard({
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={busy}>{busy ? "در حال بررسی…" : step.name === "proof" ? "تأیید رمز و ادامه"
             : step.name === "authenticator" ? "تأیید و فعال‌سازی"
-            : action === "reauthenticate" ? "تأیید برای پنج دقیقه"
             : action === "mfa-setup" ? "نمایش QR" : "ثبت تغییر"}</Button>
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>انصراف</Button>
         </div>

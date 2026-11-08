@@ -10,7 +10,7 @@ const RAILS = new Set(["bale_wallet", "telegram_fiat", "telegram_stars"]);
 function failure(error: unknown): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect("/payment-accounts?error=reauth");
+  if (error.code === "reauthentication_required" || error.status === 428) redirect("/payment-accounts?error=reauth");
   const codes = new Set([
     "configuration_changed", "payment_account_invalid", "payment_token_invalid",
     "payment_token_not_supported", "payment_account_not_found",

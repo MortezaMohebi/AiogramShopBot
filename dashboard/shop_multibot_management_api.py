@@ -51,7 +51,7 @@ class BotSettings(StrictPayload):
     expected_version: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=160)
     owner_staff_id: int | None = Field(default=None, gt=0)
-    environment: Literal["codespaces", "staging", "production"] = "staging"
+    environment: Literal["staging", "production"] = "staging"
     welcome_message: str | None = Field(default=None, max_length=4096)
     maintenance_message: str | None = Field(default=None, max_length=4096)
     support_url: str = Field(default="", max_length=500)

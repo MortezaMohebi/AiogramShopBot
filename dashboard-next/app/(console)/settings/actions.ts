@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { adminFetch } from "@/lib/bridge";
+import { ApiError, adminFetch } from "@/lib/bridge";
 
 /** Modify only future merchant-funded referral rewards; never wallet balances. */
 export async function saveReferralPolicy(form: FormData) {
@@ -42,7 +42,8 @@ export async function savePwaAppearance(form: FormData) {
     await adminFetch("/pwa-settings", "PATCH", {
       name, short_name: shortName, theme_color: color, expected_version: Number(version),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "reauthentication_required") redirect("/settings?error=reauth");
     redirect("/settings?error=pwa");
   }
   revalidatePath("/settings");

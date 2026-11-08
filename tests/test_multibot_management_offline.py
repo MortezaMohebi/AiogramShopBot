@@ -219,6 +219,16 @@ def test_per_bot_details_not_shared_across_platforms(db: Session) -> None:
     ), "invalid_support_url")
 
 
+def test_legacy_codespaces_environment_is_presented_as_staging(db: Session) -> None:
+    bot = _active_bot(db, "telegram")
+    ops = db.get(ShopBotOperations, bot.id)
+    ops.environment = "codespaces"
+    db.commit()
+
+    assert operations.operation_data(db, bot)["environment"] == "staging"
+    assert ops.environment == "codespaces"
+
+
 def test_keyed_token_fingerprint_prevents_duplicate_drafts(db: Session) -> None:
     """One token can never silently represent two new logical bots."""
     first = registry.register_bot(

@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 import config
+from models.shop_multibot import ShopBot
 from models.shop_service_control import ShopServiceControl
 from services import shop_admin_security as security
 
@@ -40,15 +41,18 @@ class ServiceSnapshot:
     """One complete process-local view; None means the control DB is unavailable."""
 
     overrides: Mapping[str, bool | None] | None
+    has_registered_bots: bool = False
 
 
 _snapshot = ServiceSnapshot({})
 
 
-def deployment_default(key: str) -> bool:
+def deployment_default(key: str, *, has_registered_bots: bool = False) -> bool:
     """Preserve existing local automation and deployment flags as defaults."""
     if key in {"customer-notifications", "mcp"}:
         return os.environ.get(FLAGS[key][0], "").lower() == "true"
+    if key == "receivers" and has_registered_bots:
+        return True
     return all(getattr(config, flag, False) is True for flag in FLAGS[key])
 
 
@@ -93,7 +97,10 @@ def service_enabled(key: str) -> bool:
     if overrides is None:
         return False
     override = overrides.get(key)
-    requested = deployment_default(key) if override is None else override
+    requested = (
+        deployment_default(key, has_registered_bots=_snapshot.has_registered_bots)
+        if override is None else override
+    )
     return requested and blocked_reason(key) is None
 
 
@@ -121,14 +128,25 @@ def read_overrides(db: Session) -> dict[str, bool | None]:
     ).where(ShopServiceControl.key.in_(FLAGS))).all())
 
 
+def _has_registered_bots(db: Session) -> bool:
+    return db.scalar(select(ShopBot.id).where(
+        ShopBot.runtime_owner == "registry",
+    ).limit(1)) is not None
+
+
+def read_snapshot(db: Session) -> ServiceSnapshot:
+    return ServiceSnapshot(read_overrides(db), _has_registered_bots(db))
+
+
 def describe_controls(db: Session) -> list[dict]:
     """Report authoritative choices separately from deployment prerequisites."""
     rows = {row.key: row for row in db.scalars(select(ShopServiceControl)).all()}
+    has_registered_bots = _has_registered_bots(db)
     result = []
     for key in FLAGS:
         row = rows.get(key)
         override = row.enabled if row is not None else None
-        default = deployment_default(key)
+        default = deployment_default(key, has_registered_bots=has_registered_bots)
         reason = blocked_reason(key)
         result.append({
             "key": key, "override": override, "default": default,
@@ -169,7 +187,7 @@ async def refresh_controls(session_factory) -> None:
     try:
         async with asyncio.timeout(_POLL_SECONDS):
             async with session_factory() as db:
-                _snapshot = ServiceSnapshot(await db.run_sync(read_overrides))
+                _snapshot = await db.run_sync(read_snapshot)
     except Exception:
         if _snapshot.overrides is not None:
             _LOG.warning("Operational service controls unavailable; new work is paused.")

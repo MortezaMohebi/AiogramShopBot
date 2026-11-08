@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,8 +51,15 @@ class BotCreate(StrictPayload):
 
     store_id: UUID
     name: str = Field(min_length=1, max_length=160)
-    slug: str = Field(min_length=3, max_length=64)
+    slug: str | None = Field(default=None, min_length=3, max_length=64)
     platform: Literal["telegram", "bale"]
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def blank_slug_is_missing(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class BotTokenStage(StrictPayload):

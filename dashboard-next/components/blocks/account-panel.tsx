@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountSecurityWizard, type SecurityAction } from "@/components/blocks/account-security-wizard";
+import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -108,6 +109,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
 
   return <div className="space-y-5" aria-busy={busy}>
     {wizard ? <AccountSecurityWizard key={wizard} action={wizard}
+      reuseLoginProof={needsEnrollment}
       minimumPassword={initial.password_policy.min_length} onClose={() => setWizard(null)}
       onSuccess={text => setNotice({ ok: true, text })} /> : null}
     {notice ? <p role={notice.ok ? "status" : "alert"} className={notice.ok ? "rounded-lg bg-accent p-3 text-sm" : "rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>{notice.text}</p> : null}
@@ -186,7 +188,7 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       <CardContent className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" onClick={() => setWizard("username")}>تغییر نام کاربری</Button>
         <Button type="button" variant="outline" onClick={() => setWizard("password")}>تغییر رمز عبور</Button>
-        <Button type="button" variant="outline" onClick={() => setWizard("reauthenticate")}>تأیید هویت برای عملیات حساس</Button>
+        <ReauthenticateButton />
       </CardContent>
     </Card>
     {mfaCard}
