@@ -56,3 +56,12 @@ test("verified draft receiver activation does not repeat password or MFA", () =>
   assert(!html.includes('name="current_password"'), "Setup relies on the authenticated administrator session");
   assert(!html.includes('name="second_factor"'), "Setup does not ask for another MFA code");
 });
+
+test("a verified staged token is waiting for activation, not verification", () => {
+  const { botCredentialLabel } = load("lib/bot-registry") as {
+    botCredentialLabel: (credential: { state: "staged"; verified_at: string | null }) => string;
+  };
+  assert.equal(botCredentialLabel({ state: "staged", verified_at: null }), "در انتظار تأیید");
+  assert.equal(botCredentialLabel({ state: "staged", verified_at: "2026-11-08T03:45:50Z" }),
+    "تأییدشده · در انتظار فعال‌سازی");
+});

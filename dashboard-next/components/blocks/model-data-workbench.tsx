@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { useRouter } from "next/navigation";
 import { FileDown, FileSpreadsheet, Filter, Layers3, Search, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -470,8 +470,7 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
           <Button type="button" disabled={busy || !file} variant="outline"
             onClick={() => void importFile("preview")}>بررسی فایل</Button>
         </div>
-        {importProofNeeded ? <Link href="/account" target="_blank" rel="noopener"
-          className="text-sm underline">تأیید هویت در حساب من (زبانهٔ جدید)</Link> : null}
+        {importProofNeeded ? <ReauthenticateButton /> : null}
         {preview ? <div className="space-y-3 rounded-lg border p-4">
           <p className="text-sm font-semibold">پیش‌نمایش تغییرات — هنوز ذخیره نشده است.</p>
           <p className="text-sm">

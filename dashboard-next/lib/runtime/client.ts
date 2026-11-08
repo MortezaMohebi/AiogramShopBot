@@ -60,7 +60,7 @@ export async function runtimeRequest<T>(path: string, method: "GET" | "POST" = "
 export function runtimeErrorText(error: unknown): string {
   const code = error instanceof RuntimeError ? error.code : error instanceof Error ? error.message : "service_unavailable";
   const messages: Record<string, string> = {
-    reauthentication_required: "برای این تغییر، رمز و MFA خود را در «حساب من» دوباره تأیید کنید. سپس وضعیت را بخوانید و درخواست تازه‌ای ثبت کنید.",
+    reauthentication_required: "هویت خود را در همین صفحه تأیید کنید. سپس وضعیت را بخوانید و درخواست تازه‌ای ثبت کنید.",
     session_expired: "نشست منقضی شده است؛ دوباره وارد شوید.",
     permission_denied: "مجوز این عملیات را در فروشگاه ندارید.",
     runtime_preview_expired: "مهلت پیش‌نمایش پایان یافته است؛ پیش‌نمایش تازه‌ای بسازید.",

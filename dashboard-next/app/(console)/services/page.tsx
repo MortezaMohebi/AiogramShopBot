@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { ServiceControlCard } from "@/components/blocks/service-control-card";
-import { Button } from "@/components/ui/button";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import { serviceGroups, type ServiceControl } from "@/lib/service-controls";
 
@@ -10,7 +8,6 @@ const errors: Record<string, string> = {
   validation: "درخواست معتبر نیست. صفحه را دوباره باز کنید.",
   conflict: "وضعیت سرویس تغییر کرده است. وضعیت فعلی را بررسی کنید.",
   prerequisite: "پیش‌نیاز سرویس آماده نیست.",
-  reauth: "برای تغییر وضعیت سرویس، هویت خود را دوباره تأیید کنید.",
   save: "تغییر وضعیت سرویس تأیید نشد. وضعیت فعلی را بررسی کنید.",
 };
 
@@ -32,11 +29,8 @@ export default async function ServicesPage({ searchParams }: {
     {query.saved ? <p role="status" className="rounded-lg border p-3 text-sm">
       تنظیم سرویس ذخیره شد. وضعیت اجرا و پیش‌نیازها را در کارت همان سرویس ببینید.
     </p> : null}
-    {query.error ? <div role="alert" className="space-y-2 rounded-lg border border-destructive/40 p-3 text-sm">
+    {query.error && query.error !== "reauth" ? <div role="alert" className="space-y-2 rounded-lg border border-destructive/40 p-3 text-sm">
       <p>{errors[query.error] ?? errors.save}</p>
-      {query.error === "reauth" ? <Button size="sm" asChild variant="outline">
-        <Link href="/account">تأیید هویت در حساب من</Link>
-      </Button> : null}
     </div> : null}
     {serviceGroups.map((group) => <section key={group.title} className="space-y-3">
       <h2 className="text-lg font-semibold">{group.title}</h2>

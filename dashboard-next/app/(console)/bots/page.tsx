@@ -19,7 +19,7 @@ type Params = Promise<{
 
 const problems: Record<string, string> = {
   validation: "اطلاعات فرم معتبر نیست؛ نام و شناسه‌ها را بررسی کنید.",
-  reauth: "برای ساخت ربات، در حساب من هویت خود را دوباره تأیید کنید.",
+  reauth: "برای ساخت ربات، هویت خود را در همین صفحه تأیید کنید.",
   conflict: "شناسهٔ انتخاب‌شده قبلاً ثبت شده یا نسخهٔ اطلاعات تغییر کرده است.",
   save: "ثبت انجام نشد؛ سرویس و دسترسی حساب را بررسی کنید.",
 };
@@ -113,9 +113,11 @@ export default async function BotsPage({
         <label className="block space-y-2 text-sm">نام ربات
           <Input name="name" maxLength={160} required placeholder="مثلاً ربات فروش محصولات صنعتی" />
         </label>
-        <label className="block space-y-2 text-sm">شناسهٔ داخلی (Slug)
-          <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9\-]{2,63}" minLength={3} maxLength={64} required placeholder="industrial-telegram" />
+        <label className="block space-y-2 text-sm">شناسهٔ داخلی (Slug، اختیاری)
+          <Input name="slug" dir="ltr" pattern="[a-z][a-z0-9\-]{2,63}" minLength={3} maxLength={64}
+            aria-describedby="bot-slug-hint" placeholder="industrial-telegram" />
         </label>
+        <p id="bot-slug-hint" className="text-xs text-muted-foreground">اگر خالی بماند، شناسه به‌صورت خودکار ساخته می‌شود.</p>
         <label className="block space-y-2 text-sm">نوع پیام‌رسان
           <select name="platform" className="h-10 w-full rounded-md border bg-background px-3">
             <option value="telegram">تلگرام</option><option value="bale">بله</option>

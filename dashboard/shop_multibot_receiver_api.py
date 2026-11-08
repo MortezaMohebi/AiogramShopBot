@@ -2,7 +2,8 @@
 
 New bots require a verified staged credential, safe per-bot webhook ownership,
 an authenticated administrator, an active shop and an opt-in runtime flag.
-No credential, webhook authenticator, or live endpoint URL is returned.
+Receiver snapshots omit secrets. Reading the active webhook URL requires
+an explicit request with recent administrator proof.
 """
 
 from __future__ import annotations
@@ -11,12 +12,16 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.admin_control_api import StrictPayload, throttle
 from dashboard.next_api import database, signed_staff
+from models.shop_multibot_receiver import ShopBotReceiver
 from models.shop_staff import ShopStaff
+from services.shop_bot_secrets import decrypt_receiver_secret
+from services.shop_multibot_webhook import webhook_url
 from services.shop_service_controls import service_enabled
 from services import shop_admin_security as security
 from services import shop_multibot_receiver_control as control
@@ -61,6 +66,20 @@ async def receiver_info(
             supervisor is not None and supervisor.owns_lease
         ),
     }
+
+
+@router.post("/bot-registry/{bot_id}/receiver/webhook-url")
+async def reveal_webhook_url(bot_id: UUID, staff: Staff, db: Db) -> JSONResponse:
+    """Read the configured callback under the signed, recent-auth boundary."""
+    require(staff, "bots.apply")
+    row = await db.get(ShopBotReceiver, str(bot_id))
+    if row is None or row.mode != "webhook" or row.state != "active":
+        raise security.SecurityRejected("invalid_operation_state", 409)
+    secret = decrypt_receiver_secret(str(bot_id), row.webhook_secret_ciphertext)
+    url = webhook_url(row.binding_id, secret)
+    if not url:
+        raise security.SecurityRejected("webhook_url_invalid", 422)
+    return JSONResponse({"url": url}, headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/bot-registry/{bot_id}/receiver/stage", status_code=201)

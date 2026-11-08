@@ -6,8 +6,8 @@ import { pathToFileURL } from "node:url";
 const directory = "dashboard-next/app/enrollment-ui-qa";
 const marker = "// Owned temporary enrollment QA fixture.\n";
 const base = "http://127.0.0.1:3005";
-const output = "/tmp/dashboard-enrollment";
-const env = Object.fromEntries(readFileSync(".codespaces/mcp-qa.env", "utf8").trim().split("\n").map(line => {
+const output = process.env.ENROLLMENT_QA_OUTPUT ?? "/tmp/dashboard-enrollment";
+const env = Object.fromEntries(readFileSync(".codespaces/mcp-qa.env", "utf8").trim().split(/\r?\n/).map(line => {
   const i = line.indexOf("="); return [line.slice(0, i), line.slice(i + 1)];
 }));
 assert.equal(env.SHOP_MCP_QA, "1"); assert.equal(env.SHOP_BETA_QA, "1");
@@ -70,7 +70,7 @@ export function EnrollmentStage({optional}: {optional: boolean}) {
   let browser;
   try {
     const { chromium } = await import(pathToFileURL(process.env.WORKFLOW_PLAYWRIGHT_MODULE).href);
-    browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] }); evidence.browser = browser.version();
+    browser = await chromium.launch({ headless: true, executablePath: process.env.WORKFLOW_CHROMIUM_PATH, args: ["--no-sandbox"] }); evidence.browser = browser.version();
     for (const theme of ["light", "dark"]) {
       const context = await browser.newContext({ viewport: { width: 390, height: 900 }, colorScheme: theme, reducedMotion: "reduce", serviceWorkers: "block" });
       await context.addInitScript(value => localStorage.setItem("theme", value), theme);
@@ -91,10 +91,6 @@ export function EnrollmentStage({optional}: {optional: boolean}) {
           if (url.pathname === "/api/account/mfa-confirm") {
             assert.equal(body.code, "123456"); confirmation = true;
             return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, recovery_codes: ["SYNTHETIC-RECOVERY-ONLY"] }) });
-          }
-          if (url.pathname === "/api/account/reauthenticate") {
-            assert.equal(body.current_password, "SYNTHETIC-reauth-only-password-123"); behavior = "fresh";
-            return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
           }
           evidence.real_mutations++; return route.abort();
         }
@@ -130,17 +126,23 @@ export function EnrollmentStage({optional}: {optional: boolean}) {
         assert.equal(await page.getByRole("button", { name: "تغییر حالت روشن و تاریک", exact: true }).count(), 2);
       }
       check("fresh independent client roots remount without script or Performance errors", theme);
-      const start = page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true });
+      const start = page.getByRole("button", { name: "فعال‌سازی", exact: true });
+      const wizard = page.getByRole("dialog");
+      const showQr = wizard.getByRole("button", { name: "نمایش QR", exact: true });
       await start.focus(); await start.press("Enter");
-      await page.getByRole("img", { name: "QR Code فعال‌سازی احراز هویت دومرحله‌ای", exact: true }).waitFor(); assert(setup);
-      await page.getByLabel("کد تأیید", { exact: true }).fill("123456");
+      await wizard.waitFor();
+      assert.equal(await wizard.locator('[name="current_password"]').count(), 0, "A mandatory MFA wizard must not ask for the login password again");
+      await showQr.click();
+      await wizard.getByRole("img", { name: "QR فعال‌سازی احراز هویت دومرحله‌ای", exact: true }).waitFor(); assert(setup);
+      await wizard.getByLabel("کد شش‌رقمی برنامه", { exact: true }).fill("123456");
       await page.getByRole("button", { name: "تأیید و فعال‌سازی", exact: true }).click();
       await page.getByText("SYNTHETIC-RECOVERY-ONLY", { exact: true }).waitFor(); assert(confirmation);
-      await page.getByRole("button", { name: "پنهان کردن کدها", exact: true }).click();
+      await wizard.getByRole("button", { name: "ذخیره کردم", exact: false }).click();
       assert.equal(await page.getByText("SYNTHETIC-RECOVERY-ONLY", { exact: true }).count(), 0);
       check("synthetic setup/confirmation and recovery display use intercepted actions only", theme);
       behavior = "expired"; await page.goto(base + "/enrollment-ui-qa");
-      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).click();
+      await start.click();
+      await showQr.click();
       await page.getByText("زمان تأیید ورود پایان یافته است. دوباره وارد شوید و فعال‌سازی را ادامه دهید.", { exact: true }).waitFor();
       assert.equal(await page.locator('[name="current_password"]').count(), 0);
       assert.equal(await page.getByRole("link", { name: "ورود دوباره", exact: true }).getAttribute("href"), "/login");
@@ -149,14 +151,10 @@ export function EnrollmentStage({optional}: {optional: boolean}) {
       await page.getByRole("link", { name: "ورود دوباره", exact: true }).click();
       await page.getByLabel("نام کاربری", { exact: true }).waitFor();
       check("App Router navigation remains usable after independent root mounts", theme);
-      behavior = "expired"; await page.goto(base + "/enrollment-ui-qa?optional=1");
-      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).click();
-      await page.getByRole("link", { name: "ورود دوباره", exact: true }).waitFor();
-      const reauth = page.getByRole("button", { name: "تأیید هویت برای پنج دقیقه", exact: true }).locator("..");
-      await reauth.getByLabel("رمز فعلی", { exact: true }).fill("SYNTHETIC-reauth-only-password-123");
-      await reauth.getByRole("button", { name: "تأیید هویت برای پنج دقیقه", exact: true }).click();
-      await page.getByRole("button", { name: "شروع فعال‌سازی MFA", exact: true }).waitFor({timeout: 5000});
-      check("optional MFA setup recovers after successful in-account reauthentication", theme);
+      await page.goto(base + "/enrollment-ui-qa?optional=1");
+      await start.click();
+      await wizard.getByLabel("رمز فعلی", { exact: true }).waitFor();
+      check("optional MFA setup retains explicit password proof", theme);
       await context.close();
     }
     assert.equal(evidence.real_mutations, 0); assert.deepEqual(evidence.errors, []);

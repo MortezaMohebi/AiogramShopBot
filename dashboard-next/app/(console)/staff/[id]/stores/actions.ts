@@ -10,7 +10,7 @@ const ACCESS = new Set(["viewer", "editor", "manager"]);
 function fail(error: unknown, memberId: number): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect(`/staff/${memberId}/stores?error=reauth`);
+  if (error.code === "reauthentication_required" || error.status === 428) redirect(`/staff/${memberId}/stores?error=reauth`);
   const allowed = new Set([
     "store_permission_denied", "store_access_denied",
     "invalid_store_grants", "invalid_store_default",

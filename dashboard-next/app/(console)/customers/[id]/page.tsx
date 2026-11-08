@@ -59,7 +59,7 @@ export default async function CustomerDetailPage({
     <PageHeading title={customer.name || `مشتری شماره ${id}`} description={`پروندهٔ ${customer.platform === "telegram" ? "تلگرام" : "بله"}، شناسهٔ ${customer.user_id}؛ داده‌های دو پیام‌رسان بدون اثبات مالکیت ادغام نمی‌شوند.`} />
     {query.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">تغییرات ثبت شد.</p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-      {query.error === "reauth" ? "در حساب من هویت خود را دوباره تأیید کنید." :
+      {query.error === "reauth" ? "هویت خود را در همین صفحه تأیید کنید." :
         query.error === "reason" ? "برای محدودسازی، دلیل حداقل هشت نویسه‌ای وارد کنید." :
         query.error === "permission" ? "مجوز لازم برای این عملیات را ندارید." :
         "ذخیره انجام نشد؛ داده‌ها و وضعیت حساب را بررسی کنید."}

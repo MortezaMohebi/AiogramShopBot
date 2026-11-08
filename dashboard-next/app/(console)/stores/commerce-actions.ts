@@ -9,7 +9,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 function safeFailure(error: unknown): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect("/stores?error=reauth");
+  if (error.code === "reauthentication_required" || error.status === 428) redirect("/stores?error=reauth");
   const allowed = new Set([
     "configuration_changed", "identity_credit_requires_reconciliation",
     "invalid_store_sharing_policy", "invalid_credentials",

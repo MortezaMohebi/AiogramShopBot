@@ -30,7 +30,7 @@ export interface BotOperations {
   maintenance_message: string | null;
   support_url: string | null;
   owner_staff_id: number | null;
-  environment: "staging" | "production" | "codespaces";
+  environment: "staging" | "production";
   reason: string | null;
   updated_at: string | null;
 }
@@ -112,6 +112,13 @@ export interface BotRegistryDetail {
 
 export function botPlatformLabel(platform: BotPlatform): string {
   return platform === "telegram" ? "تلگرام" : "بله";
+}
+
+export function botCredentialLabel(credential: BotCredentialStatus): string {
+  if (credential.state === "staged") {
+    return credential.verified_at ? "تأییدشده · در انتظار فعال‌سازی" : "در انتظار تأیید";
+  }
+  return ({ active: "فعال", revoked: "لغوشده", retiring: "در حال جایگزینی" } as Record<string, string>)[credential.state] ?? credential.state;
 }
 
 export function botRuntimeLabel(bot: BotRecord): string {

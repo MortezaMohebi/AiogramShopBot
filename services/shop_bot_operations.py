@@ -109,7 +109,7 @@ def update_details(
         raise security.SecurityRejected("bot_not_found", 404)
     if bot.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
-    if environment not in {"codespaces", "staging", "production"}:
+    if environment not in {"staging", "production"}:
         raise security.SecurityRejected("invalid_request", 422)
     if owner_staff_id is not None:
         owner = db.get(ShopStaff, owner_staff_id)
@@ -198,7 +198,7 @@ def operation_data(db: Session, bot: ShopBot) -> dict:
         "maintenance_message": ops.maintenance_message if ops else None,
         "support_url": ops.support_url if ops else None,
         "owner_staff_id": ops.owner_staff_id if ops else None,
-        "environment": ops.environment if ops else "staging",
+        "environment": "production" if ops and ops.environment == "production" else "staging",
         "reason": ops.reason if ops else None,
         "updated_at": (
             ops.updated_at.isoformat() if ops and ops.updated_at else None

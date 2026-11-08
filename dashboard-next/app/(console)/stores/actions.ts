@@ -26,7 +26,7 @@ export async function createStore(name: string, slug: string): Promise<StoreResu
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
     if (error.code === "reauthentication_required") {
-      return { ok: false, message: "برای ساخت فروشگاه، ابتدا هویت خود را در حساب من تأیید کنید.", reauthenticate: true };
+      return { ok: false, message: "برای ساخت فروشگاه، هویت خود را در همین پنجره تأیید کنید.", reauthenticate: true };
     }
     if (error.code === "invalid_registry_name") {
       return { ok: false, message: "نام شرکت یا فروشگاه معتبر نیست. نام را بررسی کنید." };
@@ -62,7 +62,7 @@ export async function changeStoreState(
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
     if (error.code === "reauthentication_required") {
-      return { ok: false, message: "ابتدا هویت خود را در حساب من تأیید کنید.", reauthenticate: true };
+      return { ok: false, message: "هویت خود را در همین پنجره تأیید کنید.", reauthenticate: true };
     }
     if (error.code === "store_has_live_activity") {
       return { ok: false, message: "این فروشگاه ربات در حال اجرا، اتصال در حال تغییر یا پرداخت تعیین‌تکلیف‌نشده دارد. پیش از تغییر وضعیت، آن‌ها را بررسی کنید." };

@@ -620,6 +620,38 @@ async def test_nondefault_store_catalog_candidates_use_actual_owners(campaign_ap
     assert choices.json()["policy_ready"] is True
     assert [item["id"] for item in choices.json()["items"]] == [products[0].id]
     assert choices.json()["default_effect"] == "deny"
+    path = f"/bot-catalog/bots/{BOT_A}"
+    version = campaign_app.db.get(ShopBot, BOT_A).version
+    inherited = await campaign_app.request("GET", f"{path}?effect=inherit&q=Catalog")
+    assert inherited.status_code == 200
+    assert inherited.json()["version"] == version
+    assert inherited.json()["total"] == 1
+    empty = await campaign_app.request("GET", f"{path}?effect=allow&q=Catalog")
+    assert empty.status_code == 200 and empty.json()["total"] == 0
+    change = {
+        "expected_version": version, "kind": "product",
+        "target_ids": [products[0].id], "effect": "allow",
+    }
+    session = campaign_app.db.get(AdminSession, campaign_app.session_id)
+    session.reauthenticated_at = security.clock() - 2 * security.REAUTH_LIMIT
+    campaign_app.db.commit()
+    expired = await campaign_app.request("POST", f"{path}/rules", payload=change)
+    assert expired.json()["detail"] == "reauthentication_required"
+    session.reauthenticated_at = security.clock()
+    campaign_app.db.commit()
+    saved = await campaign_app.request("POST", f"{path}/rules", payload=change)
+    assert saved.status_code == 200, saved.text
+    assert saved.json() == {"ok": True, "changed": 1, "version": version + 1}
+    conflict = await campaign_app.request("POST", f"{path}/rules", payload=change)
+    assert conflict.status_code == 409 and conflict.json()["detail"] == "configuration_changed"
+    allowed = await campaign_app.request("GET", f"{path}?effect=allow&q=Catalog")
+    assert allowed.status_code == 200 and allowed.json()["total"] == 1
+    assert allowed.json()["items"][0]["id"] == products[0].id
+    assert allowed.json()["version"] == version + 1
+    empty = await campaign_app.request("GET", f"{path}?effect=inherit")
+    assert empty.status_code == 200 and empty.json()["total"] == 0
+    invalid = await campaign_app.request("GET", f"{path}?effect=other")
+    assert invalid.status_code == 422
     bots = await campaign_app.request("GET", f"/bot-catalog/products/{products[0].id}")
     assert bots.status_code == 200, bots.text
     assert {item["id"] for item in bots.json()["bots"]} == {BOT_A, BOT_DRAFT}
@@ -630,6 +662,7 @@ async def test_nondefault_store_catalog_candidates_use_actual_owners(campaign_ap
         },
     )
     assert denied.status_code == 409, denied.text
+    assert denied.json()["detail"] == "store_switch_required"
     campaign_app.select_store(STORE_A)
     hidden = await campaign_app.request("GET", f"/bot-catalog/bots/{BOT_B}")
     assert hidden.status_code == 404, hidden.text

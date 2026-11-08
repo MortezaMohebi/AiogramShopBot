@@ -16,7 +16,7 @@ function positiveInt(value: FormDataEntryValue | null): number {
 function fail(error: unknown): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect("/relay-workers?error=reauth");
+  if (error.code === "reauthentication_required" || error.status === 428) redirect("/relay-workers?error=reauth");
   const known = new Set([
     "invalid_relay_worker", "relay_worker_exists", "configuration_changed",
     "transport_endpoint_not_approved", "relay_worker_not_verified",

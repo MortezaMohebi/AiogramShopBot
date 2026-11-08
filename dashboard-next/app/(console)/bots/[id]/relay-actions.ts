@@ -30,7 +30,7 @@ function int(form: FormData, key: string): number {
 function fail(error: unknown, botId: string): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect(`/bots/${botId}?relay_error=reauth`);
+  if (error.code === "reauthentication_required" || error.status === 428) redirect(`/bots/${botId}?relay_error=reauth`);
   redirect(`/bots/${botId}?relay_error=${
     error.code && ERRORS.has(error.code) ? error.code : "save"
   }`);

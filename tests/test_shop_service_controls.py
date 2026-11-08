@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 import config
 from models.shop_admin_control import AdminEvent
+from models.shop_multibot import DEFAULT_STORE_ID, ShopStore
 from models.shop_staff import ShopStaff
+from services import shop_bot_registry as registry
 from services import shop_service_controls as controls
 from services.shop_admin_security import SecurityRejected
 from tests.schema_support import create_shop_schema
@@ -62,6 +64,33 @@ def test_switch_is_versioned_and_audited_atomically(monkeypatch):
             assert controls.service_enabled("telegram-fiat")
 
 
+def test_registered_bot_enables_receiver_default_but_explicit_stop_wins(monkeypatch):
+    monkeypatch.setattr(config, "MULTIBOT_V2_RUNTIME_ENABLED", False)
+    with create_engine("sqlite+pysqlite://").begin() as connection:
+        create_shop_schema(connection)
+        with Session(connection) as db:
+            db.add(ShopStaff(id=1, username="owner", password_hash="test",
+                             role="superadmin", is_active=True, session_version=1))
+            db.add(ShopStore(id=DEFAULT_STORE_ID, slug="default", name="Shop", state="active"))
+            db.flush()
+
+            def receiver():
+                return next(item for item in controls.describe_controls(db)
+                            if item["key"] == "receivers")
+
+            assert not receiver()["enabled"]
+            bot = registry.register_bot(db, store_id=DEFAULT_STORE_ID, platform="telegram",
+                                        name="Draft Telegram", actor_id=1)
+            assert receiver()["enabled"] and receiver()["override"] is None
+            assert bot.status == "draft" and bot.credential_version is None
+            monkeypatch.setattr(controls, "_snapshot", controls.read_snapshot(db))
+            assert controls.service_enabled("receivers")
+            controls.write_override(db, key="receivers", enabled=False, expected_version=0, actor_id=1)
+            assert receiver()["default"] and not receiver()["enabled"]
+            monkeypatch.setattr(controls, "_snapshot", controls.read_snapshot(db))
+            assert not controls.service_enabled("receivers")
+
+
 @pytest.mark.asyncio
 async def test_refresh_reads_committed_choices_and_fails_closed(monkeypatch):
     from contextlib import asynccontextmanager
@@ -71,7 +100,7 @@ async def test_refresh_reads_committed_choices_and_fails_closed(monkeypatch):
 
     class Readable:
         async def run_sync(self, _operation):
-            return {"receivers": False, "telegram-stars": True}
+            return controls.ServiceSnapshot({"receivers": False, "telegram-stars": True}, has_registered_bots=True)
 
     @asynccontextmanager
     async def available():

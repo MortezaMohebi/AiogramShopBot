@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { Plus } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { createStore } from "@/app/(console)/stores/actions";
@@ -99,8 +99,7 @@ export function StoreCreateWizard() {
             فروشگاه با فروش متوقف ایجاد می‌شود. برای دیدن تنظیمات آن، فروشگاه را از انتخاب‌گر بالای صفحه انتخاب کنید.
           </p>
           {notice ? <p role="alert" className="text-sm text-destructive">{notice}</p> : null}
-          {reauthenticate ? <Link href="/account" target="_blank" rel="noopener"
-            className="block text-sm underline">تأیید هویت در حساب من (زبانهٔ جدید)</Link> : null}
+          {reauthenticate ? <ReauthenticateButton /> : null}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={busy}>{busy ? "در حال ساخت…" : "ایجاد فروشگاه"}</Button>
             <Button type="button" variant="outline" disabled={busy}

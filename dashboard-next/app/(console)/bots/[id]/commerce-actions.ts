@@ -25,7 +25,7 @@ function proof(form: FormData): { current_password: string; second_factor: strin
 function failure(error: unknown, botId: string): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect(`/bots/${botId}?commerce_error=reauth`);
+  if (error.code === "reauthentication_required" || error.status === 428) redirect(`/bots/${botId}?commerce_error=reauth`);
   const codes = new Set([
     "configuration_changed", "invalid_bot_commerce_policy",
     "payment_access_store_mismatch", "payment_access_invalid",

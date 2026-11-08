@@ -8,7 +8,7 @@ interface Identity { id: number; version: number; sid?: string }
 type Method = "GET" | "POST" | "PATCH" | "DELETE";
 const SAFE_CODES = new Set([
   "service_control_conflict", "service_control_not_found", "service_prerequisite_missing",
-  "store_scope_not_supported",
+  "store_scope_not_supported", "store_switch_required",
   // Closed native MCP errors may explain consent/receipt recovery.
   "mcp_admin_session_required",
   "mcp_approval_conflict",

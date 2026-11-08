@@ -116,7 +116,7 @@ def permission_for(path: str, method: str) -> str | None:
         "stores": "bots.read" if method == "GET" else "bots.configure",
         "bot-registry": (
             "bots.apply"
-            if path.endswith("/receiver/activate")
+            if path.endswith(("/receiver/activate", "/receiver/webhook-url"))
             else "bots.read" if method == "GET" else "bots.configure"
         ),
         "bot-catalog": "bots.read" if method == "GET" else "bots.configure",

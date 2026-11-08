@@ -1,10 +1,11 @@
 """Authenticated self-service control plane over the existing signed bridge."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import asyncio
 import hashlib
 import secrets
-from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -434,12 +435,12 @@ async def change_username(
 
 
 @router.post("/account/reauthenticate")
-async def reauthenticate(payload: Proof | VerifiedProof, request: Request, staff: Staff, db: Db) -> dict:
+async def reauthenticate(payload: Proof, request: Request, staff: Staff, db: Db) -> dict:
     """Grant a short recent-auth window without creating another session."""
     member = required(staff)
-    await require_account_proof(db, member, request, "reauthenticate", payload)
+    await fresh_proof(db, member, payload, request=request)
     row = await db.get(AdminSession, own_session(request))
-    row.reauthenticated_at = datetime.now(timezone.utc)
+    row.reauthenticated_at = security.clock()
     await db.run_sync(lambda sync: security.audit(sync, member.id, "account.reauthenticated"))
     await db.commit()
     return {"ok": True}

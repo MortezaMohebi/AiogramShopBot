@@ -38,7 +38,7 @@ export default async function CustomerRetentionPage({
           : "بررسی بدون حذف انجام شد. هیچ یادداشتی حذف نشد.") : "سیاست نگهداری ذخیره شد."}
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-      {query.error === "reauth" ? "برای این عملیات، در حساب من هویت خود را مجدداً تأیید کنید." :
+      {query.error === "reauth" ? "برای این عملیات، هویت خود را در همین صفحه تأیید کنید." :
         query.error === "receipt" ? "نتیجهٔ پاکسازی تأیید نشد. پیش از تکرار، سوابق و وضعیت یادداشت‌ها را بررسی کنید." :
           "عملیات کامل نشد؛ وضعیت سرویس و داده‌ها را بررسی کنید."}
     </p> : null}

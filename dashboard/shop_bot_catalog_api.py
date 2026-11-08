@@ -112,6 +112,7 @@ async def bot_catalog_policy(
     bot_id: UUID, staff: Staff, db: Db,
     kind: Literal["product", "category"] = "product",
     q: str = "", page: int = 1, page_size: int = 20,
+    effect: Literal["allow", "deny", "inherit"] | None = None,
 ) -> dict:
     """List searchable, paginated grant candidates with effective access."""
     require(staff, "bots.read")
@@ -120,18 +121,23 @@ async def bot_catalog_policy(
         raise security.SecurityRejected("invalid_request", 422)
     bot = await scoped_bot(db, str(bot_id))
     model, target_model, id_key = catalog_acl.RULE_OBJECTS[kind]
-    base = select(target_model).where(target_model.store_id == bot.store_id)
-    count_stmt = select(func.count()).select_from(target_model).where(
-        target_model.store_id == bot.store_id,
-    )
+    criteria = [target_model.store_id == bot.store_id]
     if q.strip():
         needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        criterion = target_model.name.ilike(f"%{needle}%", escape="\\")
-        base = base.where(criterion)
-        count_stmt = count_stmt.where(criterion)
+        criteria.append(target_model.name.ilike(f"%{needle}%", escape="\\"))
+    if effect is not None:
+        explicit_rule = select(model.bot_id).where(
+            model.bot_id == bot.id, getattr(model, id_key) == target_model.id,
+        )
+        criteria.append(
+            ~explicit_rule.exists() if effect == "inherit"
+            else explicit_rule.where(model.effect == effect).exists()
+        )
+    count_stmt = select(func.count()).select_from(target_model).where(*criteria)
     total = int(await db.scalar(count_stmt) or 0)
     records = (await db.scalars(
-        base.order_by(target_model.id.desc()).offset(offset).limit(limit)
+        select(target_model).where(*criteria)
+        .order_by(target_model.id.desc()).offset(offset).limit(limit)
     )).all()
     ids = [row.id for row in records]
     explicit = {}
@@ -153,6 +159,7 @@ async def bot_catalog_policy(
 
     return {
         "bot_id": bot.id,
+        "version": bot.version,
         "kind": kind,
         "default_effect": "deny",
         "policy_ready": preview_scope.available,
@@ -183,7 +190,10 @@ async def change_bot_rules(
         effect=payload.effect,
     ))
     await db.commit()
-    return {"ok": True, "changed": changed}
+    return {
+        "ok": True, "changed": changed,
+        "version": payload.expected_version + int(changed > 0),
+    }
 
 
 @router.get("/bot-catalog/products/{product_id}")

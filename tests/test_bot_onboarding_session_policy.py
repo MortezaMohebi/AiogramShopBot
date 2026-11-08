@@ -4,6 +4,7 @@ The real signed HTTP boundary, Store scope, encrypted credentials, persistence,
 and receiver service run here. Only provider I/O and polling are fake.
 """
 
+import re
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from types import SimpleNamespace
@@ -72,15 +73,21 @@ def onboarding_app(campaign_app, monkeypatch):
     fixture.app.state.test_started_bots = started
 
     class Provider:
-        """Implement only the read calls needed for safe Polling activation."""
+        """Model verified provider state without touching the network."""
+
+        url = ""
 
         async def get_me(self):
             """Return the exact identity verified during credential setup."""
             return SimpleNamespace(id=12345678)
 
         async def get_webhook_info(self):
-            """Require an empty webhook without deleting any webhook."""
-            return SimpleNamespace(url="")
+            return SimpleNamespace(url=self.url)
+
+        async def set_webhook(self, *, url, drop_pending_updates, **options):
+            assert drop_pending_updates is False
+            self.url = url
+            fixture.app.state.test_registered_webhook = url
 
     @asynccontextmanager
     async def provider(platform, token, *, bot_id):
@@ -91,6 +98,23 @@ def onboarding_app(campaign_app, monkeypatch):
 
     monkeypatch.setattr(receivers, "provider_client", provider)
     return fixture
+
+
+@pytest.mark.asyncio
+async def test_draft_bots_generate_unique_slugs_when_omitted_or_blank(onboarding_app):
+    """The signed create endpoint handles Persian names and duplicate labels."""
+    app = onboarding_app
+    payload = {"store_id": STORE_A, "platform": "bale", "name": "ربات فروشگاه"}
+    slugs = set()
+    for request in (payload, {**payload, "slug": ""}, {**payload, "slug": "  "}):
+        response = await app.request("POST", "/bot-registry", payload=request)
+        assert response.status_code == 201, response.text
+        bot = response.json()["bot"]
+        assert bot["status"] == "draft"
+        assert re.fullmatch(r"[a-z][a-z0-9-]{2,63}", bot["slug"])
+        assert app.db.get(ShopBot, bot["id"]).slug == bot["slug"]
+        slugs.add(bot["slug"])
+    assert len(slugs) == 3
 
 
 async def create_verified_bot(app):
@@ -115,12 +139,13 @@ async def create_verified_bot(app):
 
 
 @pytest.mark.asyncio
-async def test_onboarding_and_activation_do_not_repeat_password_or_mfa(onboarding_app):
+@pytest.mark.parametrize("mode", ["polling", "webhook"])
+async def test_onboarding_and_activation_do_not_repeat_password_or_mfa(onboarding_app, mode):
     """An authenticated administrator can fully onboard despite old step-up."""
     app = onboarding_app
     bot_id, version = await create_verified_bot(app)
     response = await app.request(
-        "POST", f"/bot-registry/{bot_id}/receiver/stage", payload={"mode": "polling"},
+        "POST", f"/bot-registry/{bot_id}/receiver/stage", payload={"mode": mode},
     )
     assert response.status_code == 201, response.text
     response = await app.request(
@@ -131,7 +156,7 @@ async def test_onboarding_and_activation_do_not_repeat_password_or_mfa(onboardin
     assert response.json()["state"] == "active"
     assert app.db.get(ShopBot, bot_id).status == "active"
     assert app.db.get(ShopBotReceiver, bot_id).state == "active"
-    assert app.app.state.test_started_bots == [bot_id]
+    assert app.app.state.test_started_bots == ([bot_id] if mode == "polling" else [])
     credential = app.db.query(ShopBotCredential).filter_by(
         bot_id=bot_id, version=version,
     ).one()
@@ -139,6 +164,64 @@ async def test_onboarding_and_activation_do_not_repeat_password_or_mfa(onboardin
     assert security.utc(app.db.get(AdminSession, app.session_id).reauthenticated_at) < (
         security.clock() - security.REAUTH_LIMIT
     )
+
+
+@pytest.mark.asyncio
+async def test_active_webhook_url_requires_recent_proof_and_stays_out_of_status(onboarding_app):
+    app = onboarding_app
+    bot_id, _ = await create_verified_bot(app)
+    path = f"/bot-registry/{bot_id}/receiver"
+    staged = await app.request("POST", f"{path}/stage", payload={"mode": "webhook"})
+    assert staged.status_code == 201, staged.text
+
+    response = await app.request("POST", f"{path}/webhook-url", payload={})
+    assert response.json()["detail"] == "reauthentication_required"
+
+    app.db.get(AdminSession, app.session_id).reauthenticated_at = security.clock()
+    app.db.commit()
+    response = await app.request("POST", f"{path}/webhook-url", payload={})
+    assert response.status_code == 409, response.text
+
+    active = await app.request("POST", f"{path}/activate", payload={
+        "expected_version": staged.json()["version"],
+    })
+    assert active.status_code == 200, active.text
+    url = app.app.state.test_registered_webhook
+    response = await app.request("GET", path)
+    assert response.status_code == 200 and url not in response.text
+    response = await app.request("POST", f"{path}/webhook-url", payload={})
+    assert response.status_code == 200
+    assert response.json() == {"url": url}
+    assert "no-store" in response.headers["cache-control"]
+
+
+@pytest.mark.asyncio
+async def test_webhook_preflight_timeout_keeps_verified_receiver_retryable(onboarding_app, monkeypatch):
+    app = onboarding_app
+    bot_id, _ = await create_verified_bot(app)
+    path = f"/bot-registry/{bot_id}/receiver"
+    staged = await app.request("POST", f"{path}/stage", payload={"mode": "webhook"})
+    assert staged.status_code == 201, staged.text
+
+    class Provider:
+        async def get_me(self):
+            return SimpleNamespace(id=12345678)
+
+        async def get_webhook_info(self):
+            raise TimeoutError
+
+    @asynccontextmanager
+    async def timed_out(*args, **kwargs):
+        yield Provider()
+
+    monkeypatch.setattr(receivers, "provider_client", timed_out)
+    response = await app.request("POST", f"{path}/activate", payload={
+        "expected_version": staged.json()["version"],
+    })
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"] == "provider_state_unavailable"
+    row = app.db.get(ShopBotReceiver, bot_id)
+    assert row.state == "staged" and row.last_error_code == "provider_state_unavailable"
 
 
 @pytest.mark.asyncio

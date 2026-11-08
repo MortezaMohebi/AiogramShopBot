@@ -10,7 +10,7 @@ const CODE = /^[a-z][a-z0-9_-]{0,31}$/;
 function fail(error: unknown): never {
   if (!(error instanceof ApiError)) throw error;
   if (error.status === 401) redirect("/login?expired=1");
-  if (error.status === 428) redirect("/uoms?error=reauth");
+  if (error.code === "reauthentication_required" || error.status === 428) redirect("/uoms?error=reauth");
   const allowed = new Set([
     "invalid_uom", "uom_already_exists", "uom_category_not_found",
     "store_switch_required", "store_permission_denied",

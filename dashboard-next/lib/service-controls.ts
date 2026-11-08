@@ -1,6 +1,6 @@
 /** The dashboard can change these named features, never start a host command. */
 export const services = {
-  receivers: { title: "دریافت پیام ربات‌ها", note: "راه‌اندازی دریافت پیام هر ربات پس از تأیید توکن و انتخاب روش اتصال انجام می‌شود.", href: "/bots" },
+  receivers: { title: "دریافت پیام ربات‌ها", note: "با ثبت اولین ربات این سرویس به‌صورت پیش‌فرض روشن می‌شود. اتصال هر ربات از صفحهٔ همان ربات فعال می‌شود.", href: "/bots" },
   "relay-pool": { title: "اتصال‌های Relay تلگرام", note: "تنها Relay و مسیر تأییدشده برای همان ربات استفاده می‌شود.", href: "/relay-workers" },
   "workflow-runtime": { title: "اجرای گردش‌کار", note: "اجرای هر گردش‌کار به انتشار و فعال‌سازی جداگانه برای فروشگاه و ربات نیاز دارد.", href: "/studio/workflows" },
   "telegram-fiat": { title: "درگاه ریالی تلگرام", note: "برای کالای فیزیکی و تنها با درگاه تأییدشده‌ای که ریال را پشتیبانی کند.", href: "/payment-accounts" },
