@@ -1,8 +1,8 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import Link from "next/link";
 import { adminFetch } from "@/lib/bridge";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { StudioHomeNav } from "@/components/workflows/studio-home-nav";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RuntimeRefresh } from "@/components/runtime/refresh";
 import { RuntimeOperationalOverview } from "@/components/runtime/overview";
@@ -132,8 +132,12 @@ export default async function RuntimePage({
       {item.label}
     </Link>)}
   </nav>
-  {["runs", "outbox", "publications"].includes(tab) && <form action="/studio/runtime" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4">
-    <input type="hidden" name="tab" value={tab} />
+  {["runs", "outbox", "publications"].includes(tab) && <ListSearch path="/studio/runtime" fixed={{ tab }}
+    values={{
+      ...(tab !== "publications" ? { status: { label: "وضعیت", value: status, display: statuses[status] } } : {}),
+      ...(tab !== "outbox" ? { workflow_id: { label: "فرایند", value: workflowId } } : {}),
+      ...(tab === "runs" ? { publication_id: { label: "انتشار", value: publicationId } } : {}),
+    }} filters={<>
     {tab !== "publications" && <label className="min-w-0 space-y-2 text-xs">
       <span>وضعیت</span>
       <select name="status" defaultValue={status} className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring">
@@ -151,9 +155,7 @@ export default async function RuntimePage({
       <span>شناسهٔ انتشار</span>
       <Input name="publication_id" dir="ltr" defaultValue={publicationId} maxLength={36} pattern={uuid.source} />
     </label>}
-    <Button type="submit" variant="outline">اعمال فیلتر</Button>
-    <Link href={`/studio/runtime?tab=${tab}`} className="text-xs text-primary underline">پاک‌کردن فیلترها</Link>
-  </form>}
+    </>} />}
   {content}
   {paged && <RuntimePager page={paged.page} hasMore={paged.has_more} href={href} />}
 </div>;

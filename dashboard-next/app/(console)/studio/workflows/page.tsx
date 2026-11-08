@@ -1,3 +1,4 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import Link from "next/link";
 import { RecordClickArea } from "@/components/ui/record-click-area";
 import { RecordLink } from "@/components/ui/record-link";
@@ -5,7 +6,6 @@ import { StudioHomeNav } from "@/components/workflows/studio-home-nav";
 import { adminFetch } from "@/lib/bridge";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { Catalog, WorkflowList } from "@/lib/workflows/types";
 export default async function WorkflowsPage({
   searchParams,
@@ -48,24 +48,17 @@ export default async function WorkflowsPage({
         پیش‌نویس روی ربات اجرا نمی‌شود. برای اجرا، نسخه را منتشر کنید و ورودی، ربات و مجوز اجرا را مشخص کنید.{" "}
         <Link href="/studio/runtime" className="text-primary underline">بررسی وضعیت اجرا</Link>
       </div>
-      <form
-        action="/studio/workflows"
-        className="mb-5 flex flex-wrap items-end gap-3"
-      >
-        <label className="min-w-0 flex-1 basis-48 space-y-2 text-xs font-semibold">
-          جستجوی فرایند
-          <Input
-            name="q"
-            defaultValue={q}
-            maxLength={100}
-            placeholder="نام فرایند"
-          />
-        </label>
+      <div className="mb-5">
+        <ListSearch path="/studio/workflows"
+          query={{ name: "q", label: "نام فرایند", value: q, placeholder: "نام فرایند…" }}
+          values={{ status: { label: "وضعیت", value: status, inactive: "draft",
+            display: { draft: "پیش‌نویس", archived: "بایگانی", deleted: "حذف‌شده", all: "همه" }[status] } }}
+          filters={<>
         <label className="space-y-2 text-xs font-semibold">
           وضعیت
           <select
             name="status"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
             defaultValue={status}
           >
             <option value="draft">پیش‌نویس</option>
@@ -74,10 +67,8 @@ export default async function WorkflowsPage({
             <option value="all">همه</option>
           </select>
         </label>
-        <Button type="submit" variant="outline">
-          اعمال فیلتر
-        </Button>
-      </form>
+          </>} />
+      </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.items.map((item) => (
           <RecordClickArea

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { useRouter } from "next/navigation";
-import { FileDown, FileSpreadsheet, Filter, Layers3, Search, Upload } from "lucide-react";
+import { FileDown, FileSpreadsheet, Layers3, Search, Upload } from "lucide-react";
+import { SearchFavorites, SearchTools } from "@/components/blocks/search-tools";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,15 @@ import type {
 
 interface Props { metadata: ModelMetadata; initialIds?: string }
 type Format = "csv" | "xlsx";
+type SearchView = {
+  text: string;
+  filters: ModelFilter[];
+  sortBy: string;
+  descending: boolean;
+  groupField: string;
+  period: TimeGranularity;
+  grouped: boolean;
+};
 
 const OPS: Array<[FieldOperator, string]> = [
   ["contains", "شامل"], ["eq", "برابر"], ["ne", "نابرابر"],
@@ -71,7 +81,11 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
     searchable.find((item) => item.kind === "string")?.key ??
     searchable[0]?.key ?? "id",
   );
-  const [op, setOp] = useState<FieldOperator>("contains");
+  const quickField = searchable.find(item => ["name", "display_name", "first_name"].includes(item.key))
+    ?? searchable.find(item => item.kind === "string");
+  const [quick, setQuick] = useState("");
+  const [op, setOp] = useState<FieldOperator>(() =>
+    ["string", "enum"].includes(searchable.find(item => item.key === field)?.kind ?? "") ? "contains" : "eq");
   const [value, setValue] = useState("");
   const [sortBy, setSortBy] = useState(sortable[0]?.key ?? "id");
   const selectedField = searchable.find((item) => item.key === field);
@@ -102,6 +116,40 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
   const [updateFields, setUpdateFields] = useState(() => writableFields.map((item) => item.key));
   const [exportIssue, setExportIssue] = useState("");
   const chosenFields = updateCompatible ? updateFields : reportFields;
+  const view: SearchView = {
+    text: quick, filters, sortBy, descending, groupField, period, grouped: groupResult !== null,
+  };
+
+  function queryFilters(selection: SearchView) {
+    const text = selection.text.trim();
+    return quickField && text
+      ? [...selection.filters, { field: quickField.key, op: "contains" as const, value: text }]
+      : selection.filters;
+  }
+
+  async function restoreView(raw: unknown) {
+    if (!raw || typeof raw !== "object") return;
+    const stored = raw as Partial<SearchView>;
+    if (!Array.isArray(stored.filters) || stored.filters.length > 10 ||
+        typeof stored.text !== "string" || stored.text.length > 100 ||
+        typeof stored.descending !== "boolean" || typeof stored.grouped !== "boolean" ||
+        typeof stored.groupField !== "string" ||
+        (stored.groupField !== "" && !groupable.some(item => item.key === stored.groupField)) ||
+        !sortable.some(item => item.key === stored.sortBy) ||
+        !PERIODS.some(([key]) => key === stored.period) ||
+        !stored.filters.every(filter => filter && searchable.some(item => item.key === filter.field) &&
+          OPS.some(([key]) => key === filter.op))) return;
+    const restored = stored as SearchView;
+    setQuick(restored.text);
+    setFilters(restored.filters);
+    setSortBy(restored.sortBy);
+    setDescending(restored.descending);
+    setGroupField(restored.groupField);
+    setPeriod(restored.period);
+    setGroupResult(null);
+    await runSearch(1, restored);
+    if (restored.grouped) await runGroup(restored);
+  }
 
   function addFilter() {
     if (filters.length >= 10 || !field) return;
@@ -117,13 +165,18 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
     setValue("");
   }
 
-  async function runSearch(page: number) {
+  async function runSearch(page: number, selection = view) {
     if (busy) return;
+    const active = queryFilters(selection);
+    if (active.length > 10) {
+      setNotice("برای جست‌وجوی متنی یکی از فیلترها را حذف کنید.");
+      return;
+    }
     setBusy(true);
     setNotice("");
     try {
       const response = await searchDataModel(metadata.model, {
-        filters, page, page_size: 30, sort_by: sortBy, descending,
+        filters: active, page, page_size: 30, sort_by: selection.sortBy, descending: selection.descending,
       });
       if (!response.ok) {
         setNotice(response.error);
@@ -136,16 +189,21 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
     } finally { setBusy(false); }
   }
 
-  async function runGroup() {
-    if (busy || !groupField) return;
+  async function runGroup(selection = view) {
+    if (busy || !selection.groupField) return;
+    const active = queryFilters(selection);
+    if (active.length > 10) {
+      setNotice("برای گروه‌بندی یکی از فیلترها را حذف کنید.");
+      return;
+    }
     setBusy(true);
     setNotice("");
     try {
-      const selected = groupable.find((item) => item.key === groupField);
+      const selected = groupable.find((item) => item.key === selection.groupField);
       const response = await groupDataModel(
-        metadata.model, groupField,
-        selected?.kind === "datetime" ? period : null,
-        filters,
+        metadata.model, selection.groupField,
+        selected?.kind === "datetime" ? selection.period : null,
+        active,
       );
       if (!response.ok) setNotice(response.error);
       else setGroupResult(response.data);
@@ -250,56 +308,109 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
 
   return <div className="space-y-6" aria-busy={busy}>
     <Card>
-      <CardHeader><CardTitle className="flex items-center gap-2">
-        <Filter className="size-5" /> جست‌وجوی داده‌ها
-      </CardTitle></CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_auto] lg:items-end">
-          <label className="space-y-2 text-sm">فیلد
-            <select value={field} onChange={(event) => {
-              setField(event.target.value);
-              const next = searchable.find((item) => item.key === event.target.value);
-              if (isDateTime || next?.kind === "datetime") setValue("");
-              setOp(next?.kind === "string" || next?.kind === "enum" ? "contains" : "eq");
-            }}
-              className="h-10 w-full rounded-md border bg-background px-3">
-              {searchable.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
-            </select>
-          </label>
-          <label className="space-y-2 text-sm">عملگر
-            <select value={op} onChange={(event) => {
-              const next = event.target.value as FieldOperator;
-              if (isDateTime && op === "in" && next !== "in") setValue(dateList?.[0] ?? "");
-              setOp(next);
-            }}
-              className="h-10 rounded-md border bg-background px-3">
-              {applicableOps.map(([key, label]) =>
-                <option key={key} value={key}>{label}</option>)}
-            </select>
-          </label>
-          {isDateTime ?
-            <PersianDatePicker label={dateList ? "افزودن تاریخ و زمان" : "تاریخ و زمان"}
-              value={dateList ? "" : value} withTime onChange={(next) => {
-                if (!dateList) setValue(next);
-                else if (next && !dateList.includes(next)) {
-                  if (dateList.length >= 20) setNotice("حداکثر ۲۰ زمان می‌توانید اضافه کنید.");
-                  else setValue([...dateList, next].join(","));
-                }
-              }} /> :
-            <label className="space-y-2 text-sm">عبارت / مقدار
-              <Input value={value} onChange={(event) => setValue(event.target.value)} maxLength={200} />
-            </label>}
-          <Button type="button" disabled={busy} variant="outline" onClick={addFilter}>
-            افزودن فیلتر
-          </Button>
-        </div>
-        {dateList?.length ? <div className="flex flex-wrap gap-2" aria-label="زمان‌های انتخاب‌شده">
-          {dateList.map((date) => <Button key={date} type="button" size="sm" variant="outline"
-            onClick={() => setValue(dateList.filter((item) => item !== date).join(","))}
-            aria-label={`حذف ${dateFilterLabel(date)}`}>
-            {dateFilterLabel(date)} ×
-          </Button>)}
-        </div> : null}
+      <CardContent className="space-y-4 pt-5">
+        <SearchTools
+          main={<form className="flex min-w-0 flex-1 items-center gap-2" role="search"
+            aria-label="جست‌وجوی داده‌ها" onSubmit={event => { event.preventDefault(); void runSearch(1); }}>
+            {quickField ? <Input type="search" aria-label={`جست‌وجو در ${quickField.title}`}
+              placeholder={`جست‌وجو در ${quickField.title}…`} value={quick}
+              maxLength={100} onChange={event => setQuick(event.target.value)} /> : null}
+            <Button type="submit" variant="outline" size="icon" aria-label="جست‌وجو" disabled={busy}><Search /></Button>
+          </form>}
+          filters={<div className="space-y-3">
+            <div className="grid gap-3">
+              <label className="space-y-2 text-sm">فیلد
+                <select value={field} onChange={(event) => {
+                  setField(event.target.value);
+                  const next = searchable.find((item) => item.key === event.target.value);
+                  if (isDateTime || next?.kind === "datetime") setValue("");
+                  setOp(next?.kind === "string" || next?.kind === "enum" ? "contains" : "eq");
+                }}
+                  className="h-10 w-full rounded-md border bg-background px-3">
+                  {searchable.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">عملگر
+                <select value={op} onChange={(event) => {
+                  const next = event.target.value as FieldOperator;
+                  if (isDateTime && op === "in" && next !== "in") setValue(dateList?.[0] ?? "");
+                  setOp(next);
+                }}
+                  className="h-10 w-full rounded-md border bg-background px-3">
+                  {applicableOps.map(([key, label]) =>
+                    <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              {isDateTime ?
+                <PersianDatePicker label={dateList ? "افزودن تاریخ و زمان" : "تاریخ و زمان"}
+                  value={dateList ? "" : value} withTime onChange={(next) => {
+                    if (!dateList) setValue(next);
+                    else if (next && !dateList.includes(next)) {
+                      if (dateList.length >= 20) setNotice("حداکثر ۲۰ زمان می‌توانید اضافه کنید.");
+                      else setValue([...dateList, next].join(","));
+                    }
+                  }} /> :
+                <label className="space-y-2 text-sm">عبارت / مقدار
+                  <Input value={value} onChange={(event) => setValue(event.target.value)} maxLength={200} />
+                </label>}
+              <Button type="button" disabled={busy} variant="outline" onClick={addFilter}>
+                افزودن فیلتر
+              </Button>
+            </div>
+            {dateList?.length ? <div className="flex flex-wrap gap-2" aria-label="زمان‌های انتخاب‌شده">
+              {dateList.map((date) => <Button key={date} type="button" size="sm" variant="outline"
+                onClick={() => setValue(dateList.filter((item) => item !== date).join(","))}
+                aria-label={`حذف ${dateFilterLabel(date)}`}>
+                {dateFilterLabel(date)} ×
+              </Button>)}
+            </div> : null}
+            <div className="grid gap-3 border-t pt-3">
+              <label className="space-y-2 text-sm">مرتب‌سازی
+                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}
+                  className="h-10 w-full rounded-md border bg-background px-3">
+                  {sortable.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 pb-2 text-sm">
+                <input type="checkbox" checked={descending}
+                  onChange={(event) => setDescending(event.target.checked)} />
+                نزولی
+              </label>
+            </div>
+            <Button type="button" size="sm" disabled={busy} onClick={event => {
+              const disclosure = event.currentTarget.closest("details");
+              if (disclosure) disclosure.open = false;
+              void runSearch(1);
+            }}>اعمال فیلترها</Button>
+          </div>}
+          groups={groupable.length ? <>
+            <div className="grid gap-3">
+              <label className="space-y-2 text-sm">گروه‌بندی بر اساس
+                <select value={groupField} onChange={(event) => setGroupField(event.target.value)}
+                  className="block h-10 w-full rounded-md border bg-background px-3">
+                  {groupable.map((item) => <option key={item.key} value={item.key}>
+                    {item.title}
+                  </option>)}
+                </select>
+              </label>
+              {groupable.find((item) => item.key === groupField)?.kind === "datetime" ?
+                <label className="space-y-2 text-sm">بازهٔ زمانی
+                  <select value={period} onChange={(event) => setPeriod(event.target.value as TimeGranularity)}
+                    className="block h-10 w-full rounded-md border bg-background px-3">
+                    {PERIODS.map(([key, label]) =>
+                      <option key={key} value={key}>{label}</option>)}
+                  </select>
+                </label> : null}
+              <Button type="button" variant="outline" disabled={busy}
+                onClick={event => {
+                  const disclosure = event.currentTarget.closest("details");
+                  if (disclosure) disclosure.open = false;
+                  void runGroup();
+                }}>گروه‌بندی</Button>
+            </div>
+          </> : undefined}
+          favorites={<SearchFavorites id={`data-model:${metadata.model}`} value={view} disabled={busy}
+            onRestore={value => void restoreView(value)} />} />
         {filters.length ? <div className="flex flex-wrap gap-2">
           {filters.map((filter, index) => {
             const filterField = metadata.fields.find((item) => item.key === filter.field);
@@ -316,22 +427,6 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
           <Button type="button" size="sm" variant="outline"
             onClick={() => setFilters([])} disabled={busy}>پاک کردن فیلترها</Button>
         </div> : null}
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-2 text-sm">مرتب‌سازی
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}
-              className="h-10 rounded-md border bg-background px-3">
-              {sortable.map((item) => <option key={item.key} value={item.key}>{item.title}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 pb-2 text-sm">
-            <input type="checkbox" checked={descending}
-              onChange={(event) => setDescending(event.target.checked)} />
-            نزولی
-          </label>
-          <Button type="button" disabled={busy} onClick={() => void runSearch(1)}>
-            <Search className="size-4" /> جست‌وجو
-          </Button>
-        </div>
         {searchResult ? <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             {searchResult.total} نتیجه · صفحه {searchResult.page}
@@ -380,38 +475,18 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
         </div> : null}
       </CardContent>
     </Card>
-    {groupable.length ? <Card>
+    {groupResult ? <Card>
       <CardHeader><CardTitle className="flex items-center gap-2">
-        <Layers3 className="size-5" /> گروه‌بندی داده‌ها
+        <Layers3 className="size-5" /> نتیجهٔ گروه‌بندی
       </CardTitle></CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-2 text-sm">گروه‌بندی بر اساس
-            <select value={groupField} onChange={(event) => setGroupField(event.target.value)}
-              className="block h-10 min-w-44 rounded-md border bg-background px-3">
-              {groupable.map((item) => <option key={item.key} value={item.key}>
-                {item.title}
-              </option>)}
-            </select>
-          </label>
-          {groupable.find((item) => item.key === groupField)?.kind === "datetime" ?
-            <label className="space-y-2 text-sm">بازهٔ زمانی
-              <select value={period} onChange={(event) => setPeriod(event.target.value as TimeGranularity)}
-                className="block h-10 rounded-md border bg-background px-3">
-                {PERIODS.map(([key, label]) =>
-                  <option key={key} value={key}>{label}</option>)}
-              </select>
-            </label> : null}
-          <Button type="button" variant="outline" disabled={busy}
-            onClick={() => void runGroup()}>گروه‌بندی</Button>
-        </div>
-        {groupResult ? <div className="overflow-x-auto">
+      <CardContent>
+        <div className="overflow-x-auto">
           <p className="mb-2 text-xs text-muted-foreground">
             {groupResult.timezone ? "زمان مبنا: UTC" : "مقادیر گروه‌بندی"}
           </p>
           <table className="w-full max-w-xl text-right text-sm">
-            <thead><tr className="border-b"><th className="p-2">مقدار / دوره</th>
-              <th className="p-2">تعداد</th></tr></thead>
+            <thead><tr className="border-b"><th scope="col" className="p-2">مقدار / دوره</th>
+              <th scope="col" className="p-2">تعداد</th></tr></thead>
             <tbody>{groupResult.items.map((item, index) =>
               <tr key={index} className="border-b">
                 <td className="p-2" dir="auto">{String(item.bucket ?? "نامشخص")}</td>
@@ -421,7 +496,7 @@ export function ModelDataWorkbench({ metadata, initialIds = "" }: Props) {
           {!groupResult.items.length ? <p className="py-3 text-sm text-muted-foreground">
             داده‌ای برای گروه‌بندی پیدا نشد.
           </p> : null}
-        </div> : null}
+        </div>
       </CardContent>
     </Card> : null}
 

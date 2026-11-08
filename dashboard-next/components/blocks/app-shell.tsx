@@ -1,3 +1,4 @@
+import { SearchPreferenceScope } from "@/components/blocks/search-tools";
 import type { ReactNode } from "react";
 import type { Staff } from "@/lib/types";
 import type { StoreContextSnapshot } from "@/lib/store-context";
@@ -33,7 +34,7 @@ export function AppShell({
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-7 sm:px-8 sm:py-9">
-          {children}
+          <SearchPreferenceScope scope={`${staff.id}:${storeContext.current_store_id}`}>{children}</SearchPreferenceScope>
         </main>
       </div>
     </div>

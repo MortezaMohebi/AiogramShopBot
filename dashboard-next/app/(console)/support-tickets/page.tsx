@@ -1,9 +1,8 @@
-import Link from "next/link";
+import { ListSearch } from "@/components/blocks/search-tools";
 import { RecordClickArea } from "@/components/ui/record-click-area";
 import { RecordLink } from "@/components/ui/record-link";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { adminFetch } from "@/lib/bridge";
 import type { SupportTicketSummary } from "@/lib/customer-experience";
 
@@ -27,15 +26,12 @@ export default async function SupportTickets({
   return <div className="space-y-5">
     <PageHeading title="مرکز پشتیبانی مشتریان"
       />
-    <nav className="flex flex-wrap gap-2" aria-label="فیلتر وضعیت درخواست‌ها">
-      {STATUSES.map(item => <Button key={item} asChild
-        variant={item === status ? "secondary" : "outline"} size="sm">
-        <Link href={item === "all" ? "/support-tickets" : `/support-tickets?status=${item}`}
-          aria-current={item === status ? "page" : undefined}>
-          {STATUS_LABELS[item]}
-        </Link>
-      </Button>)}
-    </nav>
+    <ListSearch path="/support-tickets" values={{ status: { label: "وضعیت", value: status, inactive: "all", display: STATUS_LABELS[status] } }}
+      filters={<label className="block space-y-2 text-sm">وضعیت
+        <select name="status" defaultValue={status} className="h-10 w-full rounded-md border border-input bg-background px-3">
+          {STATUSES.map(item => <option key={item} value={item}>{STATUS_LABELS[item]}</option>)}
+        </select>
+      </label>} />
     <Card>
       <CardHeader><CardTitle>درخواست‌های مشتریان ({results.items.length})</CardTitle></CardHeader>
       <CardContent>

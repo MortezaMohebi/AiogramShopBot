@@ -1,8 +1,7 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 
 type Query = Promise<{ status?: string }>;
@@ -35,15 +34,12 @@ export default async function DigitalReceipts({
   return <div className="space-y-5">
     <PageHeading title="تحویل محصولات دیجیتال"
       description="وضعیت تحویل فایل و لایسنس را بررسی کنید. ارسال با نتیجهٔ نامشخص خودکار تکرار نمی‌شود." />
-    <div className="flex flex-wrap gap-2">
-      {STATES.map(item => <Button key={item} asChild size="sm"
-        variant={status === item ? "secondary" : "outline"}>
-        <Link href={item === "all" ? "/digital-deliveries"
-          : `/digital-deliveries?status=${item}`} aria-current={status === item ? "page" : undefined}>
-          {STATE_LABELS[item]}
-        </Link>
-      </Button>)}
-    </div>
+    <ListSearch path="/digital-deliveries" values={{ status: { label: "وضعیت", value: status, inactive: "all", display: STATE_LABELS[status] } }}
+      filters={<label className="block space-y-2 text-sm">وضعیت
+        <select name="status" defaultValue={status} className="h-10 w-full rounded-md border border-input bg-background px-3">
+          {STATES.map(item => <option key={item} value={item}>{STATE_LABELS[item]}</option>)}
+        </select>
+      </label>} />
     <Card>
       <CardHeader><CardTitle>سوابق تحویل ({data.items.length})</CardTitle></CardHeader>
       <CardContent className="space-y-2">

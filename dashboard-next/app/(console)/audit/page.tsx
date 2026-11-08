@@ -1,12 +1,12 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { PersianDatePicker } from "@/components/ui/persian-date-picker";
 import { adminFetch, currentStaff } from "@/lib/bridge";
-import { parseCalendarDate } from "@/lib/persian-calendar";
+import { parseCalendarDate, persianDateLabel } from "@/lib/persian-calendar";
 
 type Filter = { actor?: string; action?: string; since?: string; until?: string; page?: string };
 type AuditEntry = { id: string; actor: number; action: string; target: string; created_at: string };
@@ -44,22 +44,23 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   return <div className="space-y-6">
     <PageHeading title="گزارش تغییرات مدیران" />
     <div><Button asChild variant="outline"><Link href="/staff">بازگشت به کارکنان</Link></Button></div>
-    <Card><CardContent className="pt-6">
-      <form method="get" className="grid gap-3 md:grid-cols-4">
+    <ListSearch path="/audit"
+      query={{ name: "action", label: "نوع رویداد", value: pageQuery.get("action") ?? "", dir: "ltr" }}
+      values={{
+        actor: { label: "کاربر", value: pageQuery.get("actor") ?? "", display: names.get(Number(query.actor)) },
+        since: { label: "از تاریخ", value: since, display: since ? persianDateLabel(parseCalendarDate(since)!) : "" },
+        until: { label: "تا تاریخ", value: until, display: until ? persianDateLabel(parseCalendarDate(until)!) : "" },
+      }}
+      filters={<>
         <label className="space-y-2 text-sm">کاربر
           <select name="actor" defaultValue={query.actor ?? ""} className="h-10 w-full rounded-md border border-input bg-background px-2">
             <option value="">همه کاربران</option>
             {members.map((member) => <option key={member.id} value={member.id}>{member.username}</option>)}
           </select>
         </label>
-        <label className="space-y-2 text-sm">نوع رویداد
-          <Input name="action" dir="ltr" placeholder="staff.invitation_issued" defaultValue={query.action ?? ""} />
-        </label>
         <PersianDatePicker key={`since:${since}`} name="since" label="از تاریخ" defaultValue={since} />
         <PersianDatePicker key={`until:${until}`} name="until" label="تا تاریخ" defaultValue={until} />
-        <Button type="submit" className="md:col-span-4 md:justify-self-start">اعمال فیلترها</Button>
-      </form>
-    </CardContent></Card>
+      </>} />
     <Card><CardContent className="overflow-x-auto pt-6">
       <p className="mb-4 text-sm text-muted-foreground">{history.total.toLocaleString("fa-IR")} رویداد یافت شد.</p>
       <table className="w-full min-w-[620px] text-right text-sm">

@@ -20,7 +20,7 @@ function loader(read:(path:string)=>Promise<unknown>,role="superadmin") {
   const old=cache.get(filename);if(old)return old;
   const evaluated={exports:{} as Record<string,unknown>};cache.set(filename,evaluated.exports);
   const code=ts.transpileModule(readFileSync(filename,"utf8"),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
-  runInNewContext(code,{module:evaluated,exports:evaluated.exports,require:(name:string)=>{
+  runInNewContext(code,{module:evaluated,exports:evaluated.exports,URLSearchParams,require:(name:string)=>{
    if(name==="server-only")return {};
    if(name==="@/lib/bridge")return {ApiError,adminFetch:read,currentStaff:async()=>({id:11,username:"qa",role})};
    if(name==="next/navigation")return {notFound(){throw Error("NOT_FOUND");},useRouter:()=>({refresh(){}})};
@@ -50,7 +50,7 @@ test("product search controls render while matching results remain pending",asyn
  const held=deferred<unknown>(),calls:string[]=[];
  const work=loader(async path=>{calls.push(path);return held.promise;})("products")({searchParams:Promise.resolve({page:"2",search:"فیلتر روغن"})});
  let rendered:Awaited<ReturnType<typeof stream>>|undefined;
- try {rendered=await stream(await shellBeforeRead(work));await rendered.waitFor("جستجو در محصول و SKU");assert(rendered.text().includes('value="فیلتر روغن"'));assert(rendered.text().includes("در حال دریافت محصولات"));assert(!rendered.text().includes("هنوز محصولی ثبت نشده"));held.resolve({...pageData,page:2});await rendered.done;
+ try {rendered=await stream(await shellBeforeRead(work));await rendered.waitFor("نام یا کد کالا");assert(rendered.text().includes('value="فیلتر روغن"'));assert(rendered.text().includes("در حال دریافت محصولات"));assert(!rendered.text().includes("هنوز محصولی ثبت نشده"));held.resolve({...pageData,page:2});await rendered.done;
  assert.deepEqual(calls,["/products?page=2&search=%D9%81%DB%8C%D9%84%D8%AA%D8%B1%20%D8%B1%D9%88%D8%BA%D9%86"]);
  }finally{held.resolve(pageData);rendered?.abort();await work;}
 });

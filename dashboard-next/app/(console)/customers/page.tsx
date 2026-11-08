@@ -1,3 +1,4 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import Link from "next/link";
 import { RecordClickArea } from "@/components/ui/record-click-area";
 import { RecordLink } from "@/components/ui/record-link";
@@ -71,11 +72,17 @@ export default async function CustomersPage({
         <Link href="/data-models/customers">جست‌وجوی پیشرفته و ورود و خروج مشتریان</Link>
       </Button>
     </div>
-    <Card><CardContent className="pt-5">
-      <form method="get" className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <label className="space-y-2 text-sm xl:col-span-2">نام، نام کاربری یا شناسه
-          <Input name="q" maxLength={100} defaultValue={q} placeholder="جست‌وجوی مشتری…" />
-        </label>
+    <ListSearch path="/customers"
+      query={{ name: "q", label: "نام، نام کاربری یا شناسه", placeholder: "جست‌وجوی مشتری…", value: q }}
+      values={{
+        platform: { label: "پیام‌رسان", value: platform, inactive: "all", display: platform === "telegram" ? "تلگرام" : "بله" },
+        restriction: { label: "وضعیت محدودسازی", value: restriction, inactive: "all", display: restriction === "active" ? "فعال" : "مسدود" },
+        consent: { label: "رضایت تبلیغاتی", value: consent, inactive: "all", display: consent === "yes" ? "دارد" : "ندارد" },
+        tag: { label: "برچسب", value: tag },
+        owner: { label: "مسئول پیگیری", value: filters.get("owner") ?? "", display: usernames.get(Number(params.owner)) },
+      }}
+      groups={<Link href="/data-models/customers" className="text-sm text-primary underline underline-offset-4">گروه‌بندی پیشرفتهٔ مشتریان</Link>}
+      filters={<>
         <label className="space-y-2 text-sm">پیام‌رسان
           <select name="platform" defaultValue={platform} className="h-10 w-full rounded-md border bg-background px-2">
             <option value="all">همه</option><option value="telegram">تلگرام</option><option value="bale">بله</option>
@@ -94,18 +101,13 @@ export default async function CustomersPage({
         <label className="space-y-2 text-sm">برچسب
           <Input name="tag" maxLength={32} defaultValue={tag} placeholder="مثلاً عمده‌فروش" />
         </label>
-        <label className="space-y-2 text-sm md:col-span-2">مسئول پیگیری
+        <label className="space-y-2 text-sm">مسئول پیگیری
           <select name="owner" defaultValue={params.owner ?? ""} className="h-10 w-full rounded-md border bg-background px-2">
             <option value="">همه</option>
             {operators.items.map((item) => <option key={item.id} value={item.id}>{item.username}</option>)}
           </select>
         </label>
-        <div className="flex items-end gap-2">
-          <Button type="submit">جست‌وجو و فیلتر</Button>
-          <Button asChild type="button" variant="outline"><Link href="/customers">پاک‌کردن</Link></Button>
-        </div>
-      </form>
-    </CardContent></Card>
+      </>} />
     <Card><CardContent className="overflow-x-auto pt-5">
       <p className="mb-3 text-xs text-muted-foreground">{result.total.toLocaleString("fa-IR")} مشتری مطابق جست‌وجو</p>
       <table className="w-full min-w-[580px] text-right text-sm">

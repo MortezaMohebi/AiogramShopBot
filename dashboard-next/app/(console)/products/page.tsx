@@ -1,12 +1,12 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import { Suspense } from "react";
 import { ProductsResults } from "@/components/data/products";
 import { TableSkeleton } from "@/components/data/skeletons";
 import Link from "next/link";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { currentStaff } from "@/lib/bridge";
 
 type Params = Promise<{ page?: string; search?: string; saved?: string }>;
@@ -36,13 +36,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Par
       {q.saved ? <p role="status" className="mb-4 rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">محصول ذخیره شد.</p> : null}
       <Card>
         <CardContent className="pt-5">
-          <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
-            <label className="min-w-48 flex-1 space-y-2 text-sm">
-              <span className="font-medium">جستجو در محصول و SKU</span>
-              <Input name="search" maxLength={100} placeholder="نام یا کد کالا..." defaultValue={search} />
-            </label>
-            <Button type="submit" variant="outline"><Search /> جستجو</Button>
-          </form>
+          <div className="mb-5">
+            <ListSearch path="/products"
+              query={{ name: "search", label: "نام یا کد کالا", value: search, placeholder: "نام یا کد کالا…" }}
+              groups={<Link href="/data-models/products" className="text-sm text-primary underline underline-offset-4">گروه‌بندی پیشرفتهٔ محصولات</Link>} />
+          </div>
           <Suspense key={JSON.stringify([page, search])} fallback={<TableSkeleton label="در حال دریافت محصولات…" />}>
             <ProductsResults page={page} search={search} canEdit={canEdit} />
           </Suspense>

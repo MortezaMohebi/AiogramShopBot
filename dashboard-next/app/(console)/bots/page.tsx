@@ -1,3 +1,4 @@
+import { ListSearch } from "@/components/blocks/search-tools";
 import Link from "next/link";
 import { RecordClickArea } from "@/components/ui/record-click-area";
 import { RecordLink } from "@/components/ui/record-link";
@@ -37,8 +38,8 @@ export default async function BotsPage({
   const filters = new URLSearchParams({
     page: String(page), page_size: "30",
   });
-  const platform = ["telegram", "bale"].includes(query.platform ?? "")
-    ? query.platform! : "";
+  const platform = query.platform === "telegram" || query.platform === "bale"
+    ? query.platform : "";
   if (platform) filters.set("platform", platform);
   const store_id = /^[0-9a-f-]{36}$/i.test(query.store_id ?? "")
     ? query.store_id! : "";
@@ -64,21 +65,22 @@ export default async function BotsPage({
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Bot className="size-5" /> فهرست ربات‌ها</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        <form method="get" className="flex flex-wrap items-end gap-3">
+        <ListSearch path="/bots" values={{
+          platform: { label: "پیام‌رسان", value: platform, display: platform ? botPlatformLabel(platform) : "" },
+          store_id: { label: "فروشگاه", value: store_id, display: result.stores.find(store => store.id === store_id)?.name },
+        }} filters={<>
           <label className="space-y-2 text-sm">پیام‌رسان
-            <select name="platform" defaultValue={platform} className="block h-10 min-w-36 rounded-md border bg-background px-3">
+            <select name="platform" defaultValue={platform} className="block h-10 w-full rounded-md border bg-background px-3">
               <option value="">همه</option><option value="telegram">تلگرام</option><option value="bale">بله</option>
             </select>
           </label>
           <label className="space-y-2 text-sm">فروشگاه
-            <select name="store_id" defaultValue={store_id} className="block h-10 min-w-48 rounded-md border bg-background px-3">
+            <select name="store_id" defaultValue={store_id} className="block h-10 w-full rounded-md border bg-background px-3">
               <option value="">همهٔ فروشگاه‌ها</option>
               {result.stores.map(store => <option value={store.id} key={store.id}>{store.name}</option>)}
             </select>
           </label>
-          <Button type="submit" variant="outline">فیلتر</Button>
-          <Button asChild variant="outline"><Link href="/bots">پاک کردن فیلترها</Link></Button>
-        </form>
+        </>} />
         <p className="text-xs text-muted-foreground">{result.total_bots.toLocaleString("fa-IR")} ربات ثبت‌شده</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[550px] text-right text-sm">
