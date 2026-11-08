@@ -53,7 +53,10 @@ class NativeClient:
 
     async def send(self, chat_id, reply, *, edit_message_id=None):
         """Record the equivalent Bale transport payload."""
-        self.messages.append({"chat_id": chat_id, "text": reply.text, "rows": reply.rows})
+        self.messages.append({
+            "chat_id": chat_id, "text": reply.text, "rows": reply.rows,
+            "keyboard_rows": reply.keyboard_rows,
+        })
         return edit_message_id or 100 + len(self.messages)
 
     async def send_view(self, chat_id, reply, *, edit_message_id=None):

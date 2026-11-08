@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from base64 import b64decode
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -36,16 +37,20 @@ from aiogram.methods import EditMessageText  # noqa: E402
 from channels.bale import BaleTransport  # noqa: E402
 from channels.contracts import BotReply, InlineAction, Platform, ViewOutcome  # noqa: E402
 from channels.telegram import TelegramTransport  # noqa: E402
+from config import SHOP_MEDIA_ROOT  # noqa: E402
+from dashboard.media_storage import save_media  # noqa: E402
 from db import engine, session_maker  # noqa: E402
 from models.shop_bot_catalog_acl import ShopBotProductRule  # noqa: E402
 from models.shop_checkout import ShopCart, ShopCartItem, ShopShippingMethod  # noqa: E402
 from models.shop_checkout_policy import ShopStoreCheckoutPolicy  # noqa: E402
-from models.shop_content import Product, ShopCategory, ShopIdentity  # noqa: E402
+from models.shop_content import Product, ProductMedia, ShopCategory, ShopIdentity  # noqa: E402
 from models.shop_customer_account_data import (  # noqa: E402
     ShopCustomerAddress,
     ShopCustomerWishlist,
 )
-from models.shop_customer_navigation import ShopCustomerChatState  # noqa: E402
+from models.shop_customer_navigation import (  # noqa: E402
+    ShopCustomerChatState, ShopCustomerMediaReceipt,
+)
 from models.shop_customer_support import ShopSupportTicket  # noqa: E402
 from models.shop_multibot import ShopBot, ShopStore  # noqa: E402
 from models.shop_staff import ShopStaff  # noqa: E402
@@ -54,9 +59,11 @@ from models.shop_store_commerce import (  # noqa: E402
     ShopBotCommercePolicy,
     ShopBotPaymentAccess,
     ShopPaymentAccount,
+    ShopStoreCustomer,
 )
 from services import shop_admin_security as security  # noqa: E402
 from services.shop_bot_context import resolve_bot_context  # noqa: E402
+from services.shop_customer_menu import MENU_CALLBACKS, MENU_LABELS, set_menu  # noqa: E402
 from services.shop_digital_catalog import (  # noqa: E402
     add_license_batch,
     set_private_product_file,
@@ -107,14 +114,18 @@ class NativeMessageLog:
         if edit:
             message_id = payload["message_id"]
         else:
-            self.next_message_id += 1
-            message_id = self.next_message_id
+            message_id = self.allocate_message_id()
         snapshot = deepcopy(payload)
         snapshot["message_id"] = message_id
         snapshot["text"] = snapshot.get("text") or snapshot.get("caption") or ""
         self.messages.append(snapshot)
         self.current[message_id] = snapshot
         return snapshot
+
+    def allocate_message_id(self) -> int:
+        """Share the native message ID sequence with standalone documents."""
+        self.next_message_id += 1
+        return self.next_message_id
 
     def retire(self, payload: dict) -> None:
         """Remove markup without removing or rewriting historical content."""
@@ -202,19 +213,21 @@ class FakeTelegram(NativeMessageLog):
         """Retire old markup while preserving the referenced message."""
         return await self._message("editMessageReplyMarkup", payload, edit=True)
 
-    async def send_document(self, **payload):
+    async def send_document(self, chat_id, document, **payload):
         """Read the exact private file supplied to the native upload adapter."""
-        document = payload["document"]
+        message_id = self.allocate_message_id()
+        outcome = self.outcome("sendDocument", {"chat_id": chat_id})
         self.documents.append(
             {
+                "message_id": message_id,
                 "sha256": hashlib.sha256(Path(document.path).read_bytes()).hexdigest(),
-                "chat_id": payload["chat_id"],
+                "chat_id": chat_id,
                 "protected": payload.get("protect_content"),
             }
         )
-        if self.fail_delivery:
+        if outcome == "unknown" or self.fail_delivery:
             raise TimeoutError("Synthetic ambiguous provider outcome")
-        return SimpleNamespace(message_id=len(self.documents) + 1000)
+        return SimpleNamespace(message_id=message_id, document=None)
 
     async def answer_callback_query(self, **payload):
         """Record that the native callback spinner is acknowledged."""
@@ -339,8 +352,10 @@ class FakeBaleSession(NativeMessageLog):
             result = self.transactions.get(key, {"status": "unpaid"})
         elif method == "sendDocument":
             fields = {field[0]["name"]: field[2] for field in data._fields}
+            result = {"message_id": self.allocate_message_id()}
             self.documents.append(
                 {
+                    "message_id": result["message_id"],
                     "sha256": hashlib.sha256(fields["document"].read()).hexdigest(),
                     "chat_id": int(fields["chat_id"]),
                 }
@@ -485,7 +500,7 @@ class StorefrontJourney:
         item = next((
             key for key in actions
             if key.startswith(("shop:item:", "ux:search:item:"))
-            and key.endswith(f":{product_id}")
+            and key.removesuffix(":search").endswith(f":{product_id}")
         ), None)
         if f"shop:add:{product_id}" not in actions and item is not None:
             reply = await self.ask(item)
@@ -913,6 +928,398 @@ async def check_fakes() -> None:
     print("PASS  Native fakes: positive IDs, same-ID edits, markup, and classified outcomes")
 
 
+def keyboard_requests(journey: StorefrontJourney) -> list[dict]:
+    """Record actual native keyboard installs, separate from mutable views."""
+    return [
+        payload["reply_markup"]
+        for method, payload in journey.native.calls
+        if method == "sendMessage" and "keyboard" in (payload.get("reply_markup") or {})
+    ]
+
+
+def button_labels(reply: dict, kind: str) -> list[str]:
+    """Flatten one native keyboard without confusing Reply and Inline markup."""
+    return [
+        button["text"]
+        for row in (reply.get("reply_markup") or {}).get(kind, [])
+        for button in row
+    ]
+
+
+async def assert_keyboard(
+    journey: StorefrontJourney, expected: tuple[str, ...], *, home: dict | None = None,
+) -> None:
+    """Compare ordered labels on both surfaces against the effective policy."""
+    labels = [MENU_LABELS[action] for action in expected]
+    if home is not None:
+        assert list(await journey.actions(home)) == [MENU_CALLBACKS[action] for action in expected]
+        assert button_labels(home, "inline_keyboard") == labels
+    keyboard = keyboard_requests(journey)[-1]
+    assert button_labels({"reply_markup": keyboard}, "keyboard") == labels
+    assert not any(button.get("request_contact") for row in keyboard["keyboard"] for button in row)
+    if journey.scope.platform == Platform.TELEGRAM:
+        assert keyboard["is_persistent"] is True
+    else:
+        assert "is_persistent" not in keyboard
+
+
+async def verified_phone(journey: StorefrontJourney) -> tuple[str | None, datetime | None]:
+    """Read the current shopper's stored ownership proof in a separate session."""
+    async with session_maker() as db:
+        customer = await db.scalar(
+            select(ShopStoreCustomer)
+            .join(ShopIdentity, ShopIdentity.customer_id == ShopStoreCustomer.id)
+            .where(
+                ShopIdentity.bot_id == journey.scope.bot_id,
+                ShopIdentity.store_id == journey.scope.store_id,
+                ShopIdentity.platform_user_id == journey.user_id,
+            )
+        )
+        return customer.phone, customer.phone_verified_at
+
+
+async def keyboard_policy() -> None:
+    """Check real Store/Bot policy, capability drift, and contact restoration."""
+    fixture = await seed(persist_manifest=False)
+    suffix = uuid4().int % 1_000_000
+    inherited = ("orders", "shop", "cart", "account", "search", "support")
+    overridden = ("search", "account", "shop", "cart", "orders")
+    restricted = ("search", "account", "shop", "orders")
+    async with session_maker() as db:
+        await set_menu(
+            db, store_id=fixture["stores"][0], actor_id=fixture["admin_id"],
+            actions=list(inherited), expected_version=0,
+        )
+    for index, bot_key in enumerate(("telegram", "bale")):
+        journey = StorefrontJourney(await context(fixture, bot_key), 851_000_000 + suffix + index)
+        await assert_keyboard(journey, inherited, home=await journey.ask(message="/start"))
+        installs = len(keyboard_requests(journey))
+        await journey.ask(message="/menu")
+        assert len(keyboard_requests(journey)) == installs
+        async with session_maker() as db:
+            await set_menu(
+                db, bot_id=journey.scope.bot_id, actor_id=fixture["admin_id"],
+                actions=list(overridden), expected_version=0,
+            )
+        await assert_keyboard(journey, overridden, home=await journey.ask(message="/menu"))
+        assert len(keyboard_requests(journey)) == installs + 1
+        old_cart = await journey.prepare("shop:cart")
+        async with session_maker() as db:
+            row = await db.get(ShopBotCommercePolicy, journey.scope.bot_id)
+            row.cart_enabled = False
+            await db.commit()
+        assert (await journey.tap(old_cart))["status"] == "shortcut_unavailable"
+        await assert_keyboard(journey, restricted, home=journey.native.messages[-1])
+        assert len(keyboard_requests(journey)) == installs + 2
+        rejected = await dispatch(journey.scope, journey.client, inbound(
+            journey.user_id, message=MENU_LABELS["cart"],
+        ))
+        assert rejected["status"] == "shortcut_unavailable"
+        assert len(keyboard_requests(journey)) == installs + 2
+
+        async def request_contact() -> None:
+            await journey.ask(message="/profile")
+            await journey.ask("ux:phone")
+            keys = keyboard_requests(journey)[-1]["keyboard"]
+            assert any(key.get("request_contact") for row in keys for key in row)
+
+        await request_contact()
+        await journey.ask(contact={"user_id": journey.user_id + 1, "phone_number": "09123456789"})
+        assert await verified_phone(journey) == (None, None)
+        await assert_keyboard(journey, restricted)
+
+        await request_contact()
+        await journey.ask(message="/cancel")
+        await assert_keyboard(journey, restricted)
+        assert await verified_phone(journey) == (None, None)
+
+        await request_contact()
+        await assert_keyboard(journey, restricted, home=await journey.ask(message="/menu"))
+        assert await verified_phone(journey) == (None, None)
+
+        await request_contact()
+        await journey.ask(contact={"user_id": journey.user_id, "phone_number": "09121111111"})
+        phone, verified_at = await verified_phone(journey)
+        assert phone == "09121111111" and verified_at is not None
+        await assert_keyboard(journey, restricted)
+        assert all(
+            not ("keyboard" in markup and "inline_keyboard" in markup)
+            for _, payload in journey.native.calls
+            if (markup := payload.get("reply_markup"))
+        )
+        print(f"PASS  {bot_key} PostgreSQL: R-05 policy order, stale shortcuts and native contact exits")
+
+
+async def seed_discovery() -> tuple[dict, list[int], int, str]:
+    """Create nine eligible items plus one denied item, a cover, and a file."""
+    fixture = await seed(persist_manifest=False)
+    store_id = fixture["stores"][0]
+    products = list(fixture["products"].values())
+    needle = "ردیابی نتایج"
+    async with session_maker() as db:
+        for product_id in products:
+            (await db.get(Product, product_id)).description = needle
+        category = ShopCategory(store_id=store_id, name="کشف محصول", is_published=True)
+        db.add(category)
+        await db.flush()
+        for index in range(6):
+            product = Product(
+                store_id=store_id, category_id=category.id if index != 4 else None,
+                uom_id=default_unit_id(store_id), sku=f"DISCOVERY-{index}",
+                name=f"کالای مقایسه شماره {index}", description=needle, price=1000,
+                stock_quantity=10, position=index + 1, is_published=True,
+            )
+            db.add(product)
+            await db.flush()
+            for bot_key in ("telegram", "bale"):
+                db.add(ShopBotProductRule(
+                    bot_id=fixture["bots"][bot_key], product_id=product.id,
+                    effect="deny" if index == 5 else "allow", updated_by=fixture["admin_id"],
+                ))
+            if index < 5:
+                products.append(product.id)
+        png = b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0l"
+            "EQVR42mP8/x8AAwMCAO+X2ZkAAAAASUVORK5CYII="
+        )
+        media = []
+        for filename, body in (("cover.png", png), ("details.pdf", PDF_V1)):
+            saved = await save_media(
+                UploadFile(file=BytesIO(body), filename=filename),
+                root=SHOP_MEDIA_ROOT, max_bytes=64 * 1024,
+            )
+            row = ProductMedia(
+                product_id=products[4], kind=saved.kind, storage_key=saved.key,
+                original_filename=saved.original_filename, mime_type=saved.mime_type,
+                size_bytes=saved.size_bytes, is_published=True, position=len(media),
+            )
+            db.add(row)
+            media.append(row)
+        await db.commit()
+        return fixture, products, media[1].id, media[1].storage_key
+
+
+def new_messages(journey: StorefrontJourney) -> int:
+    """Count provider sends separately from edit and acknowledgement calls."""
+    return sum(method in {"sendMessage", "sendPhoto", "sendDocument"}
+               for method, _ in journey.native.calls)
+
+
+def item_ids(actions: dict[str, VisibleTap]) -> list[int]:
+    """Extract only shopper-visible product links from a compact page."""
+    return [
+        int(action.split(":")[2])
+        for action in actions if action.startswith("shop:item:")
+    ]
+
+
+async def shop_state(journey: StorefrontJourney) -> ShopCustomerChatState:
+    """Read the scoped persisted chat state without using the dispatcher session."""
+    async with session_maker() as db:
+        state = await db.get(ShopCustomerChatState, journey.scope.owner_key(journey.user_id))
+        assert state is not None and state.store_id == journey.scope.store_id
+        return state
+
+
+async def compact_catalog(journey: StorefrontJourney, products: list[int]) -> None:
+    """Walk nine products and exercise each provider's edit outcomes."""
+    await journey.ask(message="/start")
+    page = await journey.ask(message="/catalog")
+    first_id = page["message_id"]
+    start = new_messages(journey)
+    seen = []
+    for index in range(3):
+        actions = await journey.actions(page)
+        assert item_ids(actions) == products[index * 4:index * 4 + 4]
+        seen.extend(item_ids(actions))
+        if index < 2:
+            page = await journey.ask(f"shop:list:{index + 1}")
+            assert page["message_id"] == first_id
+    assert seen == products and len(seen) == 9
+    assert new_messages(journey) == start
+    back = await journey.prepare("shop:list:1")
+    journey.native.outcomes["editMessageText"] = "unchanged"
+    assert (await journey.tap(back))["status"] == "processed"
+    assert new_messages(journey) == start
+    assert (await shop_state(journey)).ui_message_id == first_id
+    journey.native.outcomes["editMessageText"] = "missing"
+    assert (await journey.tap(back))["status"] == "processed"
+    assert new_messages(journey) == start + 1
+    assert (await shop_state(journey)).ui_message_id != first_id
+    assert callbacks(journey.native.current[first_id]) == []
+
+    previous = await journey.prepare("shop:list:0")
+    journey.native.outcomes["editMessageText"] = "unknown"
+    await journey.tap(previous)
+    assert new_messages(journey) == start + 1
+    assert (await journey.tap(previous))["status"] == "stale_callback"
+    recoveries = new_messages(journey)
+    assert recoveries <= start + 2
+    assert (await journey.tap(previous))["status"] == "stale_callback"
+    assert new_messages(journey) == recoveries
+    await journey.ask(message="/menu")
+
+
+async def search_navigation(journey: StorefrontJourney, products: list[int]) -> None:
+    """Restore scoped page/filter and park an address independently of Search."""
+    await journey.ask(message="/address")
+    await journey.ask("ux:address:new")
+    await journey.ask(message="09123456789")
+    parked = await shop_state(journey)
+    assert parked.context_ref == "province" and parked.address_draft
+    await journey.ask(message="/search")
+    async with session_maker() as db:
+        known = (await db.get(Product, products[4])).name
+    plain = await journey.ask(message=known)
+    assert products[4] in item_ids(await journey.actions(plain))
+
+    async def later_page() -> dict:
+        await journey.ask(message="/search")
+        await journey.ask("ux:search:filters")
+        await journey.ask("ux:search:field:description")
+        await journey.ask(message="ردیابی نتایج")
+        return await journey.ask("ux:search:page:1")
+
+    async def open_preview(page: dict) -> None:
+        calls = len(journey.native.calls)
+        preview = await journey.ask(f"shop:item:{products[4]}:search")
+        assert "caption" in preview and known in preview["text"]
+        operations = [method for method, _ in journey.native.calls[calls:]]
+        if journey.scope.platform == Platform.TELEGRAM:
+            assert preview["message_id"] == page["message_id"]
+            assert "editMessageMedia" in operations and "sendPhoto" not in operations
+        else:
+            assert preview["message_id"] != page["message_id"]
+            assert operations.count("sendPhoto") == 1 and "editMessageMedia" not in operations
+
+    later = await later_page()
+    assert item_ids(await journey.actions(later)) == products[4:8]
+    await open_preview(later)
+    back = await journey.ask("ux:search:back")
+    assert back["text"] == later["text"]
+    restored = await shop_state(journey)
+    assert (restored.query_text, restored.query_field, restored.page) == (
+        "ردیابی نتایج", "description", 1,
+    )
+    await open_preview(back)
+    try:
+        async with session_maker() as db:
+            for product_id in products[4:]:
+                (await db.get(Product, product_id)).is_published = False
+            await db.commit()
+        back = await journey.ask("ux:search:back")
+        assert item_ids(await journey.actions(back)) == products[:4]
+        assert (await shop_state(journey)).page == 0
+    finally:
+        async with session_maker() as db:
+            for product_id in products[4:]:
+                (await db.get(Product, product_id)).is_published = True
+            await db.commit()
+
+    await open_preview(await later_page())
+    async with session_maker() as db:
+        state = await db.get(ShopCustomerChatState, journey.scope.owner_key(journey.user_id))
+        expired = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        state.view_state = {
+            **state.view_state, "search": {**state.view_state["search"], "expires": expired},
+        }
+        await db.commit()
+    recovery = await journey.ask("ux:search:back")
+    assert "ux:search" in await journey.actions(recovery)
+    await journey.ask(message="/address")
+    await journey.ask("ux:address:resume")
+    resumed = await shop_state(journey)
+    assert resumed.context_ref == parked.context_ref
+    assert resumed.address_draft == parked.address_draft
+    assert resumed.expires_at == parked.expires_at
+
+
+async def media_and_history(
+    journey: StorefrontJourney, photo_product: int, document_id: int, document_key: str,
+) -> None:
+    """Keep real requested files and support history outside editable navigation."""
+    await journey.ask(message="/catalog")
+    await journey.ask("shop:list:1")
+    marker = len(journey.native.messages)
+    await journey.ask("shop:gallery:0:1")
+    action = f"g:{photo_product}:0:1"
+    card = next(
+        reply for reply in journey.native.messages[marker:] if action in callbacks(reply)
+    )
+    assert (await journey.tap(VisibleTap(card["message_id"], action)))["status"] == "processed"
+    await journey.ask(f"shop:files:{photo_product}:0")
+    request = await journey.prepare(f"shop:file:{document_id}")
+    assert (await journey.tap(request))["status"] == "processed"
+    assert len(journey.native.documents) == 1
+    file_id = journey.native.documents[0]["message_id"]
+    assert journey.native.documents[0]["sha256"] == hashlib.sha256(PDF_V1).hexdigest()
+    async with session_maker() as db:
+        receipt = await db.get(ShopCustomerMediaReceipt, (
+            journey.scope.bot_id, journey.user_id, document_key,
+        ))
+        assert receipt and receipt.message_id == file_id
+    assert (await shop_state(journey)).ui_message_id != file_id
+    assert (await journey.tap(request))["status"] == "stale_callback"
+    assert len(journey.native.documents) == 1
+
+    await journey.open_product(photo_product)
+    media_action = next(
+        action for action in await journey.actions() if action.startswith(f"shop:files:{photo_product}:")
+    )
+    await journey.ask(media_action)
+    repeat = next(
+        tap for action, tap in (await journey.actions()).items()
+        if action == f"shop:file:{document_id}" or action.startswith(f"shop:file:{document_id}:")
+    )
+    journey.native.outcomes["sendDocument"] = "unknown"
+    assert (await journey.tap(repeat))["status"] == "processed"
+    assert len(journey.native.documents) == 2
+    ambiguous_id = journey.native.documents[-1]["message_id"]
+    assert (await journey.tap(repeat))["status"] == "stale_callback"
+    assert len(journey.native.documents) == 2
+    async with session_maker() as db:
+        receipt = await db.get(ShopCustomerMediaReceipt, (
+            journey.scope.bot_id, journey.user_id, document_key,
+        ))
+        assert receipt.message_id == file_id, "Unknown delivery replaced the confirmed receipt"
+
+    await journey.ask(message="/support")
+    await journey.ask("ux:ticket:new")
+    await journey.ask("ux:ticket:topic:general")
+    body = "متن آزمایشی تاریخچه که با پیمایش تغییر نمی‌کند."
+    sent = await journey.ask(message=body)
+    support_id = sent["message_id"]
+    await journey.ask(message="/catalog")
+    await journey.ask(message="/support")
+    await journey.ask("ux:tickets")
+    details = next(
+        action for action in await journey.actions() if action.startswith("ux:ticket:view:")
+    )
+    history = await journey.ask(details)
+    assert body in history["text"]
+    assert not any(
+        method.startswith(("edit", "delete"))
+        and payload.get("message_id") in {file_id, ambiguous_id, support_id}
+        for method, payload in journey.native.calls
+    ), "Navigation targeted a durable file or support receipt"
+
+
+async def discovery(*, search_only: bool = False) -> None:
+    """Drive R-06–R-08 with paired native fakes on guarded PostgreSQL."""
+    fixture, products, document_id, document_key = await seed_discovery()
+    suffix = uuid4().int % 1_000_000
+    for index, bot_key in enumerate(("telegram", "bale")):
+        journey = StorefrontJourney(await context(fixture, bot_key), 861_000_000 + suffix + index)
+        if not search_only:
+            await compact_catalog(journey, products)
+        await search_navigation(journey, products)
+        if search_only:
+            print(f"PASS  {bot_key} PostgreSQL: R-06 Search Back, expiry, and preserved draft")
+            continue
+        await media_and_history(journey, products[4], document_id, document_key)
+        print(f"PASS  {bot_key} PostgreSQL: R-06–R-08 Search Back, compact views, and durable media")
+
+
 async def cart_quantity(journey: StorefrontJourney, product_id: int) -> int:
     """Observe committed real PostgreSQL cart effects through a separate session."""
     async with session_maker() as db:
@@ -973,13 +1380,16 @@ async def verify_lease_handoff(journey: StorefrontJourney, product: int) -> None
     else:
         assert isinstance(result, dict), result
     remote = journey.native.current[old.message_id]
+    sent_before_replay = new_messages(journey)
+    assert (await journey.tap(old))["status"] == "stale_callback"
+    assert new_messages(journey) == sent_before_replay
     for data in callbacks(remote):
         # The provider accepted the edit, but lease fencing must make every
         # newly rendered control unusable even if it shows on a real client.
         if data.startswith("v1:"):
             status = await journey.tap(VisibleTap(old.message_id, data))
             assert status["status"] == "stale_callback", status
-    assert (await journey.tap(old))["status"] == "stale_callback"
+    assert new_messages(journey) == sent_before_replay
     await journey.ask(message="/start")
     assert await cart_quantity(journey, product) == before + 1
     assert journey.native.messages[-1]["message_id"] != old.message_id
@@ -1093,12 +1503,20 @@ async def main() -> int:
     """Run only requested, isolated scenarios and return failure on any assertion."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--stage", choices=("fakes", "seed", "menus", "concurrency", "all"), default="all",
+        "--stage",
+        choices=("fakes", "seed", "menus", "concurrency", "keyboard", "search", "discovery", "all"),
+        default="all",
     )
     args = parser.parse_args()
     try:
         if args.stage == "fakes":
             await check_fakes()
+            return 0
+        if args.stage == "keyboard":
+            await keyboard_policy()
+            return 0
+        if args.stage in {"search", "discovery"}:
+            await discovery(search_only=args.stage == "search")
             return 0
         fixture = (
             await seed()

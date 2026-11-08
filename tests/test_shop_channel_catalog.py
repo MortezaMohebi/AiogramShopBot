@@ -80,6 +80,55 @@ def event(platform, callback=None, text=None):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_default_catalog_reaches_nine_products_without_sending_cards(session, platform):
+    """The shopper can page the compact list and opt into photos separately."""
+    groups = [ShopCategory(name=f"دسته {index}", is_published=True) for index in range(2)]
+    session.add_all(groups)
+    session.flush()
+    products = [
+        Product(
+            sku=f"COMPACT-{index}", name=f"محصول {index}", description="توضیح",
+            price=200, stock_quantity=2, is_published=True, position=index,
+            category_id=groups[index % 2].id if index < 8 else None,
+        )
+        for index in range(9)
+    ]
+    session.add_all(products)
+    allow_test_catalog(session)
+    session.add(ProductMedia(
+        product_id=products[0].id, kind="photo",
+        storage_key="a" * 32 + ".png", original_filename="cover.png",
+        mime_type="image/png", size_bytes=20, is_published=True,
+    ))
+    session.commit()
+    catalog = CatalogFlow(bot_context=test_bot_context(platform))
+    proxy = AsyncSessionProxy(session)
+    reply = await catalog.reply(event(platform, text="/catalog"), proxy)
+    seen = []
+    for page, count in enumerate((4, 4, 1)):
+        assert not reply.cards and reply.preview is None
+        assert f"صفحه {page + 1} از 3" in reply.text
+        controls = [button for row in reply.rows for button in row]
+        items = [button for button in controls if button.callback_data.startswith("shop:item:")]
+        assert len(items) == count
+        seen.extend(button.label for button in items)
+        if page == 0:
+            action = next(button.callback_data for button in controls
+                          if button.callback_data.startswith("shop:gallery:"))
+            gallery = await catalog.reply(event(platform, callback=action), proxy)
+            assert len(gallery.cards) == 4 and gallery.cards[0].preview is not None
+        if page < 2:
+            action = next(button.callback_data for button in controls
+                          if button.callback_data == f"shop:list:{page + 1}")
+            reply = await catalog.reply(event(platform, callback=action), proxy)
+        else:
+            product = await catalog.reply(event(platform, callback=items[0].callback_data), proxy)
+            assert product.rows[-1][0].callback_data == "shop:list:2"
+    assert seen == [product.name for product in products]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
 async def test_catalog_uses_database_without_hardcoded_products(session, platform):
     """Only published products appear, regardless of messaging platform."""
     session.add_all(
@@ -101,10 +150,10 @@ async def test_catalog_uses_database_without_hardcoded_products(session, platfor
         event(platform, text="/catalog"), AsyncSessionProxy(session)
     )
     assert reply is not None
-    assert len(reply.cards) == 1
-    assert "کرم" in reply.cards[0].text
-    assert reply.cards[0].rows[0][0].callback_data == "g:1:0:0"
-    assert "پنهان" not in str(reply.cards)
+    assert not reply.cards
+    assert "کرم" in reply.text
+    assert reply.rows[0][0].callback_data == "shop:item:1"
+    assert "پنهان" not in reply.text
     detail = await flow.reply(
         event(platform, callback="shop:item:1"), AsyncSessionProxy(session)
     )
@@ -200,7 +249,7 @@ async def test_gallery_shows_four_permitted_cards_and_restores_category_page(
     session.commit()
     flow = CatalogFlow(bot_context=test_bot_context(platform))
     proxy = AsyncSessionProxy(session)
-    prefix = f"shop:category:{category.id}:"
+    prefix = f"shop:gallery:{category.id}:"
 
     first = await flow.reply(event(platform, callback=prefix + "0"), proxy)
     assert len(first.cards) == 4
@@ -245,11 +294,11 @@ async def test_gallery_bounds_out_of_range_page(session, platform):
     allow_test_catalog(session)
     session.commit()
     reply = await CatalogFlow(bot_context=test_bot_context(platform)).reply(
-        event(platform, callback="shop:list:999"), AsyncSessionProxy(session),
+        event(platform, callback="shop:gallery:0:999"), AsyncSessionProxy(session),
     )
     assert len(reply.cards) == 1
     assert reply.cards[0].text.startswith("کالا 4")
-    assert reply.rows[0][0].callback_data == "shop:list:0"
+    assert reply.rows[0][0].callback_data == "shop:gallery:0:0"
 
 
 @pytest.mark.asyncio
@@ -342,7 +391,7 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
     flow = CatalogFlow(bot_context=test_bot_context(platform))
     proxy = AsyncSessionProxy(session)
     start = await flow.reply(event(platform, text="/catalog"), proxy)
-    assert "محصول" in start.cards[0].text
+    assert "محصول" in start.text and not start.cards
     assert not start.attachments
     categories = await flow.reply(event(platform, callback="shop:categories"), proxy)
     assert categories.rows[0][0].label == "محصولات مراقبتی"
@@ -350,7 +399,7 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
         event(platform, callback=f"shop:category:{category.id}:0"),
         proxy,
     )
-    assert "محصول" in category_page.cards[0].text
+    assert "محصول" in category_page.text and not category_page.cards
     listing = await flow.reply(
         event(platform, callback=f"shop:files:{product.id}:0"), proxy
     )

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.contracts import BotReply, InboundEvent, InlineAction
 from models.shop_customer_account_data import ShopCustomerAddress
 from models.shop_customer_navigation import ShopCustomerChatState
+from services.shop_customer_views import envelope, persist
 from utils.shop_text import clean_text
 
 PROVINCES = (
@@ -41,6 +42,7 @@ CITIES = (
     ("بندرعباس", "قشم", "میناب"), ("همدان", "ملایر"), ("یزد", "میبد"),
 )
 STEPS = ("recipient", "phone", "province", "city", "full_address", "postal_code")
+_RESUME_STEPS = STEPS + ("confirm", "city_other")
 PHONE = re.compile(r"^\+?[0-9]{7,16}\Z")
 _LOCAL_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 ACTION = re.compile(
@@ -61,7 +63,59 @@ def _draft(state: ShopCustomerChatState) -> dict[str, str]:
 
 def _step(state: ShopCustomerChatState) -> str:
     """Return the current form field without trusting an arbitrary key."""
-    return state.context_ref if state.context_ref in STEPS + ("confirm", "city_other") else STEPS[0]
+    return state.context_ref if state.context_ref in _RESUME_STEPS else STEPS[0]
+
+
+def _utc(value: datetime) -> datetime:
+    """Treat naive SQLite fixture dates as UTC."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def park_address_draft(state: ShopCustomerChatState) -> None:
+    """Remember the owned draft step and expiry before another form takes over."""
+    if (
+        not state.address_draft
+        or state.action not in {"address_input", "idle"}
+        or state.context_ref not in _RESUME_STEPS
+        or state.expires_at is None
+    ):
+        return
+    data = envelope(state)
+    data["address"] = {
+        "step": state.context_ref,
+        "expires": _utc(state.expires_at).isoformat(),
+        "origin": "ux:addresses",
+    }
+    persist(state, data)
+
+
+def _resume_address(state: ShopCustomerChatState) -> bool:
+    """Restore a previously parked step without renewing its deadline."""
+    park_address_draft(state)
+    data = envelope(state)
+    address = data.get("address")
+    if not isinstance(address, dict) or address.get("step") not in _RESUME_STEPS:
+        return False
+    try:
+        expiry = datetime.fromisoformat(address["expires"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if expiry.tzinfo is None or expiry <= datetime.now(timezone.utc):
+        return False
+    state.action = "address_input"
+    state.context_ref = address["step"]
+    state.expires_at = expiry
+    data.pop("address", None)
+    persist(state, data)
+    return True
+
+
+def _clear_parked_address(state: ShopCustomerChatState) -> None:
+    """Remove resume metadata after a save, cancel or explicit new draft."""
+    data = envelope(state)
+    if "address" in data:
+        del data["address"]
+        persist(state, data)
 
 
 def _render(state: ShopCustomerChatState, *, page: int = 0) -> BotReply:
@@ -143,10 +197,13 @@ async def address_reply(
         return BotReply("ابتدا نشانی جدید را از فهرست نشانی‌ها انتخاب کنید.")
     if action == "ux:address:cancel":
         state.action, state.context_ref, state.address_draft = "idle", None, None
+        _clear_parked_address(state)
         await db.commit()
         return BotReply("ثبت نشانی لغو شد.", _rows(("نشانی‌ها", "ux:addresses")))
     if action == "ux:address:pause":
+        park_address_draft(state)
         state.action = "idle"
+        state.context_ref = None
         await db.commit()
         return BotReply(
             "نشانی ناتمام ذخیره شد؛ از «نشانی‌های من» ادامه دهید.",
@@ -171,6 +228,7 @@ async def address_reply(
         if known_phone:
             draft["phone"] = known_phone
         state.address_draft = json.dumps(draft, ensure_ascii=False)
+        _clear_parked_address(state)
         state.context_ref = STEPS[0]
         state.action = "address_input"
         state.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -179,15 +237,19 @@ async def address_reply(
     elif state.address_draft is None:
         return BotReply("نشانی ناتمام ندارید.", _rows(("نشانی جدید", "ux:address:new")))
     elif action == "ux:address:resume":
-        # Resume is explicit; ordinary navigation leaves the draft parked.
-        expiry = state.expires_at
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        if expiry <= datetime.now(timezone.utc):
+        if not _resume_address(state):
             state.action, state.context_ref, state.address_draft = "idle", None, None
+            _clear_parked_address(state)
             await db.commit()
-            return BotReply("مهلت نشانی ناتمام تمام شد؛ نشانی جدید بسازید.")
-        state.action = "address_input"
+            return BotReply(
+                "مهلت نشانی ناتمام پایان یافته است.",
+                _rows(("نشانی جدید", "ux:address:new")),
+            )
+    elif state.action != "address_input" or _utc(state.expires_at) <= datetime.now(timezone.utc):
+        return BotReply(
+            "برای ادامه، نشانی ناتمام را دوباره باز کنید.",
+            _rows(("ادامه نشانی ناتمام", "ux:address:resume")),
+        )
     elif action == "ux:address:back":
         step = _step(state)
         current = len(STEPS) if step == "confirm" else (
@@ -240,6 +302,7 @@ async def address_reply(
         db.add(address)
         await db.flush()
         state.action, state.context_ref, state.address_draft = "idle", None, None
+        _clear_parked_address(state)
         await db.commit()
         return BotReply(
             "✅ نشانی ذخیره شد. برای استفاده در سفارش، آن را انتخاب کنید.",

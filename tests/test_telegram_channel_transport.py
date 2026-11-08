@@ -83,8 +83,8 @@ async def test_product_preview_edits_existing_card_with_cached_file_id(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_main_keyboard_is_persistent_and_inline_actions_stay_on_screen():
-    """The initial fixed keyboard coexists with contextual inline actions."""
+async def test_legacy_keyboard_hint_does_not_install_unconfigured_shortcuts():
+    """Only a policy-supplied keyboard can install native shortcuts."""
     bot = RecordingBot()
     await TelegramTransport(bot).send(
         101,
@@ -94,10 +94,48 @@ async def test_main_keyboard_is_persistent_and_inline_actions_stay_on_screen():
             show_main_keyboard=True,
         ),
     )
+    assert len(bot.sent) == 1
+    assert bot.sent[0]["reply_markup"].inline_keyboard[0][0].callback_data == "ux:search"
+
+
+@pytest.mark.asyncio
+async def test_policy_keyboard_send_is_persistent_and_removable():
+    """An ordered keyboard or removal uses a dedicated send, never an edit."""
+    class KeyboardBot(RecordingBot):
+        async def send_message(self, **kwargs):
+            await super().send_message(**kwargs)
+            return SimpleNamespace(message_id=100 + len(self.sent))
+
+    bot = KeyboardBot()
+    transport = TelegramTransport(bot)
+    rows = (("سفارش‌ها", "جست‌وجو"), ("فروشگاه",))
+    reply = BotReply("دسترسی‌های فروشگاه", keyboard_rows=rows)
+    result = await transport.send_view(101, reply, edit_message_id=99)
+    assert result.outcome.value == "cannot_edit" and bot.sent == []
+    assert (await transport.send_view(101, reply)).message_id == 101
+    markup = bot.sent[0]["reply_markup"]
+    assert markup.is_persistent is True
+    assert tuple(tuple(button.text for button in row) for row in markup.keyboard) == rows
+    assert (await transport.send_view(
+        101, BotReply("منوی قبلی برداشته شد.", keyboard_rows=()),
+    )).message_id == 102
+    assert bot.sent[1]["reply_markup"].remove_keyboard is True
     assert len(bot.sent) == 2
-    assert bot.sent[0]["text"] == "🛍 فروشگاه"
-    assert bot.sent[0]["reply_markup"].keyboard[0][0].text == "🛍 فروشگاه"
-    assert bot.sent[1]["reply_markup"].inline_keyboard[0][0].callback_data == "ux:search"
+
+
+@pytest.mark.asyncio
+async def test_unknown_policy_keyboard_send_is_not_retried():
+    """A timeout can follow an installed keyboard and is not retried here."""
+    class KeyboardBot(RecordingBot):
+        async def send_message(self, **kwargs):
+            await super().send_message(**kwargs)
+            raise TimeoutError
+
+    bot = KeyboardBot()
+    result = await TelegramTransport(bot).send_view(
+        101, BotReply("دسترسی‌های فروشگاه", keyboard_rows=(("خانه",),)),
+    )
+    assert result.outcome.value == "unknown" and len(bot.sent) == 1
 
 
 @pytest.mark.asyncio

@@ -37,6 +37,21 @@ MENU_CALLBACKS = {
     "account": "ux:account",
     "support": "ux:support",
 }
+_NATIVE_SHORTCUTS = {
+    **{label: MENU_CALLBACKS[key] for key, label in MENU_LABELS.items()},
+    "💬 پشتیبانی": MENU_CALLBACKS["support"],
+}
+
+
+def native_shortcut(text: str) -> str | None:
+    """Recognize known old and current native labels before free-text routing."""
+    return _NATIVE_SHORTCUTS.get(text.strip())
+
+
+def native_rows(rows) -> tuple[tuple[str, ...], ...]:
+    """Lay out the same ordered labels from Home in compact native rows."""
+    labels = tuple(button.label for row in rows for button in row)
+    return tuple(labels[index:index + 2] for index in range(0, len(labels), 2))
 
 
 def normalize_menu(values: Sequence[str]) -> tuple[str, ...]:

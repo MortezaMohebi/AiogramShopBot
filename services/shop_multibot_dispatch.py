@@ -9,13 +9,17 @@ that server-provided identity, and settlement runs before maintenance gates.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
+
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from sqlalchemy import select
 
+from channels.bale import BaleApiError
 from channels.contracts import (
     BotReply, InboundEvent, InlineAction, Platform, ReplyPurpose,
     ViewOutcome, ViewResult, normalize_update,
@@ -39,6 +43,7 @@ from services.shop_customer_experience import (
     should_clear_chat_state,
 )
 from services.shop_customer_notification_dispatch import deliver_order_paid_once
+from services.shop_customer_menu import effective_menu, native_rows, native_shortcut
 from services.shop_customer_support import CustomerSupportFlow, is_support_action
 from services.shop_customer_views import (
     ChatBusy, active_view, consume, envelope, guarded_chat, persist,
@@ -176,14 +181,9 @@ async def _send(
         db.add(state)
     if state.store_id != context.store_id:
         raise ValueError("Customer UI ownership mismatch.")
-    if (
-        (event.text or "").split(" ", 1)[0] == "/start"
-        or event.contact_phone is not None
-        or (state.action == "idle" and (event.text or "").strip() == "📱 اشتراک شمارهٔ تماس")
-    ) and not reply.request_contact:
-        reply = replace(reply, show_main_keyboard=True)
-
     data = envelope(state)
+    if recovery and data.get("pending"):
+        return
     if recovery and data.get("recovery"):
         if data["recovery"] != "confirmed" or active_view(state) is not None:
             return
@@ -196,14 +196,37 @@ async def _send(
         persist(state, data)
         await db.commit()
 
+    if reply.request_contact:
+        data["keyboard"] = "contact"
+        data.pop("keyboard_pending", None)
+        persist(state, data)
+        await db.commit()
+    elif context.status == "active" and not recovery and (
+        reply.menu_view or reply.show_main_keyboard or data.get("keyboard")
+    ) and state.action != "phone_verification":
+        await _sync_keyboard(db, context, transport, event, state, reply, lease_check)
+        data = envelope(state)
+    if reply.show_main_keyboard:
+        reply = replace(reply, show_main_keyboard=False)
+
     for attachment in reply.attachments:
         receipt_key = (*key, attachment.storage_key)
         receipt = await db.get(ShopCustomerMediaReceipt, receipt_key)
         if receipt is not None and receipt.store_id != context.store_id:
             raise ValueError("Customer media ownership mismatch.")
         await db.commit()
-        async with asyncio.timeout(12):
-            message_id = await transport.send_media(chat_id, attachment)
+        unavailable = False
+        try:
+            async with asyncio.timeout(120):
+                message_id = await transport.send_media(chat_id, attachment)
+        except (TelegramBadRequest, TelegramForbiddenError, ValueError, FileNotFoundError):
+            unavailable = True
+            message_id = None
+        except BaleApiError as error:
+            unavailable = error.view_outcome == ViewOutcome.REJECTED
+            message_id = None
+        except (OSError, TelegramAPIError):
+            message_id = None
         if type(message_id) is int and message_id > 0:
             if receipt is None:
                 db.add(ShopCustomerMediaReceipt(
@@ -214,6 +237,17 @@ async def _send(
             else:
                 receipt.message_id = message_id
             await db.commit()
+        else:
+            notice = (
+                "این فایل اکنون در دسترس نیست. از گزینهٔ بازگشت ادامه دهید."
+                if unavailable else
+                "وضعیت ارسال فایل مشخص نیست. پیام‌های همین گفت‌وگو را بررسی کنید."
+            )
+            reply = replace(
+                reply, text=notice,
+                rows=reply.rows or ((InlineAction("منوی اصلی", "shop:home"),),),
+            )
+            break
     reply = replace(reply, attachments=())
 
     durable = reply.purpose == ReplyPurpose.DURABLE or (event.callback_data or "").startswith(
@@ -292,6 +326,41 @@ async def _retire(transport, chat_id: int, message_id: int | None) -> None:
             await transport.clear_inline(chat_id, message_id)
     except Exception:
         LOG.debug("Unable to retire obsolete commerce markup")
+
+
+async def _sync_keyboard(db, context, transport, event, state, reply, lease_check) -> None:
+    """Install the effective native keyboard only when it needs refreshing."""
+    rows = reply.rows if reply.menu_view else await effective_menu(
+        db, bot_id=context.bot_id, platform=context.platform,
+    )
+    labels = native_rows(rows)
+    fingerprint = hashlib.sha256(repr(labels).encode("utf-8")).hexdigest()[:24]
+    data = envelope(state)
+    if data.get("keyboard") == fingerprint:
+        return
+    deliberate = reply.menu_view and (
+        event.callback_data == "shop:home"
+        or (event.text or "").strip() in {"/start", "/menu", "🏠 منوی اصلی"}
+    )
+    if data.get("keyboard_pending") == fingerprint and not deliberate:
+        return
+    data["keyboard_pending"] = fingerprint
+    persist(state, data)
+    await db.commit()
+    try:
+        async with asyncio.timeout(8):
+            outcome = await transport.send_view(
+                event.chat_id, BotReply("میان‌برهای فروشگاه", keyboard_rows=labels),
+            )
+    except TimeoutError:
+        return
+    if lease_check is not None:
+        await lease_check()
+    if outcome.outcome == ViewOutcome.CONFIRMED:
+        data.pop("keyboard_pending", None)
+        data["keyboard"] = fingerprint
+        persist(state, data)
+        await db.commit()
 
 
 async def _acknowledge(context: BotContext, client, query_id: str) -> None:
@@ -498,6 +567,24 @@ async def _dispatch_chat(db, context, client, event, payload, lease_check) -> di
     if event.is_callback and logical is None:
         await _recover(db, context, client, event, state, lease_check)
         return {"status": "stale_callback"}
+    shortcut = native_shortcut(event.text or "")
+    menu_origin = logical is not None and not legacy and state is not None and (
+        active_view(state) or {}
+    ).get("menu")
+    if context.status == "active" and (shortcut or menu_origin):
+        allowed = await effective_menu(db, bot_id=context.bot_id, platform=context.platform)
+        if (shortcut or logical) not in {button.callback_data for row in allowed for button in row}:
+            home = await CatalogFlow(bot_context=context)._home(
+                db, context.platform.value, returning=True,
+            )
+            await _send(
+                context, client, event.chat_id,
+                replace(home, text="این میان‌بر در دسترس نیست. از منوی زیر ادامه دهید."),
+                event=event, db=db, lease_check=lease_check,
+            )
+            return {"status": "shortcut_unavailable"}
+    if shortcut and context.status == "active":
+        logical = shortcut
     if logical is not None:
         event = replace(event, callback_data=logical)
     paused_route = None
@@ -515,7 +602,7 @@ async def _dispatch_chat(db, context, client, event, payload, lease_check) -> di
             )
             return {"status": "maintenance"}
 
-    if logical is not None and not legacy and not _view_read(logical) and state is not None:
+    if logical is not None and not legacy and not shortcut and not _view_read(logical) and state is not None:
         consume(state)
         await db.commit()
     if context.status == "active" and not refund and not legacy:
@@ -524,7 +611,9 @@ async def _dispatch_chat(db, context, client, event, payload, lease_check) -> di
             platform_user_id=event.user_id,
             username=_user_name(payload), first_name=_first_name(payload),
         )
-    if logical is not None and not blocked:
+    if not blocked and (
+        logical is not None or (event.text or "").strip() == "🏠 منوی اصلی"
+    ):
         await suspend_for_commerce(db, context, event.user_id)
 
     restore_keyboard = bool(

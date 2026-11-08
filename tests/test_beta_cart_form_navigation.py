@@ -56,6 +56,31 @@ async def setup_dispatch(db, monkeypatch, platform):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("platform", list(Platform))
+async def test_search_cancel_preserves_address_step_and_original_expiry(db, monkeypatch, platform):
+    """Search, contact prompts and Cancel do not borrow or renew a parked address."""
+    product, _ = seed(db)
+    scope, native = await setup_dispatch(db, monkeypatch, platform)
+    await dispatch(scope, native, current_callback(db, scope, f"shop:add:{product.id}"))
+    cart = db.session.scalars(select(ShopCart)).one()
+    revision = cart.revision
+    await dispatch(scope, native, current_callback(db, scope, "ux:address:new"))
+    await dispatch(scope, native, raw(message="مشتری نمونه"))
+    await dispatch(scope, native, raw(message="09123456789"))
+    state = db.session.get(ShopCustomerChatState, scope.owner_key(101))
+    assert state.context_ref == "province"
+    draft, expiry = state.address_draft, state.expires_at
+    await dispatch(scope, native, current_callback(db, scope, "ux:search"))
+    await dispatch(scope, native, raw(message=product.name))
+    await dispatch(scope, native, current_callback(db, scope, "ux:search:stop"))
+    assert state.action == "idle" and state.query_text is None
+    assert state.address_draft == draft
+    await dispatch(scope, native, current_callback(db, scope, "ux:address:resume"))
+    assert state.action == "address_input" and state.context_ref == "province"
+    assert state.expires_at == expiry and cart.revision == revision
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
 @pytest.mark.parametrize("form", ["coupon"])
 async def test_home_search_cannot_be_consumed_by_an_old_cart_form(
@@ -83,7 +108,7 @@ async def test_home_search_cannot_be_consumed_by_an_old_cart_form(
     else:
         actions = [action.callback_data for row in delivered["rows"] for action in row]
     assert all(action.startswith("v1:") for action in actions)
-    assert f"shop:add:{product.id}" in state.view_state["active"]["actions"]
+    assert f"shop:item:{product.id}:search" in state.view_state["active"]["actions"]
     assert product.name in delivered["text"]
 
 

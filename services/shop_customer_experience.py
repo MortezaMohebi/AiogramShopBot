@@ -19,7 +19,7 @@ from services.shop_bot_context import BotContext
 from services import shop_customer_search as search
 
 
-_SEARCH_PAGE = re.compile(r"ux:search:page:(0|[1-9][0-9]{0,3})\Z")
+_SEARCH_PAGE = re.compile(r"ux:search:page:(0|[1-9][0-9]{0,3}|10000)\Z")
 _SEARCH_FIELD = re.compile(r"ux:search:field:(all|name|sku|description)\Z")
 _ORDER_DETAIL = re.compile(r"ux:order:detail:([1-9][0-9]{0,18})\Z")
 _ORDER_TRACK = re.compile(r"ux:order:track:([1-9][0-9]{0,18})\Z")
@@ -114,13 +114,21 @@ async def clear_pending_on_navigation(
     if state is not None:
         if state.store_id != context.store_id:
             raise ValueError("Customer chat Store mismatch.")
-        if state.action != "idle" or state.context_ref or state.query_text:
-            preserve_draft_step = bool(state.address_draft)
+        keep_search = bool(
+            _SEARCH_FIELD.fullmatch(action)
+            or action.endswith(":search") and action.startswith((
+                "shop:item:", "shop:detail:", "shop:reviews:", "shop:files:", "shop:file:",
+            ))
+        )
+        if state.action != "idle" or state.context_ref:
+            from services.shop_address_wizard import park_address_draft
+
+            park_address_draft(state)
             state.action = "idle"
-            if not preserve_draft_step:
-                state.context_ref = None
-            state.query_text = None
+            state.context_ref = None
             changed = True
+        if not keep_search:
+            changed = search.clear_search(state) or changed
     private = await db.execute(update(ShopCart).where(
         ShopCart.store_id == context.store_id,
         ShopCart.bot_id == context.bot_id,
@@ -246,6 +254,10 @@ class CustomerExperienceFlow:
             "/search", "🔎 جستجوی محصول",
         }:
             return await search.start(db, context, event)
+        if action == "ux:search:filters":
+            return await search.filters(db, context, event)
+        if action == "ux:search:back":
+            return await search.paginate(db, context, event)
         match = _SEARCH_FIELD.fullmatch(action)
         if match:
             return await search.field(
@@ -256,20 +268,11 @@ class CustomerExperienceFlow:
             return await search.paginate(
                 db, context, event, page=int(match.group(1)),
             )
-        if action == "ux:search:stop" or text == "/cancel":
+        if action == "ux:search:stop":
+            return await search.stop(db, context, event)
+        if text == "/cancel":
             # A single cancel command stops the currently active bot-owned
             # form, regardless of whether it is address, ticket or search.
-            state = await db.get(
-                ShopCustomerChatState,
-                (context.bot_id, event.user_id),
-            )
-            if state is not None:
-                if state.store_id != context.store_id:
-                    raise ValueError("Customer chat state Store mismatch.")
-                state.action = "idle"
-                state.context_ref = None
-                state.query_text = None
-                await db.commit()
             return BotReply(
                 "عملیات متوقف شد.",
                 ((InlineAction("🏠 منوی اصلی", "shop:home"),),),

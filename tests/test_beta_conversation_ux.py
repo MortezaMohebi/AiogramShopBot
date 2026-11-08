@@ -238,6 +238,38 @@ async def test_requested_media_is_resent_on_every_click(db, monkeypatch, platfor
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("platform", list(Platform))
+async def test_uncertain_requested_media_is_not_replayed_and_has_back(db, monkeypatch, platform):
+    """A timed-out file retains navigation and creates no confirmed receipt."""
+    from channels.contracts import InlineAction
+
+    scope, _ = await setup_dispatch(db, monkeypatch, platform)
+
+    class UncertainMedia(NativeClient):
+        calls = 0
+
+        async def send_media(self, _chat_id, _attachment):
+            self.calls += 1
+            raise TimeoutError()
+
+    native = UncertainMedia()
+    if platform == Platform.TELEGRAM:
+        monkeypatch.setattr(
+            "services.shop_multibot_dispatch.TelegramTransport", lambda *args, **kwargs: native,
+        )
+    event = InboundEvent(platform=platform, chat_id=101, user_id=101, callback_data="shop:file:1")
+    reply = BotReply(
+        "فایل محصول", ((InlineAction("بازگشت", "shop:home"),),),
+        attachments=(MediaAttachment("a" * 32 + ".pdf", "document", "application/pdf"),),
+    )
+    await _send(scope, native, 101, reply, event=event)
+    assert native.calls == 1 and "مشخص نیست" in native.messages[-1]["text"]
+    assert db.session.scalars(select(ShopCustomerMediaReceipt)).all() == []
+    state = db.session.get(ShopCustomerChatState, (scope.bot_id, 101))
+    assert state.view_state["active"]["actions"] == ["shop:home"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
 async def test_stale_inline_button_cannot_mutate_active_cart(
     db, monkeypatch, platform,

@@ -20,6 +20,7 @@ from services.shop_bot_catalog_acl import (
     CatalogScope, permitted_product_clause, resolve_scope,
 )
 from services.shop_bot_context import BotContext
+from services.shop_customer_views import envelope, persist
 from services.shop_model_registry import escape_like
 
 _SEARCH_FIELDS = {
@@ -27,7 +28,7 @@ _SEARCH_FIELDS = {
     "sku": Product.sku,
     "description": Product.description,
 }
-_SEARCH_PAGE_SIZE = 1
+_SEARCH_PAGE_SIZE = 4
 _SEARCH_TTL = timedelta(minutes=15)
 
 
@@ -85,26 +86,103 @@ async def _state(
     return state
 
 
+def _session(state: ShopCustomerChatState) -> dict | None:
+    """Read the current search deadline independently of other forms."""
+    value = envelope(state).get("search")
+    if value is None and state.action == "product_search" and state.expires_at is not None:
+        # Older rows already own a bounded search deadline.
+        expiry = state.expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        value = {"stage": "results" if state.query_text else "input", "expires": expiry.isoformat()}
+    if not isinstance(value, dict) or value.get("stage") not in {"input", "results", "detail"}:
+        return None
+    try:
+        expiry = datetime.fromisoformat(value["expires"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value if expiry.tzinfo is not None and expiry > datetime.now(timezone.utc) else None
+
+
+def _stage(state: ShopCustomerChatState, stage: str) -> None:
+    """Advance the search state without extending a parked address."""
+    expires = datetime.now(timezone.utc) + _SEARCH_TTL
+    data = envelope(state)
+    data["search"] = {"stage": stage, "expires": expires.isoformat()}
+    persist(state, data)
+    if stage == "detail":
+        state.action = "idle"
+    else:
+        state.action = "product_search"
+        state.expires_at = expires
+
+
+def clear_search(state: ShopCustomerChatState) -> bool:
+    """End search while leaving unrelated cart and draft fields intact."""
+    data = envelope(state)
+    changed = bool(data.pop("search", None) is not None or state.query_text)
+    if state.action == "product_search":
+        state.action = "idle"
+        changed = True
+    if changed:
+        state.query_text, state.query_field, state.page = None, "all", 0
+        persist(state, data)
+    return changed
+
+
+def _prompt() -> BotReply:
+    """Offer plain text first and show filters only on request."""
+    return BotReply(
+        "نام یا کد محصول را بنویسید.",
+        _rows(
+            InlineAction("فیلترهای جستجو", "ux:search:filters"),
+            InlineAction("لغو جستجو", "ux:search:stop"),
+            InlineAction("منوی اصلی", "shop:home"),
+        ),
+    )
+
+
+async def _expired(db: AsyncSession, state: ShopCustomerChatState | None) -> BotReply:
+    """Offer fresh search without renewing an expired result."""
+    if state is not None and clear_search(state):
+        await db.commit()
+    return BotReply(
+        "مهلت جستجو پایان یافته است. برای ادامه جستجوی تازه‌ای شروع کنید.",
+        _rows(InlineAction("جستجوی دوباره", "ux:search"), InlineAction("منوی اصلی", "shop:home")),
+    )
+
+
 async def start(
     db: AsyncSession, context: BotContext, event: InboundEvent,
 ) -> BotReply:
-    """Begin chat search, optionally selecting a public Search field."""
+    """Begin a fresh chat search with an optional field chooser."""
+    from services.shop_address_wizard import park_address_draft
+
     state = await _state(db, context, event, create=True)
-    state.action = "product_search"
-    state.page = 0
-    state.query_text = None
-    state.query_field = "all"
-    state.expires_at = datetime.now(timezone.utc) + _SEARCH_TTL
+    park_address_draft(state)
+    state.query_text, state.query_field, state.page, state.context_ref = None, "all", 0, None
+    _stage(state, "input")
     await db.commit()
+    return _prompt()
+
+
+async def filters(db: AsyncSession, context: BotContext, event: InboundEvent) -> BotReply:
+    """Expose the supported filters without forcing a choice."""
+    state = await _state(db, context, event)
+    if state is None or _session(state) is None:
+        return await _expired(db, state)
+    back = (
+        InlineAction("بازگشت به نتایج", "ux:search:back") if state.query_text
+        else InlineAction("بازگشت به جستجو", "ux:search")
+    )
     return BotReply(
-        "🔎 نام یا کد محصول را بنویسید.\n"
-        "می‌توانید جستجو را به یک فیلد محدود کنید. برای خروج /cancel را بزنید.",
+        "در کدام بخش محصول جستجو کنیم؟",
         _rows(
-            InlineAction("تمام فیلدهای عمومی", "ux:search:field:all"),
+            InlineAction("همهٔ اطلاعات عمومی", "ux:search:field:all"),
             InlineAction("نام محصول", "ux:search:field:name"),
-            InlineAction("کد SKU", "ux:search:field:sku"),
+            InlineAction("کد محصول", "ux:search:field:sku"),
             InlineAction("توضیحات", "ux:search:field:description"),
-            InlineAction("🏠 منوی اصلی", "shop:home"),
+            back,
         ),
     )
 
@@ -113,135 +191,125 @@ async def field(
     db: AsyncSession, context: BotContext, event: InboundEvent,
     *, field_name: str,
 ) -> BotReply:
-    """Set only a registry-approved public query column."""
+    """Apply an approved filter to the current query or next text turn."""
+    state = await _state(db, context, event)
+    if state is None or _session(state) is None:
+        return await _expired(db, state)
     if field_name not in permitted_search_fields():
-        return BotReply("فیلد جستجوی انتخاب‌شده مجاز نیست.")
-    state = await _state(db, context, event, create=True)
-    state.action = "product_search"
-    state.query_text = None
+        return BotReply("این فیلتر در دسترس نیست.", _prompt().rows)
     state.query_field = field_name
-    state.page = 0
-    state.expires_at = datetime.now(timezone.utc) + _SEARCH_TTL
+    if state.query_text:
+        return await results(db, context, state, requested_page=0)
+    _stage(state, "input")
     await db.commit()
-    return BotReply(
-        "عبارت جستجو را برای فیلد انتخاب‌شده ارسال کنید.",
-        _rows(
-            InlineAction("🔎 تغییر فیلد", "ux:search"),
-            InlineAction("🏠 منوی اصلی", "shop:home"),
-        ),
-    )
+    return _prompt()
 
 
 async def results(
     db: AsyncSession, context: BotContext,
     state: ShopCustomerChatState, *, requested_page: int,
 ) -> BotReply:
-    """Search paginated published Products through current Bot ACL."""
-    if (
-        not state.query_text
-        or not search_text_valid(state.query_text)
-        or requested_page < 0 or requested_page > 10_000
-    ):
-        return BotReply("ابتدا یک عبارت جستجوی معتبر وارد کنید.")
+    """Render the closest available result page under the current catalog ACL."""
+    from services.shop_channel_catalog import CatalogFlow
+
+    if not state.query_text or not search_text_valid(state.query_text):
+        return _prompt()
     scope = await resolve_scope(db, bot_id=context.bot_id)
     if not scope.available:
-        return BotReply("کاتالوگ این بات در حال حاضر فعال نیست.")
-    items, total, page = await query_products(
-        db,
-        context,
-        query=state.query_text,
-        field_name=state.query_field,
-        page=requested_page + 1,
-        page_size=_SEARCH_PAGE_SIZE,
-    )
-    page -= 1
-    if total == 0:
         return BotReply(
-            f"برای «{state.query_text[:70]}» نتیجه‌ای پیدا نشد.\n"
-            "عبارت را تغییر دهید یا دسته‌بندی‌ها را ببینید.",
+            "محصولات این فروشگاه فعلاً در دسترس نیستند.",
+            _rows(InlineAction("منوی اصلی", "shop:home")),
+        )
+    requested_page = min(max(0, requested_page), 10_000)
+    query = state.query_text
+    items, total, page = await query_products(
+        db, context, query=query, field_name=state.query_field,
+        page=requested_page + 1, page_size=_SEARCH_PAGE_SIZE,
+    )
+    if total and not items:
+        # Eligibility may change between count and page reads.
+        items, total, page = await query_products(
+            db, context, query=query, field_name=state.query_field,
+            page=requested_page + 1, page_size=_SEARCH_PAGE_SIZE,
+        )
+    page -= 1
+    state.page = page if items else 0
+    _stage(state, "results")
+    await db.commit()
+    if not items:
+        return BotReply(
+            f"برای «{query[:70]}» محصولی پیدا نشد.",
             _rows(
-                InlineAction("🔎 جستجوی دوباره", "ux:search"),
-                InlineAction("🗂 دسته‌بندی‌ها", "shop:categories"),
-                InlineAction("🆘 پشتیبانی", "ux:support"),
+                InlineAction("جستجوی دوباره", "ux:search"),
+                InlineAction("دیدن محصولات", "shop:list:0"),
+                InlineAction("منوی اصلی", "shop:home"),
             ),
         )
     last_page = (total - 1) // _SEARCH_PAGE_SIZE
     controls = []
     if page:
-        controls.append(InlineAction("⬅ قبلی", f"ux:search:page:{page - 1}"))
-    if page < last_page:
-        controls.append(InlineAction("بعدی ➡", f"ux:search:page:{page + 1}"))
-    state.page = page
-    state.expires_at = datetime.now(timezone.utc) + _SEARCH_TTL
-    await db.commit()
-    from services.shop_channel_catalog import CatalogFlow
-
-    card = await CatalogFlow(bot_context=context)._product(
-        db, items[0].id, context.platform.value, scope,
-        navigation=tuple(controls),
-    )
-    return BotReply(
-        f"🔎 {page + 1} از {total} نتیجه برای «{state.query_text[:70]}»\n{card.text}",
-        card.rows, card.attachments, card.preview,
+        controls.append(InlineAction("صفحه قبل", f"ux:search:page:{page - 1}"))
+    if page < min(last_page, 10_000):
+        controls.append(InlineAction("صفحه بعد", f"ux:search:page:{page + 1}"))
+    return CatalogFlow(bot_context=context).compact_products(
+        items,
+        title=f"نتایج «{query[:70]}» · صفحه {page + 1} از {last_page + 1}",
+        target=lambda product: f"shop:item:{product.id}:search",
+        controls=tuple(controls),
+        footer=(
+            InlineAction("فیلترهای جستجو", "ux:search:filters"),
+            InlineAction("لغو جستجو", "ux:search:stop"),
+            InlineAction("منوی اصلی", "shop:home"),
+        ),
     )
 
 
 async def text_search(
     db: AsyncSession, context: BotContext, event: InboundEvent,
 ) -> BotReply | None:
-    """Consume free text only when the exact Bot FSM awaits a search term."""
+    """Consume free text only while the exact shopper is still in search."""
     state = await _state(db, context, event)
     if state is None or state.action != "product_search":
         return None
-    now = datetime.now(timezone.utc)
-    valid_until = state.expires_at
-    if valid_until.tzinfo is None:
-        valid_until = valid_until.replace(tzinfo=timezone.utc)
-    if valid_until <= now:
-        state.action = "idle"
-        state.query_text = None
-        await db.commit()
-        return BotReply(
-            "زمان جستجو پایان یافته؛ دوباره جستجو را آغاز کنید.",
-            _rows(InlineAction("🔎 جستجوی دوباره", "ux:search")),
-        )
+    if _session(state) is None:
+        return await _expired(db, state)
     if not search_text_valid(event.text or ""):
-        return BotReply(
-            "عبارت جستجو باید ۲ تا ۱۰۰ کاراکتر قابل‌نمایش باشد.",
-            _rows(InlineAction("لغو جستجو", "ux:search:stop")),
-        )
+        return BotReply("برای جستجو، نام یا کدی با ۲ تا ۱۰۰ نویسه بنویسید.", _prompt().rows)
     state.query_text = event.text.strip()
-    state.page = 0
     return await results(db, context, state, requested_page=0)
 
 
 async def paginate(
     db: AsyncSession, context: BotContext, event: InboundEvent,
-    *, page: int,
+    *, page: int | None = None,
 ) -> BotReply:
-    """Read a bounded search page only for the current bot user."""
+    """Restore the retained page or select an adjacent one within the same search."""
     state = await _state(db, context, event)
-    if state is None or state.action != "product_search":
-        return BotReply(
-            "جستجوی فعال پیدا نشد.",
-            _rows(InlineAction("🔎 جستجوی جدید", "ux:search")),
-        )
-    return await results(db, context, state, requested_page=page)
+    if state is None or _session(state) is None or not state.query_text:
+        return await _expired(db, state)
+    return await results(db, context, state, requested_page=state.page if page is None else page)
+
+
+async def open_result(
+    db: AsyncSession, context: BotContext, event: InboundEvent,
+) -> BotReply | None:
+    """Keep query and page while disarming text entry during product details."""
+    state = await _state(db, context, event)
+    if state is None or _session(state) is None or not state.query_text:
+        return await _expired(db, state)
+    _stage(state, "detail")
+    await db.commit()
+    return None
 
 
 async def stop(
     db: AsyncSession, context: BotContext, event: InboundEvent,
 ) -> BotReply:
-    """Clear only this Bot/user's ephemeral search state."""
+    """Clear only this shopper's ephemeral search state."""
     state = await _state(db, context, event)
-    if state is not None:
-        state.action = "idle"
-        state.query_text = None
+    if state is not None and clear_search(state):
         await db.commit()
-    return BotReply(
-        "جستجو متوقف شد.",
-        _rows(InlineAction("🏠 منوی اصلی", "shop:home")),
-    )
+    return BotReply("جستجو متوقف شد.", _rows(InlineAction("منوی اصلی", "shop:home")))
 
 
 async def query_products(

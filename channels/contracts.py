@@ -87,6 +87,8 @@ class BotReply:
     request_contact: bool = False
     show_main_keyboard: bool = False
     purpose: ReplyPurpose = ReplyPurpose.NAVIGATION
+    keyboard_rows: tuple[tuple[str, ...], ...] | None = None
+    menu_view: bool = False
 
     def __post_init__(self) -> None:
         """Validate common limits before handing data to an adapter."""
@@ -94,6 +96,8 @@ class BotReply:
             raise ValueError("Bot message must contain 1–4096 characters.")
         if self.request_contact and self.rows:
             raise ValueError("Contact keyboard cannot mix with inline actions.")
+        if self.keyboard_rows is not None and (self.rows or self.request_contact):
+            raise ValueError("Native navigation cannot mix with inline or contact controls.")
         if len(self.cards) > 4 or any(card.cards for card in self.cards):
             raise ValueError("Gallery pages contain at most four flat cards.")
 

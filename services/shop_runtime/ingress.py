@@ -18,6 +18,7 @@ from services.shop_bot_secrets import resolve_active_token
 from services.shop_identity import is_blocked, register_customer
 from services.shop_multibot_client import provider_client
 from services.shop_customer_views import commerce_callback
+from services.shop_customer_menu import native_shortcut
 from services.shop_runtime import adapters, sessions
 
 
@@ -101,6 +102,10 @@ async def try_ingress(context, payload, client=None) -> dict:
     if prior is not None:
         return prior
     if commerce_callback(payload):
+        return {"handled": False}
+    message = payload.get("message") if isinstance(payload, Mapping) else None
+    text = message.get("text") if isinstance(message, Mapping) else None
+    if isinstance(text, str) and (native_shortcut(text) or text.strip() == "🏠 منوی اصلی"):
         return {"handled": False}
     if not _deployment_enabled():
         return {"handled": False}

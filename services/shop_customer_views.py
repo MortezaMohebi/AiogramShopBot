@@ -101,6 +101,8 @@ def prepare_reply(reply: BotReply) -> tuple[BotReply, dict]:
         "expires": (datetime.now(UTC) + VIEW_TTL).isoformat(),
         "signature": hashlib.sha256(repr(reply).encode("utf-8")).hexdigest(),
     }
+    if reply.menu_view:
+        record["menu"] = True
     return replace(reply, rows=tuple(rows)), record
 
 

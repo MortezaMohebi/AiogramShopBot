@@ -166,27 +166,27 @@ changes to the approved design are part of this task list.
 
 ### Regression tests first
 
-- [ ] T029 [P] [US3] Write paired policy and stale-shortcut tests (R-05) in `tests/test_beta_customer_menu.py` and `tests/test_beta_customer_account.py`.
+- [X] T029 [P] [US3] Write paired policy and stale-shortcut tests (R-05) in `tests/test_beta_customer_menu.py` and `tests/test_beta_customer_account.py`.
   **Depends on**: T028. **Verify and accept**: Run red for Home/keyboard drift, denied old shortcuts, all enabled destinations in order and contact restoration. Check sender-owned vs. typed/foreign/expired proof, invalid contact and a subsequent unrelated form input.
 
-- [ ] T030 [P] [US3] Write Telegram native keyboard assertions (R-05) in `tests/test_telegram_channel_transport.py`.
+- [X] T030 [P] [US3] Write Telegram native keyboard assertions (R-05) in `tests/test_telegram_channel_transport.py`.
   **Depends on**: T028. **Verify and accept**: Run red for policy-derived rows. Assert persistent hint where supported, no mixed markup, first install and contact restore, and zero redundant or ambiguous reinstallation.
 
-- [ ] T031 [P] [US3] Write Bale native keyboard assertions (R-05) in `tests/test_bale_channel_transport.py`.
+- [X] T031 [P] [US3] Write Bale native keyboard assertions (R-05) in `tests/test_bale_channel_transport.py`.
   **Depends on**: T028. **Verify and accept**: Run red for policy-derived rows. Assert documented keyboard/remove requests, no reliance on Telegram-only hints, no mixed markup, explicit contact exit and zero ambiguous replay.
 
 ### Implementation and verification
 
-- [ ] T032 [US3] Build one ordered allowed snapshot using `effective_menu` in `services/shop_customer_menu.py`, render Home from it in `services/shop_channel_catalog.py`, and carry native rows in `channels/contracts.py`.
+- [X] T032 [US3] Build one ordered allowed snapshot using `effective_menu` in `services/shop_customer_menu.py`, render Home from it in `services/shop_channel_catalog.py`, and carry native rows in `channels/contracts.py`.
   **Depends on**: T029, T030, T031. **Verify and accept**: Pass policy tests: Store/Bot override and live capability filtering, identical Persian labels and configured order, all allowed Home destinations, and only a fingerprint plus installation state persisted.
 
-- [ ] T033 [P] [US3] Use ordered policy rows in `channels/telegram.py` instead of hard-coded shortcuts.
+- [X] T033 [P] [US3] Use ordered policy rows in `channels/telegram.py` instead of hard-coded shortcuts.
   **Depends on**: T032. **Verify and accept**: Pass T030; use separate native keyboard installation only on first install, policy drift, contact completion/exit or explicit removal; never mix Reply and Inline or edit in a Reply Keyboard.
 
-- [ ] T034 [P] [US3] Use ordered policy rows and explicit restoration in `channels/bale.py` instead of hard-coded shortcuts.
+- [X] T034 [P] [US3] Use ordered policy rows and explicit restoration in `channels/bale.py` instead of hard-coded shortcuts.
   **Depends on**: T032. **Verify and accept**: Pass T031; preserve documented contact/keyboard removal, never assume Telegram persistence, and never reinstall on an ambiguous result from an obsolete tap.
 
-- [ ] T035 [US3] Recheck old labels and restore current policy after contact in `services/shop_multibot_dispatch.py`, `services/shop_customer_views.py` and `services/shop_customer_account.py`.
+- [X] T035 [US3] Recheck old labels and restore current policy after contact in `services/shop_multibot_dispatch.py`, `services/shop_customer_views.py` and `services/shop_customer_account.py`.
   **Depends on**: T033, T034. **Verify and accept**: Pass paired R-05: re-evaluate current policy on authorized navigation, distinguish menu labels from separately authorized commands/deep routes, end temporary contact on success/cancel/exit, preserve provenance and never route old shortcut text into another form.
 
 ---
@@ -199,21 +199,21 @@ changes to the approved design are part of this task list.
 
 ### Regression tests first
 
-- [ ] T036 [P] [US4] Write paired search-context tests (R-06) in `tests/test_beta_customer_search.py`.
+- [X] T036 [P] [US4] Write paired search-context tests (R-06) in `tests/test_beta_customer_search.py`.
   **Depends on**: T035. **Verify and accept**: Run red for exact later-page Back, plain name in one text turn, optional filter, latest ACL, clamped page and empty/expired recovery. Include Telegram edited preview and Bale replaced preview.
 
-- [ ] T037 [P] [US4] Write paired search/form interference tests (R-06) in `tests/test_beta_cart_form_navigation.py`.
+- [X] T037 [P] [US4] Write paired search/form interference tests (R-06) in `tests/test_beta_cart_form_navigation.py`.
   **Depends on**: T035. **Verify and accept**: Run red for Home/Cancel/input precedence, stale support/contact/address text, preservation of current cart and valid parked draft values, original expiry and resume step. Expired drafts cannot be silently extended.
 
 ### Implementation and verification
 
-- [ ] T038 [US4] Isolate address resume metadata and active form ownership in `services/shop_customer_experience.py`, `services/shop_address_wizard.py` and `services/shop_customer_views.py`.
+- [X] T038 [US4] Isolate address resume metadata and active form ownership in `services/shop_customer_experience.py`, `services/shop_address_wizard.py` and `services/shop_customer_views.py`.
   **Depends on**: T036, T037. **Verify and accept**: Pass T037: park the step, original expiry and origin while preserving `address_draft`; adopt only valid legacy state; keep wizard Back/Cancel/review/explicit save. Navigation wins before text is delivered to a pending step.
 
-- [ ] T039 [US4] Preserve search entry/results/detail state in `services/shop_customer_search.py` using existing query/field/page and the approved envelope.
+- [X] T039 [US4] Preserve search entry/results/detail state in `services/shop_customer_search.py` using existing query/field/page and the approved envelope.
   **Depends on**: T038. **Verify and accept**: Pass T036: keep the “existing 15-minute search TTL”, reuse `query_text`/field/page bounds, disarm input on detail, recheck expiry and scope on Back/paging, clamp/requery once for concurrent empty pages, and offer allowed Search/Browse/Home recovery without touching unrelated data.
 
-- [ ] T040 [US4] Carry the scoped search return through product, preview, media and detail routes in `services/shop_channel_catalog.py` and `services/shop_customer_search.py`.
+- [X] T040 [US4] Carry the scoped search return through product, preview, media and detail routes in `services/shop_channel_catalog.py` and `services/shop_customer_search.py`.
   **Depends on**: T039. **Verify and accept**: Run R-06 on both transports using actual rendered controls; Back restores exact valid query/filter/page or nearest permitted page. Product visibility is checked again, including old gallery reads. This story is testable before the compact rendering change.
 
 ---
@@ -226,24 +226,24 @@ changes to the approved design are part of this task list.
 
 ### Regression tests first
 
-- [ ] T041 [P] [US5] Write paired compact-list and paging tests (R-07) in `tests/test_shop_channel_catalog.py` and `tests/test_beta_customer_search.py`.
+- [X] T041 [P] [US5] Write paired compact-list and paging tests (R-07) in `tests/test_shop_channel_catalog.py` and `tests/test_beta_customer_search.py`.
   **Depends on**: T040. **Verify and accept**: Run red for default gallery/single result behavior; require up to four eligible items, at least two when two remain, all nine reachable, optional categories and visible position/paging. Include no-cover, uncategorized and disallowed products.
 
-- [ ] T042 [P] [US5] Extend provider navigation and failure regressions (R-07/R-08) in `tests/test_telegram_channel_transport.py` and `tests/test_bale_channel_transport.py`.
+- [X] T042 [P] [US5] Extend provider navigation and failure regressions (R-07/R-08) in `tests/test_telegram_channel_transport.py` and `tests/test_bale_channel_transport.py`.
   **Depends on**: T040. **Verify and accept**: Require Telegram media edit and Bale photo replacement, supported edits/no change add zero, definite fallback adds at most one, and no duplicate on invalid payload, throttling, unknown send or uncertain edit. Assert only one active control set; count setup and deliberate media separately.
 
-- [ ] T043 [P] [US5] Write paired durable-content and media tests (R-08) in `tests/test_beta_conversation_ux.py`, `tests/test_beta_paused_customer_support.py`, `tests/test_beta_digital_delivery.py` and `tests/test_beta_dispatch_paid_notification.py`.
+- [X] T043 [P] [US5] Write paired durable-content and media tests (R-08) in `tests/test_beta_conversation_ux.py`, `tests/test_beta_paused_customer_support.py`, `tests/test_beta_digital_delivery.py` and `tests/test_beta_dispatch_paid_notification.py`.
   **Depends on**: T040. **Verify and accept**: Run the new cases before changing presentation. Explicit file/gallery reopen works under current ACL; product media, receipts, support history and delivered files remain usable. No edit, delete or automatic duplicate delivery of durable content.
 
 ### Implementation and verification
 
-- [ ] T044 [US5] Render compact Shop and Search lists via the shared catalog presentation in `services/shop_channel_catalog.py` and `services/shop_customer_search.py`.
+- [X] T044 [US5] Render compact Shop and Search lists via the shared catalog presentation in `services/shop_channel_catalog.py` and `services/shop_customer_search.py`.
   **Depends on**: T041, T042, T043. **Verify and accept**: Pass T041. Keep scoped query/order and detail/media links, four per default page, full names reachable in detail, and explicit bounded gallery. Fit text and controls to shared limits without clipping material checkout information.
 
-- [ ] T045 [US5] Use the active-view transport lifecycle for routine browse, preview and cart navigation in `services/shop_multibot_dispatch.py`, `services/shop_channel_catalog.py` and `services/shop_cart.py`.
+- [X] T045 [US5] Use the active-view transport lifecycle for routine browse, preview and cart navigation in `services/shop_multibot_dispatch.py`, `services/shop_channel_catalog.py` and `services/shop_cart.py`.
   **Depends on**: T044. **Verify and accept**: Pass T042/T043: same ID on proven edit/no-op, at most one confirmed replacement, no edit/retry of an unknown target, and no durable output becomes the active pointer. Preserve optional media, bot-scoped files, text fallback and existing checkout/payment paths.
 
-- [ ] T046 [US5] Close P1 with the paired R-05–R-08 journey suite in `scripts/beta_storefront_e2e.py` and `specs/001-customer-ux-repair/quickstart.md`.
+- [X] T046 [US5] Close P1 with the paired R-05–R-08 journey suite in `scripts/beta_storefront_e2e.py` and `specs/001-customer-ux-repair/quickstart.md`.
   **Depends on**: T035, T040, T045. **Verify and accept**: Run focused offline tests and guarded fake journeys; compare labels/order, contact restore, draft/search state, nine products, message/markup counts and durable records on Telegram and Bale. Rerun affected P0 checks. Do not advance until all required automated cases pass.
 
 ---
@@ -441,3 +441,4 @@ resolved the findings above before their respective gates.
 | Gate | Evidence |
 | --- | --- |
 | P0 | 193 focused tests passed in Python 3.12 Docker. Private PostgreSQL passed the additive upgrade with an unchanged draft and null metadata, paired storefront and callback races, all four Terms/provider/mode combinations, both checkout policy race orderings, and fake-provider commerce settlement, refunds and delivery replay. |
+| P1 | Menu/transport checkpoint 82 passed, search/catalog/forms 77 passed and requested-media/gallery 10 passed. Private PostgreSQL passed keyboard, search and discovery for both providers, including edit counts, definitive replacement, uncertainty and durable media. |

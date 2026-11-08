@@ -214,10 +214,9 @@ def test_cart_and_credit_toggles_are_independent_by_platform(db: Session):
         for row in home.rows for action in row
     )
     telegram_home = asyncio.run(CatalogFlow(bot_context=test_bot_context("telegram"))._home(adapter, "telegram"))
-    # Global Cart lives on the persistent ReplyKeyboard for either platform.
-    # It must not be duplicated as an inline Home action.
-    assert all(
-        action.callback_data != "shop:cart"
+    # Both navigation surfaces expose the same effective destinations.
+    assert any(
+        action.callback_data == "shop:cart"
         for row in telegram_home.rows for action in row
     )
 

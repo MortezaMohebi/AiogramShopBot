@@ -312,7 +312,7 @@ class BaleTransport:
             return ViewResult(ViewOutcome.REJECTED)
         if edit_message_id is not None and (
             reply.preview is not None or reply.cards or reply.attachments
-            or reply.request_contact or reply.show_main_keyboard
+            or reply.request_contact or reply.keyboard_rows is not None
         ):
             return ViewResult(ViewOutcome.CANNOT_EDIT)
         if reply.cards:
@@ -369,13 +369,12 @@ class BaleTransport:
             "text": reply.text,
         }
         if reply.request_contact:
+            edit_message_id = None
             payload["reply_markup"] = {
                 "keyboard": [
                     [{"text": "📱 اشتراک شمارهٔ تماس", "request_contact": True}],
                     [{"text": "🏠 منوی اصلی"}],
                 ],
-                "resize_keyboard": True,
-                "one_time_keyboard": True,
             }
         elif reply.rows:
             payload["reply_markup"] = {
@@ -390,21 +389,18 @@ class BaleTransport:
                     for row in reply.rows
                 ]
             }
-        if reply.show_main_keyboard:
-            main = {
-                "keyboard": [
-                    [{"text": "🛍 فروشگاه"}, {"text": "🛒 سبد خرید"}],
-                    [{"text": "📦 سفارش‌های من"}, {"text": "💬 پشتیبانی"}],
-                ],
-                "resize_keyboard": True,
-            }
-            if reply.rows:
-                await self._call("sendMessage", {
-                    "chat_id": chat_id, "text": "🛍 فروشگاه",
-                    "reply_markup": main,
-                })
-            elif not reply.request_contact:
-                payload["reply_markup"] = main
+        elif reply.keyboard_rows is not None:
+            edit_message_id = None
+            payload["reply_markup"] = (
+                {
+                    "keyboard": [
+                        [{"text": label} for label in row]
+                        for row in reply.keyboard_rows
+                    ],
+                }
+                if reply.keyboard_rows
+                else {"remove_keyboard": True}
+            )
         if reply.preview is not None:
             if reply.preview.kind != "photo":
                 raise ValueError("Product preview must be a photo.")

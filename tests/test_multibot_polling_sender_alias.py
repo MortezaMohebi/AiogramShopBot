@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from importlib import import_module
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,11 +13,14 @@ from aiogram.types import Update
 import pytest
 
 import db as database
+from channels.contracts import BotReply, InlineAction
 from models.shop_content import ShopIdentity
+from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_delivery import ShopInboundUpdate
 from models.shop_multibot import DEFAULT_STORE_ID, ShopBot, ShopBotCredential
 from models.shop_multibot_receiver import ShopBotReceiver
 from services.shop_bot_secrets import encrypt_for_bot
+from services.shop_customer_views import prepare_reply
 from tests import test_shared_payment_settlement as payments
 
 
@@ -30,6 +34,10 @@ class ReceiverDb(payments.OfflineDB):
     async def run_sync(self, operation):
         """Resolve encrypted fake credentials through the actual vault service."""
         return operation(self.session)
+
+    async def rollback(self):
+        """Discard uncommitted handler work before publishing its reply."""
+        self.session.rollback()
 
 
 class NativePollingClient:
@@ -114,10 +122,22 @@ async def test_native_polling_preserves_sender_for_actual_dispatch(
         "message_id": 1, "date": 1793836800, "from": actor,
         "chat": {"id": 101, "type": "private"}, "text": "/start",
     }
-    body = message if kind == "message" else {
-        "id": "synthetic-callback", "from": actor, "chat_instance": "qa",
-        "message": message, "data": "shop:categories",
-    }
+    if kind == "message":
+        body = message
+    else:
+        reply, view = prepare_reply(BotReply(
+            "محصولات", ((InlineAction("دسته‌ها", "shop:categories"),),),
+        ))
+        receiver_db.add(ShopCustomerChatState(
+            bot_id=bot_id, store_id=DEFAULT_STORE_ID, platform_user_id=101,
+            ui_message_id=message["message_id"], expires_at=datetime.now(UTC),
+            view_state={"version": 1, "active": view},
+        ))
+        await receiver_db.commit()
+        body = {
+            "id": "synthetic-callback", "from": actor, "chat_instance": "qa",
+            "message": message, "data": reply.rows[0][0].callback_data,
+        }
     update = Update.model_validate({"update_id": 301, kind: body})
     supervisor = runtime.MultiBotSupervisor(SimpleNamespace())
     native = NativePollingClient(update, supervisor, token)

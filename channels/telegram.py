@@ -340,7 +340,7 @@ class TelegramTransport:
             return ViewResult(ViewOutcome.REJECTED)
         if edit_message_id is not None and (
             reply.cards or reply.attachments
-            or reply.request_contact or reply.show_main_keyboard
+            or reply.request_contact or reply.keyboard_rows is not None
         ):
             return ViewResult(ViewOutcome.CANNOT_EDIT)
         if reply.cards:
@@ -382,7 +382,7 @@ class TelegramTransport:
         """Build Telegram markup and send or edit with the chosen fallback owner."""
         from aiogram.types import (
             InlineKeyboardButton, InlineKeyboardMarkup,
-            KeyboardButton, ReplyKeyboardMarkup,
+            KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove,
         )
 
         if reply.cards:
@@ -395,15 +395,9 @@ class TelegramTransport:
             # Only the footer owns page navigation and the tracked UI ID.
             return await self.send(chat_id, replace(reply, cards=()))
 
-        main = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="🛍 فروشگاه"), KeyboardButton(text="🛒 سبد خرید")],
-                [KeyboardButton(text="📦 سفارش‌های من"), KeyboardButton(text="💬 پشتیبانی")],
-            ],
-            resize_keyboard=True, is_persistent=True,
-        )
         markup = None
         if reply.request_contact:
+            edit_message_id = None
             markup = ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(
@@ -428,13 +422,20 @@ class TelegramTransport:
                     for row in reply.rows
                 ]
             )
-        if reply.show_main_keyboard and reply.rows:
-            await self.bot.send_message(
-                chat_id=chat_id, text="🛍 فروشگاه",
-                reply_markup=main, parse_mode=None,
+        elif reply.keyboard_rows is not None:
+            edit_message_id = None
+            markup = (
+                ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text=label) for label in row]
+                        for row in reply.keyboard_rows
+                    ],
+                    resize_keyboard=True,
+                    is_persistent=True,
+                )
+                if reply.keyboard_rows
+                else ReplyKeyboardRemove(remove_keyboard=True)
             )
-        elif reply.show_main_keyboard and not reply.request_contact:
-            markup = main
         for attachment in reply.attachments:
             await self.send_media(chat_id, attachment)
         if reply.preview is not None:

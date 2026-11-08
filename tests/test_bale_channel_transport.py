@@ -60,8 +60,8 @@ async def test_bale_send_message_uses_inline_keyboard():
 
 
 @pytest.mark.asyncio
-async def test_bale_installs_main_keyboard_and_edits_inline_navigation():
-    """Keep global routes in the reply keyboard and page actions inline."""
+async def test_bale_legacy_keyboard_hint_leaves_inline_navigation_intact():
+    """A hint alone cannot install shortcuts outside the effective policy."""
     session = FakeSession(FakeResponse({
         "ok": True, "result": {"message_id": 12},
     }))
@@ -71,9 +71,9 @@ async def test_bale_installs_main_keyboard_and_edits_inline_navigation():
         show_main_keyboard=True,
     )
     await transport.send(101, reply)
+    assert len(session.calls) == 1
     assert session.calls[0][0].endswith("/sendMessage")
-    assert session.calls[0][1]["reply_markup"]["keyboard"][0][0]["text"] == "🛍 فروشگاه"
-    assert session.calls[1][1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "بعدی"
+    assert session.calls[0][1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "بعدی"
 
     session.calls.clear()
     result = await transport.send(101, BotReply("صفحهٔ بعد"), edit_message_id=12)
@@ -81,6 +81,54 @@ async def test_bale_installs_main_keyboard_and_edits_inline_navigation():
     assert len(session.calls) == 1
     assert session.calls[0][0].endswith("/editMessageText")
     assert session.calls[0][1]["message_id"] == 12
+
+
+@pytest.mark.asyncio
+async def test_bale_policy_keyboard_uses_only_documented_install_and_remove():
+    """Bale's keyboard request preserves order without Telegram-specific hints."""
+    session = FakeSession(FakeResponse({
+        "ok": True, "result": {"message_id": 12},
+    }))
+    transport = BaleTransport("test-token", session)
+    rows = (("سفارش‌ها", "جست‌وجو"), ("فروشگاه",))
+    reply = BotReply("دسترسی‌های فروشگاه", keyboard_rows=rows)
+    result = await transport.send_view(101, reply, edit_message_id=99)
+    assert result.outcome.value == "cannot_edit" and session.calls == []
+    assert (await transport.send_view(101, reply)).message_id == 12
+    assert session.calls[0][1]["reply_markup"] == {
+        "keyboard": [[{"text": label} for label in row] for row in rows],
+    }
+    assert (await transport.send_view(
+        101, BotReply("منوی قبلی برداشته شد.", keyboard_rows=()),
+    )).message_id == 12
+    assert session.calls[1][1]["reply_markup"] == {"remove_keyboard": True}
+    assert [url.rsplit("/", 1)[-1] for url, _ in session.calls] == [
+        "sendMessage", "sendMessage",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_bale_contact_keyboard_retains_documented_contact_and_home():
+    """A native contact request keeps a visible way back without inline markup."""
+    session = FakeSession(FakeResponse({
+        "ok": True, "result": {"message_id": 12},
+    }))
+    transport = BaleTransport("test-token", session)
+    await transport.send_view(101, BotReply("تأیید شماره", request_contact=True))
+    assert session.calls[0][1]["reply_markup"] == {"keyboard": [
+        [{"text": "📱 اشتراک شمارهٔ تماس", "request_contact": True}],
+        [{"text": "🏠 منوی اصلی"}],
+    ]}
+
+
+@pytest.mark.asyncio
+async def test_bale_unknown_policy_keyboard_send_is_not_retried():
+    """An inconclusive response does not trigger another keyboard send."""
+    session = FakeSession(FakeResponse([], status=502))
+    result = await BaleTransport("test-token", session).send_view(
+        101, BotReply("دسترسی‌های فروشگاه", keyboard_rows=(("خانه",),)),
+    )
+    assert result.outcome.value == "unknown" and len(session.calls) == 1
 
 
 @pytest.mark.asyncio
