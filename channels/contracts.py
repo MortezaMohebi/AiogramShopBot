@@ -17,6 +17,33 @@ class Platform(StrEnum):
     BALE = "bale"
 
 
+class ReplyPurpose(StrEnum):
+    """Identify outputs that belong outside the mutable conversation view."""
+
+    NAVIGATION = "navigation"
+    DURABLE = "durable"
+    MEDIA = "media"
+    CONTACT = "contact"
+
+
+class ViewOutcome(StrEnum):
+    """Classify delivery certainty before the caller considers a fallback."""
+
+    CONFIRMED = "confirmed"
+    NO_CHANGE = "no_change"
+    CANNOT_EDIT = "cannot_edit"
+    REJECTED = "rejected"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class ViewResult:
+    """A classified provider operation and its proven message ID, if any."""
+
+    outcome: ViewOutcome
+    message_id: int | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class InlineAction:
     """A single inline keyboard action usable on both platforms."""
@@ -59,6 +86,7 @@ class BotReply:
     # Official Telegram/Bale ReplyKeyboard request_contact, never an inline button.
     request_contact: bool = False
     show_main_keyboard: bool = False
+    purpose: ReplyPurpose = ReplyPurpose.NAVIGATION
 
     def __post_init__(self) -> None:
         """Validate common limits before handing data to an adapter."""

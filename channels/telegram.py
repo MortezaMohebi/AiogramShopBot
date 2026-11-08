@@ -5,12 +5,46 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from channels.contracts import BotReply
+from channels.contracts import BotReply, ViewOutcome, ViewResult
 
 if TYPE_CHECKING:
     from aiogram import Bot
 
     from services.shop_digital_fulfillment import DigitalSend
+
+
+_UNEDITABLE = frozenset({
+    "message to edit not found",
+    "message can't be edited",
+    "message can not be edited",
+    "there is no text in the message to edit",
+    "there is no media in the message to edit",
+})
+
+
+def _view_failure(error: Exception, *, editing: bool) -> ViewOutcome:
+    """Classify explicit edit refusals without exposing provider diagnostics."""
+    from aiogram.exceptions import (
+        TelegramBadRequest, TelegramEntityTooLarge, TelegramForbiddenError,
+        TelegramNotFound, TelegramRetryAfter, TelegramUnauthorizedError,
+    )
+
+    if isinstance(error, (TelegramBadRequest, TelegramNotFound)):
+        message = error.message.lower().removeprefix("bad request: ").strip()
+        if editing and (
+            message == "message is not modified"
+            or message.startswith("message is not modified: ")
+        ):
+            return ViewOutcome.NO_CHANGE
+        if editing and message in _UNEDITABLE:
+            return ViewOutcome.CANNOT_EDIT
+        return ViewOutcome.REJECTED
+    if isinstance(error, (
+        TelegramEntityTooLarge, TelegramForbiddenError,
+        TelegramRetryAfter, TelegramUnauthorizedError,
+    )):
+        return ViewOutcome.REJECTED
+    return ViewOutcome.UNKNOWN
 
 
 class TelegramTransport:
@@ -35,7 +69,7 @@ class TelegramTransport:
 
     async def _preview(
         self, chat_id: int, reply: BotReply, markup,
-        edit_message_id: int | None,
+        edit_message_id: int | None, *, strict: bool = False,
     ) -> int | None:
         """Replace a card image in place using the current bot's file cache."""
         from aiogram.exceptions import TelegramBadRequest
@@ -67,9 +101,18 @@ class TelegramTransport:
                     media=InputMediaPhoto(media=source, caption=caption),
                     reply_markup=markup,
                 )
-            except TelegramBadRequest:
+            except TelegramBadRequest as error:
+                if strict:
+                    raise
+                outcome = _view_failure(error, editing=True)
+                if outcome is ViewOutcome.NO_CHANGE:
+                    return edit_message_id
+                if outcome is not ViewOutcome.CANNOT_EDIT:
+                    raise
                 await self.clear_inline(chat_id, edit_message_id)
         if message is None:
+            if strict and edit_message_id is not None:
+                return None
             message = await self.bot.send_photo(
                 chat_id=chat_id, photo=source, caption=caption,
                 reply_markup=markup, parse_mode=None,
@@ -288,11 +331,55 @@ class TelegramTransport:
             raise RuntimeError("runtime_delivery_receipt_invalid")
         return [str(value) for value in ids]
 
+    async def send_view(
+        self, chat_id: int, reply: BotReply, *,
+        edit_message_id: int | None = None,
+    ) -> ViewResult:
+        """Attempt one navigation presentation without an implicit replacement."""
+        if reply.preview is not None and reply.preview.kind != "photo":
+            return ViewResult(ViewOutcome.REJECTED)
+        if edit_message_id is not None and (
+            reply.cards or reply.attachments
+            or reply.request_contact or reply.show_main_keyboard
+        ):
+            return ViewResult(ViewOutcome.CANNOT_EDIT)
+        if reply.cards:
+            for index, card in enumerate(reply.cards):
+                result = await self.send_view(chat_id, card)
+                if result.outcome is not ViewOutcome.CONFIRMED:
+                    return ViewResult(ViewOutcome.UNKNOWN) if index else result
+            result = await self.send_view(chat_id, replace(reply, cards=()))
+            if result.outcome is not ViewOutcome.CONFIRMED:
+                return ViewResult(ViewOutcome.UNKNOWN)
+            return result
+        try:
+            message_id = await self._send(
+                chat_id, reply, edit_message_id=edit_message_id, strict=True,
+            )
+        except Exception as error:
+            outcome = _view_failure(error, editing=edit_message_id is not None)
+            if outcome is ViewOutcome.NO_CHANGE:
+                return ViewResult(outcome, edit_message_id)
+            return ViewResult(outcome)
+        if (
+            type(message_id) is not int or message_id <= 0
+            or (edit_message_id is not None and message_id != edit_message_id)
+        ):
+            return ViewResult(ViewOutcome.UNKNOWN)
+        return ViewResult(ViewOutcome.CONFIRMED, message_id)
+
     async def send(
         self, chat_id: int, reply: BotReply, *,
         edit_message_id: int | None = None,
     ) -> int | None:
         """Send plain text with an optional inline keyboard."""
+        return await self._send(chat_id, reply, edit_message_id=edit_message_id)
+
+    async def _send(
+        self, chat_id: int, reply: BotReply, *,
+        edit_message_id: int | None, strict: bool = False,
+    ) -> int | None:
+        """Build Telegram markup and send or edit with the chosen fallback owner."""
         from aiogram.types import (
             InlineKeyboardButton, InlineKeyboardMarkup,
             KeyboardButton, ReplyKeyboardMarkup,
@@ -351,7 +438,9 @@ class TelegramTransport:
         for attachment in reply.attachments:
             await self.send_media(chat_id, attachment)
         if reply.preview is not None:
-            return await self._preview(chat_id, reply, markup, edit_message_id)
+            return await self._preview(
+                chat_id, reply, markup, edit_message_id, strict=strict,
+            )
         if edit_message_id and not reply.attachments and not reply.request_contact:
             try:
                 edited = await self.bot.edit_message_text(
@@ -360,21 +449,18 @@ class TelegramTransport:
                     reply_markup=markup,
                     parse_mode=None, disable_web_page_preview=True,
                 )
-                return getattr(edited, "message_id", edit_message_id)
+                return getattr(
+                    edited, "message_id", None if strict else edit_message_id,
+                )
             except Exception as error:
-                # Old/deleted/non-text messages cannot be edited. Do not
-                # swallow provider transport failures unrelated to editability.
-                from aiogram.exceptions import TelegramBadRequest
-
-                if not isinstance(error, TelegramBadRequest):
+                if strict:
                     raise
-                try:
-                    await self.bot.edit_message_reply_markup(
-                        chat_id=chat_id, message_id=edit_message_id,
-                        reply_markup=None,
-                    )
-                except TelegramBadRequest:
-                    pass
+                outcome = _view_failure(error, editing=True)
+                if outcome is ViewOutcome.NO_CHANGE:
+                    return edit_message_id
+                if outcome is not ViewOutcome.CANNOT_EDIT:
+                    raise
+                await self.clear_inline(chat_id, edit_message_id)
         # The upstream bot defaults to HTML; product content must be plain.
         message = await self.bot.send_message(
             chat_id=chat_id,

@@ -247,6 +247,7 @@ class MultiBotSupervisor:
             ) as provider:
                 result = await dispatch(
                     context, provider, payload, runtime_checked=True,
+                    lease_check=self.check_lease,
                 )
                 success = True
         finally:

@@ -10,7 +10,7 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform, ReplyPurpose
 from models.shop_checkout import ShopOrderLine
 from models.shop_content import Product, ShopIdentity, ShopOrder
 from services.shop_service_controls import service_enabled
@@ -29,6 +29,8 @@ from services.shop_payments import PaymentRejected
 
 _CANCEL = re.compile(r"shop:cancelorder:([1-9][0-9]{0,18})\Z")
 _REFUND = re.compile(r"shop:refundorder:([1-9][0-9]{0,18})\Z")
+ORDER_PAGE = re.compile(r"shop:orders:page:([0-3])\Z")
+_ORDERS_PER_PAGE = 5
 
 STATUS_NAMES = {
     "pending_review": "در انتظار بررسی فروشنده",
@@ -70,6 +72,9 @@ class ShopOrdersFlow:
             "/orders", "📦 سفارش‌های من",
         ):
             return await self._history(event, session)
+        page = ORDER_PAGE.fullmatch(action)
+        if page is not None:
+            return await self._history(event, session, page=int(page[1]))
         match = _REFUND.fullmatch(action)
         if match is not None:
             try:
@@ -85,7 +90,8 @@ class ShopOrdersFlow:
                 return BotReply(str(error))
             return BotReply(
                 f"درخواست بازپرداخت سفارش ثبت شد. کد پیگیری #{case.id}. "
-                "تا تأیید تراکنش مرجع، مبلغ بازگشته تلقی نمی‌شود."
+                "تا تأیید تراکنش مرجع، مبلغ بازگشته تلقی نمی‌شود.",
+                purpose=ReplyPurpose.DURABLE,
             )
         match = _CANCEL.fullmatch(action)
         if match is not None:
@@ -95,7 +101,7 @@ class ShopOrdersFlow:
         return None
 
     async def _history(
-        self, event: InboundEvent, session: AsyncSession
+        self, event: InboundEvent, session: AsyncSession, *, page: int = 0,
     ) -> BotReply:
         """Read only orders belonging to the current platform identity."""
         identity = await session.scalar(select(ShopIdentity).where(
@@ -119,6 +125,7 @@ class ShopOrdersFlow:
             )
         else:
             conditions = (
+                ShopOrder.store_id == self.bot_context.store_id,
                 ShopOrder.bot_id == self._bot_id(event.platform),
                 ShopOrder.platform == event.platform.value,
                 ShopOrder.platform_user_id == event.user_id,
@@ -133,6 +140,10 @@ class ShopOrdersFlow:
                 "هنوز سفارشی ثبت نکرده‌اید.",
                 ((InlineAction("🛍 محصولات", "shop:categories"),),),
             )
+        last_page = (len(orders) - 1) // _ORDERS_PER_PAGE
+        page = min(page, last_page)
+        start = page * _ORDERS_PER_PAGE
+        orders = orders[start:start + _ORDERS_PER_PAGE]
         ids = [order.id for order in orders]
         counts_result = await session.execute(
             select(ShopOrderLine.order_id, func.sum(ShopOrderLine.quantity))
@@ -193,7 +204,7 @@ class ShopOrdersFlow:
                 session, "telegram", "telegram_fiat", bot_id=owner,
             )
         ) if event.platform == Platform.TELEGRAM else False
-        lines = ["📦 سفارش‌های من"]
+        lines = [f"📦 سفارش‌های من · صفحه {page + 1} از {last_page + 1}"]
         rows: list[tuple[InlineAction, ...]] = []
         for order in orders:
             originates_here = order.bot_id == self._bot_id(event.platform)
@@ -270,6 +281,13 @@ class ShopOrdersFlow:
                         f"shop:cancelorder:{order.id}",
                     ),
                 ))
+        paging = []
+        if page:
+            paging.append(InlineAction("صفحه قبل", f"shop:orders:page:{page - 1}"))
+        if page < last_page:
+            paging.append(InlineAction("صفحه بعد", f"shop:orders:page:{page + 1}"))
+        if paging:
+            rows.append(tuple(paging))
         rows.append((InlineAction("🛍 محصولات", "shop:categories"),))
         return BotReply("\n\n".join(lines), tuple(rows))
 

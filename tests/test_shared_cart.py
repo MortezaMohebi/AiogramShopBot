@@ -143,6 +143,50 @@ def seed(db):
     return first, second
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", list(Platform))
+async def test_full_cart_fits_versioned_view_without_hiding_item_actions(db, platform):
+    """Twenty lines retain all controls and the correct page after a quantity change."""
+    seed(db)
+    extra_products = [
+        Product(
+            sku=f"CART-{index}", name=f"کالای سبد {index}", description="", price=1000,
+            stock_quantity=5, is_published=True, requires_shipping=True,
+        )
+        for index in range(18)
+    ]
+    db.session.add_all(extra_products)
+    allow_test_catalog(db.session)
+    db.session.commit()
+    product_ids = set(db.session.scalars(select(Product.id)).all())
+    flow = ShopCartFlow(bot_context=test_bot_context(platform))
+    for product_id in product_ids:
+        await flow.reply(event(platform, callback=f"shop:add:{product_id}"), db)
+    await flow.reply(event(platform, callback="shop:coupon"), db)
+    await flow.reply(event(platform, text="SAVE10"), db)
+    reply = await flow.reply(event(platform, callback="shop:cart"), db)
+    visited = set()
+    page = 0
+    while True:
+        controls = [control for row in reply.rows for control in row]
+        assert len(controls) <= 32
+        assert f"صفحه {page + 1} از 3" in reply.text
+        assert "shop:checkout" in [control.callback_data for control in controls]
+        visited.update(
+            int(control.callback_data.split(":")[2]) for control in controls
+            if control.callback_data.startswith("shop:remove:")
+        )
+        following = next((control for control in controls if control.label == "صفحه بعد"), None)
+        if following is None:
+            break
+        page += 1
+        reply = await flow.reply(event(platform, callback=following.callback_data), db)
+    assert visited == product_ids
+    increment = next(c.callback_data for c in controls if c.callback_data.startswith("shop:inc:"))
+    reply = await flow.reply(event(platform, callback=increment), db)
+    assert "صفحه 3 از 3" in reply.text
+
+
 async def select_saved_address(db, platform):
     """Select an account address through the real checkout callback."""
     identity = db.session.scalar(select(ShopIdentity).where(

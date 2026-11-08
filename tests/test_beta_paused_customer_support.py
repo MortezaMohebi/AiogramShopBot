@@ -5,12 +5,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 
-from channels.contracts import Platform
+from channels.contracts import BotReply, InlineAction, Platform, ViewOutcome, ViewResult
 from models.shop_content import ShopOrder
 from models.shop_customer_crm import ShopCustomerProfile
 from models.shop_customer_navigation import ShopCustomerChatState
@@ -43,10 +44,23 @@ class NativeClient:
     async def send_message(self, **kwargs):
         """Record TelegramTransport's native payload."""
         self.messages.append(kwargs)
+        return SimpleNamespace(message_id=100 + len(self.messages))
 
-    async def send(self, chat_id, reply):
+    async def edit_message_text(self, **kwargs):
+        """Record the native edit while preserving the original message ID."""
+        self.messages.append(kwargs)
+        return SimpleNamespace(message_id=kwargs["message_id"])
+
+    async def send(self, chat_id, reply, *, edit_message_id=None):
         """Record the equivalent Bale transport payload."""
         self.messages.append({"chat_id": chat_id, "text": reply.text, "rows": reply.rows})
+        return edit_message_id or 100 + len(self.messages)
+
+    async def send_view(self, chat_id, reply, *, edit_message_id=None):
+        """Record a confirmed Bale view using the shared contract."""
+        return ViewResult(ViewOutcome.CONFIRMED, await self.send(
+            chat_id, reply, edit_message_id=edit_message_id,
+        ))
 
     async def answer_callback_query(self, **kwargs):
         """Acknowledge a native Telegram callback."""
@@ -79,6 +93,27 @@ def raw(*, callback=None, message=None):
             "chat_instance": "qa-private-chat",
         }}
     return {"message": {**body, "text": message or "/support"}}
+
+
+def current_callback(db, context, action):
+    """Install one authorized view for tests focused on a specific form."""
+    from services.shop_customer_views import envelope, persist, prepare_reply
+
+    key = context.owner_key(101)
+    state = db.session.get(ShopCustomerChatState, key)
+    if state is None:
+        state = ShopCustomerChatState(
+            bot_id=context.bot_id, store_id=context.store_id,
+            platform_user_id=101, expires_at=datetime.now(UTC),
+        )
+        db.session.add(state)
+    reply, view = prepare_reply(BotReply("Test control", ((InlineAction("Action", action),),)))
+    state.ui_message_id = state.ui_message_id or 100
+    persist(state, {**envelope(state), "active": view})
+    db.session.commit()
+    payload = raw(callback=reply.rows[0][0].callback_data)
+    payload["callback_query"]["message"]["message_id"] = state.ui_message_id
+    return payload
 
 
 @pytest.mark.asyncio
@@ -124,7 +159,7 @@ async def test_paused_support_can_accept_only_explicit_timed_ticket_input(
     monkeypatch.setattr("services.shop_multibot_dispatch.session_maker", sessions)
     context = replace(context, status="paused")
     native = NativeClient()
-    result = await dispatch(context, native, raw(callback="ux:ticket:topic:payment"))
+    result = await dispatch(context, native, current_callback(db, context, "ux:ticket:topic:payment"))
     assert result["status"] == "processed"
     result = await dispatch(context, native, raw(message="برای پرداخت ثبت‌شده کمک می‌خواهم."))
     assert result["status"] == "processed"
@@ -155,7 +190,7 @@ async def test_paused_support_allowlist_cannot_enable_new_commerce(
     result = await dispatch(
         replace(context, status="paused"), NativeClient(), raw(callback=callback),
     )
-    assert result["status"] == "maintenance"
+    assert result["status"] == "stale_callback"
     assert db.session.scalars(select(ShopOrder)).all() == []
     assert db.session.scalars(select(ShopSupportTicket)).all() == []
 
@@ -260,7 +295,7 @@ async def test_paused_free_text_requires_live_store_owned_ticket_state(
     result = await dispatch(
         replace(context, status="paused"), NativeClient(), raw(message="متن آزاد"),
     )
-    assert result["status"] == "maintenance"
+    assert result["status"] == ("blocked" if state_kind == "wrong_store" else "maintenance")
     assert db.session.scalars(select(ShopSupportTicket)).all() == []
 
 

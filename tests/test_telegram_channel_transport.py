@@ -195,3 +195,75 @@ async def test_catalog_page_does_not_confirm_partial_delivery():
         await TelegramTransport(bot).send(101, reply)
     assert bot.attempts == 2
     assert all(item["text"] != "صفحه ۱" for item in bot.sent)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("response", "outcome", "message_id"), [
+    ("confirmed", "confirmed", 77),
+    ("message is not modified", "no_change", 77),
+    ("message to edit not found", "cannot_edit", None),
+    ("message text is empty", "rejected", None),
+    ("timeout", "unknown", None),
+    ("wrong_id", "unknown", None),
+    ("empty_receipt", "unknown", None),
+])
+async def test_view_edit_returns_one_classified_result(response, outcome, message_id):
+    """Only the caller decides whether to attempt a replacement."""
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import EditMessageText
+
+    class EditBot(RecordingBot):
+        async def edit_message_text(self, **kwargs):
+            self.sent.append(("edit", kwargs))
+            if response == "timeout":
+                raise TimeoutError
+            if response == "confirmed":
+                return SimpleNamespace(message_id=77)
+            if response == "wrong_id":
+                return SimpleNamespace(message_id=78)
+            if response == "empty_receipt":
+                return True
+            raise TelegramBadRequest(
+                method=EditMessageText(text=kwargs["text"]),
+                message=f"Bad Request: {response}",
+            )
+
+    bot = EditBot()
+    result = await TelegramTransport(bot).send_view(
+        101, BotReply("صفحهٔ بعد"), edit_message_id=77,
+    )
+    assert result.outcome.value == outcome
+    assert result.message_id == message_id
+    assert [kind for kind, _ in bot.sent] == ["edit"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["timeout", "missing_receipt"])
+async def test_view_preview_failure_does_not_upload_replacement(monkeypatch, failure):
+    """Uncertain Telegram media edits must not send another card."""
+    class EditBot(RecordingBot):
+        token = "offline-token"
+
+        async def edit_message_media(self, **kwargs):
+            self.sent.append(("edit_photo", kwargs))
+            if failure == "timeout":
+                raise TimeoutError
+            return None
+
+        async def send_photo(self, **kwargs):
+            self.sent.append(("send_photo", kwargs))
+            return SimpleNamespace(message_id=78)
+
+    async def cached(**kwargs):
+        return "cached-photo"
+
+    monkeypatch.setattr("services.shop_media_delivery.cached_file_id", cached)
+    bot = EditBot()
+    reply = BotReply(
+        "عکس محصول",
+        preview=MediaAttachment("0" * 32 + ".jpg", "photo", "image/jpeg"),
+    )
+    result = await TelegramTransport(bot).send_view(101, reply, edit_message_id=77)
+    assert result.outcome.value == "unknown"
+    assert result.message_id is None
+    assert [kind for kind, _ in bot.sent] == ["edit_photo"]

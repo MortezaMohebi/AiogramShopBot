@@ -41,6 +41,26 @@ async def test_runtime_off_returns_to_commerce_without_database_or_provider(monk
 
 
 @pytest.mark.asyncio
+async def test_unverified_commerce_callback_bypasses_runtime_side_effects(monkeypatch):
+    """Runtime must not enroll or suspend before commerce verifies the view."""
+    from tests.test_runtime_adapters import context
+
+    monkeypatch.setattr(ingress, "_existing_inbox", AsyncMock(return_value=None))
+    monkeypatch.setattr(ingress, "_deployment_enabled", lambda: True)
+    monkeypatch.setattr(
+        ingress, "session_maker", lambda: pytest.fail("Unverified commerce used Runtime DB")
+    )
+    payload = {
+        "update_id": 47,
+        "callback_query": {
+            "id": "abc", "data": "v1:0123456789ab:0", "from": {"id": 101},
+            "message": {"message_id": 73, "chat": {"type": "private", "id": 101}},
+        },
+    }
+    assert await ingress.try_ingress(context(), payload) == {"handled": False}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "flag", ["SHOP_WORKFLOW_RUNTIME_ENABLED", "SHOP_WORKFLOW_RUNTIME_KILL_SWITCH"]
 )

@@ -195,3 +195,52 @@ def test_callback_payload_size_is_bounded_in_utf8_bytes():
     """Apply the documented 64-byte callback limit to Persian labels."""
     with pytest.raises(ValueError):
         InlineAction("نمونه", "x" * 65)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("payload", "status", "outcome", "message_id"), [
+    ({"ok": True, "result": {"message_id": 12}}, 200, "confirmed", 12),
+    ({"ok": False, "error_code": 400, "description": "message is not modified"}, 400, "no_change", 12),
+    ({"ok": False, "error_code": 400, "description": "message to edit not found"}, 400, "cannot_edit", None),
+    ({"ok": False, "error_code": 400, "description": "message text is empty"}, 400, "rejected", None),
+    ({"ok": False, "error_code": 429}, 429, "rejected", None),
+    ({"ok": False, "error_code": 400}, 400, "unknown", None),
+    ({"ok": True, "result": True}, 200, "unknown", None),
+    ({"ok": True, "result": {"message_id": 13}}, 200, "unknown", None),
+    ([], 502, "unknown", None),
+])
+async def test_bale_view_classifies_one_edit_without_fallback(
+    payload, status, outcome, message_id,
+):
+    """An HTTP code alone never authorizes a replacement."""
+    session = FakeSession(FakeResponse(payload, status=status))
+    result = await BaleTransport("test-token", session).send_view(
+        101, BotReply("صفحهٔ بعد"), edit_message_id=12,
+    )
+    assert result.outcome.value == outcome
+    assert result.message_id == message_id
+    assert [url.rsplit("/", 1)[-1] for url, _ in session.calls] == ["editMessageText"]
+
+
+@pytest.mark.asyncio
+async def test_bale_preview_requires_caller_authorized_replacement(monkeypatch):
+    """Bale does not have an in-place media replacement endpoint."""
+    session = FakeSession(FakeResponse({"ok": True, "result": True}))
+    transport = BaleTransport("test-token", session)
+    uploads = []
+
+    async def fake_send_media(chat_id, attachment, **kwargs):
+        uploads.append((chat_id, attachment))
+        return 13
+
+    monkeypatch.setattr(transport, "send_media", fake_send_media)
+    reply = BotReply(
+        "عکس محصول", preview=MediaAttachment("cover", "photo", "image/jpeg"),
+    )
+    result = await transport.send_view(101, reply, edit_message_id=12)
+    assert result.outcome.value == "cannot_edit"
+    assert session.calls == [] and uploads == []
+    result = await transport.send_view(101, reply)
+    assert result.outcome.value == "confirmed"
+    assert result.message_id == 13
+    assert len(uploads) == 1

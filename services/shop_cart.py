@@ -10,7 +10,9 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from services.shop_checkout_policy import checkout_rules
+from services.shop_checkout_policy import (
+    CheckoutOrigin, CheckoutRules, checkout_rules, lock_checkout_policy, terms_configured,
+)
 from services.shop_checkout_copy import checkout_confirmation_text
 from services.shop_mixed_checkout import MixedCheckoutError
 from services.shop_mixed_checkout_orders import (
@@ -22,7 +24,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform, ReplyPurpose
 from models.shop_checkout import (
     ShopCart, ShopCartInputSession, ShopCartItem, ShopCoupon,
     ShopOrderLine, ShopShippingMethod,
@@ -38,12 +40,17 @@ from services.shop_bot_catalog_acl import (
 from services.shop_bot_context import BotContext
 from models.shop_scope import require_bot_id
 
-_PRODUCT_ACTION = re.compile(r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})\Z")
+_PRODUCT_ACTION = re.compile(
+    r"shop:(add|inc|dec|remove):([1-9][0-9]{0,18})(?::(0|[1-9][0-9]{0,2}))?\Z"
+)
 _SHIPPING_ACTION = re.compile(r"shop:ship:([1-9][0-9]{0,18})\Z")
 _PLACE_ACTION = re.compile(
     r"shop:place:([1-9][0-9]{0,18}):([1-9][0-9]{0,18}):([a-f0-9]{12})\Z"
 )
+_CHECKOUT_RETURN = re.compile(r"shop:checkout:([a-f0-9]{12}):([a-f0-9]{12})\Z")
 _MAX_LINES = 20
+_CART_PAGE_SIZE = 8
+_CART_PAGE_ACTION = re.compile(r"shop:cart:page:(0|[1-9][0-9]{0,2})\Z")
 _SHIPPING_PAGE_SIZE = 10
 _SHIPPING_PAGE_ACTION = re.compile(r"shop:shipping:(0|[1-9][0-9]{0,8})\Z")
 
@@ -54,6 +61,10 @@ class CartRejected(ValueError):
 
 class CartRevisionConflict(CartRejected):
     """The customer reviewed a different cart state; require a fresh operation."""
+
+
+class CheckoutUnavailable(CartRejected):
+    """Checkout is unavailable and should offer permitted alternate actions."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +88,57 @@ class CartQuote:
     shipping_required: bool
     shipping_label: str | None
     coupon_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CheckoutReview:
+    """A read-only quote and the distinct navigation and acceptance proofs."""
+
+    cart_id: int
+    revision: int
+    proof: str
+    policy: CheckoutRules
+    item_count: int
+    price_label: str
+    delivery_label: str
+    split: bool
+
+    @property
+    def origin(self) -> CheckoutOrigin:
+        """Identify the review without granting authority to place it."""
+        return CheckoutOrigin.for_review(
+            policy_token=self.policy.policy_token,
+            cart_id=self.cart_id, revision=self.revision, proof=self.proof,
+        )
+
+    def reply(self, notice: str = "") -> BotReply:
+        """Present one explicit decision, readable terms and a way to cancel."""
+        summary = checkout_confirmation_text(
+            item_count=self.item_count,
+            price_label=self.price_label,
+            checkout_mode=self.policy.mode,
+            terms_version=self.policy.terms_version,
+            split=self.split,
+            delivery_label=self.delivery_label,
+        )
+        return BotReply(
+            f"{notice}\n\n{summary}" if notice else summary,
+            (
+                (button(
+                    "پذیرش و ثبت دو سفارش" if self.split else "پذیرش شرایط و ثبت سفارش",
+                    f"shop:place:{self.cart_id}:{self.revision}:{self.proof}",
+                ),),
+                (button("مشاهده شرایط خرید", self.origin.terms(0)),),
+                (button("انصراف", "shop:cart"),),
+            ),
+        )
+
+
+def unavailable_checkout(message: str) -> BotReply:
+    """Offer recovery that remains useful when new shopping is unavailable."""
+    return BotReply(message, (
+        (button("پشتیبانی", "ux:support"), button("منوی اصلی", "shop:home")),
+    ))
 
 
 def button(text: str, action: str) -> InlineAction:
@@ -180,6 +242,8 @@ class ShopCartFlow:
         """Resolve supported shopping actions for the event's platform identity."""
         action = event.callback_data or ""
         text = (event.text or "").strip()
+        checkout_return = _CHECKOUT_RETURN.fullmatch(action)
+        cart_page = _CART_PAGE_ACTION.fullmatch(action)
         # A disabled provider cart refuses both current and stale callback buttons.
         # Existing orders remain accessible through the separate order service.
         features = await get_features(
@@ -196,10 +260,10 @@ class ShopCartFlow:
                 "shop:ship:", "shop:shipping:", "shop:place:",
             )
             if (
-                action in cart_actions or action.startswith(prefixes)
+                action in cart_actions or checkout_return or cart_page or action.startswith(prefixes)
                 or text in ("/cart", "/checkout", "🛒 سبد خرید")
             ):
-                return BotReply("سبد خرید این پیام‌رسان در حال حاضر غیرفعال است.")
+                return unavailable_checkout("سبد خرید در حال حاضر غیرفعال است.")
             return None
         try:
             if action in ("shop:cart", "shop:shipping", "shop:clear_coupon"):
@@ -210,8 +274,14 @@ class ShopCartFlow:
                 return await self._cart_reply(event, session)
             if action in ("shop:address", "shop:coupon"):
                 return await self._request_input(event, session, action)
+            if cart_page:
+                return await self._cart_reply(event, session, page=int(cart_page[1]))
             if action == "shop:checkout":
                 return await self._checkout_preview(event, session)
+            if checkout_return:
+                return await self._checkout_preview(
+                    event, session, origin=CheckoutOrigin(*checkout_return.groups()),
+                )
             match = _SHIPPING_PAGE_ACTION.fullmatch(action)
             if match:
                 return await self._shipping_choices(
@@ -220,7 +290,7 @@ class ShopCartFlow:
             match = _PRODUCT_ACTION.fullmatch(action)
             if match:
                 return await self._change_item(
-                    event, session, match.group(1), int(match.group(2))
+                    event, session, match[1], int(match[2]), page=int(match[3] or 0),
                 )
             match = _SHIPPING_ACTION.fullmatch(action)
             if match:
@@ -246,10 +316,16 @@ class ShopCartFlow:
                 return await self._accept_input(cart, text, session, event)
             return None
         except CartRejected as error:
-            # No write on validation errors. DB session rolls back at exit.
-            return BotReply(
-                str(error), ((button("🛒 بازگشت به سبد", "shop:cart"),),)
-            )
+            # The receiver may reuse this session to persist the recovery view.
+            await session.rollback()
+            if isinstance(error, CheckoutUnavailable):
+                return unavailable_checkout(str(error))
+            if isinstance(error, CartRevisionConflict) or _PLACE_ACTION.fullmatch(action):
+                return BotReply(str(error), (
+                    (button("بررسی دوبارهٔ سفارش", "shop:checkout"),),
+                    (button("بازگشت به سبد", "shop:cart"),),
+                ))
+            return BotReply(str(error), ((button("بازگشت به سبد", "shop:cart"),),))
 
     async def _get_cart(
         self, event: InboundEvent, session: AsyncSession,
@@ -291,6 +367,8 @@ class ShopCartFlow:
         if lock:
             statement = statement.with_for_update()
         cart = await session.scalar(statement)
+        if cart is not None and cart.store_id != store_id:
+            raise CartRejected("سبد خرید در این فروشگاه در دسترس نیست.")
         if cart is None and create:
             # An already populated private cart is retained for a future
             # migration decision; no automatic merge or stock mutation.
@@ -355,11 +433,13 @@ class ShopCartFlow:
         session: AsyncSession,
         action: str,
         product_id: int,
+        *,
+        page: int = 0,
     ) -> BotReply:
         """Preserve UI commit/reply while sharing the business primitive."""
         await self.mutate_item(event, session, action, product_id)
         await session.commit()
-        return await self._cart_reply(event, session)
+        return await self._cart_reply(event, session, page=page)
 
     async def plan_item_change(
         self,
@@ -570,7 +650,7 @@ class ShopCartFlow:
         )
 
     async def _cart_reply(
-        self, event: InboundEvent, session: AsyncSession
+        self, event: InboundEvent, session: AsyncSession, *, page: int = 0,
     ) -> BotReply:
         """Display all cart lines with real-time quantities and actions."""
         cart = await self._get_cart(event, session)
@@ -638,7 +718,13 @@ class ShopCartFlow:
             )
         rows = []
         details = ["🛒 سبد خرید"]
-        for line in quote.lines:
+        pages = (len(quote.lines) + _CART_PAGE_SIZE - 1) // _CART_PAGE_SIZE
+        page = min(page, pages - 1)
+        start = page * _CART_PAGE_SIZE
+        page_suffix = f":{page}" if page else ""
+        if pages > 1:
+            details.append(f"صفحه {page + 1} از {pages}")
+        for line in quote.lines[start:start + _CART_PAGE_SIZE]:
             name = line.product.name[:70]
             line_price = (
                 f"{line.product.price_stars * line.quantity} Stars (XTR)"
@@ -651,10 +737,17 @@ class ShopCartFlow:
             )
             product_id = line.product.id
             rows.append((
-                button("➖", f"shop:dec:{product_id}"),
-                button("➕", f"shop:inc:{product_id}"),
-                button("🗑", f"shop:remove:{product_id}"),
+                button(f"کاهش {name[:14]}", f"shop:dec:{product_id}{page_suffix}"),
+                button(f"افزودن {name[:14]}", f"shop:inc:{product_id}{page_suffix}"),
+                button(f"حذف {name[:14]}", f"shop:remove:{product_id}{page_suffix}"),
             ))
+        navigation = []
+        if page:
+            navigation.append(button("صفحه قبل", f"shop:cart:page:{page - 1}"))
+        if page + 1 < pages:
+            navigation.append(button("صفحه بعد", f"shop:cart:page:{page + 1}"))
+        if navigation:
+            rows.append(tuple(navigation))
         if split_plan is not None:
             details.append(
                 "بخش فیزیکی: "
@@ -866,10 +959,20 @@ class ShopCartFlow:
         return await self._cart_reply(event, session)
 
     async def _checkout_preview(
-        self, event: InboundEvent, session: AsyncSession
+        self, event: InboundEvent, session: AsyncSession, *, origin: CheckoutOrigin | None = None,
     ) -> BotReply:
-        """Show the final quote without starting any payment provider."""
-        cart = await self._get_cart(event, session)
+        """Render the current review, explaining drift when returning from terms."""
+        review = await self.resolve_checkout_review(event, session)
+        return review.reply(origin.change_notice(review.origin) if origin else "")
+
+    async def resolve_checkout_review(
+        self, event: InboundEvent, session: AsyncSession,
+    ) -> CheckoutReview:
+        """Read the scoped cart and existing quote proof without creating anything."""
+        bot_id = self._bot_id(event.platform)
+        if not (await get_features(session, event.platform.value, bot_id=bot_id)).cart_enabled:
+            raise CheckoutUnavailable("سبد خرید در حال حاضر غیرفعال است.")
+        cart = await self._get_cart(event, session, create=False)
         if cart is None:
             raise CartRejected("سبد خرید خالی است.")
         if await self._existing_pending(session, cart, event) is not None:
@@ -882,9 +985,11 @@ class ShopCartFlow:
             not cart.shipping_address or not quote.shipping_label
         ):
             raise CartRejected("ابتدا نشانی و روش ارسال را در سبد ثبت کنید.")
-        policy = await checkout_rules(
-            session, bot_id=self._bot_id(event.platform),
-        )
+        policy = await checkout_rules(session, bot_id=bot_id)
+        if not terms_configured(policy):
+            raise CheckoutUnavailable(
+                "شرایط خرید هنوز در دسترس نیست. برای راهنمایی به پشتیبانی بروید."
+            )
         from services.shop_digital_catalog import require_digital_supply
         from services.shop_digital_rules import DeliveryPolicyError
 
@@ -919,12 +1024,6 @@ class ShopCartFlow:
                 )
         except MixedCheckoutError as error:
             raise CartRejected(str(error)) from None
-        if len(policy.terms_text) < 12:
-            return BotReply(
-                "شرایط فروش این Store هنوز توسط مدیر ثبت نشده؛ سفارش‌گیری "
-                "تا تکمیل قوانین فروش غیرفعال است.",
-                ((button("🆘 پشتیبانی", "ux:support"),),),
-            )
         price_line = (
             format_rials(split_plan.physical.total_irr, self.display_unit)
             + f" + {split_plan.digital.total_stars} Stars (XTR)"
@@ -933,28 +1032,16 @@ class ShopCartFlow:
             if stars_total is not None
             else format_rials(quote.total, self.display_unit)
         )
-        return BotReply(
-            checkout_confirmation_text(
-                item_count=sum(line.quantity for line in quote.lines),
-                price_label=price_line,
-                checkout_mode=policy.mode,
-                terms_version=policy.terms_version,
-                split=split_plan is not None,
-            ),
-            ((
-                button(
-                    (
-                        "✅ پذیرش و ثبت دو سفارش"
-                        if split_plan is not None
-                        else "✅ پذیرش شرایط و ثبت سفارش"
-                    ),
-                    f"shop:place:{cart.id}:{cart.revision}:{approval_token}",
-                ),
-                button("انصراف", "shop:cart"),
-            ), (button(
-                "📜 مشاهده شرایط خرید",
-                f"ux:terms:{policy.policy_token}:0:checkout",
-            ),)),
+        delivery_label = (
+            f"روش ارسال: {quote.shipping_label}" if quote.shipping_required
+            else "بدون ارسال فیزیکی" if any(
+                line.product.product_type == "digital" for line in quote.lines
+            ) else "بدون ارسال"
+        )
+        return CheckoutReview(
+            cart_id=cart.id, revision=cart.revision, proof=approval_token,
+            policy=policy, item_count=sum(line.quantity for line in quote.lines),
+            price_label=price_line, delivery_label=delivery_label, split=split_plan is not None,
         )
 
     async def _place_order(
@@ -981,22 +1068,26 @@ class ShopCartFlow:
                 f"این خرید قبلاً به دو سفارش #{physical.id} (IRR) "
                 f"و #{digital.id} (XTR) تبدیل شده است.",
                 ((button("📦 سفارش‌های من", "shop:orders"),),),
+                purpose=ReplyPurpose.DURABLE,
             )
         existing = await session.scalar(
             select(ShopOrder).where(ShopOrder.checkout_key == checkout_key)
         )
         if existing is not None:
             return BotReply(
-                f"درخواست سفارش #{existing.id} قبلاً ثبت شده است."
+                f"درخواست سفارش #{existing.id} قبلاً ثبت شده است.",
+                ((button("سفارش‌های من", "shop:orders"),),),
+                purpose=ReplyPurpose.DURABLE,
             )
         if cart.revision != expected_revision:
-            raise CartRejected("محتوای سبد تغییر کرده؛ دوباره سفارش را بررسی کنید.")
+            raise CartRevisionConflict("محتوای سبد تغییر کرده است. سفارش را دوباره بررسی کنید.")
+        await lock_checkout_policy(session, store_id=cart.store_id)
         policy = await checkout_rules(
             session, bot_id=self._bot_id(event.platform),
         )
-        if len(policy.terms_text) < 12:
-            raise CartRejected(
-                "شرایط خرید هنوز معتبر نیست؛ دوباره سفارش را بررسی کنید."
+        if not terms_configured(policy):
+            raise CheckoutUnavailable(
+                "شرایط خرید هنوز در دسترس نیست. برای راهنمایی به پشتیبانی بروید."
             )
         if await self._existing_pending(session, cart, event) is not None:
             raise CartRejected("یک سفارش باز در انتظار بررسی دارید.")
@@ -1165,4 +1256,5 @@ class ShopCartFlow:
         return BotReply(
             message,
             ((button("📦 سفارش‌های من", "shop:orders"),),),
+            purpose=ReplyPurpose.DURABLE,
         )

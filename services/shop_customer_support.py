@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction
+from channels.contracts import BotReply, InboundEvent, InlineAction, ReplyPurpose
 from models.shop_content import ShopIdentity
 from models.shop_customer_navigation import ShopCustomerChatState
 from models.shop_customer_support import ShopSupportMessage, ShopSupportTicket
@@ -263,6 +263,7 @@ class CustomerSupportFlow:
                     ("💬 مشاهده درخواست", f"ux:ticket:view:{ticket.id}"),
                     ("📨 درخواست‌های من", "ux:tickets"),
                 ),
+                purpose=ReplyPurpose.DURABLE,
             )
 
         if action == "ux:tickets":

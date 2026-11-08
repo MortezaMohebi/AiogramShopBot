@@ -24,7 +24,7 @@ _SEARCH_FIELD = re.compile(r"ux:search:field:(all|name|sku|description)\Z")
 _ORDER_DETAIL = re.compile(r"ux:order:detail:([1-9][0-9]{0,18})\Z")
 _ORDER_TRACK = re.compile(r"ux:order:track:([1-9][0-9]{0,18})\Z")
 _TERMS_PAGE = re.compile(
-    r"ux:terms:([a-f0-9]{12}):(0|[1-9][0-9]{0,2})(:checkout)?\Z"
+    r"ux:terms:([a-f0-9]{12}):(0|[1-9][0-9]{0,2})(?::([a-f0-9]{12}))?\Z"
 )
 _TERMS_PAGE_UNITS = 3500
 
@@ -57,12 +57,12 @@ def should_clear_chat_state(callback: str, text: str) -> bool:
     """
     return (
         callback in {
-            "shop:home", "shop:categories", "shop:cart", "shop:orders",
+            "shop:home", "shop:categories", "shop:cart", "shop:orders", "shop:checkout",
             "ux:account", "ux:support",
         }
         or callback.startswith(("shop:item:", "shop:detail:", "shop:file:", "shop:files:"))
         or text in {
-            "/start", "/menu", "🏠 منوی اصلی", "🛍 فروشگاه",
+            "/start", "/menu", "/checkout", "🏠 منوی اصلی", "🛍 فروشگاه",
             "🛒 سبد خرید", "📦 سفارش‌های من", "💬 پشتیبانی",
         }
     )
@@ -100,7 +100,7 @@ async def clear_pending_on_navigation(
         "ux:profile", "ux:addresses", "ux:address:choose:",
         "ux:address:delete:", "ux:wish", "ux:links", "ux:notifications",
         "ux:notify:", "ux:stock:", "ux:language", "ux:privacy",
-        "ux:ticket:", "ux:tickets", "ux:terms",
+        "ux:ticket:", "ux:tickets",
         "shop:list:", "shop:category:", "shop:categories:",
     ))
     if not (
@@ -159,6 +159,69 @@ class CustomerExperienceFlow:
             return self.bot_context
         raise ValueError("An authenticated bot context is required.")
 
+    async def _terms_reply(
+        self, event: InboundEvent, db: AsyncSession, context: BotContext,
+        requested: re.Match[str] | None,
+    ) -> BotReply:
+        """Read every terms page without accepting or mutating the checkout."""
+        from services.shop_cart import (
+            CartRejected, CheckoutUnavailable, ShopCartFlow, unavailable_checkout,
+        )
+        from services.shop_checkout_policy import CheckoutOrigin, checkout_rules, terms_configured
+
+        review = None
+        page = int(requested[2]) if requested else 0
+        if requested and requested[3]:
+            origin = CheckoutOrigin(requested[1], requested[3])
+            try:
+                review = await ShopCartFlow(
+                    bot_context=context,
+                ).resolve_checkout_review(event, db)
+            except CheckoutUnavailable as error:
+                return unavailable_checkout(str(error))
+            except CartRejected as error:
+                return BotReply(str(error), ((InlineAction("بازگشت به سبد", "shop:cart"),),))
+            policy = review.policy
+            notice = origin.change_notice(review.origin)
+            if notice:
+                return review.reply(notice)
+        else:
+            policy = await checkout_rules(db, bot_id=context.bot_id)
+            if not terms_configured(policy):
+                return unavailable_checkout("شرایط خرید هنوز در دسترس نیست.")
+            if requested and requested[1] != policy.policy_token:
+                return BotReply(
+                    "شرایط خرید تغییر کرده است. متن فعلی را دوباره بررسی کنید.",
+                    ((InlineAction("مشاهده شرایط فعلی", "ux:terms"),),),
+                )
+
+        pages = _terms_pages(policy.terms_text)
+        if page >= len(pages):
+            notice = "این صفحه از شرایط خرید در دسترس نیست."
+            if review is not None:
+                return review.reply(notice)
+            return BotReply(notice, ((InlineAction("شرایط خرید", "ux:terms"),),))
+
+        def page_action(index: int) -> str:
+            if review is not None:
+                return review.origin.terms(index)
+            return f"ux:terms:{policy.policy_token}:{index}"
+
+        navigation = []
+        if page:
+            navigation.append(InlineAction("صفحه قبل", page_action(page - 1)))
+        if page + 1 < len(pages):
+            navigation.append(InlineAction("صفحه بعد", page_action(page + 1)))
+        rows = [tuple(navigation)] if navigation else []
+        if review is not None:
+            rows.append((InlineAction("بازگشت به بررسی سفارش", review.origin.back()),))
+        rows.append((InlineAction("منوی اصلی", "shop:home"),))
+        return BotReply(
+            f"شرایط خرید — نسخه {policy.terms_version}"
+            f" — صفحه {page + 1} از {len(pages)}\n\n{pages[page]}",
+            tuple(rows),
+        )
+
     async def reply(
         self, event: InboundEvent, db: AsyncSession,
     ) -> BotReply | None:
@@ -171,52 +234,7 @@ class CustomerExperienceFlow:
         )
         terms_page = _TERMS_PAGE.fullmatch(action)
         if action == "ux:terms" or text == "/terms" or terms_page:
-            from services.shop_checkout_policy import checkout_rules
-
-            policy = await checkout_rules(db, bot_id=context.bot_id)
-            if len(policy.terms_text) < 12:
-                return BotReply(
-                    "شرایط فروش هنوز توسط مدیر ثبت نشده است. خرید جدید تا "
-                    "تعریف قوانین فروش غیرفعال می‌ماند.",
-                    ((InlineAction("🆘 پشتیبانی", "ux:support"),),),
-                )
-            if terms_page and terms_page.group(1) != policy.policy_token:
-                return BotReply(
-                    "شرایط خرید تغییر کرده است. متن فعلی را دوباره بررسی کنید.",
-                    ((InlineAction("📜 مشاهده شرایط فعلی", "ux:terms"),),),
-                )
-            pages = _terms_pages(policy.terms_text)
-            page = int(terms_page.group(2)) if terms_page else 0
-            if page >= len(pages):
-                return BotReply(
-                    "این صفحه از شرایط خرید وجود ندارد. متن را دوباره باز کنید.",
-                    ((InlineAction("📜 شرایط خرید", "ux:terms"),),),
-                )
-            origin = ":checkout" if terms_page and terms_page.group(3) else ""
-            navigation = []
-            if page:
-                navigation.append(InlineAction(
-                    "صفحه قبل",
-                    f"ux:terms:{policy.policy_token}:{page - 1}{origin}",
-                ))
-            if page + 1 < len(pages):
-                navigation.append(InlineAction(
-                    "صفحه بعد",
-                    f"ux:terms:{policy.policy_token}:{page + 1}{origin}",
-                ))
-            rows = [tuple(navigation)] if navigation else []
-            if origin:
-                # Returning to preview recomputes the existing quote proof;
-                # reading any policy page never creates an order or consent.
-                rows.append((InlineAction(
-                    "بازگشت به بررسی سفارش", "shop:checkout",
-                ),))
-            rows.append((InlineAction("🏠 منوی اصلی", "shop:home"),))
-            return BotReply(
-                f"📜 شرایط خرید — نسخه {policy.terms_version}"
-                f" — صفحه {page + 1} از {len(pages)}\n\n{pages[page]}",
-                tuple(rows),
-            )
+            return await self._terms_reply(event, db, context, terms_page)
         if action in {"ux:home"} or text in {"/menu", "🏠 منوی اصلی"}:
             from services.shop_channel_catalog import CatalogFlow
 

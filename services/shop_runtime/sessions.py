@@ -847,6 +847,25 @@ async def _consume(
     )
 
 
+async def suspend_for_navigation(db, context, user_id: int) -> None:
+    """Suspend an existing owned run when the shopper intentionally leaves it."""
+    slot = await db.scalar(
+        select(RuntimeSlot)
+        .where(RuntimeSlot.bot_id == context.bot_id, RuntimeSlot.user_id == user_id)
+        .with_for_update()
+    )
+    if slot and slot.run_id:
+        run = await db.scalar(
+            select(WorkflowRun)
+            .where(WorkflowRun.id == slot.run_id, WorkflowRun.bot_id == context.bot_id)
+            .with_for_update()
+        )
+        if run and run.status not in TERMINAL:
+            run.status = "suspended"
+            run.updated_at = security.clock()
+    await db.commit()
+
+
 async def handle(
     db,
     *,
@@ -914,7 +933,6 @@ async def handle(
                 db, duplicate, {"handled": True, "status": "input_stale"}
             )
         return {"handled": False}
-    slot = await _slot(db, context, event.user_id)
     # Preserve commerce navigation/payment callbacks and commands even during an active Run.
     navigation = (
         event.kind == "callback" and not event.callback.startswith(("wf:", "wfe:"))
@@ -930,17 +948,9 @@ async def handle(
         )
     )
     if navigation:
-        if slot.run_id:
-            run = await db.scalar(
-                select(WorkflowRun)
-                .where(WorkflowRun.id == slot.run_id)
-                .with_for_update()
-            )
-            if run and run.status not in TERMINAL:
-                run.status = "suspended"
-                run.updated_at = security.clock()
-        await db.commit()
+        await suspend_for_navigation(db, context, event.user_id)
         return {"handled": False}
+    slot = await _slot(db, context, event.user_id)
     inbox = await db.scalar(
         select(WorkflowInbox)
         .where(

@@ -17,6 +17,7 @@ from services.shop_bot_context import resolve_bot_context
 from services.shop_bot_secrets import resolve_active_token
 from services.shop_identity import is_blocked, register_customer
 from services.shop_multibot_client import provider_client
+from services.shop_customer_views import commerce_callback
 from services.shop_runtime import adapters, sessions
 
 
@@ -99,6 +100,8 @@ async def try_ingress(context, payload, client=None) -> dict:
     prior = await _existing_inbox(getattr(context, "bot_id", None), payload)
     if prior is not None:
         return prior
+    if commerce_callback(payload):
+        return {"handled": False}
     if not _deployment_enabled():
         return {"handled": False}
     event = adapters.normalize(context, payload)
@@ -182,3 +185,9 @@ async def try_ingress(context, payload, client=None) -> dict:
     if result.get("handled") and event.kind == "callback":
         await _acknowledge(current, payload, client=client)
     return result
+
+
+async def suspend_for_commerce(db, context, user_id: int) -> None:
+    """Leave a published workflow only after commerce authenticates the action."""
+    if _deployment_enabled() and await sessions.enabled(db, context):
+        await sessions.suspend_for_navigation(db, context, user_id)

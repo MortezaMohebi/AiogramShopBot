@@ -6,7 +6,46 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
+from channels.contracts import Platform
+from models.shop_content import ShopOrder
 from services.shop_customer_orders import order_owner_clause
+from services.shop_orders import ShopOrdersFlow
+from tests.schema_support import test_bot_context
+from tests.test_shared_cart import db, event, seed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", list(Platform))
+async def test_twenty_order_actions_fit_into_versioned_views(db, platform):
+    """Every existing order remains reachable within the active slot budget."""
+    product, _ = seed(db)
+    context = test_bot_context(platform)
+    db.session.add_all([
+        ShopOrder(
+            store_id=context.store_id, bot_id=context.bot_id,
+            platform=platform.value, platform_user_id=101, chat_id=101,
+            product_id=product.id, product_name_snapshot=product.name,
+            unit_price_irr=1000, total_irr=1000, status="paid",
+            provider="manual_review", invoice_payload=f"test-order-{i}",
+        )
+        for i in range(20)
+    ])
+    db.session.commit()
+    flow = ShopOrdersFlow(bot_context=context)
+    action = "shop:orders"
+    order_controls = []
+    for _ in range(4):
+        reply = await flow.reply(event(platform, callback=action), db)
+        controls = [button.callback_data for row in reply.rows for button in row]
+        assert len(controls) <= 32
+        order_controls.extend(a for a in controls if a.startswith("shop:refundorder:"))
+        if len(order_controls) == 20:
+            break
+        action = next(
+            button.callback_data for row in reply.rows for button in row
+            if button.label == "صفحه بعد"
+        )
+    assert len(set(order_controls)) == 20
 
 
 def test_verified_bot_identity_tuples_scope_historical_orders():

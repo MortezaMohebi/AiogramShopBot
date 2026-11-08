@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from channels.contracts import Platform
@@ -31,6 +31,54 @@ class CheckoutRules:
     policy_token: str
 
 
+@dataclass(frozen=True, slots=True)
+class CheckoutOrigin:
+    """Identify the applicable terms and quote without granting order consent."""
+
+    policy_token: str
+    review_token: str
+
+    @classmethod
+    def for_review(
+        cls, *, policy_token: str, cart_id: int, revision: int, proof: str,
+    ) -> CheckoutOrigin:
+        """Bind the short navigation token to the cart and existing quote proof."""
+        payload = f"{cart_id}:{revision}:{proof}".encode()
+        return cls(policy_token, hashlib.sha256(payload).hexdigest()[:12])
+
+    def terms(self, page: int) -> str:
+        """Return one bounded logical action for a checkout terms page."""
+        return f"ux:terms:{self.policy_token}:{page}:{self.review_token}"
+
+    def back(self) -> str:
+        """Return one bounded logical action to reopen the checkout review."""
+        return f"shop:checkout:{self.policy_token}:{self.review_token}"
+
+    def change_notice(self, current: CheckoutOrigin) -> str:
+        """Explain why a shopper needs to review the current order again."""
+        if self.policy_token != current.policy_token:
+            return "شرایط خرید تغییر کرده است. شرایط و سفارش را دوباره بررسی کنید."
+        if self.review_token != current.review_token:
+            return "جزئیات سفارش تغییر کرده است. مبلغ و سفارش را دوباره بررسی کنید."
+        return ""
+
+
+async def lock_checkout_policy(
+    db: AsyncSession, *, store_id: str, exclusive: bool = False,
+) -> None:
+    """Order confirmations against policy writers, even before policy rows exist."""
+    get_bind = getattr(db, "get_bind", None)
+    if get_bind is None or get_bind().dialect.name != "postgresql":
+        return
+    digest = hashlib.blake2b(store_id.encode(), digest_size=8, person=b"checkout-policy")
+    key = int.from_bytes(digest.digest(), "big", signed=True)
+    statement = (
+        text("SELECT pg_advisory_xact_lock(:key)") if exclusive
+        else text("SELECT pg_advisory_xact_lock_shared(:key)")
+    )
+    await db.execute(statement, {"key": key})
+
+
 def decide_checkout_mode(
     store_policy: ShopStoreCheckoutPolicy | None,
     bot_policy: ShopBotCheckoutPolicy | None,
@@ -45,7 +93,7 @@ def decide_checkout_mode(
     return "manual"
 
 
-def terms_configured(policy: ShopStoreCheckoutPolicy | None) -> bool:
+def terms_configured(policy: ShopStoreCheckoutPolicy | CheckoutRules | None) -> bool:
     """Confirm that a dated, bounded customer terms document is available."""
     return bool(
         policy is not None
@@ -81,8 +129,12 @@ async def checkout_rules(
     store = await db.get(ShopStore, bot.store_id)
     if store is None or store.state != "active":
         raise security.SecurityRejected("store_not_active", 409)
-    default = await db.get(ShopStoreCheckoutPolicy, store.id)
-    override = await db.get(ShopBotCheckoutPolicy, bot.id)
+    default = await db.scalar(select(ShopStoreCheckoutPolicy).where(
+        ShopStoreCheckoutPolicy.store_id == store.id,
+    ).execution_options(populate_existing=True))
+    override = await db.scalar(select(ShopBotCheckoutPolicy).where(
+        ShopBotCheckoutPolicy.bot_id == bot.id,
+    ).execution_options(populate_existing=True))
     if override is not None and override.store_id != store.id:
         raise security.SecurityRejected("checkout_store_mismatch", 409)
     mode = decide_checkout_mode(default, override)
@@ -142,9 +194,10 @@ async def save_store_checkout(
         or (mode == "instant" and len(terms_text) < 12)
     ):
         raise security.SecurityRejected("invalid_checkout_policy", 422)
+    await lock_checkout_policy(db, store_id=store_id, exclusive=True)
     row = await db.scalar(select(ShopStoreCheckoutPolicy).where(
         ShopStoreCheckoutPolicy.store_id == store_id,
-    ).with_for_update())
+    ).with_for_update().execution_options(populate_existing=True))
     if row is None:
         if expected_version != 0:
             raise security.SecurityRejected("configuration_changed", 409)
@@ -173,9 +226,10 @@ async def save_bot_checkout(
     bot = await db.get(ShopBot, bot_id)
     if bot is None:
         raise security.SecurityRejected("bot_not_found", 404)
+    await lock_checkout_policy(db, store_id=bot.store_id, exclusive=True)
     policy = await db.scalar(select(ShopBotCheckoutPolicy).where(
         ShopBotCheckoutPolicy.bot_id == bot_id,
-    ).with_for_update())
+    ).with_for_update().execution_options(populate_existing=True))
     if policy is None:
         if expected_version != 0:
             raise security.SecurityRejected("configuration_changed", 409)
@@ -185,7 +239,9 @@ async def save_bot_checkout(
         db.add(policy)
     elif policy.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
-    store_policy = await db.get(ShopStoreCheckoutPolicy, bot.store_id)
+    store_policy = await db.scalar(select(ShopStoreCheckoutPolicy).where(
+        ShopStoreCheckoutPolicy.store_id == bot.store_id,
+    ).execution_options(populate_existing=True))
     if mode_override == "instant" and not terms_configured(store_policy):
         raise security.SecurityRejected("checkout_terms_required", 409)
     policy.mode_override = mode_override

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 def checkout_confirmation_text(
     *, item_count: int, price_label: str, checkout_mode: str,
-    terms_version: str, split: bool,
+    terms_version: str, split: bool, delivery_label: str = "",
 ) -> str:
     """Explain terms and distinct payments without misleading currency totals."""
     if (
@@ -23,7 +23,7 @@ def checkout_confirmation_text(
         raise ValueError("Invalid finalized checkout summary inputs.")
 
     mode_label = (
-        "ثبت و آماده‌سازی پرداخت"
+        "ثبت سفارش و آماده‌سازی پرداخت در مرحلهٔ بعد"
         if checkout_mode == "instant"
         else "ثبت درخواست بررسی فروشنده"
     )
@@ -31,13 +31,15 @@ def checkout_confirmation_text(
         "با تأیید، دو سفارش جدا ساخته می‌شود و پرداخت هرکدام مستقل است.\n"
         if split else ""
     )
+    delivery = f"{delivery_label}\n" if delivery_label else ""
     return (
         "🧾 بررسی نهایی سفارش\n"
         f"تعداد اقلام: {item_count}\n"
         f"مبلغ نهایی: {price_label}\n"
+        f"{delivery}"
         f"مسیر: {mode_label}\n"
         f"شرایط خرید: نسخهٔ {terms_version}\n"
         f"{split_note}"
-        "با تأیید، شرایط خرید این نسخه را می‌پذیرید. "
-        "متن کامل از /terms قابل مشاهده است؛ هنوز وجهی دریافت نشده."
+        "متن کامل از «مشاهده شرایط خرید» در دسترس است. "
+        "با ثبت سفارش، شرایط این نسخه را می‌پذیرید. هنوز وجهی دریافت نشده است."
     )

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, String,
+    BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, JSON, String,
     Text, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -93,6 +93,7 @@ class ShopCustomerChatState(Base):
     # consumed as a field. No delivery address is committed until confirmation.
     address_draft: Mapped[str | None] = mapped_column(Text)
     ui_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    view_state: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     query_field: Mapped[str] = mapped_column(
         String(16), nullable=False, default="all", server_default="all",
     )

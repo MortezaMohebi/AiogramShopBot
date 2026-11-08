@@ -15,11 +15,48 @@ if TYPE_CHECKING:
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from channels.contracts import BotReply, MediaAttachment
+from channels.contracts import BotReply, MediaAttachment, ViewOutcome, ViewResult
+
+
+_UNEDITABLE = frozenset({
+    "message to edit not found",
+    "message can't be edited",
+    "message can not be edited",
+    "there is no text in the message to edit",
+})
+
+
+def _view_failure(method: str, status: int, data: object) -> ViewOutcome:
+    """Use a recognized Bale rejection, never a broad HTTP fallback."""
+    if status >= 500 or not isinstance(data, dict) or data.get("ok") is not False:
+        return ViewOutcome.UNKNOWN
+    code = data.get("error_code")
+    code = code if type(code) is int else None
+    if status == 429 or code == 429:
+        return ViewOutcome.REJECTED
+    description = data.get("description")
+    if not isinstance(description, str) or not description.strip():
+        return ViewOutcome.UNKNOWN
+    message = description.lower().removeprefix("bad request: ").strip()
+    if method == "editMessageText" and (status in {400, 404} or code in (400, 404)):
+        if message == "message is not modified" or message.startswith("message is not modified: "):
+            return ViewOutcome.NO_CHANGE
+        if message in _UNEDITABLE:
+            return ViewOutcome.CANNOT_EDIT
+    return ViewOutcome.REJECTED if 400 <= status < 500 or (
+        type(code) is int and 400 <= code < 500
+    ) else ViewOutcome.UNKNOWN
 
 
 class BaleApiError(RuntimeError):
     """A sanitized Bale API error that never exposes the bot token."""
+
+    def __init__(
+        self, message: str, *, view_outcome: ViewOutcome = ViewOutcome.UNKNOWN,
+    ) -> None:
+        """Keep only a typed classification from the provider response."""
+        super().__init__(message)
+        self.view_outcome = view_outcome
 
 
 class BaleTransport:
@@ -71,7 +108,8 @@ class BaleTransport:
                 ):
                     raise BaleApiError(
                         f"Bale API {method} failed (HTTP {response.status}, "
-                        f"code {code})."
+                        f"code {code if type(code) is int else None}).",
+                        view_outcome=_view_failure(method, response.status, data),
                     )
                 return data.get("result")
         except (ClientError, asyncio.TimeoutError, ValueError):
@@ -98,12 +136,15 @@ class BaleTransport:
         try:
             size_bytes = path.stat().st_size
         except OSError:
-            raise BaleApiError("Bale media original file is unavailable.") from None
+            raise BaleApiError(
+                "Bale media original file is unavailable.",
+                view_outcome=ViewOutcome.REJECTED,
+            ) from None
         try:
             selected = bale_media_method(media.kind, media.mime_type, size_bytes)
         except MediaLimitError as error:
             # Message is a safe validation failure with no credential data.
-            raise BaleApiError(str(error)) from None
+            raise BaleApiError(str(error), view_outcome=ViewOutcome.REJECTED) from None
 
         bot_key = bot_fingerprint(self._bot_token)
         cached = await cached_file_id(
@@ -166,7 +207,10 @@ class BaleTransport:
                         or result.get("ok") is not True
                     ):
                         raise BaleApiError(
-                            f"Bale API {selected.name} rejected the media."
+                            f"Bale API {selected.name} rejected the media.",
+                            view_outcome=_view_failure(
+                                selected.name, response.status, result,
+                            ),
                         )
                     message = result.get("result")
         except (OSError, ClientError, asyncio.TimeoutError, ValueError):
@@ -259,11 +303,56 @@ class BaleTransport:
             raise BaleApiError("Bale did not confirm a delivery Message ID.")
         return str(message_id)
 
+    async def send_view(
+        self, chat_id: int, reply: BotReply, *,
+        edit_message_id: int | None = None,
+    ) -> ViewResult:
+        """Present one view and leave any replacement to the coordinator."""
+        if reply.preview is not None and reply.preview.kind != "photo":
+            return ViewResult(ViewOutcome.REJECTED)
+        if edit_message_id is not None and (
+            reply.preview is not None or reply.cards or reply.attachments
+            or reply.request_contact or reply.show_main_keyboard
+        ):
+            return ViewResult(ViewOutcome.CANNOT_EDIT)
+        if reply.cards:
+            for index, card in enumerate(reply.cards):
+                result = await self.send_view(chat_id, card)
+                if result.outcome is not ViewOutcome.CONFIRMED:
+                    return ViewResult(ViewOutcome.UNKNOWN) if index else result
+            result = await self.send_view(chat_id, replace(reply, cards=()))
+            if result.outcome is not ViewOutcome.CONFIRMED:
+                return ViewResult(ViewOutcome.UNKNOWN)
+            return result
+        try:
+            message_id = await self._send(
+                chat_id, reply, edit_message_id=edit_message_id, strict=True,
+            )
+        except BaleApiError as error:
+            if error.view_outcome is ViewOutcome.NO_CHANGE:
+                return ViewResult(error.view_outcome, edit_message_id)
+            return ViewResult(error.view_outcome)
+        except (ClientError, OSError, ValueError):
+            return ViewResult(ViewOutcome.UNKNOWN)
+        if (
+            type(message_id) is not int or message_id <= 0
+            or (edit_message_id is not None and message_id != edit_message_id)
+        ):
+            return ViewResult(ViewOutcome.UNKNOWN)
+        return ViewResult(ViewOutcome.CONFIRMED, message_id)
+
     async def send(
         self, chat_id: int, reply: BotReply, *,
         edit_message_id: int | None = None,
     ) -> int | None:
         """Send UTF-8 text with standard inline callback buttons."""
+        return await self._send(chat_id, reply, edit_message_id=edit_message_id)
+
+    async def _send(
+        self, chat_id: int, reply: BotReply, *,
+        edit_message_id: int | None, strict: bool = False,
+    ) -> int | None:
+        """Build Bale markup and send or edit with the chosen fallback owner."""
         if reply.cards:
             # Keep the former page in the chat, but disable its page controls.
             # Each product is a separate photo with its own detail button.
@@ -336,19 +425,16 @@ class BaleTransport:
                 result = await self._call("editMessageText", {
                     **payload, "message_id": edit_message_id,
                 })
-                return result.get("message_id", edit_message_id) if isinstance(result, dict) else edit_message_id
+                default_id = None if strict else edit_message_id
+                return result.get("message_id", default_id) if isinstance(result, dict) else default_id
             except BaleApiError as error:
-                if "HTTP 400" not in str(error) and "HTTP 404" not in str(error):
+                if strict:
                     raise
-                # Older Bale clients may reject an edit. Invalidate the
-                # obsolete controls before posting the replacement screen.
-                try:
-                    await self._call("editMessageReplyMarkup", {
-                        "chat_id": chat_id, "message_id": edit_message_id,
-                        "reply_markup": {"inline_keyboard": []},
-                    })
-                except BaleApiError:
-                    pass
+                if error.view_outcome is ViewOutcome.NO_CHANGE:
+                    return edit_message_id
+                if error.view_outcome is not ViewOutcome.CANNOT_EDIT:
+                    raise
+                await self.clear_inline(chat_id, edit_message_id)
         result = await self._call("sendMessage", payload)
         return result.get("message_id") if isinstance(result, dict) else None
 

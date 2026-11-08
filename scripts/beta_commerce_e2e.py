@@ -7,6 +7,7 @@ temporary Python configuration overrides never enable a running receiver.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -18,9 +19,11 @@ from scripts.beta_storefront_e2e import (
     MANIFEST,
     FakeBaleSession,
     FakeTelegram,
-    callbacks,
+    StorefrontJourney,
+    VisibleTap,
     context,
     inbound,
+    seed,
 )
 
 import config
@@ -28,60 +31,53 @@ from channels.bale import BaleTransport
 from channels.telegram import TelegramTransport
 from db import engine, session_maker
 from models.shop_checkout import ShopOrderLine
+from models.shop_checkout_policy import ShopStoreCheckoutPolicy
 from models.shop_content import Product, ShopOrder
 from models.shop_digital_delivery import ShopDigitalDelivery, ShopDigitalLicense
 from models.shop_payment import ShopPaymentAttempt
 from services.shop_digital_catalog import set_private_product_file
+from services.shop_cart import ShopCartFlow
+from services.shop_checkout_policy import save_bot_checkout, save_store_checkout
 from services.shop_multibot_dispatch import dispatch
 from services.shop_refunds import ShopRefundService
-from sqlalchemy import select
+from sqlalchemy import select, text
 from starlette.datastructures import Headers, UploadFile
 from workers import shop_digital_delivery as digital_worker
 
 
-class Journey:
+class Journey(StorefrontJourney):
     """One independently scoped customer, native provider fake and trusted Bot."""
 
-    def __init__(self, scope, user_id: int) -> None:
-        """Bind a server-authenticated context; inbound data cannot change it."""
-        self.scope = scope
-        self.user_id = user_id
-        self.native = (
-            FakeTelegram() if scope.platform.value == "telegram" else FakeBaleSession()
-        )
-        self.client = (
-            self.native
-            if scope.platform.value == "telegram"
-            else BaleTransport("qa-fake-token", self.native, bot_id=scope.bot_id)
-        )
-
-    async def ask(self, action=None, *, message=None):
-        """Run an actual raw provider update through the shared Dispatcher."""
-        result = await dispatch(
-            self.scope,
-            self.client,
-            inbound(self.user_id, action=action, message=message),
-        )
-        assert result["status"] in {"processed", "invoice_requested"}, result
-        return self.native.messages[-1]
-
-    async def order(self, fixture: dict, kinds: tuple[str, ...]) -> list[int]:
-        """Walk cart actions and atomically submit a freshly signed preview."""
+    async def prepare_checkout(
+        self, fixture: dict, kinds: tuple[str, ...],
+    ) -> VisibleTap:
+        """Build a quote and return the actual rendered confirmation button."""
         await self.ask(message="/start")
         for kind in kinds:
-            await self.ask(f"shop:add:{fixture['products'][kind]}")
+            product_id = fixture["products"][kind]
+            await self.open_product(product_id)
+            await self.ask(f"shop:add:{product_id}")
         if "physical" in kinds:
             await self.ask("shop:address")
-            await self.ask(message="نشانی آزمایشی تهران خیابان نمونه پلاک ۱۲")
+            await self.ask(await self.add_address())
+            await self.ask("shop:cart")
+            await self.ask("shop:shipping")
             await self.ask(f"shop:ship:{fixture['shipping_id']}")
         preview = await self.ask("shop:checkout")
         buttons = [
-            value for value in callbacks(preview) if value.startswith("shop:place:")
+            tap for action, tap in (await self.actions(preview)).items()
+            if action.startswith("shop:place:")
         ]
         assert len(buttons) == 1, preview["text"]
+        return buttons[0]
+
+    async def order(self, fixture: dict, kinds: tuple[str, ...]) -> list[int]:
+        """Walk cart actions and atomically submit a freshly signed preview."""
+        confirmation = await self.prepare_checkout(fixture, kinds)
         # PostgreSQL row locks and uniqueness must survive two simultaneous taps.
-        await asyncio.gather(self.ask(buttons[0]), self.ask(buttons[0]))
-        await self.ask(buttons[0])
+        results = await asyncio.gather(self.tap(confirmation), self.tap(confirmation))
+        assert all(r["status"] in {"processed", "stale_callback"} for r in results)
+        assert (await self.tap(confirmation))["status"] in {"processed", "stale_callback"}
         async with session_maker() as db:
             rows = (
                 await db.scalars(
@@ -113,9 +109,11 @@ class Journey:
         before = len(self.native.invoices)
         if isinstance(self.native, FakeTelegram):
             self.native.fail_invoice = unknown
-        await self.ask(f"shop:pay:{order_id}")
+        await self.ask(message="/orders")
+        tap = await self.prepare(f"shop:pay:{order_id}")
+        assert (await self.tap(tap))["status"] == "invoice_requested"
         assert len(self.native.invoices) == before + 1, self.native.messages[-1]["text"]
-        await self.ask(f"shop:pay:{order_id}")
+        assert (await self.tap(tap))["status"] in {"invoice_requested", "stale_callback"}
         assert len(self.native.invoices) == before + 1, "Uncertain invoice was resent"
         if isinstance(self.native, FakeTelegram):
             self.native.fail_invoice = False
@@ -169,6 +167,215 @@ class Journey:
         assert (await dispatch(self.scope, self.client, raw))[
             "status"
         ] == "already_settled"
+
+
+async def blocked_by(pid: int, waiting: asyncio.Task) -> None:
+    """Observe a real PostgreSQL block before releasing its current holder."""
+    async with asyncio.timeout(5):
+        while True:
+            assert not waiting.done(), "Checkout policy operations did not serialize"
+            async with session_maker() as db:
+                blocked = await db.scalar(text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                    "WHERE datname = current_database() "
+                    "AND :holder = ANY(pg_blocking_pids(pid)))"
+                ), {"holder": pid})
+            if blocked:
+                return
+            await asyncio.sleep(0.02)
+
+
+async def shopper_orders(journey: Journey) -> list[ShopOrder]:
+    """Read orders and assert reviewing or submitting has not started a charge."""
+    async with session_maker() as db:
+        orders = list(await db.scalars(select(ShopOrder).where(
+            ShopOrder.store_id == journey.scope.store_id,
+            ShopOrder.bot_id == journey.scope.bot_id,
+            ShopOrder.platform_user_id == journey.user_id,
+        )))
+        attempts = list(await db.scalars(select(ShopPaymentAttempt).where(
+            ShopPaymentAttempt.order_id.in_([order.id for order in orders]),
+        )))
+    assert not attempts and not journey.native.invoices
+    return orders
+
+
+async def review_terms() -> None:
+    """Read every checkout terms page without creating orders or charges."""
+    fixture = await seed(persist_manifest=False)
+    suffix = uuid4().int % 1_000_000
+    store_id = fixture["stores"][0]
+    long_terms = (
+        "شروع-شرایط-آزمایشی\n"
+        + ("ارسال خرید پس از بررسی موجودی و دریافت رسید انجام می‌شود.\n" * 120)[:4900]
+        + "\nپایان-شرایط-آزمایشی"
+    )
+    with patch.multiple(
+        config,
+        TELEGRAM_STARS_CHECKOUT_ENABLED=True,
+        BALE_WALLET_CHECKOUT_ENABLED=True,
+    ):
+        for mode_index, mode in enumerate(("manual", "instant")):
+            async with session_maker() as db:
+                policy = await db.get(ShopStoreCheckoutPolicy, store_id)
+                await save_store_checkout(
+                    db, store_id=store_id, actor_id=fixture["admin_id"],
+                    expected_version=policy.version, mode=mode,
+                    terms_version="qa-long-v1", terms_text=long_terms,
+                )
+            for bot_index, bot_key in enumerate(("telegram", "bale")):
+                journey = Journey(
+                    await context(fixture, bot_key),
+                    831_000_000 + suffix + mode_index * 2 + bot_index,
+                )
+                await journey.prepare_checkout(fixture, ("file",))
+                initial = journey.native.messages[-1]["text"]
+                terms = next(
+                    action for action in await journey.actions()
+                    if action.startswith("ux:terms:")
+                )
+                page = await journey.ask(terms)
+                assert "شروع-شرایط-آزمایشی" in page["text"]
+                assert not await shopper_orders(journey)
+                for page_index in range(1, 6):
+                    actions = await journey.actions(page)
+                    back = next(
+                        action for action in actions if action.startswith("shop:checkout:")
+                    )
+                    next_page = next((
+                        action for action in actions
+                        if action.startswith("ux:terms:")
+                        and int(action.split(":")[3]) == page_index
+                    ), None)
+                    if next_page is None:
+                        break
+                    page = await journey.ask(next_page)
+                    assert not await shopper_orders(journey)
+                assert "پایان-شرایط-آزمایشی" in page["text"]
+                returned = await journey.ask(back)
+                assert returned["text"] == initial
+                assert not await shopper_orders(journey)
+                await journey.ask("shop:cart")
+                assert not await shopper_orders(journey)
+                await journey.ask("shop:checkout")
+                confirm = next(
+                    tap for action, tap in (await journey.actions()).items()
+                    if action.startswith("shop:place:")
+                )
+                assert (await journey.tap(confirm))["status"] == "processed"
+                assert (await journey.tap(confirm))["status"] == "stale_callback"
+                orders = await shopper_orders(journey)
+                assert len(orders) == 1 and orders[0].terms_accepted_at
+                assert orders[0].terms_version_snapshot == "qa-long-v1"
+                assert orders[0].status == (
+                    "pending_review" if mode == "manual" else "approved_unpaid"
+                )
+                print(
+                    f"PASS  {bot_key} {mode}: one-tap long Terms, same review on "
+                    "Back, no read/cancel effects, one explicit order"
+                )
+
+
+async def policy_races() -> None:
+    """Exercise both checkout-policy linearization orders on real PostgreSQL."""
+    fixture = await seed(persist_manifest=False)
+    suffix = uuid4().int % 1_000_000
+    telegram = Journey(await context(fixture, "telegram"), 821_000_000 + suffix)
+    bale = Journey(await context(fixture, "bale"), 822_000_000 + suffix)
+    with patch.multiple(
+        config,
+        TELEGRAM_STARS_CHECKOUT_ENABLED=True,
+        BALE_WALLET_CHECKOUT_ENABLED=True,
+    ):
+        confirmation = await telegram.prepare_checkout(fixture, ("file",))
+        held = asyncio.Event()
+        release = asyncio.Event()
+        async with session_maker() as writer_db:
+            policy = await writer_db.get(ShopStoreCheckoutPolicy, telegram.scope.store_id)
+            pid = await writer_db.scalar(text("SELECT pg_backend_pid()"))
+            original_commit = writer_db.commit
+
+            async def hold_writer_commit():
+                held.set()
+                await asyncio.wait_for(release.wait(), 10)
+                await original_commit()
+
+            with patch.object(writer_db, "commit", hold_writer_commit):
+                writer = asyncio.create_task(save_store_checkout(
+                    writer_db, store_id=telegram.scope.store_id, actor_id=fixture["admin_id"],
+                    expected_version=policy.version, mode=policy.mode,
+                    terms_version=policy.terms_version,
+                    terms_text=policy.terms_text + " روش پیگیری سفارش به‌روز شده است.",
+                ))
+                decision = None
+                try:
+                    await asyncio.wait_for(held.wait(), 5)
+                    decision = asyncio.create_task(telegram.tap(confirmation))
+                    await blocked_by(pid, decision)
+                    assert not await shopper_orders(telegram)
+                finally:
+                    release.set()
+                    results = await asyncio.gather(
+                        *(task for task in (writer, decision) if task is not None),
+                        return_exceptions=True,
+                    )
+            assert all(isinstance(result, dict) for result in results), results
+        assert not await shopper_orders(telegram), "Old confirmation accepted changed terms"
+        assert (await telegram.tap(confirmation))["status"] == "stale_callback"
+        preview = await telegram.ask(message="/checkout")
+        refreshed = next(
+            tap for action, tap in (await telegram.actions(preview)).items()
+            if action.startswith("shop:place:")
+        )
+        assert refreshed != confirmation
+        assert (await telegram.tap(refreshed))["status"] == "processed"
+        orders = await shopper_orders(telegram)
+        assert len(orders) == 1 and orders[0].terms_version_snapshot == "qa-v1"
+
+        # No Bot override exists yet. Hold the decision after it takes its
+        # policy read lock and prove an inserting writer must wait for it.
+        confirmation = await bale.prepare_checkout(fixture, ("file",))
+        held, release = asyncio.Event(), asyncio.Event()
+        decision_pid = None
+        original_quote = ShopCartFlow._quote
+
+        async def hold_decision_quote(flow, cart, db, **kwargs):
+            nonlocal decision_pid
+            if decision_pid is None:
+                decision_pid = await db.scalar(text("SELECT pg_backend_pid()"))
+                held.set()
+                await asyncio.wait_for(release.wait(), 10)
+            return await original_quote(flow, cart, db, **kwargs)
+
+        async def insert_override():
+            async with session_maker() as db:
+                return await save_bot_checkout(
+                    db, bot_id=bale.scope.bot_id, actor_id=fixture["admin_id"],
+                    expected_version=0, mode_override="manual",
+                )
+
+        with patch.object(ShopCartFlow, "_quote", hold_decision_quote):
+            decision = asyncio.create_task(bale.tap(confirmation))
+            writer = None
+            try:
+                await asyncio.wait_for(held.wait(), 5)
+                writer = asyncio.create_task(insert_override())
+                await blocked_by(decision_pid, writer)
+                assert not await shopper_orders(bale)
+            finally:
+                release.set()
+                results = await asyncio.gather(
+                    *(task for task in (decision, writer) if task is not None),
+                    return_exceptions=True,
+                )
+        assert results[0]["status"] == "processed"
+        assert results[1]["mode_override"] == "manual"
+        orders = await shopper_orders(bale)
+        assert len(orders) == 1 and orders[0].status == "approved_unpaid"
+        assert orders[0].terms_accepted_at and orders[0].terms_version_snapshot == "qa-v1"
+        assert (await bale.tap(confirmation))["status"] == "stale_callback"
+        assert len(await shopper_orders(bale)) == 1
+    print("PASS  PostgreSQL checkout: writer-first terms refresh, decision-first Bot override insertion, zero charges or duplicate orders")
 
 
 async def commerce(fixture: dict) -> None:
@@ -399,8 +606,18 @@ async def commerce(fixture: dict) -> None:
 
 async def main() -> None:
     """Reuse only the exact synthetic fixture prepared by the guarded seed."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--stage", choices=("commerce", "policy", "terms"), default="commerce",
+    )
+    args = parser.parse_args()
     try:
-        await commerce(json.loads(MANIFEST.read_text()))
+        if args.stage == "policy":
+            await policy_races()
+        elif args.stage == "terms":
+            await review_terms()
+        else:
+            await commerce(json.loads(MANIFEST.read_text()))
     finally:
         await engine.dispose()
 
