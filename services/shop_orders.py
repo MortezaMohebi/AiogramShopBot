@@ -1,0 +1,322 @@
+"""Shared order history and safe cancellation for Telegram and Bale.
+
+Payment transactions are never cancelled by this service.
+"""
+
+from __future__ import annotations
+
+import re
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform, ReplyPurpose
+from models.shop_checkout import ShopOrderLine
+from models.shop_content import Product, ShopIdentity, ShopOrder
+from services.shop_service_controls import service_enabled
+from services.shop_checkout_policy import legal_credit_for_items
+from services.shop_customer_orders import (
+    order_owner_clause, verified_identity_keys,
+)
+from services.shop_money import format_rials
+from services.shop_channel_features import get_features, inline_credit_label
+from services.shop_payment_rails import rail_enabled
+from services.shop_bot_catalog_acl import resolve_scope, visible_product_ids
+from services.shop_bot_context import BotContext
+import config
+from services.shop_refunds import ShopRefundService
+from services.shop_payments import PaymentRejected
+
+_CANCEL = re.compile(r"shop:cancelorder:([1-9][0-9]{0,18})\Z")
+_REFUND = re.compile(r"shop:refundorder:([1-9][0-9]{0,18})\Z")
+ORDER_PAGE = re.compile(r"shop:orders:page:([0-3])\Z")
+_ORDERS_PER_PAGE = 5
+
+STATUS_NAMES = {
+    "pending_review": "در انتظار بررسی فروشنده",
+    "approved_unpaid": "بررسی شد؛ پرداخت نشده",
+    "pending_payment": "در انتظار پرداخت",
+    "paid": "پرداخت‌شده",
+    "paid_unfulfilled": "پرداخت شده؛ نیازمند بررسی",
+    "refunded": "بازپرداخت‌شده",
+    "cancelled": "لغو‌شده",
+}
+
+
+class ShopOrdersFlow:
+    """Provide one order-history experience for both messaging platforms."""
+
+    def __init__(
+        self, display_unit: str = "IRR",
+        *, bot_context: BotContext | None = None,
+    ) -> None:
+        """Bind only a previously verified bot identity for every query."""
+        self.display_unit = display_unit
+        self.bot_context = bot_context
+
+    def _bot_id(self, platform) -> str:
+        """Scope all order reads and callbacks to the authenticated bot."""
+        if self.bot_context is None:
+            raise ValueError("An authenticated bot context is required.")
+        if self.bot_context.platform != platform:
+            raise PaymentRejected("شناسه بات با پیام‌رسان تطبیق ندارد.")
+        return self.bot_context.bot_id
+
+    async def reply(
+        self, event: InboundEvent, session: AsyncSession
+    ) -> BotReply | None:
+        """Resolve order history or customer cancellation of an unpaid request."""
+        action = event.callback_data or ""
+        text = (event.text or "").strip()
+        if action == "shop:orders" or text in (
+            "/orders", "📦 سفارش‌های من",
+        ):
+            return await self._history(event, session)
+        page = ORDER_PAGE.fullmatch(action)
+        if page is not None:
+            return await self._history(event, session, page=int(page[1]))
+        match = _REFUND.fullmatch(action)
+        if match is not None:
+            try:
+                case = await ShopRefundService.request(
+                    session,
+                    platform=event.platform,
+                    payer_id=event.user_id,
+                    bot_id=self._bot_id(event.platform),
+                    order_id=int(match.group(1)),
+                    reason="Customer requested refund.",
+                )
+            except PaymentRejected as error:
+                return BotReply(str(error))
+            return BotReply(
+                f"درخواست بازپرداخت سفارش ثبت شد. کد پیگیری #{case.id}. "
+                "تا تأیید تراکنش مرجع، مبلغ بازگشته تلقی نمی‌شود.",
+                purpose=ReplyPurpose.DURABLE,
+            )
+        match = _CANCEL.fullmatch(action)
+        if match is not None:
+            return await self._cancel(
+                event, session, int(match.group(1))
+            )
+        return None
+
+    async def _history(
+        self, event: InboundEvent, session: AsyncSession, *, page: int = 0,
+    ) -> BotReply:
+        """Read only orders belonging to the current platform identity."""
+        identity = await session.scalar(select(ShopIdentity).where(
+            ShopIdentity.bot_id == self._bot_id(event.platform),
+            ShopIdentity.platform == event.platform.value,
+            ShopIdentity.platform_user_id == event.user_id,
+        ))
+        if identity is not None and identity.customer_id is not None:
+            # Linking updates ShopIdentity.customer_id but deliberately
+            # does NOT rewrite historical Order.customer_id/payment ownership.
+            # Read through the verified per-Bot identity cluster instead.
+            keys = await verified_identity_keys(
+                session, store_id=identity.store_id,
+                customer_id=identity.customer_id,
+            )
+            conditions = (
+                order_owner_clause(
+                    store_id=identity.store_id,
+                    identity_keys=keys,
+                ),
+            )
+        else:
+            conditions = (
+                ShopOrder.store_id == self.bot_context.store_id,
+                ShopOrder.bot_id == self._bot_id(event.platform),
+                ShopOrder.platform == event.platform.value,
+                ShopOrder.platform_user_id == event.user_id,
+            )
+        result = await session.execute(
+            select(ShopOrder).where(*conditions)
+            .order_by(ShopOrder.id.desc()).limit(20)
+        )
+        orders = result.scalars().all()
+        if not orders:
+            return BotReply(
+                "هنوز سفارشی ثبت نکرده‌اید.",
+                ((InlineAction("🛍 محصولات", "shop:categories"),),),
+            )
+        last_page = (len(orders) - 1) // _ORDERS_PER_PAGE
+        page = min(page, last_page)
+        start = page * _ORDERS_PER_PAGE
+        orders = orders[start:start + _ORDERS_PER_PAGE]
+        ids = [order.id for order in orders]
+        counts_result = await session.execute(
+            select(ShopOrderLine.order_id, func.sum(ShopOrderLine.quantity))
+            .where(ShopOrderLine.order_id.in_(ids))
+            .group_by(ShopOrderLine.order_id)
+        )
+        quantities = dict(counts_result.all())
+        # A payment button must not be offered when the current bot ACL
+        # denies an unpaid order. A customer's paid/refundable history remains
+        # visible, and cancellation of the unpaid request stays available.
+        order_items = await session.execute(
+            select(
+                ShopOrderLine.order_id, ShopOrderLine.product_id,
+                Product.product_type,
+            ).join(
+                Product, Product.id == ShopOrderLine.product_id,
+            ).where(ShopOrderLine.order_id.in_(ids))
+        )
+        order_products: dict[int, set[int]] = {}
+        order_types: dict[int, set[str]] = {}
+        all_products: set[int] = set()
+        for order_id, product_id, product_type in order_items.all():
+            order_products.setdefault(order_id, set()).add(product_id)
+            order_types.setdefault(order_id, set()).add(product_type)
+            all_products.add(product_id)
+        allowed_products = await visible_product_ids(
+            session,
+            await resolve_scope(session, bot_id=self._bot_id(event.platform)),
+            all_products,
+        )
+        owner = self._bot_id(event.platform)
+        features = await get_features(
+            session, event.platform.value, bot_id=owner,
+        )
+        credit_available = (
+            features.store_credit_enabled
+            and await rail_enabled(
+                session, event.platform.value, "store_credit",
+                bot_id=owner,
+            )
+        )
+        bale_ready = (
+            service_enabled("bale-wallet")
+            and await rail_enabled(
+                session, "bale", "bale_wallet", bot_id=owner,
+            )
+        ) if event.platform == Platform.BALE else False
+        stars_ready = (
+            service_enabled("telegram-stars")
+            and await rail_enabled(
+                session, "telegram", "telegram_stars", bot_id=owner,
+            )
+        ) if event.platform == Platform.TELEGRAM else False
+        fiat_ready = (
+            service_enabled("telegram-fiat")
+            and config.TELEGRAM_IRR_MINOR_MULTIPLIER > 0
+            and await rail_enabled(
+                session, "telegram", "telegram_fiat", bot_id=owner,
+            )
+        ) if event.platform == Platform.TELEGRAM else False
+        lines = [f"📦 سفارش‌های من · صفحه {page + 1} از {last_page + 1}"]
+        rows: list[tuple[InlineAction, ...]] = []
+        for order in orders:
+            originates_here = order.bot_id == self._bot_id(event.platform)
+            count = quantities.get(order.id, order.quantity)
+            money_label = (
+                f"{order.total_stars_snapshot} Stars (XTR)"
+                if order.platform == "telegram"
+                and order.total_stars_snapshot is not None
+                else format_rials(order.total_irr, self.display_unit)
+            )
+            lines.append(
+                f"#{order.id} — {count} کالا — "
+                f"{money_label}\n"
+                f"{STATUS_NAMES.get(order.status, 'در حال بررسی')}"
+            )
+            rows.append((
+                InlineAction(
+                    f"📄 جزئیات سفارش #{order.id}",
+                    f"ux:order:detail:{order.id}",
+                ),
+            ))
+            if (
+                originates_here
+                and order.status in ("paid", "paid_unfulfilled")
+            ):
+                rows.append((
+                    InlineAction(
+                        f"درخواست بازپرداخت #{order.id}",
+                        f"shop:refundorder:{order.id}",
+                    ),
+                ))
+            if originates_here and order.status == "approved_unpaid":
+                # A denied order can still be cancelled or reconciled.
+                # Only the creation of new invoice intents is prohibited.
+                available_ids = order_products.get(order.id, set())
+                if not available_ids or not available_ids <= allowed_products:
+                    lines.append(
+                        "دسترسی به یکی از کالاهای این سفارش تغییر کرده است؛ "
+                        "پرداخت جدید برای آن مجاز نیست."
+                    )
+                else:
+                    actions = []
+                    kinds = order_types.get(order.id, set())
+                    external_ready = (
+                        bale_ready and len(kinds) == 1
+                        if event.platform == Platform.BALE
+                        else stars_ready if kinds == {"digital"}
+                        else fiat_ready if kinds == {"physical"}
+                        else False
+                    )
+                    if external_ready:
+                        actions.append(InlineAction(
+                            f"💳 پرداخت سفارش #{order.id}",
+                            f"shop:pay:{order.id}",
+                        ))
+                    if (
+                        credit_available
+                        and legal_credit_for_items(event.platform, kinds)
+                    ):
+                        actions.append(InlineAction(
+                            inline_credit_label(features),
+                            f"shop:creditpay:{order.id}",
+                        ))
+                    if actions:
+                        rows.append(tuple(actions))
+            if (
+                originates_here
+                and order.provider == "manual_review"
+                and order.status in ("pending_review", "approved_unpaid")
+            ):
+                rows.append((
+                    InlineAction(
+                        f"لغو درخواست #{order.id}",
+                        f"shop:cancelorder:{order.id}",
+                    ),
+                ))
+        paging = []
+        if page:
+            paging.append(InlineAction("صفحه قبل", f"shop:orders:page:{page - 1}"))
+        if page < last_page:
+            paging.append(InlineAction("صفحه بعد", f"shop:orders:page:{page + 1}"))
+        if paging:
+            rows.append(tuple(paging))
+        rows.append((InlineAction("🛍 محصولات", "shop:categories"),))
+        return BotReply("\n\n".join(lines), tuple(rows))
+
+    async def _cancel(
+        self, event: InboundEvent, session: AsyncSession, order_id: int
+    ) -> BotReply:
+        """Cancel only an unpaid review request owned by this exact identity."""
+        result = await session.execute(
+            select(ShopOrder).where(
+                ShopOrder.id == order_id,
+                ShopOrder.bot_id == self._bot_id(event.platform),
+                ShopOrder.platform == event.platform.value,
+                ShopOrder.platform_user_id == event.user_id,
+            ).with_for_update()
+        )
+        order = result.scalar_one_or_none()
+        if order is None:
+            return BotReply("سفارش یافت نشد.")
+        if (
+            order.provider != "manual_review"
+            or order.status not in ("pending_review", "approved_unpaid")
+        ):
+            return BotReply(
+                "این سفارش پرداخت‌شده، لغوشده یا در مرحله دیگری است؛ "
+                "لغو خودکار آن امکان‌پذیر نیست."
+            )
+        order.status = "cancelled"
+        await session.commit()
+        return BotReply(
+            f"درخواست سفارش #{order.id} لغو شد. مبلغی دریافت نشده است.",
+            ((InlineAction("📦 سفارش‌های من", "shop:orders"),),),
+        )

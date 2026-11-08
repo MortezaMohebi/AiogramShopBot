@@ -1,0 +1,49 @@
+{
+  "name": "dual-messenger-shop-admin",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "postinstall": "node scripts/patch-next-themes.mjs",
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test:captcha": "node --experimental-strip-types --test tests/captcha-verification.test.mts",
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/*.test.mts",
+    "test:settings": "node --experimental-strip-types --test tests/shop-settings-route.test.mts tests/bridge.test.mts"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@xyflow/react": "12.12.1",
+    "next": "16.4.3",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "lucide-react": "1.66.0",
+    "@fontsource-variable/vazirmatn": "5.3.0",
+    "@radix-ui/react-slot": "1.2.3",
+    "@radix-ui/react-direction": "1.1.1",
+    "next-themes": "0.4.6",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.3.1",
+    "class-variance-authority": "0.7.1",
+    "server-only": "0.0.1",
+    "thinking-orbs": "0.3.2",
+    "lazysizes": "5.3.2",
+    "react-aria-components": "1.22.1",
+    "@internationalized/date": "3.12.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.11",
+    "@tailwindcss/postcss": "^4.1.11",
+    "postcss": "^8.5.6",
+    "typescript": "^5.9.2",
+    "eslint": "^9.35.0",
+    "eslint-config-next": "16.4.3"
+  }
+}

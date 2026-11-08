@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "tools": [
+    "get_project_metadata",
+    "get_errors",
+    "get_page_metadata",
+    "get_logs",
+    "get_server_action_by_id",
+    "get_routes",
+    "get_request_insights",
+    "get_compilation_issues",
+    "compile_route"
+  ],
+  "results": {
+    "get_project_metadata": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"projectPath\":\"/workspaces/AiogramShopBot-mcp-qa/dashboard-next\",\"devServerUrl\":\"http://127.0.0.1:3005\"}"
+        }
+      ]
+    },
+    "get_routes": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\n  \"appRouter\": [\n    \"/\",\n    \"/account\",\n    \"/account/mcp\",\n    \"/activate\",\n    \"/api/account/[action]\",\n    \"/api/admin/actions/[[...path]]\",\n    \"/api/admin/bot-connections\",\n    \"/api/admin/bot-connections/mode-request\",\n    \"/api/admin/categories\",\n    \"/api/admin/customers/[id]/export\",\n    \"/api/admin/data-models/[model]/[action]\",\n    \"/api/admin/data-models/[model]/import\",\n    \"/api/admin/digital-assets/[id]\",\n    \"/api/admin/mcp/[[...path]]\",\n    \"/api/admin/preview/[kind]/[id]\",\n    \"/api/admin/product-media/[id]\",\n    \"/api/admin/products\",\n    \"/api/admin/shop-settings\",\n    \"/api/admin/telegram-transport/[operation]\",\n    \"/api/admin/upload\",\n    \"/api/admin/workflow-runtime/[[...path]]\",\n    \"/api/admin/workflows/[[...path]]\",\n    \"/api/auth/challenge\",\n    \"/api/auth/login\",\n    \"/api/auth/logout\",\n    \"/api/auth/redeem\",\n    \"/audit\",\n    \"/bot-connections\",\n    \"/bots\",\n    \"/bots/[id]\",\n    \"/campaigns\",\n    \"/campaigns/[id]\",\n    \"/campaigns/new\",\n    \"/categories\",\n    \"/coupons\",\n    \"/customer-notifications\",\n    \"/customers\",\n    \"/customers/[id]\",\n    \"/customers/retention\",\n    \"/dashboard\",\n    \"/data-models/[model]\",\n    \"/digital-deliveries\",\n    \"/finance\",\n    \"/fulfillments\",\n    \"/login\",\n    \"/media\",\n    \"/orders\",\n    \"/payment-accounts\",\n    \"/permissions\",\n    \"/products\",\n    \"/products/[id]/digital\",\n    \"/products/[id]/edit\",\n    \"/products/new\",\n    \"/relay-workers\",\n    \"/reports\",\n    \"/reviews\",\n    \"/settings\",\n    \"/shipping\",\n    \"/staff\",\n    \"/staff/[id]/stores\",\n    \"/store-customers\",\n    \"/store-customers/[id]\",\n    \"/stores\",\n    \"/studio/actions\",\n    \"/studio/mcp\",\n    \"/studio/runtime\",\n    \"/studio/runtime/runs/[id]\",\n    \"/studio/workflows\",\n    \"/studio/workflows/[id]\",\n    \"/studio/workflows/[id]/preview\",\n    \"/studio/workflows/[id]/settings\",\n    \"/studio/workflows/[id]/versions\",\n    \"/studio/workflows/new\",\n    \"/support-tickets\",\n    \"/support-tickets/[id]\",\n    \"/uoms\"\n  ]\n}"
+        }
+      ]
+    },
+    "get_compilation_issues": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"issues\":[]}"
+        }
+      ]
+    }
+  }
+}

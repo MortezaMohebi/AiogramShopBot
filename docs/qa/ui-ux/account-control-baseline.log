@@ -1,0 +1,82 @@
+✖ a failed account challenge shows safe feedback without dispatching a write (4.009772ms)
+✖ a lost account response stays unconfirmed and does not replay the write (1.064005ms)
+✖ an unreadable account response directs status checking without automatic replay (3.997183ms)
+✔ account rejection translates the stable code and excludes raw server detail (1.539718ms)
+✔ only an affirmative account receipt returns a successful result (1.479448ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 2
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 678.987772
+
+✖ failing tests:
+
+test at tests/account-control-baseline.tmp.mts:39:1
+✖ a failed account challenge shows safe feedback without dispatching a write (4.009772ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /بررسی امنیتی انجام نشد/. Input:
+  
+  'Error: INTERNAL_SECURITY_DETAIL'
+  
+      at async TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/account-control-baseline.tmp.mts:41:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: Error: INTERNAL_SECURITY_DETAIL
+        at TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/account-control-baseline.tmp.mts:40:36)
+        at Test.runInAsyncScope (node:async_hooks:227:14)
+        at Test.run (node:internal/test_runner/test:1402:25)
+        at Test.start (node:internal/test_runner/test:1262:17)
+        at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17),
+    expected: /بررسی امنیتی انجام نشد/,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/account-control-baseline.tmp.mts:45:1
+✖ a lost account response stays unconfirmed and does not replay the write (1.064005ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /پاسخ نهایی دریافت نشد.*وضعیت فعلی/. Input:
+  
+  'TypeError: INTERNAL_NETWORK_DETAIL'
+  
+      at async TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/account-control-baseline.tmp.mts:47:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: TypeError: INTERNAL_NETWORK_DETAIL
+        at TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/account-control-baseline.tmp.mts:46:36)
+        at Test.runInAsyncScope (node:async_hooks:227:14)
+        at Test.run (node:internal/test_runner/test:1402:25)
+        at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+        at Test.postRun (node:internal/test_runner/test:1542:19)
+        at Test.run (node:internal/test_runner/test:1467:12)
+        at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3),
+    expected: /پاسخ نهایی دریافت نشد.*وضعیت فعلی/,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/account-control-baseline.tmp.mts:51:1
+✖ an unreadable account response directs status checking without automatic replay (3.997183ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /پاسخ نهایی قابل خواندن نیست.*وضعیت فعلی/. Input:
+  
+  `SyntaxError: Unexpected token 'o', "not-json" is not valid JSON`
+  
+      at async TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/account-control-baseline.tmp.mts:53:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: SyntaxError: Unexpected token 'o', "not-json" is not valid JSON
+        at JSON.parse (<anonymous>)
+        at parseJSONFromBytes (node:internal/deps/undici/undici:4432:19)
+        at successSteps (node:internal/deps/undici/undici:7087:27)
+        at readAllBytes (node:internal/deps/undici/undici:6004:13),
+    expected: /پاسخ نهایی قابل خواندن نیست.*وضعیت فعلی/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

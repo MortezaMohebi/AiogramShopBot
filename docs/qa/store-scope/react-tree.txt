@@ -1,0 +1,1334 @@
+# React component tree
+# Columns: depth id parent name [key=...]
+# Use `react inspect <id>` for props/hooks/state. IDs valid until next navigation.
+0 46 - Root
+1 47 46 HeadManagerContext.Provider
+2 48 47 Root
+3 49 48 ServerRoot
+4 50 49 Context.Provider
+5 51 50 AppRouter
+6 52 51 RootErrorBoundary
+7 53 52 ErrorBoundary
+8 54 53 ErrorBoundaryHandler
+9 55 54 Router
+10 56 55 HistoryUpdater
+10 57 55 NavigationPromisesContext.Provider
+11 58 57 PathParamsContext.Provider
+12 59 58 PathnameContext.Provider
+13 60 59 SearchParamsContext.Provider
+14 61 60 GlobalLayoutRouterContext.Provider
+15 62 61 AppRouterContext.Provider
+16 63 62 LayoutRouterContext.Provider
+17 64 63 HotReload
+18 65 64 AppDevOverlayErrorBoundary
+19 66 65 ReplaySsrOnlyErrors
+19 67 65 DevRootHTTPAccessFallbackBoundary
+20 68 67 HTTPAccessFallbackBoundary
+21 69 68 HTTPAccessFallbackErrorBoundary
+22 70 69 RedirectBoundary
+23 71 70 RedirectErrorBoundary
+24 72 71 Head key="[\"/!KGNvbnNvbGUp/stores/__PAGE__/_head\",\"\"]"
+25 73 72 Fragment key="h"
+26 74 73 Server(ViewportWrapper)
+27 75 74 __next_viewport_boundary__
+28 76 75 meta key="0"
+28 77 75 meta key="1"
+26 78 73 Server(MetadataWrapper)
+27 79 78 __next_metadata_boundary__
+28 80 79 div
+29 81 80 Suspense
+30 952 81 title key="0"
+30 953 81 meta key="1"
+30 954 81 meta key="2"
+30 955 81 link key="3"
+30 956 81 IconMark key="4"
+24 82 71 __next_root_layout_boundary__
+25 83 82 SegmentViewNode key="layout"
+26 84 83 SegmentTrieNode key="layout"
+26 85 83 Fragment key="c"
+27 86 85 link key="0"
+27 87 85 script key="script-0"
+27 88 85 Server(RootLayout)
+28 89 88 html
+29 90 89 body
+30 91 90 Providers
+31 92 91 J
+32 93 92 V
+33 94 93 Context.Provider
+34 95 94 Memo(Anonymous)
+34 96 94 DirectionProvider
+35 97 96 Context.Provider
+36 98 97 OuterLayoutRouter
+37 99 98 SegmentStateProvider key="(console)"
+38 100 99 Context.Provider key="0"
+39 101 100 TemplateContext.Provider key="(console)"
+40 102 101 RenderFromTemplateContext
+41 103 102 ScrollHandler
+42 104 103 InnerScrollHandler
+43 105 104 ErrorBoundary
+44 106 105 ErrorBoundaryHandler
+45 107 106 LoadingBoundary
+46 108 107 HTTPAccessFallbackBoundary
+47 109 108 HTTPAccessFallbackErrorBoundary
+48 110 109 RedirectBoundary
+49 111 110 RedirectErrorBoundary
+50 112 111 InnerLayoutRouter
+51 113 112 LayoutRouterContext.Provider
+52 114 113 NavigationPromisesContext.Provider
+53 115 114 LoadingBoundaryProvider
+54 116 115 LayoutRouterContext.Provider
+55 117 116 SegmentViewNode key="layout"
+56 118 117 SegmentTrieNode key="layout"
+56 119 117 Fragment key="c"
+57 120 119 script key="script-0"
+57 121 119 script key="script-1"
+57 122 119 Server(ConsoleLayout)
+58 123 122 Server(AppShell)
+59 124 123 div
+60 125 124 a
+60 126 124 Sidebar
+61 127 126 button
+62 128 127 Menu
+63 129 128 ForwardRef(Anonymous)
+64 130 129 svg
+65 131 130 path key="1tepv9"
+65 132 130 path key="1lakjw"
+65 133 130 path key="1djgab"
+61 134 126 aside
+62 135 134 div
+63 136 135 div
+64 137 136 div
+65 138 137 MessageCircle
+66 139 138 ForwardRef(Anonymous)
+67 140 139 svg
+68 141 140 path key="1sd12s"
+64 142 136 p
+63 143 135 button
+64 144 143 X
+65 145 144 ForwardRef(Anonymous)
+66 146 145 svg
+67 147 146 path key="1bl5f8"
+67 148 146 path key="d8bk6v"
+62 149 134 nav
+63 150 149 div key="فروش"
+64 151 150 p
+64 152 150 ul
+65 153 152 li key="/dashboard"
+66 154 153 LinkComponent
+67 155 154 Context.Provider
+68 156 155 a
+69 157 156 LayoutDashboard
+70 158 157 ForwardRef(Anonymous)
+71 159 158 svg
+72 160 159 rect key="10lvy0"
+72 161 159 rect key="16une8"
+72 162 159 rect key="1hutg5"
+72 163 159 rect key="ldoo1y"
+65 164 152 li key="/orders"
+66 165 164 LinkComponent
+67 166 165 Context.Provider
+68 167 166 a
+69 168 167 ClipboardList
+70 169 168 ForwardRef(Anonymous)
+71 170 169 svg
+72 171 170 rect key="tgr4d6"
+72 172 170 path key="116196"
+72 173 170 path key="1jrz19"
+72 174 170 path key="n85exb"
+72 175 170 path key="1dfujw"
+72 176 170 path key="18s6g9"
+65 177 152 li key="/digital-deliveries"
+66 178 177 LinkComponent
+67 179 178 Context.Provider
+68 180 179 a
+69 181 180 ClipboardList
+70 182 181 ForwardRef(Anonymous)
+71 183 182 svg
+72 184 183 rect key="tgr4d6"
+72 185 183 path key="116196"
+72 186 183 path key="1jrz19"
+72 187 183 path key="n85exb"
+72 188 183 path key="1dfujw"
+72 189 183 path key="18s6g9"
+65 190 152 li key="/fulfillments"
+66 191 190 LinkComponent
+67 192 191 Context.Provider
+68 193 192 a
+69 194 193 Truck
+70 195 194 ForwardRef(Anonymous)
+71 196 195 svg
+72 197 196 path key="wrbu53"
+72 198 196 path key="1lyqi6"
+72 199 196 path key="lysw3i"
+72 200 196 circle key="332jqn"
+72 201 196 circle key="19iecd"
+65 202 152 li key="/shipping"
+66 203 202 LinkComponent
+67 204 203 Context.Provider
+68 205 204 a
+69 206 205 Truck
+70 207 206 ForwardRef(Anonymous)
+71 208 207 svg
+72 209 208 path key="wrbu53"
+72 210 208 path key="1lyqi6"
+72 211 208 path key="lysw3i"
+72 212 208 circle key="332jqn"
+72 213 208 circle key="19iecd"
+65 214 152 li key="/finance"
+66 215 214 LinkComponent
+67 216 215 Context.Provider
+68 217 216 a
+69 218 217 ShieldCheck
+70 219 218 ForwardRef(Anonymous)
+71 220 219 svg
+72 221 220 path key="oel41y"
+72 222 220 path key="dzmm74"
+65 223 152 li key="/reports"
+66 224 223 LinkComponent
+67 225 224 Context.Provider
+68 226 225 a
+69 227 226 ChartColumn
+70 228 227 ForwardRef(Anonymous)
+71 229 228 svg
+72 230 229 path key="c24i48"
+72 231 229 path key="2bz60n"
+72 232 229 path key="1frdt8"
+72 233 229 path key="17ska0"
+63 234 149 div key="محصولات"
+64 235 234 p
+64 236 234 ul
+65 237 236 li key="/products"
+66 238 237 LinkComponent
+67 239 238 Context.Provider
+68 240 239 a
+69 241 240 Boxes
+70 242 241 ForwardRef(Anonymous)
+71 243 242 svg
+72 244 243 path key="lc1i9w"
+72 245 243 path key="1o9zyk"
+72 246 243 path key="va8pkn"
+72 247 243 path key="jnp8gn"
+72 248 243 path key="8zsnat"
+72 249 243 path key="8arw3v"
+72 250 243 path key="8rfmw"
+72 251 243 path key="k6z78m"
+72 252 243 path key="1xygjf"
+72 253 243 path key="1vbdud"
+72 254 243 path key="3rx089"
+72 255 243 path key="1io7kd"
+65 256 236 li key="/uoms"
+66 257 256 LinkComponent
+67 258 257 Context.Provider
+68 259 258 a
+69 260 259 Ruler
+70 261 260 ForwardRef(Anonymous)
+71 262 261 svg
+72 263 262 path key="icamh8"
+72 264 262 path key="inckbg"
+72 265 262 path key="fmmyf7"
+72 266 262 path key="vc6u1g"
+72 267 262 path key="wo5hmg"
+65 268 236 li key="/data-models/products"
+66 269 268 LinkComponent
+67 270 269 Context.Provider
+68 271 270 a
+69 272 271 Database
+70 273 272 ForwardRef(Anonymous)
+71 274 273 svg
+72 275 274 ellipse key="msslwz"
+72 276 274 path key="1wlel7"
+72 277 274 path key="mv7ke4"
+65 278 236 li key="/categories"
+66 279 278 LinkComponent
+67 280 279 Context.Provider
+68 281 280 a
+69 282 281 FolderTree
+70 283 282 ForwardRef(Anonymous)
+71 284 283 svg
+72 285 284 path key="hod4my"
+72 286 284 path key="w4yl2u"
+72 287 284 path key="f2jnh7"
+72 288 284 path key="k8epm1"
+63 289 149 div key="مشتریان"
+64 290 289 p
+64 291 289 ul
+65 292 291 li key="/support-tickets"
+66 293 292 LinkComponent
+67 294 293 Context.Provider
+68 295 294 a
+69 296 295 MessagesSquare
+70 297 296 ForwardRef(Anonymous)
+71 298 297 svg
+72 299 298 path key="1n2ejm"
+72 300 298 path key="1qfcsi"
+65 301 291 li key="/customers"
+66 302 301 LinkComponent
+67 303 302 Context.Provider
+68 304 303 a
+69 305 304 ContactRound
+70 306 305 ForwardRef(Anonymous)
+71 307 306 svg
+72 308 307 path key="scm5qe"
+72 309 307 path key="13n4mv"
+72 310 307 path key="pbkmx"
+72 311 307 circle key="1gt34v"
+72 312 307 rect key="h1oib"
+65 313 291 li key="/coupons"
+66 314 313 LinkComponent
+67 315 314 Context.Provider
+68 316 315 a
+69 317 316 TicketPercent
+70 318 317 ForwardRef(Anonymous)
+71 319 318 svg
+72 320 319 path key="1l48ns"
+72 321 319 path key="1q5me6"
+72 322 319 path key="1uzhvr"
+72 323 319 path key="lqbp3k"
+65 324 291 li key="/reviews"
+66 325 324 LinkComponent
+67 326 325 Context.Provider
+68 327 326 a
+69 328 327 MessagesSquare
+70 329 328 ForwardRef(Anonymous)
+71 330 329 svg
+72 331 330 path key="1n2ejm"
+72 332 330 path key="1qfcsi"
+65 333 291 li key="/campaigns"
+66 334 333 LinkComponent
+67 335 334 Context.Provider
+68 336 335 a
+69 337 336 Megaphone
+70 338 337 ForwardRef(Anonymous)
+71 339 338 svg
+72 340 339 path key="q8bfy3"
+72 341 339 path key="1853fq"
+72 342 339 path key="15ugcq"
+65 343 291 li key="/store-customers"
+66 344 343 LinkComponent
+67 345 344 Context.Provider
+68 346 345 a
+69 347 346 Users
+70 348 347 ForwardRef(Anonymous)
+71 349 348 svg
+72 350 349 path key="1yyitq"
+72 351 349 path key="16gr8j"
+72 352 349 path key="kshegd"
+72 353 349 circle key="nufk8"
+65 354 291 li key="/customer-notifications"
+66 355 354 LinkComponent
+67 356 355 Context.Provider
+68 357 356 a
+69 358 357 Megaphone
+70 359 358 ForwardRef(Anonymous)
+71 360 359 svg
+72 361 360 path key="q8bfy3"
+72 362 360 path key="1853fq"
+72 363 360 path key="15ugcq"
+63 364 149 div key="تنظیمات"
+64 365 364 p
+64 366 364 ul
+65 367 366 li key="/studio/workflows"
+66 368 367 LinkComponent
+67 369 368 Context.Provider
+68 370 369 a
+69 371 370 Workflow
+70 372 371 ForwardRef(Anonymous)
+71 373 372 svg
+72 374 373 rect key="by2w9f"
+72 375 373 path key="xkn7yn"
+72 376 373 rect key="1cgmvn"
+65 377 366 li key="/account"
+66 378 377 LinkComponent
+67 379 378 Context.Provider
+68 380 379 a
+69 381 380 UserRound
+70 382 381 ForwardRef(Anonymous)
+71 383 382 svg
+72 384 383 circle key="1hypcn"
+72 385 383 path key="rfgkzh"
+65 386 366 li key="/permissions"
+66 387 386 LinkComponent
+67 388 387 Context.Provider
+68 389 388 a
+69 390 389 KeyRound
+70 391 390 ForwardRef(Anonymous)
+71 392 391 svg
+72 393 392 path key="1s6t7t"
+72 394 392 circle key="w0ekpg"
+65 395 366 li key="/staff"
+66 396 395 LinkComponent
+67 397 396 Context.Provider
+68 398 397 a
+69 399 398 UserCog
+70 400 399 ForwardRef(Anonymous)
+71 401 400 svg
+72 402 401 path key="1nfge6"
+72 403 401 path key="1itpsq"
+72 404 401 path key="eplpkm"
+72 405 401 path key="13v3q0"
+72 406 401 path key="1i8mnm"
+72 407 401 path key="1q8j1v"
+72 408 401 path key="vk1qj3"
+72 409 401 path key="n880s0"
+72 410 401 path key="1g6xey"
+72 411 401 circle key="gjjjvw"
+72 412 401 circle key="nufk8"
+65 413 366 li key="/bots"
+66 414 413 LinkComponent
+67 415 414 Context.Provider
+68 416 415 a
+69 417 416 Bot
+70 418 417 ForwardRef(Anonymous)
+71 419 418 svg
+72 420 419 path key="hb8ula"
+72 421 419 rect key="enze0r"
+72 422 419 path key="vft8re"
+72 423 419 path key="4cs60a"
+72 424 419 path key="1xurst"
+72 425 419 path key="rq6x2g"
+65 426 366 li key="/stores"
+66 427 426 LinkComponent
+67 428 427 Context.Provider
+68 429 428 a
+69 430 429 Store
+70 431 430 ForwardRef(Anonymous)
+71 432 431 svg
+72 433 432 path key="slp6dd"
+72 434 432 path key="o0xfot"
+72 435 432 path key="wn3emo"
+69 436 429 span
+65 437 366 li key="/payment-accounts"
+66 438 437 LinkComponent
+67 439 438 Context.Provider
+68 440 439 a
+69 441 440 Wallet
+70 442 441 ForwardRef(Anonymous)
+71 443 442 svg
+72 444 443 path key="18etb6"
+72 445 443 path key="xoc0q4"
+65 446 366 li key="/bot-connections"
+66 447 446 LinkComponent
+67 448 447 Context.Provider
+68 449 448 a
+69 450 449 Webhook
+70 451 450 ForwardRef(Anonymous)
+71 452 451 svg
+72 453 452 path key="q3hayz"
+72 454 452 path key="1go1hn"
+72 455 452 path key="qlwsc0"
+65 456 366 li key="/relay-workers"
+66 457 456 LinkComponent
+67 458 457 Context.Provider
+68 459 458 a
+69 460 459 Webhook
+70 461 460 ForwardRef(Anonymous)
+71 462 461 svg
+72 463 462 path key="q3hayz"
+72 464 462 path key="1go1hn"
+72 465 462 path key="qlwsc0"
+65 466 366 li key="/settings"
+66 467 466 LinkComponent
+67 468 467 Context.Provider
+68 469 468 a
+69 470 469 Settings2
+70 471 470 ForwardRef(Anonymous)
+71 472 471 svg
+72 473 472 path key="gfn3mx"
+72 474 472 path key="6i9tg"
+72 475 472 circle key="18b49y"
+72 476 472 circle key="dfmy0x"
+62 477 134 div
+63 478 477 p
+63 479 477 LogoutControl
+64 480 479 div
+65 481 480 button
+66 482 481 LogOut
+67 483 482 ForwardRef(Anonymous)
+68 484 483 svg
+69 485 484 path key="1bji2h"
+69 486 484 path key="dn1m92"
+69 487 484 path key="1uf3rs"
+61 488 126 Dialog
+62 489 488 dialog
+63 490 489 div
+64 491 490 div
+65 492 491 div
+66 493 492 div
+67 494 493 div
+68 495 494 MessageCircle
+69 496 495 ForwardRef(Anonymous)
+70 497 496 svg
+71 498 497 path key="1sd12s"
+67 499 493 p
+66 500 492 button
+67 501 500 X
+68 502 501 ForwardRef(Anonymous)
+69 503 502 svg
+70 504 503 path key="1bl5f8"
+70 505 503 path key="d8bk6v"
+65 506 491 nav
+66 507 506 div key="فروش"
+67 508 507 p
+67 509 507 ul
+68 510 509 li key="/dashboard"
+69 511 510 LinkComponent
+70 512 511 Context.Provider
+71 513 512 a
+72 514 513 LayoutDashboard
+73 515 514 ForwardRef(Anonymous)
+74 516 515 svg
+75 517 516 rect key="10lvy0"
+75 518 516 rect key="16une8"
+75 519 516 rect key="1hutg5"
+75 520 516 rect key="ldoo1y"
+68 521 509 li key="/orders"
+69 522 521 LinkComponent
+70 523 522 Context.Provider
+71 524 523 a
+72 525 524 ClipboardList
+73 526 525 ForwardRef(Anonymous)
+74 527 526 svg
+75 528 527 rect key="tgr4d6"
+75 529 527 path key="116196"
+75 530 527 path key="1jrz19"
+75 531 527 path key="n85exb"
+75 532 527 path key="1dfujw"
+75 533 527 path key="18s6g9"
+68 534 509 li key="/digital-deliveries"
+69 535 534 LinkComponent
+70 536 535 Context.Provider
+71 537 536 a
+72 538 537 ClipboardList
+73 539 538 ForwardRef(Anonymous)
+74 540 539 svg
+75 541 540 rect key="tgr4d6"
+75 542 540 path key="116196"
+75 543 540 path key="1jrz19"
+75 544 540 path key="n85exb"
+75 545 540 path key="1dfujw"
+75 546 540 path key="18s6g9"
+68 547 509 li key="/fulfillments"
+69 548 547 LinkComponent
+70 549 548 Context.Provider
+71 550 549 a
+72 551 550 Truck
+73 552 551 ForwardRef(Anonymous)
+74 553 552 svg
+75 554 553 path key="wrbu53"
+75 555 553 path key="1lyqi6"
+75 556 553 path key="lysw3i"
+75 557 553 circle key="332jqn"
+75 558 553 circle key="19iecd"
+68 559 509 li key="/shipping"
+69 560 559 LinkComponent
+70 561 560 Context.Provider
+71 562 561 a
+72 563 562 Truck
+73 564 563 ForwardRef(Anonymous)
+74 565 564 svg
+75 566 565 path key="wrbu53"
+75 567 565 path key="1lyqi6"
+75 568 565 path key="lysw3i"
+75 569 565 circle key="332jqn"
+75 570 565 circle key="19iecd"
+68 571 509 li key="/finance"
+69 572 571 LinkComponent
+70 573 572 Context.Provider
+71 574 573 a
+72 575 574 ShieldCheck
+73 576 575 ForwardRef(Anonymous)
+74 577 576 svg
+75 578 577 path key="oel41y"
+75 579 577 path key="dzmm74"
+68 580 509 li key="/reports"
+69 581 580 LinkComponent
+70 582 581 Context.Provider
+71 583 582 a
+72 584 583 ChartColumn
+73 585 584 ForwardRef(Anonymous)
+74 586 585 svg
+75 587 586 path key="c24i48"
+75 588 586 path key="2bz60n"
+75 589 586 path key="1frdt8"
+75 590 586 path key="17ska0"
+66 591 506 div key="محصولات"
+67 592 591 p
+67 593 591 ul
+68 594 593 li key="/products"
+69 595 594 LinkComponent
+70 596 595 Context.Provider
+71 597 596 a
+72 598 597 Boxes
+73 599 598 ForwardRef(Anonymous)
+74 600 599 svg
+75 601 600 path key="lc1i9w"
+75 602 600 path key="1o9zyk"
+75 603 600 path key="va8pkn"
+75 604 600 path key="jnp8gn"
+75 605 600 path key="8zsnat"
+75 606 600 path key="8arw3v"
+75 607 600 path key="8rfmw"
+75 608 600 path key="k6z78m"
+75 609 600 path key="1xygjf"
+75 610 600 path key="1vbdud"
+75 611 600 path key="3rx089"
+75 612 600 path key="1io7kd"
+68 613 593 li key="/uoms"
+69 614 613 LinkComponent
+70 615 614 Context.Provider
+71 616 615 a
+72 617 616 Ruler
+73 618 617 ForwardRef(Anonymous)
+74 619 618 svg
+75 620 619 path key="icamh8"
+75 621 619 path key="inckbg"
+75 622 619 path key="fmmyf7"
+75 623 619 path key="vc6u1g"
+75 624 619 path key="wo5hmg"
+68 625 593 li key="/data-models/products"
+69 626 625 LinkComponent
+70 627 626 Context.Provider
+71 628 627 a
+72 629 628 Database
+73 630 629 ForwardRef(Anonymous)
+74 631 630 svg
+75 632 631 ellipse key="msslwz"
+75 633 631 path key="1wlel7"
+75 634 631 path key="mv7ke4"
+68 635 593 li key="/categories"
+69 636 635 LinkComponent
+70 637 636 Context.Provider
+71 638 637 a
+72 639 638 FolderTree
+73 640 639 ForwardRef(Anonymous)
+74 641 640 svg
+75 642 641 path key="hod4my"
+75 643 641 path key="w4yl2u"
+75 644 641 path key="f2jnh7"
+75 645 641 path key="k8epm1"
+66 646 506 div key="مشتریان"
+67 647 646 p
+67 648 646 ul
+68 649 648 li key="/support-tickets"
+69 650 649 LinkComponent
+70 651 650 Context.Provider
+71 652 651 a
+72 653 652 MessagesSquare
+73 654 653 ForwardRef(Anonymous)
+74 655 654 svg
+75 656 655 path key="1n2ejm"
+75 657 655 path key="1qfcsi"
+68 658 648 li key="/customers"
+69 659 658 LinkComponent
+70 660 659 Context.Provider
+71 661 660 a
+72 662 661 ContactRound
+73 663 662 ForwardRef(Anonymous)
+74 664 663 svg
+75 665 664 path key="scm5qe"
+75 666 664 path key="13n4mv"
+75 667 664 path key="pbkmx"
+75 668 664 circle key="1gt34v"
+75 669 664 rect key="h1oib"
+68 670 648 li key="/coupons"
+69 671 670 LinkComponent
+70 672 671 Context.Provider
+71 673 672 a
+72 674 673 TicketPercent
+73 675 674 ForwardRef(Anonymous)
+74 676 675 svg
+75 677 676 path key="1l48ns"
+75 678 676 path key="1q5me6"
+75 679 676 path key="1uzhvr"
+75 680 676 path key="lqbp3k"
+68 681 648 li key="/reviews"
+69 682 681 LinkComponent
+70 683 682 Context.Provider
+71 684 683 a
+72 685 684 MessagesSquare
+73 686 685 ForwardRef(Anonymous)
+74 687 686 svg
+75 688 687 path key="1n2ejm"
+75 689 687 path key="1qfcsi"
+68 690 648 li key="/campaigns"
+69 691 690 LinkComponent
+70 692 691 Context.Provider
+71 693 692 a
+72 694 693 Megaphone
+73 695 694 ForwardRef(Anonymous)
+74 696 695 svg
+75 697 696 path key="q8bfy3"
+75 698 696 path key="1853fq"
+75 699 696 path key="15ugcq"
+68 700 648 li key="/store-customers"
+69 701 700 LinkComponent
+70 702 701 Context.Provider
+71 703 702 a
+72 704 703 Users
+73 705 704 ForwardRef(Anonymous)
+74 706 705 svg
+75 707 706 path key="1yyitq"
+75 708 706 path key="16gr8j"
+75 709 706 path key="kshegd"
+75 710 706 circle key="nufk8"
+68 711 648 li key="/customer-notifications"
+69 712 711 LinkComponent
+70 713 712 Context.Provider
+71 714 713 a
+72 715 714 Megaphone
+73 716 715 ForwardRef(Anonymous)
+74 717 716 svg
+75 718 717 path key="q8bfy3"
+75 719 717 path key="1853fq"
+75 720 717 path key="15ugcq"
+66 721 506 div key="تنظیمات"
+67 722 721 p
+67 723 721 ul
+68 724 723 li key="/studio/workflows"
+69 725 724 LinkComponent
+70 726 725 Context.Provider
+71 727 726 a
+72 728 727 Workflow
+73 729 728 ForwardRef(Anonymous)
+74 730 729 svg
+75 731 730 rect key="by2w9f"
+75 732 730 path key="xkn7yn"
+75 733 730 rect key="1cgmvn"
+68 734 723 li key="/account"
+69 735 734 LinkComponent
+70 736 735 Context.Provider
+71 737 736 a
+72 738 737 UserRound
+73 739 738 ForwardRef(Anonymous)
+74 740 739 svg
+75 741 740 circle key="1hypcn"
+75 742 740 path key="rfgkzh"
+68 743 723 li key="/permissions"
+69 744 743 LinkComponent
+70 745 744 Context.Provider
+71 746 745 a
+72 747 746 KeyRound
+73 748 747 ForwardRef(Anonymous)
+74 749 748 svg
+75 750 749 path key="1s6t7t"
+75 751 749 circle key="w0ekpg"
+68 752 723 li key="/staff"
+69 753 752 LinkComponent
+70 754 753 Context.Provider
+71 755 754 a
+72 756 755 UserCog
+73 757 756 ForwardRef(Anonymous)
+74 758 757 svg
+75 759 758 path key="1nfge6"
+75 760 758 path key="1itpsq"
+75 761 758 path key="eplpkm"
+75 762 758 path key="13v3q0"
+75 763 758 path key="1i8mnm"
+75 764 758 path key="1q8j1v"
+75 765 758 path key="vk1qj3"
+75 766 758 path key="n880s0"
+75 767 758 path key="1g6xey"
+75 768 758 circle key="gjjjvw"
+75 769 758 circle key="nufk8"
+68 770 723 li key="/bots"
+69 771 770 LinkComponent
+70 772 771 Context.Provider
+71 773 772 a
+72 774 773 Bot
+73 775 774 ForwardRef(Anonymous)
+74 776 775 svg
+75 777 776 path key="hb8ula"
+75 778 776 rect key="enze0r"
+75 779 776 path key="vft8re"
+75 780 776 path key="4cs60a"
+75 781 776 path key="1xurst"
+75 782 776 path key="rq6x2g"
+68 783 723 li key="/stores"
+69 784 783 LinkComponent
+70 785 784 Context.Provider
+71 786 785 a
+72 787 786 Store
+73 788 787 ForwardRef(Anonymous)
+74 789 788 svg
+75 790 789 path key="slp6dd"
+75 791 789 path key="o0xfot"
+75 792 789 path key="wn3emo"
+72 793 786 span
+68 794 723 li key="/payment-accounts"
+69 795 794 LinkComponent
+70 796 795 Context.Provider
+71 797 796 a
+72 798 797 Wallet
+73 799 798 ForwardRef(Anonymous)
+74 800 799 svg
+75 801 800 path key="18etb6"
+75 802 800 path key="xoc0q4"
+68 803 723 li key="/bot-connections"
+69 804 803 LinkComponent
+70 805 804 Context.Provider
+71 806 805 a
+72 807 806 Webhook
+73 808 807 ForwardRef(Anonymous)
+74 809 808 svg
+75 810 809 path key="q3hayz"
+75 811 809 path key="1go1hn"
+75 812 809 path key="qlwsc0"
+68 813 723 li key="/relay-workers"
+69 814 813 LinkComponent
+70 815 814 Context.Provider
+71 816 815 a
+72 817 816 Webhook
+73 818 817 ForwardRef(Anonymous)
+74 819 818 svg
+75 820 819 path key="q3hayz"
+75 821 819 path key="1go1hn"
+75 822 819 path key="qlwsc0"
+68 823 723 li key="/settings"
+69 824 823 LinkComponent
+70 825 824 Context.Provider
+71 826 825 a
+72 827 826 Settings2
+73 828 827 ForwardRef(Anonymous)
+74 829 828 svg
+75 830 829 path key="gfn3mx"
+75 831 829 path key="6i9tg"
+75 832 829 circle key="18b49y"
+75 833 829 circle key="dfmy0x"
+65 834 491 div
+66 835 834 p
+66 836 834 LogoutControl
+67 837 836 div
+68 838 837 button
+69 839 838 LogOut
+70 840 839 ForwardRef(Anonymous)
+71 841 840 svg
+72 842 841 path key="1bji2h"
+72 843 841 path key="dn1m92"
+72 844 841 path key="1uf3rs"
+60 845 124 div
+61 846 845 header
+62 847 846 div
+63 848 847 StoreSwitcher
+64 849 848 StoreSwitcherForm key="4:eb28cf88-d40d-4f6a-ba3a-14eb46fe90e2:a24e1c89-2c3e-4815-9e4e-e4eae2ef0fed,eb28cf88-d40d-4f6a-ba3a-14eb46fe90e2"
+65 850 849 div
+66 851 850 button
+67 852 851 Store
+68 853 852 ForwardRef(Anonymous)
+69 854 853 svg
+70 855 854 path key="slp6dd"
+70 856 854 path key="o0xfot"
+70 857 854 path key="wn3emo"
+67 858 851 span
+67 859 851 span
+67 860 851 ChevronsUpDown
+68 861 860 ForwardRef(Anonymous)
+69 862 861 svg
+70 863 862 path key="1hf1tw"
+70 864 862 path key="sgt6xg"
+66 865 850 Dialog
+67 866 865 dialog
+68 867 866 div
+69 868 867 div
+70 869 868 div
+71 870 869 p
+71 871 869 p
+70 872 868 div
+71 873 872 div key="a24e1c89-2c3e-4815-9e4e-e4eae2ef0fed"
+72 874 873 label
+73 875 874 input
+73 876 874 span
+74 877 876 span
+74 878 876 span
+72 879 873 label
+73 880 879 input
+73 881 879 span
+71 882 872 div key="eb28cf88-d40d-4f6a-ba3a-14eb46fe90e2"
+72 883 882 label
+73 884 883 input
+73 885 883 span
+74 886 885 span
+74 887 885 span
+72 888 882 label
+73 889 888 input
+73 890 888 span
+70 891 868 div
+71 892 891 Button
+72 893 892 button
+73 894 893 Check
+74 895 894 ForwardRef(Anonymous)
+75 896 895 svg
+76 897 896 path key="1gmf2c"
+71 898 891 Button
+72 899 898 button
+70 900 868 div
+71 901 900 button
+72 902 901 Star
+73 903 902 ForwardRef(Anonymous)
+74 904 903 svg
+75 905 904 path key="r04s7s"
+63 906 847 Server(LinkComponent)
+64 907 906 LinkComponent
+65 908 907 Context.Provider
+66 909 908 a
+67 910 909 Server(CircleUserRound)
+68 911 910 ForwardRef(Anonymous)
+69 912 911 svg
+70 913 912 path key="z69sun"
+70 914 912 circle key="1gt34v"
+70 915 912 circle key="1mglay"
+67 916 909 span
+63 917 847 ThemeToggle
+64 918 917 Button
+65 919 918 button
+66 920 919 Moon
+67 921 920 ForwardRef(Anonymous)
+68 922 921 svg
+69 923 922 path key="kfwtm"
+61 924 845 main
+62 925 924 OuterLayoutRouter
+63 926 925 SegmentStateProvider key="stores"
+64 927 926 Context.Provider key="0"
+65 928 927 TemplateContext.Provider key="stores"
+66 929 928 RenderFromTemplateContext
+67 930 929 ScrollHandler
+68 931 930 InnerScrollHandler
+69 932 931 ErrorBoundary
+70 933 932 ErrorBoundaryHandler
+71 934 933 LoadingBoundary
+72 935 934 Suspense
+73 957 935 HTTPAccessFallbackBoundary
+74 958 957 HTTPAccessFallbackErrorBoundary
+75 959 958 RedirectBoundary
+76 960 959 RedirectErrorBoundary
+77 961 960 InnerLayoutRouter
+78 962 961 LayoutRouterContext.Provider
+79 963 962 NavigationPromisesContext.Provider
+80 964 963 Fragment key="c"
+81 965 964 OuterLayoutRouter
+82 966 965 SegmentStateProvider key="__PAGE__"
+83 967 966 Context.Provider key="0"
+84 968 967 TemplateContext.Provider key="__PAGE__"
+85 969 968 RenderFromTemplateContext
+86 970 969 ScrollHandler
+87 971 970 InnerScrollHandler
+88 972 971 ErrorBoundary
+89 973 972 LoadingBoundary
+90 974 973 HTTPAccessFallbackBoundary
+91 975 974 RedirectBoundary
+92 976 975 RedirectErrorBoundary
+93 977 976 InnerLayoutRouter
+94 978 977 LayoutRouterContext.Provider
+95 979 978 Fragment key="c"
+96 980 979 SegmentViewNode key="c-page"
+97 981 980 SegmentTrieNode key="page"
+97 982 980 Server(StoresPage)
+98 983 982 div
+99 984 983 Server(PageHeading)
+100 985 984 div
+101 986 985 div
+102 987 986 h1
+99 988 983 div
+100 989 988 Server(Button)
+101 990 989 Server(Slot.Slot)
+102 991 990 Server(Slot.SlotClone)
+103 992 991 Server(LinkComponent)
+104 993 992 LinkComponent
+105 994 993 Context.Provider
+106 995 994 a
+104 996 992 LinkComponent
+105 997 996 Context.Provider
+106 998 997 a
+104 999 992 LinkComponent
+105 1000 999 Context.Provider
+106 1001 1000 a
+102 1002 990 Server(Slot.SlotClone)
+103 1003 1002 Server(LinkComponent)
+104 1004 1003 LinkComponent
+105 1005 1004 Context.Provider
+106 1006 1005 a
+104 1007 1003 LinkComponent
+105 1008 1007 Context.Provider
+106 1009 1008 a
+102 1010 990 Server(Slot.SlotClone)
+103 1011 1010 Server(LinkComponent)
+104 1012 1011 LinkComponent
+105 1013 1012 Context.Provider
+106 1014 1013 a
+100 1015 988 Server(Button)
+101 1016 1015 Server(Slot.Slot)
+102 1017 1016 Server(Slot.SlotClone)
+103 1018 1017 Server(LinkComponent)
+104 1019 1018 LinkComponent
+105 1020 1019 Context.Provider
+106 1021 1020 a
+104 1022 1018 LinkComponent
+105 1023 1022 Context.Provider
+106 1024 1023 a
+102 1025 1016 Server(Slot.SlotClone)
+103 1026 1025 Server(LinkComponent)
+104 1027 1026 LinkComponent
+105 1028 1027 Context.Provider
+106 1029 1028 a
+100 1030 988 Server(Button)
+101 1031 1030 Server(Slot.Slot)
+102 1032 1031 Server(Slot.SlotClone)
+103 1033 1032 Server(LinkComponent)
+104 1034 1033 LinkComponent
+105 1035 1034 Context.Provider
+106 1036 1035 a
+99 1037 983 p
+99 1038 983 div
+100 1039 1038 Server(Card) key="a24e1c89-2c3e-4815-9e4e-e4eae2ef0fed"
+101 1040 1039 section key="a24e1c89-2c3e-4815-9e4e-e4eae2ef0fed"
+102 1041 1040 Server(CardHeader)
+103 1042 1041 div
+104 1043 1042 Server(CardTitle)
+105 1044 1043 h2
+102 1045 1040 Server(CardContent)
+103 1046 1045 div
+104 1047 1046 p
+105 1048 1047 bdi
+104 1049 1046 form
+105 1050 1049 input
+105 1051 1049 input
+105 1052 1049 label
+106 1053 1052 select
+107 1054 1053 option
+107 1055 1053 option
+105 1056 1049 label
+106 1057 1056 select
+107 1058 1057 option
+107 1059 1057 option
+105 1060 1049 div
+106 1061 1060 label
+107 1062 1061 Server(Input)
+108 1063 1062 input
+106 1064 1060 label
+107 1065 1064 Server(Input)
+108 1066 1065 input
+105 1067 1049 Server(Button)
+106 1068 1067 button
+100 1069 1038 Server(Card) key="eb28cf88-d40d-4f6a-ba3a-14eb46fe90e2"
+101 1070 1069 section key="eb28cf88-d40d-4f6a-ba3a-14eb46fe90e2"
+102 1071 1070 Server(CardHeader)
+103 1072 1071 div
+104 1073 1072 Server(CardTitle)
+105 1074 1073 h2
+102 1075 1070 Server(CardContent)
+103 1076 1075 div
+104 1077 1076 p
+105 1078 1077 bdi
+104 1079 1076 form
+105 1080 1079 input
+105 1081 1079 input
+105 1082 1079 label
+106 1083 1082 select
+107 1084 1083 option
+107 1085 1083 option
+105 1086 1079 label
+106 1087 1086 select
+107 1088 1087 option
+107 1089 1087 option
+105 1090 1079 div
+106 1091 1090 label
+107 1092 1091 Server(Input)
+108 1093 1092 input
+106 1094 1090 label
+107 1095 1094 Server(Input)
+108 1096 1095 input
+105 1097 1079 Server(Button)
+106 1098 1097 button
+99 1099 983 section
+100 1100 1099 h2
+100 1101 1099 div key="a24e1c89-2c3e-4815-9e4e-e4eae2ef0fed"
+101 1102 1101 h3
+101 1103 1101 Server(CustomerExperiencePolicyPanel)
+102 1104 1103 div
+103 1105 1104 Server(Card)
+104 1106 1105 section
+105 1107 1106 Server(CardHeader)
+106 1108 1107 div
+107 1109 1108 Server(CardTitle)
+108 1110 1109 h2
+105 1111 1106 Server(CardContent)
+106 1112 1111 div
+107 1113 1112 p
+107 1114 1112 form
+108 1115 1114 input
+108 1116 1114 input
+108 1117 1114 input
+108 1118 1114 div
+109 1119 1118 div key="shop"
+110 1120 1119 label
+111 1121 1120 input
+111 1122 1120 input
+111 1123 1120 span
+110 1124 1119 label
+111 1125 1124 select
+112 1126 1125 option key="1"
+112 1127 1125 option key="2"
+112 1128 1125 option key="3"
+112 1129 1125 option key="4"
+112 1130 1125 option key="5"
+112 1131 1125 option key="6"
+109 1132 1118 div key="search"
+110 1133 1132 label
+111 1134 1133 input
+111 1135 1133 span
+110 1136 1132 label
+111 1137 1136 select
+112 1138 1137 option key="1"
+112 1139 1137 option key="2"
+112 1140 1137 option key="3"
+112 1141 1137 option key="4"
+112 1142 1137 option key="5"
+112 1143 1137 option key="6"
+109 1144 1118 div key="cart"
+110 1145 1144 label
+111 1146 1145 input
+111 1147 1145 span
+110 1148 1144 label
+111 1149 1148 select
+112 1150 1149 option key="1"
+112 1151 1149 option key="2"
+112 1152 1149 option key="3"
+112 1153 1149 option key="4"
+112 1154 1149 option key="5"
+112 1155 1149 option key="6"
+109 1156 1118 div key="orders"
+110 1157 1156 label
+111 1158 1157 input
+111 1159 1157 span
+110 1160 1156 label
+111 1161 1160 select
+112 1162 1161 option key="1"
+112 1163 1161 option key="2"
+112 1164 1161 option key="3"
+112 1165 1161 option key="4"
+112 1166 1161 option key="5"
+112 1167 1161 option key="6"
+109 1168 1118 div key="account"
+110 1169 1168 label
+111 1170 1169 input
+111 1171 1169 span
+110 1172 1168 label
+111 1173 1172 select
+112 1174 1173 option key="1"
+112 1175 1173 option key="2"
+112 1176 1173 option key="3"
+112 1177 1173 option key="4"
+112 1178 1173 option key="5"
+112 1179 1173 option key="6"
+109 1180 1118 div key="support"
+110 1181 1180 label
+111 1182 1181 input
+111 1183 1181 span
+110 1184 1180 label
+111 1185 1184 select
+112 1186 1185 option key="1"
+112 1187 1185 option key="2"
+112 1188 1185 option key="3"
+112 1189 1185 option key="4"
+112 1190 1185 option key="5"
+112 1191 1185 option key="6"
+108 1192 1114 Server(Proof)
+109 1193 1192 div
+110 1194 1193 label
+111 1195 1194 Server(Input)
+112 1196 1195 input
+110 1197 1193 label
+111 1198 1197 Server(Input)
+112 1199 1198 input
+108 1200 1114 Server(Button)
+109 1201 1200 button
+103 1202 1104 Server(Card)
+104 1203 1202 section
+105 1204 1203 Server(CardHeader)
+106 1205 1204 div
+107 1206 1205 Server(CardTitle)
+108 1207 1206 h2
+105 1208 1203 Server(CardContent)
+106 1209 1208 div
+107 1210 1209 p
+107 1211 1209 form
+108 1212 1211 input
+108 1213 1211 input
+108 1214 1211 input
+108 1215 1211 label
+109 1216 1215 select
+110 1217 1216 option
+110 1218 1216 option
+108 1219 1211 label
+109 1220 1219 Server(Input)
+110 1221 1220 input
+108 1222 1211 label
+109 1223 1222 Server(Textarea)
+110 1224 1223 textarea
+108 1225 1211 p
+108 1226 1211 Server(Proof)
+109 1227 1226 div
+110 1228 1227 label
+111 1229 1228 Server(Input)
+112 1230 1229 input
+110 1231 1227 label
+111 1232 1231 Server(Input)
+112 1233 1232 input
+108 1234 1211 Server(Button)
+109 1235 1234 button
+100 1236 1099 div key="eb28cf88-d40d-4f6a-ba3a-14eb46fe90e2"
+101 1237 1236 h3
+101 1238 1236 Server(CustomerExperiencePolicyPanel)
+102 1239 1238 div
+103 1240 1239 Server(Card)
+104 1241 1240 section
+105 1242 1241 Server(CardHeader)
+106 1243 1242 div
+107 1244 1243 Server(CardTitle)
+108 1245 1244 h2
+105 1246 1241 Server(CardContent)
+106 1247 1246 div
+107 1248 1247 p
+107 1249 1247 form
+108 1250 1249 input
+108 1251 1249 input
+108 1252 1249 input
+108 1253 1249 div
+109 1254 1253 div key="shop"
+110 1255 1254 label
+111 1256 1255 input
+111 1257 1255 input
+111 1258 1255 span
+110 1259 1254 label
+111 1260 1259 select
+112 1261 1260 option key="1"
+112 1262 1260 option key="2"
+112 1263 1260 option key="3"
+112 1264 1260 option key="4"
+112 1265 1260 option key="5"
+112 1266 1260 option key="6"
+109 1267 1253 div key="search"
+110 1268 1267 label
+111 1269 1268 input
+111 1270 1268 span
+110 1271 1267 label
+111 1272 1271 select
+112 1273 1272 option key="1"
+112 1274 1272 option key="2"
+112 1275 1272 option key="3"
+112 1276 1272 option key="4"
+112 1277 1272 option key="5"
+112 1278 1272 option key="6"
+109 1279 1253 div key="cart"
+110 1280 1279 label
+111 1281 1280 input
+111 1282 1280 span
+110 1283 1279 label
+111 1284 1283 select
+112 1285 1284 option key="1"
+112 1286 1284 option key="2"
+112 1287 1284 option key="3"
+112 1288 1284 option key="4"
+112 1289 1284 option key="5"
+112 1290 1284 option key="6"
+109 1291 1253 div key="orders"
+110 1292 1291 label
+111 1293 1292 input
+111 1294 1292 span
+110 1295 1291 label
+111 1296 1295 select
+112 1297 1296 option key="1"
+112 1298 1296 option key="2"
+112 1299 1296 option key="3"
+112 1300 1296 option key="4"
+112 1301 1296 option key="5"
+112 1302 1296 option key="6"
+109 1303 1253 div key="account"
+110 1304 1303 label
+111 1305 1304 input
+111 1306 1304 span
+110 1307 1303 label
+111 1308 1307 select
+112 1309 1308 option key="1"
+112 1310 1308 option key="2"
+112 1311 1308 option key="3"
+112 1312 1308 option key="4"
+112 1313 1308 option key="5"
+112 1314 1308 option key="6"
+109 1315 1253 div key="support"
+110 1316 1315 label
+111 1317 1316 input
+111 1318 1316 span
+110 1319 1315 label
+111 1320 1319 select
+112 1321 1320 option key="1"
+112 1322 1320 option key="2"
+112 1323 1320 option key="3"
+112 1324 1320 option key="4"
+112 1325 1320 option key="5"
+112 1326 1320 option key="6"
+108 1327 1249 Server(Proof)
+109 1328 1327 div
+110 1329 1328 label
+111 1330 1329 Server(Input)
+112 1331 1330 input
+110 1332 1328 label
+111 1333 1332 Server(Input)
+112 1334 1333 input
+108 1335 1249 Server(Button)
+109 1336 1335 button
+103 1337 1239 Server(Card)
+104 1338 1337 section
+105 1339 1338 Server(CardHeader)
+106 1340 1339 div
+107 1341 1340 Server(CardTitle)
+108 1342 1341 h2
+105 1343 1338 Server(CardContent)
+106 1344 1343 div
+107 1345 1344 p
+107 1346 1344 form
+108 1347 1346 input
+108 1348 1346 input
+108 1349 1346 input
+108 1350 1346 label
+109 1351 1350 select
+110 1352 1351 option
+110 1353 1351 option
+108 1354 1346 label
+109 1355 1354 Server(Input)
+110 1356 1355 input
+108 1357 1346 label
+109 1358 1357 Server(Textarea)
+110 1359 1358 textarea
+108 1360 1346 p
+108 1361 1346 Server(Proof)
+109 1362 1361 div
+110 1363 1362 label
+111 1364 1363 Server(Input)
+112 1365 1364 input
+110 1366 1362 label
+111 1367 1366 Server(Input)
+112 1368 1367 input
+108 1369 1346 Server(Button)
+109 1370 1369 button
+96 1371 979 Server(Next.MetadataOutlet)
+97 1372 1371 __next_outlet_boundary__
+98 1373 1372 Suspense
+93 1374 976 SegmentBoundaryTriggerNode
+88 1375 971 SegmentViewStateNode key="/stores"
+77 1376 960 SegmentBoundaryTriggerNode
+69 936 931 SegmentViewStateNode key="/stores"
+65 937 927 SegmentViewNode
+66 938 937 SegmentTrieNode key="boundary:not-found"
+65 939 927 SegmentViewNode
+66 940 939 SegmentTrieNode key="boundary:loading"
+65 941 927 SegmentViewNode
+66 942 941 SegmentTrieNode key="boundary:error"
+50 943 111 SegmentBoundaryTriggerNode
+43 944 104 SegmentViewStateNode key="/stores"
+39 945 100 SegmentViewNode
+40 946 945 SegmentTrieNode key="boundary:not-found"
+39 947 100 SegmentViewNode
+40 948 947 SegmentTrieNode key="boundary:error"
+39 949 100 SegmentViewNode
+40 950 949 SegmentTrieNode key="boundary:global-error"
+24 951 71 AppRouterAnnouncer

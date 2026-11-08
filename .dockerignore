@@ -1,3 +1,37 @@
 .env
 .idea
 venv
+.venv/
+.env.next-admin
+
+# Keep all production, development and generated test secrets out of images.
+.env*
+*.pem
+*.key
+__pycache__/
+.pytest_cache/
+node_modules/
+.next/
+# The API build context also contains the separately built dashboard checkout.
+**/node_modules/
+**/.next*/
+**/.env*
+.git/
+
+# Never bake persisted production / local state into test or runtime images.
+media_data/
+postgres_data/
+caddy_data/
+caddy_config/
+redis_data/
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Browser test artifacts are never included in images or Git.
+.test-artifacts/
+
+# Never put the owner Codespace credentials into any image or build layer.
+.codespaces/

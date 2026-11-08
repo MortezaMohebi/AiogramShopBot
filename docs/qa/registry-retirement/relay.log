@@ -1,0 +1,23 @@
+✔ one Worker serves two bots with distinct secrets (34.520138ms)
+✔ cross-bot key reuse cannot forward another bot's token (3.890189ms)
+✔ configuration and quota failure fail closed before contacting Telegram (3.687546ms)
+✔ rotating a key permits only the explicitly provisioned version (3.708227ms)
+✔ no automatic replay after a failed Telegram mutation (2.671827ms)
+✔ persistent Durable Object reserves per-bot and global inflight quotas (3.325129ms)
+✔ rejects unauthenticated requests without contacting Telegram (8.910361ms)
+✔ fails closed if Worker secret has not been provisioned (0.810468ms)
+✔ rejects arbitrary paths and non-Telegram upstream targets (0.640339ms)
+✔ forwards POST multipart bodies unchanged to a fixed Telegram host (23.126551ms)
+✔ streams a file path without replacing its response bytes (6.223225ms)
+✔ does not follow upstream redirects into a different origin (2.919878ms)
+✔ does not allow a POST request to download a file (1.397856ms)
+✔ keeps the upstream failure text and secrets out of errors (2.581589ms)
+✔ retired shared-key requests fail closed without any upstream fetch (0.883427ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 238.665848

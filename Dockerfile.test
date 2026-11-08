@@ -1,0 +1,25 @@
+# Dedicated disposable lab image; provider receivers remain disabled.
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /bot
+
+# Install pinned Python dependencies without leaking runtime credentials.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Build the same application source as the production image.
+COPY . .
+
+# Unprivileged process owns only its private upload directory.
+RUN groupadd --system --gid 10001 shoplab \
+    && useradd --system --uid 10001 --gid shoplab --home /bot shoplab \
+    && mkdir -p /bot/media_data \
+    && chown -R shoplab:shoplab /bot/media_data
+
+USER shoplab
+EXPOSE 5000
+CMD ["python", "-m", "uvicorn", "scripts.test_lab_app:app", "--host", "0.0.0.0", "--port", "5000"]

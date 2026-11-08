@@ -1,0 +1,23 @@
+{
+  "environment": "isolated Codespace PostgreSQL",
+  "checks": [
+    {
+      "check": "signed HTTP persistence, history, scopes, publish denial, both-platform simulation and unchanged business rows",
+      "status": "PASS"
+    },
+    {
+      "check": "concurrent exact create",
+      "status": "PASS"
+    },
+    {
+      "check": "concurrent exact save",
+      "status": "PASS"
+    },
+    {
+      "check": "concurrent distinct saves CAS",
+      "status": "PASS"
+    }
+  ],
+  "live_provider_calls": 0,
+  "runtime_enabled": false
+}

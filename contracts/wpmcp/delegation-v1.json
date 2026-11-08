@@ -1,0 +1,37 @@
+{
+  "description": "PUBLIC TEST FIXTURE ONLY. The deterministic test key must never be configured in a deployment.",
+  "installation_id": "30000000-0000-4000-8000-000000000001",
+  "key_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "public_key_base64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+  "now": 1794000000,
+  "body_utf8": "{\"name\":\"context.get_profile\",\"arguments\":{}}",
+  "header": {
+    "alg": "EdDSA",
+    "typ": "wpmcp-delegation+jwt",
+    "kid": "wpmcp-delegation-test"
+  },
+  "claims": {
+    "v": 1,
+    "iss": "https://gateway.example.test",
+    "aud": "urn:bot-workflows:30000000-0000-4000-8000-000000000001",
+    "sub": "gateway-test-owner",
+    "client_id": "gateway-test-client",
+    "tenant_id": "40000000-0000-4000-8000-000000000001",
+    "workspace_id": "40000000-0000-4000-8000-000000000002",
+    "connection_id": "40000000-0000-4000-8000-000000000003",
+    "grant_id": "40000000-0000-4000-8000-000000000004",
+    "grant_version": 1,
+    "scopes": [
+      "workflow:read",
+      "workflow:validate"
+    ],
+    "method": "POST",
+    "target": "/internal/mcp/v1/tools/call",
+    "body_sha256": "8ee0b4de67f5e572bcac31806886205000ccb8d5ec9744b88b56264f9303d065",
+    "iat": 1794000000,
+    "exp": 1794000045,
+    "jti": "50000000-0000-4000-8000-000000000001",
+    "correlation_id": "50000000-0000-4000-8000-000000000002"
+  },
+  "token": "eyJhbGciOiJFZERTQSIsImtpZCI6IndwbWNwLWRlbGVnYXRpb24tdGVzdCIsInR5cCI6IndwbWNwLWRlbGVnYXRpb24rand0In0.eyJhdWQiOiJ1cm46Ym90LXdvcmtmbG93czozMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJib2R5X3NoYTI1NiI6IjhlZTBiNGRlNjdmNWU1NzJiY2FjMzE4MDY4ODYyMDUwMDBjY2I4ZDVlYzk3NDRiODhiNTYyNjRmOTMwM2QwNjUiLCJjbGllbnRfaWQiOiJnYXRld2F5LXRlc3QtY2xpZW50IiwiY29ubmVjdGlvbl9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMyIsImNvcnJlbGF0aW9uX2lkIjoiNTAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiZXhwIjoxNzk0MDAwMDQ1LCJncmFudF9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNCIsImdyYW50X3ZlcnNpb24iOjEsImlhdCI6MTc5NDAwMDAwMCwiaXNzIjoiaHR0cHM6Ly9nYXRld2F5LmV4YW1wbGUudGVzdCIsImp0aSI6IjUwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsIm1ldGhvZCI6IlBPU1QiLCJzY29wZXMiOlsid29ya2Zsb3c6cmVhZCIsIndvcmtmbG93OnZhbGlkYXRlIl0sInN1YiI6ImdhdGV3YXktdGVzdC1vd25lciIsInRhcmdldCI6Ii9pbnRlcm5hbC9tY3AvdjEvdG9vbHMvY2FsbCIsInRlbmFudF9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInYiOjEsIndvcmtzcGFjZV9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMiJ9.V3lOEa6WhxYAiWvx19RxuMnn2XOChC5oF6UAEMgV202_BWOa92WU4bQcgUZeRjsBQySNsH5ZokQOJGuyL0SsDA"
+}

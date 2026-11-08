@@ -1,0 +1,63 @@
+{
+  "status": "PASS",
+  "implementation_scope": "Layer 4 MCP Workflow Designer via WPMCP",
+  "date": "2026-11-06",
+  "default_enabled": false,
+  "github_actions": {
+    "AiogramShopBot": "disabled",
+    "ai-wordpress-builder": "disabled",
+    "verification": "repository settings UI: Disable actions selected"
+  },
+  "tests": {
+    "python_pass": 1263,
+    "python_inherited_warnings": 3,
+    "next_pass": 220,
+    "next_typecheck": "PASS",
+    "next_lint": "PASS",
+    "next_build": "PASS",
+    "gateway_source_pass": 588,
+    "gateway_provider_subset_pass": 60,
+    "relay_pass": 14,
+    "cross_service_pass": 18,
+    "native_browser_pass": 7,
+    "runtime_postgresql_pass": 23,
+    "audit_readback": "PASS"
+  },
+  "external_clients": {
+    "developer_http": "PASS",
+    "inspector_2_14_modern": "PASS",
+    "hosted_chatgpt_codex": "BLOCKED: private QA; no public deployment or client registration"
+  },
+  "live_provider_calls": 0,
+  "customer_bot_activation": false,
+  "merge_or_production_deployment": false,
+  "independent_review": {
+    "critical_open": 0,
+    "important_open": 0,
+    "important_fixed": 3,
+    "reviewers": 1,
+    "followup_review": true
+  },
+  "evidence_sha256": {
+    "publication-lock.json": "54137a22ff18e9005d52ae3730d57a6826d880eab2a2a07aa82815e6d94eeb37",
+    "runtime-regression.json": "14bf99e0db86abc4cb1c2862b379093ceadd3b3721af9c8c31e67155ff88f797",
+    "native-browser.json": "317fa31be797ee7973b9a6af174710daf7ec17fdcae61d1419bd14ee8ec3c985",
+    "gateway-runtime-manifest.json": "38b68c74aaadeb2487ebcf2880ef5f445dd074c343607f500819e0ce6de12c72",
+    "gateway-postgresql.json": "b82374fcfea460b44dde40b1b0c1342b71e35abb4a8f134481282d563ea7962f",
+    "audit-readback.json": "bb679b4a5265dfe3b909252e701adb0dda27daaa3b3da862c1ef970991f9cbca",
+    "gateway-registration.json": "e7060fe8ea9cfffc516455ab27faa6b0a6398c347899031393fb053615a89e40"
+  },
+  "cleanup": {
+    "owned_qa_services_stopped": true,
+    "qa_listener_ports_closed": [
+      3005,
+      8095,
+      8096,
+      5485
+    ],
+    "native_active_qa_admin_sessions": 0,
+    "original_codespace_services_healthy": 5,
+    "qa_source_checkout_clean": true,
+    "original_checkouts_preserved": true
+  }
+}

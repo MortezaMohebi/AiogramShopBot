@@ -1,0 +1,68 @@
+# Dedicated Layer 4 lab: no live receiver or provider credentials.
+name: aiogram-workflow-mcp-qa
+
+x-backend: &backend
+  image: aiogram-workflow-mcp-qa:local
+  build: .
+  env_file: .codespaces/mcp-qa.env
+  environment:
+    SHOP_WORKFLOW_QA: "1"
+    SHOP_ACTION_QA: "1"
+    SHOP_RUNTIME_QA: "1"
+    SHOP_MCP_QA: "1"
+    SHOP_WORKFLOW_RUNTIME_ENABLED: "true"
+    SHOP_WORKFLOW_RUNTIME_KILL_SWITCH: "false"
+  volumes:
+    - .:/bot:ro
+    - mcp_assets:/qa
+  networks: [private]
+  working_dir: /bot
+  init: true
+
+services:
+  postgres:
+    image: postgres:18
+    env_file: .codespaces/mcp-qa.env
+    volumes: [mcp_pg:/var/lib/postgresql]
+    ports: ['127.0.0.1:5485:5432']
+    # Docker suppresses published ports on an internal-only network. The
+    # gateway test process uses this loopback binding from the Codespace host.
+    networks: [private, ingress]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U shop_codespace -d shop_codespace']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7.4-alpine
+    env_file: .codespaces/mcp-qa.env
+    command: [/bin/sh, -ec, 'exec redis-server --save "" --appendonly no --requirepass "$${REDIS_PASSWORD}"']
+    networks: [private]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  bootstrap:
+    <<: *backend
+    command: [python, -m, scripts.codespace_bootstrap]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+  api:
+    <<: *backend
+    command: [python, -m, uvicorn, scripts.test_lab_app:app, --host, 0.0.0.0, --port, '5000']
+    ports: ['127.0.0.1:8095:5000']
+    networks: [private, ingress]
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    restart: "no"
+
+networks:
+  private:
+    internal: true
+  ingress: {}
+volumes:
+  mcp_pg:
+  mcp_assets:

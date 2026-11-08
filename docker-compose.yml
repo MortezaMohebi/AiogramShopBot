@@ -1,73 +1,129 @@
+# Registry-only deployment. Initialize an empty DB or review an existing migration.
 services:
   caddy:
-    image: caddy
-    ports:
-      - "80:80"
-      - "443:443"
-    networks:
-      - caddy
+    profiles: [edge]
+    image: caddy:2.10.2-alpine
+    environment:
+      WEBHOOK_DOMAIN: "${WEBHOOK_DOMAIN:-}"
+    ports: ["80:80", "443:443"]
+    networks: [private]
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./Caddyfile.template:/etc/caddy/Caddyfile:ro
       - ./caddy_data:/data
       - ./caddy_config:/config
-    restart: always
+    depends_on: {bot: {condition: service_healthy}}
+    restart: unless-stopped
 
   bot:
-    build:
-      context: .
-    container_name: 'AiogramShopBot'
-    env_file:
-      - .env
-    labels:
-      caddy: YOUR-DOMAIN-GOES-HERE
-      caddy.reverse_proxy: "bot:5000"
+    build: {context: .}
+    env_file: [.env]
+    environment:
+      NEXT_ADMIN_BRIDGE_ENABLED: "true"
+      SHOP_DIGITAL_ROOT: "${SHOP_DIGITAL_ROOT:-/bot/private_data}"
     depends_on:
-      - caddy
-    networks:
-      - caddy
-    ports:
-      - "127.0.0.1:5000:5000" # ${WEBAPP_PORT}:${WEBAPP_PORT}
-    volumes:
-      - ./i18n:/bot/i18n
-    command: [ "python", "-u", "run.py" ]
-    restart: always
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [private]
+    volumes: ["./media_data:/bot/media_data", "private_data:/bot/private_data"]
+    command: ["python", "-m", "uvicorn", "scripts.secure_app:app", "--host", "0.0.0.0", "--port", "5000", "--no-access-log"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:5000/healthz', timeout=4).status == 200"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+    restart: unless-stopped
+
+  # One shared Runtime queue drainer; per-Store/Bot gates stay explicit.
+  runtime-worker:
+    build: {context: .}
+    env_file: [.env]
+    depends_on:
+      bot: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [private]
+    volumes: ["./media_data:/bot/media_data"]
+    command: ["python", "-m", "shop_workflow_runtime"]
+    restart: on-failure
+
+  # One shared worker; provider dispatch is separately disabled by default.
+  broadcast-worker:
+    build: {context: .}
+    env_file: [.env]
+    environment: {SHOP_PROCESS_ROLE: broadcast_worker}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [private]
+    volumes: ["./media_data:/bot/media_data"]
+    command: ["python", "-m", "workers.shop_broadcast"]
+    restart: unless-stopped
+
+  digital-delivery-worker:
+    build: {context: .}
+    env_file: [.env]
+    environment: {SHOP_DIGITAL_ROOT: "${SHOP_DIGITAL_ROOT:-/bot/private_data}"}
+    depends_on:
+      bot: {condition: service_healthy}
+    networks: [private]
+    volumes: ["private_data:/bot/private_data"]
+    command: ["python", "-m", "workers.shop_digital_delivery"]
+    restart: unless-stopped
+
+  customer-notifications-worker:
+    build: {context: .}
+    env_file: [.env]
+    depends_on:
+      bot: {condition: service_healthy}
+    networks: [private]
+    command: ["python", "-m", "workers.shop_customer_notifications"]
+    restart: unless-stopped
+
+  next-admin:
+    build:
+      context: ./dashboard-next
+      dockerfile: Dockerfile
+      args:
+        NEXT_ADMIN_CDN_URL: "${NEXT_ADMIN_CDN_URL:-}"
+    env_file: [.env.next-admin]
+    environment:
+      SHOP_FASTAPI_INTERNAL_URL: http://bot:5000
+      NODE_ENV: production
+      PORT: "3000"
+    depends_on: {bot: {condition: service_healthy}}
+    networks: [private]
+    # Serve through an owner-managed private HTTPS origin; never expose publicly.
+    ports: ["127.0.0.1:3000:3000"]
+    restart: unless-stopped
 
   redis:
-    image: redis:latest
-    container_name: redis
-    command:
-      - /bin/sh
-      - -c
-      - redis-server --requirepass "$${REDIS_PASSWORD:?REDIS_PASSWORD variable is not set}"
-    ports:
-      - "127.0.0.1:6379:6379"
-    env_file:
-      - .env
-    volumes:
-      - redis_data:/data
-    restart: always
-    networks:
-      - caddy
+    image: redis:7.4-alpine
+    command: ["/bin/sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD:?REDIS_PASSWORD is required}\""]
+    env_file: [.env]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [private]
+    restart: unless-stopped
 
   postgres:
-    container_name: "postgres"
-    image: "postgres:18"
-    env_file:
-      - .env
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - ./postgres_data:/var/lib/postgresql
-    networks:
-      - caddy
-    restart: always
-
+    image: postgres:18
+    env_file: [.env]
+    # Preserve the existing installation path, including owner/MFA/order data.
+    volumes: ["./postgres_data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [private]
+    restart: unless-stopped
 
 volumes:
-  AiogramShopBot:
-  caddy_data:
   redis_data:
-  postgres_data:
-
+  private_data:
 networks:
-  caddy:
+  private: {driver: bridge}

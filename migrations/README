@@ -1,1 +1,48 @@
-Generic single-database configuration with an async dbapi.
+The historical Alembic chain upgrades existing initialized installations. Its
+original root assumes the former schema already exists; it is not a fresh
+PostgreSQL provisioning baseline. Historical revisions are self-contained and
+must not import deleted application modules or contact bot providers.
+
+Fresh PostgreSQL deployment initialization is a separate, explicit command:
+
+    python -m scripts.initialize_registry_database
+
+It refuses any existing application table, including alembic_version. It creates
+only the current Registry ORM schema and Store/UOM seed, then records the current
+Alembic head using the same connection and transaction. It executes no historical
+upgrade function and creates no bots or credentials. Staff provisioning remains
+an explicit separate operation.
+
+Isolated Codespaces databases use scripts.security_bootstrap to create the
+current ORM schema directly. Fresh initialization creates a default Store,
+Store-owned units and administrator grants. It never registers bots or creates
+provider credentials. Do not stamp or replay historical revisions over it.
+
+Explicit retirement
+-------------------
+
+Back up existing data before retiring obsolete tables.
+
+For an unversioned, isolated Codespaces database, inspect the planned cleanup:
+
+    python -m scripts.legacy_schema_cleanup
+
+Then apply the bounded cleanup explicitly:
+
+    python -m scripts.legacy_schema_cleanup --apply
+
+For an existing versioned installation, use the guarded terminal revision:
+
+    alembic -x retire_original_schema=true upgrade head
+
+The fixed allowlist contains the original single-bot tables and obsolete global
+control tables. Cleanup rejects external foreign keys and uses transactional
+PostgreSQL DROP RESTRICT. Staff/MFA, Stores, modern catalog/orders, canonical
+Store Customers and historical Bot Registry owners remain intact. Singleton
+merchant text moves into default Store settings; conflicting existing text
+blocks cleanup. Retired identity links must already be represented by shared
+Store Customer ownership. Historical workflow bridges are disabled and fallback
+values normalized to ignore; bindings and their referenced Runs remain intact.
+
+Cleanup does not recreate bots, read environment-owned provider tokens, delete
+modern bot-owned commerce rows or invent a downgrade for deleted history.

@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "checks": [
+    "SSR login cannot natively submit before its secure handler hydrates",
+    "Hydrated login enables submission on the current development server",
+    "Auth GET redirects are relative and cannot expose localhost through a proxy",
+    "Rejected native POST stays on the browser hostname",
+    "Missing CSRF challenge remains rejected",
+    "Cross-site challenge requests remain rejected",
+    "Valid browser challenge reaches the real Backend; wrong credentials stay on the login page",
+    "Correct synthetic password opens MFA separately without creating a session",
+    "Synthetic MFA login reaches the Dashboard and preserves Remember me",
+    "No uncaught browser runtime errors"
+  ],
+  "errors": [],
+  "loginStatuses": [
+    401,
+    428,
+    200
+  ],
+  "authResponses": [
+    {
+      "path": "/api/auth/challenge",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/login",
+      "status": 401
+    },
+    {
+      "path": "/api/auth/challenge",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/login",
+      "status": 428
+    },
+    {
+      "path": "/api/auth/challenge",
+      "status": 200
+    },
+    {
+      "path": "/api/auth/login",
+      "status": 200
+    }
+  ],
+  "lastAlert": "ورود انجام نشد\n\nنام کاربری یا رمز عبور صحیح نیست. اطلاعات را بررسی و دوباره تلاش کنید.\n\nاطلاعات پشتیبانی"
+}

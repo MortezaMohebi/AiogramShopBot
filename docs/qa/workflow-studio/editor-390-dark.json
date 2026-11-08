@@ -1,0 +1,33 @@
+{
+  "width": 390,
+  "scroll": 390,
+  "rtl": "rtl",
+  "nodes": [
+    {
+      "id": "node_6dc4388784c5",
+      "visibility": "hidden",
+      "width": 0
+    },
+    {
+      "id": "node_c8220e6a5096",
+      "visibility": "hidden",
+      "width": 0
+    },
+    {
+      "id": "node_07b3d257744d",
+      "visibility": "hidden",
+      "width": 0
+    },
+    {
+      "id": "node_6523cf69b54f",
+      "visibility": "hidden",
+      "width": 0
+    },
+    {
+      "id": "node_8a2bf7e190fd",
+      "visibility": "hidden",
+      "width": 0
+    }
+  ],
+  "edges": 0
+}

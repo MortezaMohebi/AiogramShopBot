@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Late initialization failure rolls back PostgreSQL DDL, seeds and migration stamp",
+    "Concurrent initializers elect one creator; the other refuses without partial reset",
+    "Fresh PostgreSQL initializes only current schema, Store/UoM and migration head; zero bots/credentials",
+    "Nonempty fresh initialization refuses without resetting data",
+    "Codespaces bootstrap twice retains Store/UoM and creates zero bots",
+    "Cross-schema inbound foreign key aborts PostgreSQL retirement without partial data loss",
+    "Dry run finds 24 retired tables and changes neither data nor merchant settings",
+    "Conflicting merchant text blocks the complete retirement transaction",
+    "Unconverted customer link blocks retirement",
+    "Transactional DROP RESTRICT removes 24 tables while preserving owner/MFA/Store/products/orders/audit bot/customer membership",
+    "Repeated retirement is idempotent"
+  ]
+}

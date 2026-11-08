@@ -1,0 +1,8 @@
+npm warn deprecated eslint@9.39.5: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+> dual-messenger-shop-admin@0.1.0 postinstall
+> node scripts/patch-next-themes.mjs
+
+next-themes React 19 compatibility: applied
+
+added 400 packages in 36s

@@ -1,0 +1,19 @@
+Python:
+850 passed, 3 warnings in 110.16s (0:01:50)
+
+Relay:
+# tests 14
+# pass 14
+# fail 0
+# skipped 0
+
+Next and Build:
+GATE compile PASS
+GATE typecheck PASS
+GATE lint PASS
+# tests 78
+# pass 78
+# fail 0
+# skipped 0
+GATE next-tests PASS
+GATE production-build PASS

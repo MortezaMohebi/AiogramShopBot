@@ -1,0 +1,110 @@
+{
+  "status": "PENDING_FULL_DASHBOARD_ACCEPTANCE",
+  "source_routes_audited": 54,
+  "local": {
+    "unit": {
+      "pass": 267,
+      "fail": 0,
+      "skipped": 0
+    },
+    "lint": "PASS",
+    "build": "PASS",
+    "typecheck": "PASS",
+    "harness_syntax": "PASS"
+  },
+  "observed_codespace": {
+    "auth_backend_pass": 31,
+    "successful_mfa_login_observed": true,
+    "dialog_checks": [
+      "Store selection: 40 forward/reverse keys, Escape, focus restoration",
+      "Mobile menu: 80 keys, RTL edge, Escape, responsive dismissal",
+      "Category edit: 12 keys, Escape, focus restoration"
+    ],
+    "latest_route_sweep": {
+      "status": "FAIL",
+      "passed_viewport_cases": 36,
+      "next_case": "/orders at 1280px",
+      "failure": "Chromium renderer target crashed",
+      "full_sweep_accepted": false
+    },
+    "login_widths": [
+      1440,
+      1024,
+      768,
+      390,
+      320
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "login_axe": {
+      "passes": 33,
+      "violations": 0,
+      "incomplete": 0
+    },
+    "next_compilation_issues": 0,
+    "next_config_errors": 0,
+    "next_session_errors": 0,
+    "final_source_browser_retest": "PENDING",
+    "offline_captcha_browser": "PENDING",
+    "services_cleanup": "UNVERIFIED_AFTER_CONTROL_TIMEOUT",
+    "pre_sweep_checks_passed": 7
+  },
+  "current_blocker": null,
+  "recovery_changes": {
+    "screenshot_caret": "initial",
+    "client_readiness": "mounted control plus settled page; login password reveal assertion",
+    "verified": "JavaScript syntax only; browser rerun pending"
+  },
+  "production_deployed": false,
+  "live_provider_operations": false,
+  "prior_control_incident": "Prior Codespace control timeout resolved by a fresh browser tab; earlier full route-sweep renderer failure remains unresolved.",
+  "thinking_orbs": {
+    "version": "0.3.2",
+    "ui_checks": 14,
+    "captures": 62,
+    "status": "PASS",
+    "scope": "production loading components and offline login UI; not full authenticated dashboard acceptance",
+    "next_mcp": "PASS",
+    "react_mount": "PASS",
+    "fixture_cleanup": "PASS",
+    "runtime_exceptions": 0
+  },
+  "lazysizes": {
+    "version": "5.3.2",
+    "ui_checks": 13,
+    "captures": 12,
+    "status": "PASS",
+    "scope": "production image components with offline private-preview responses; not live media transactions",
+    "next_mcp": "PASS",
+    "react_mount": "PASS",
+    "fixture_cleanup": "PASS",
+    "runtime_exceptions": 0
+  },
+  "component_skeletons": {
+    "status": "PENDING_STUDIO_BROWSER_ACCEPTANCE",
+    "unit_regressions": 11,
+    "unit_regressions_pass": 11,
+    "independent_review": "No Critical or Important findings",
+    "ui_checks": 12,
+    "captures": 0,
+    "next_mcp": "BLOCKED_NO_BROWSER_SESSION",
+    "react_mount": "BLOCKED_LOCAL_CHROMIUM_LAUNCH",
+    "fixture_cleanup": "PASS",
+    "source_published": true,
+    "scope": "Partial light-theme data-state browser pass; Studio harness cleanup failed; not full accepted scope",
+    "approval": "User explicitly authorized Codespace update; earlier approval blocker resolved"
+  },
+  "two_step_login": {
+    "status": "PASS_SCOPED_UI",
+    "application_source": "01fb2bc5d95394cb3e22945c771b31e41e8874c2",
+    "python_focused_pass": 25,
+    "browser_checks": 14,
+    "captures": 22,
+    "real_auth_mutations": 0,
+    "agent_executed_mfa_reset": false,
+    "preview_port": 3005,
+    "full_python_retest": "NO_FINAL_RESULT_HOST_SESSION_DISAPPEARED"
+  }
+}

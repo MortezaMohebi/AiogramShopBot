@@ -1,0 +1,899 @@
+]633;E;docker compose -f compose.action-qa.yml exec -T api python -m scripts.beta_storefront_e2e --stage menus;3625cbc2-b39b-45b8-b587-99642263d728]633;CPASS  telegram: six menus, Persian search, address, Contact, wishlist, support, cancel, ACL
+PASS  bale: six menus, Persian search, address, Contact, wishlist, support, cancel, ACL
+PASS  Signed HTTP CRUD/history/scopes; both platforms; business rows unchanged
+PASS  concurrent exact create
+PASS  concurrent exact save
+PASS  concurrent distinct saves CAS
+PASS  telegram real catalog/UoM/cart/checkout and no-effect dry-run/simulation
+PASS  bale real catalog/UoM/cart/checkout and no-effect dry-run/simulation
+PASS  PostgreSQL concurrent identical insert claims produce one cart effect and receipt
+PASS  PostgreSQL same idempotency key with different normalized input conflicts
+PASS  PostgreSQL competing absolute cart writes reject a stale cart revision
+PASS  Pending approval resumes the same operation once under concurrent confirmation replay
+PASS  Invalid adapter output rolls back actual cart creation while persisting a safe failed receipt
+PASS  Lost commit acknowledgment reconciles through the same receipt without duplicate effects
+PASS  Supported support Action reuses real ticket service with exact retry and private-body redaction
+PASS  Unavailable services, missing scopes and Cross-Store product access fail closed
+PASS  Real signed HTTP Catalog/dry-run preserves rows, rejects tenant/authority spoofing and exposes no live execute
+PASS  Stopped only the owned Layer2 Next dev process group
+
+[1/6] Compile Python source
+
+[2/6] All Python regressions, including digital delivery and mixed checkout
+........................................................................ [  7%]
+........................................................................ [ 14%]
+........................................................................ [ 22%]
+........................................................................ [ 29%]
+........................................................................ [ 37%]
+........................................................................ [ 44%]
+........................................................................ [ 52%]
+........................................................................ [ 59%]
+........................................................................ [ 66%]
+........................................................................ [ 74%]
+........................................................................ [ 81%]
+........................................................................ [ 89%]
+........................................................................ [ 96%]
+................................                                         [100%]
+=============================== warnings summary ===============================
+models/shop_content.py:203
+  /workspaces/AiogramShopBot-action-registry/models/shop_content.py:203: PytestCollectionWarning: cannot collect test class 'Testimonial' because it has a __init__ constructor (from: tests/test_multibot_catalog_acl_offline.py)
+    class Testimonial(Base):
+
+dashboard/next_operations.py:367
+  /workspaces/AiogramShopBot-action-registry/dashboard/next_operations.py:367: PytestCollectionWarning: cannot collect test class 'TestimonialPatch' because it has a __init__ constructor (from: tests/test_next_admin_operations_offline.py)
+    class TestimonialPatch(BaseModel):
+
+models/shop_content.py:203
+  /workspaces/AiogramShopBot-action-registry/models/shop_content.py:203: PytestCollectionWarning: cannot collect test class 'Testimonial' because it has a __init__ constructor (from: tests/test_shop_channel_catalog.py)
+    class Testimonial(Base):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+968 passed, 3 warnings in 122.86s (0:02:02)
+
+[3/6] Cloudflare Worker and relay-pool regressions
+TAP version 13
+# Subtest: one Worker serves two bots with distinct secrets
+ok 1 - one Worker serves two bots with distinct secrets
+  ---
+  duration_ms: 42.023968
+  type: 'test'
+  ...
+# Subtest: cross-bot key reuse cannot forward another bot's token
+ok 2 - cross-bot key reuse cannot forward another bot's token
+  ---
+  duration_ms: 3.29889
+  type: 'test'
+  ...
+# Subtest: configuration and quota failure fail closed before contacting Telegram
+ok 3 - configuration and quota failure fail closed before contacting Telegram
+  ---
+  duration_ms: 2.539723
+  type: 'test'
+  ...
+# Subtest: rotating a key permits only the explicitly provisioned version
+ok 4 - rotating a key permits only the explicitly provisioned version
+  ---
+  duration_ms: 2.975289
+  type: 'test'
+  ...
+# Subtest: no automatic replay after a failed Telegram mutation
+ok 5 - no automatic replay after a failed Telegram mutation
+  ---
+  duration_ms: 3.21923
+  type: 'test'
+  ...
+# Subtest: persistent Durable Object reserves per-bot and global inflight quotas
+ok 6 - persistent Durable Object reserves per-bot and global inflight quotas
+  ---
+  duration_ms: 1.767227
+  type: 'test'
+  ...
+# Subtest: rejects unauthenticated requests without contacting Telegram
+ok 7 - rejects unauthenticated requests without contacting Telegram
+  ---
+  duration_ms: 54.631881
+  type: 'test'
+  ...
+# Subtest: fails closed if Worker secret has not been provisioned
+ok 8 - fails closed if Worker secret has not been provisioned
+  ---
+  duration_ms: 1.739295
+  type: 'test'
+  ...
+# Subtest: rejects arbitrary paths and non-Telegram upstream targets
+ok 9 - rejects arbitrary paths and non-Telegram upstream targets
+  ---
+  duration_ms: 17.627258
+  type: 'test'
+  ...
+# Subtest: forwards POST multipart bodies unchanged to a fixed Telegram host
+ok 10 - forwards POST multipart bodies unchanged to a fixed Telegram host
+  ---
+  duration_ms: 6.208663
+  type: 'test'
+  ...
+# Subtest: streams a file path without replacing its response bytes
+ok 11 - streams a file path without replacing its response bytes
+  ---
+  duration_ms: 4.828781
+  type: 'test'
+  ...
+# Subtest: does not follow upstream redirects into a different origin
+ok 12 - does not follow upstream redirects into a different origin
+  ---
+  duration_ms: 2.454913
+  type: 'test'
+  ...
+# Subtest: does not allow a POST request to download a file
+ok 13 - does not allow a POST request to download a file
+  ---
+  duration_ms: 5.348378
+  type: 'test'
+  ...
+# Subtest: keeps the upstream failure text and secrets out of errors
+ok 14 - keeps the upstream failure text and secrets out of errors
+  ---
+  duration_ms: 2.979292
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 296.414971
+
+[4/6] Next.js TypeScript typecheck
+
+> dual-messenger-shop-admin@0.1.0 typecheck
+> tsc --noEmit
+
+
+[5/6] Next.js lint and unit tests
+
+> dual-messenger-shop-admin@0.1.0 lint
+> eslint .
+
+
+> dual-messenger-shop-admin@0.1.0 test
+> node --experimental-strip-types --test tests/*.test.mts
+
+TAP version 13
+# Subtest: POST signs only the allowlisted safe dry-run route
+ok 1 - POST signs only the allowlisted safe dry-run route
+  ---
+  duration_ms: 26.442206
+  type: 'test'
+  ...
+# Subtest: GET forwards only allowed encoded query keys
+ok 2 - GET forwards only allowed encoded query keys
+  ---
+  duration_ms: 1.379492
+  type: 'test'
+  ...
+# Subtest: arbitrary admin route
+ok 3 - arbitrary admin route
+  ---
+  duration_ms: 1.321754
+  type: 'test'
+  ...
+# Subtest: encoded traversal
+ok 4 - encoded traversal
+  ---
+  duration_ms: 0.946063
+  type: 'test'
+  ...
+# Subtest: unexpected query
+ok 5 - unexpected query
+  ---
+  duration_ms: 0.914361
+  type: 'test'
+  ...
+# Subtest: live execute
+ok 6 - live execute
+  ---
+  duration_ms: 1.044316
+  type: 'test'
+  ...
+# Subtest: arbitrary version
+ok 7 - arbitrary version
+  ---
+  duration_ms: 0.981656
+  type: 'test'
+  ...
+# Subtest: missing CSRF cannot mutate
+ok 8 - missing CSRF cannot mutate
+  ---
+  duration_ms: 1.022277
+  type: 'test'
+  ...
+# Subtest: missing session cannot mutate
+ok 9 - missing session cannot mutate
+  ---
+  duration_ms: 1.307578
+  type: 'test'
+  ...
+# Subtest: oversized chunked JSON is cancelled before signed transport
+ok 10 - oversized chunked JSON is cancelled before signed transport
+  ---
+  duration_ms: 1.928745
+  type: 'test'
+  ...
+# (node:198681) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspaces/AiogramShopBot-action-registry/dashboard-next/lib/actions/state.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /workspaces/AiogramShopBot-action-registry/dashboard-next/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Catalog filters combine category, side effect, name and deprecation
+ok 11 - Catalog filters combine category, side effect, name and deprecation
+  ---
+  duration_ms: 2.739248
+  type: 'test'
+  ...
+# Subtest: Dry-run form produces typed bounded constants and omits empty optional fields
+ok 12 - Dry-run form produces typed bounded constants and omits empty optional fields
+  ---
+  duration_ms: 0.305338
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects fractional integer
+ok 13 - Dry-run rejects fractional integer
+  ---
+  duration_ms: 0.240339
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects missing required
+ok 14 - Dry-run rejects missing required
+  ---
+  duration_ms: 0.099854
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects negative quantity
+ok 15 - Dry-run rejects negative quantity
+  ---
+  duration_ms: 0.111032
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects large count
+ok 16 - Dry-run rejects large count
+  ---
+  duration_ms: 0.093428
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects invalid enum
+ok 17 - Dry-run rejects invalid enum
+  ---
+  duration_ms: 0.146754
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects long text
+ok 18 - Dry-run rejects long text
+  ---
+  duration_ms: 0.11405
+  type: 'test'
+  ...
+# Subtest: Dry-run rejects extra identity
+ok 19 - Dry-run rejects extra identity
+  ---
+  duration_ms: 0.244614
+  type: 'test'
+  ...
+# Subtest: Binding variable choices respect primitive and explicit reference fields
+ok 20 - Binding variable choices respect primitive and explicit reference fields
+  ---
+  duration_ms: 0.5609
+  type: 'test'
+  ...
+# Subtest: Output mapping cannot narrow arbitrary strings to date/datetime/enum
+ok 21 - Output mapping cannot narrow arbitrary strings to date/datetime/enum
+  ---
+  duration_ms: 0.29666
+  type: 'test'
+  ...
+# (node:198689) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspaces/AiogramShopBot-action-registry/dashboard-next/lib/activation-fragment.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /workspaces/AiogramShopBot-action-registry/dashboard-next/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: activation capability survives URL scrubbing and Strict Mode resubscription
+ok 22 - activation capability survives URL scrubbing and Strict Mode resubscription
+  ---
+  duration_ms: 1.607965
+  type: 'test'
+  ...
+# Subtest: server rendering and malformed activation fragments expose no capability
+ok 23 - server rendering and malformed activation fragments expose no capability
+  ---
+  duration_ms: 0.202779
+  type: 'test'
+  ...
+# Subtest: concurrent first authenticated challenges share a stable session-bound value
+ok 24 - concurrent first authenticated challenges share a stable session-bound value
+  ---
+  duration_ms: 145.393299
+  type: 'test'
+  ...
+# Subtest: session refresh retains CSRF value while another session gets a distinct token
+ok 25 - session refresh retains CSRF value while another session gets a distinct token
+  ---
+  duration_ms: 98.970428
+  type: 'test'
+  ...
+# Subtest: anonymous forms reuse a valid existing host-bound challenge
+ok 26 - anonymous forms reuse a valid existing host-bound challenge
+  ---
+  duration_ms: 82.120084
+  type: 'test'
+  ...
+# Subtest: cross-site requests do not receive or rotate a challenge
+ok 27 - cross-site requests do not receive or rotate a challenge
+  ---
+  duration_ms: 34.452146
+  type: 'test'
+  ...
+# Subtest: HMAC covers exact UTF-8 body, identity, method and full target
+ok 28 - HMAC covers exact UTF-8 body, identity, method and full target
+  ---
+  duration_ms: 29.54452
+  type: 'test'
+  ...
+# Subtest: network failure produces a safe diagnostic without logging its secret URI
+ok 29 - network failure produces a safe diagnostic without logging its secret URI
+  ---
+  duration_ms: 1.435375
+  type: 'test'
+  ...
+# Subtest: HTTP failure logs status and route but not backend error contents
+ok 30 - HTTP failure logs status and route but not backend error contents
+  ---
+  duration_ms: 2.56478
+  type: 'test'
+  ...
+# Subtest: expired backend identity redirects a protected data read to login
+ok 31 - expired backend identity redirects a protected data read to login
+  ---
+  duration_ms: 1.420974
+  type: 'test'
+  ...
+# Subtest: role rejection remains a 403 instead of becoming a login redirect
+ok 32 - role rejection remains a 403 instead of becoming a login redirect
+  ---
+  duration_ms: 1.122564
+  type: 'test'
+  ...
+# Subtest: malformed upstream success body is reported as protocol error
+ok 33 - malformed upstream success body is reported as protocol error
+  ---
+  duration_ms: 1.302552
+  type: 'test'
+  ...
+# Subtest: explicit JSON request deadline aborts the transport and never retries
+ok 34 - explicit JSON request deadline aborts the transport and never retries
+  ---
+  duration_ms: 11.34914
+  type: 'test'
+  ...
+# Subtest: missing browser session prevents any backend request
+ok 35 - missing browser session prevents any backend request
+  ---
+  duration_ms: 1.016693
+  type: 'test'
+  ...
+# Subtest: a Registry choice carries its explicit bot identity into the signed API
+ok 36 - a Registry choice carries its explicit bot identity into the signed API
+  ---
+  duration_ms: 27.419418
+  type: 'test'
+  ...
+# Subtest: an explicit legacy all choice preserves its bounded platform audience
+ok 37 - an explicit legacy all choice preserves its bounded platform audience
+  ---
+  duration_ms: 1.321829
+  type: 'test'
+  ...
+# Subtest: an explicit legacy telegram choice preserves its bounded platform audience
+ok 38 - an explicit legacy telegram choice preserves its bounded platform audience
+  ---
+  duration_ms: 0.830287
+  type: 'test'
+  ...
+# Subtest: an explicit legacy bale choice preserves its bounded platform audience
+ok 39 - an explicit legacy bale choice preserves its bounded platform audience
+  ---
+  duration_ms: 0.843714
+  type: 'test'
+  ...
+# Subtest: an invalid or absent target undefined cannot become a legacy draft
+ok 40 - an invalid or absent target undefined cannot become a legacy draft
+  ---
+  duration_ms: 0.897711
+  type: 'test'
+  ...
+# Subtest: an invalid or absent target "" cannot become a legacy draft
+ok 41 - an invalid or absent target "" cannot become a legacy draft
+  ---
+  duration_ms: 0.644862
+  type: 'test'
+  ...
+# Subtest: an invalid or absent target "legacy:unknown" cannot become a legacy draft
+ok 42 - an invalid or absent target "legacy:unknown" cannot become a legacy draft
+  ---
+  duration_ms: 0.621996
+  type: 'test'
+  ...
+# Subtest: an invalid or absent target "not-a-bot" cannot become a legacy draft
+ok 43 - an invalid or absent target "not-a-bot" cannot become a legacy draft
+  ---
+  duration_ms: 0.658514
+  type: 'test'
+  ...
+# (node:198835) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspaces/AiogramShopBot-action-registry/dashboard-next/lib/captcha-verification.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /workspaces/AiogramShopBot-action-registry/dashboard-next/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: disabled mode preserves the original login flow
+ok 44 - disabled mode preserves the original login flow
+  ---
+  duration_ms: 1.209169
+  type: 'test'
+  ...
+# Subtest: enabled providers require a nonempty bounded token
+ok 45 - enabled providers require a nonempty bounded token
+  ---
+  duration_ms: 0.225383
+  type: 'test'
+  ...
+# Subtest: Turnstile uses the official POST endpoint and binds host/action
+ok 46 - Turnstile uses the official POST endpoint and binds host/action
+  ---
+  duration_ms: 24.351045
+  type: 'test'
+  ...
+# Subtest: Turnstile replay, wrong hostname or action are rejected
+ok 47 - Turnstile replay, wrong hostname or action are rejected
+  ---
+  duration_ms: 1.715726
+  type: 'test'
+  ...
+# Subtest: Google v2 checks hostname and does not require a v3 action
+ok 48 - Google v2 checks hostname and does not require a v3 action
+  ---
+  duration_ms: 0.672032
+  type: 'test'
+  ...
+# Subtest: Google v3 requires matching action and minimum score
+ok 49 - Google v3 requires matching action and minimum score
+  ---
+  duration_ms: 3.302111
+  type: 'test'
+  ...
+# Subtest: outages, malformed replies and missing server keys fail closed
+ok 50 - outages, malformed replies and missing server keys fail closed
+  ---
+  duration_ms: 0.782919
+  type: 'test'
+  ...
+# (node:198843) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspaces/AiogramShopBot-action-registry/dashboard-next/lib/order-money.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /workspaces/AiogramShopBot-action-registry/dashboard-next/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Stars orders display frozen XTR rather than catalog IRR
+ok 51 - Stars orders display frozen XTR rather than catalog IRR
+  ---
+  duration_ms: 68.619528
+  type: 'test'
+  ...
+# Subtest: settled Stars amount remains exact after refund
+ok 52 - settled Stars amount remains exact after refund
+  ---
+  duration_ms: 0.369074
+  type: 'test'
+  ...
+# Subtest: Bale IRR is never guessed to be Telegram Stars
+ok 53 - Bale IRR is never guessed to be Telegram Stars
+  ---
+  duration_ms: 0.320356
+  type: 'test'
+  ...
+# Subtest: valid Persian settings are confirmed by an independent upstream read
+ok 54 - valid Persian settings are confirmed by an independent upstream read
+  ---
+  duration_ms: 31.256874
+  type: 'test'
+  ...
+# Subtest: a 20,000-character Persian FAQ fits the advertised field limits
+ok 55 - a 20,000-character Persian FAQ fits the advertised field limits
+  ---
+  duration_ms: 3.645962
+  type: 'test'
+  ...
+# Subtest: chunked Persian JSON can be split inside a UTF-8 character
+ok 56 - chunked Persian JSON can be split inside a UTF-8 character
+  ---
+  duration_ms: 8.698031
+  type: 'test'
+  ...
+# Subtest: oversized streamed body is cancelled before upstream mutation
+ok 57 - oversized streamed body is cancelled before upstream mutation
+  ---
+  duration_ms: 7.80006
+  type: 'test'
+  ...
+# Subtest: application/jsonp is not accepted as JSON
+ok 58 - application/jsonp is not accepted as JSON
+  ---
+  duration_ms: 1.26251
+  type: 'test'
+  ...
+# Subtest: read-back failure after a successful write reports an unverified save
+ok 59 - read-back failure after a successful write reports an unverified save
+  ---
+  duration_ms: 1.403868
+  type: 'test'
+  ...
+# Subtest: a read-back mismatch must never show success
+ok 60 - a read-back mismatch must never show success
+  ---
+  duration_ms: 1.289695
+  type: 'test'
+  ...
+# Subtest: missing CSRF does not mutate settings
+ok 61 - missing CSRF does not mutate settings
+  ---
+  duration_ms: 0.949974
+  type: 'test'
+  ...
+# Subtest: expired browser session does not mutate settings
+ok 62 - expired browser session does not mutate settings
+  ---
+  duration_ms: 1.356545
+  type: 'test'
+  ...
+# Subtest: non-superadmin role does not mutate settings
+ok 63 - non-superadmin role does not mutate settings
+  ---
+  duration_ms: 1.344867
+  type: 'test'
+  ...
+# Subtest: revoked backend session does not mutate settings
+ok 64 - revoked backend session does not mutate settings
+  ---
+  duration_ms: 1.111958
+  type: 'test'
+  ...
+# Subtest: backend permission rejection does not mutate settings
+ok 65 - backend permission rejection does not mutate settings
+  ---
+  duration_ms: 1.501902
+  type: 'test'
+  ...
+# Subtest: backend validation rejection does not mutate settings
+ok 66 - backend validation rejection does not mutate settings
+  ---
+  duration_ms: 1.453973
+  type: 'test'
+  ...
+# Subtest: backend outage does not mutate settings
+ok 67 - backend outage does not mutate settings
+  ---
+  duration_ms: 1.409687
+  type: 'test'
+  ...
+# Subtest: unknown settings is rejected before upstream work
+ok 68 - unknown settings is rejected before upstream work
+  ---
+  duration_ms: 1.420378
+  type: 'test'
+  ...
+# Subtest: insecure support link is rejected before upstream work
+ok 69 - insecure support link is rejected before upstream work
+  ---
+  duration_ms: 1.502878
+  type: 'test'
+  ...
+# Subtest: credential-bearing support link is rejected before upstream work
+ok 70 - credential-bearing support link is rejected before upstream work
+  ---
+  duration_ms: 1.617246
+  type: 'test'
+  ...
+# Subtest: oversized FAQ is rejected before upstream work
+ok 71 - oversized FAQ is rejected before upstream work
+  ---
+  duration_ms: 1.718539
+  type: 'test'
+  ...
+# Subtest: array body is rejected before upstream work
+ok 72 - array body is rejected before upstream work
+  ---
+  duration_ms: 1.573645
+  type: 'test'
+  ...
+# Subtest: null body is rejected before upstream work
+ok 73 - null body is rejected before upstream work
+  ---
+  duration_ms: 1.327644
+  type: 'test'
+  ...
+# Subtest: overlapping studio mutations cannot invalidate each other's CSRF cookie
+ok 74 - overlapping studio mutations cannot invalidate each other's CSRF cookie
+  ---
+  duration_ms: 3.894672
+  type: 'test'
+  ...
+# (node:198886) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspaces/AiogramShopBot-action-registry/dashboard-next/lib/workflows/navigation.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /workspaces/AiogramShopBot-action-registry/dashboard-next/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: declined Back preserves the editor, its history and mounted router tree
+ok 75 - declined Back preserves the editor, its history and mounted router tree
+  ---
+  duration_ms: 3.847644
+  type: 'test'
+  ...
+# Subtest: clean Back reaches the previous route once
+ok 76 - clean Back reaches the previous route once
+  ---
+  duration_ms: 0.336176
+  type: 'test'
+  ...
+# Subtest: declined Forward preserves dirty state and does not dispatch App Router restore
+ok 77 - declined Forward preserves dirty state and does not dispatch App Router restore
+  ---
+  duration_ms: 0.432508
+  type: 'test'
+  ...
+# Subtest: a skipped multi-entry traversal cannot bypass the pending-operation guard
+ok 78 - a skipped multi-entry traversal cannot bypass the pending-operation guard
+  ---
+  duration_ms: 0.366897
+  type: 'test'
+  ...
+# Subtest: an unknown operation alone blocks Store-context navigation
+ok 79 - an unknown operation alone blocks Store-context navigation
+  ---
+  duration_ms: 0.376162
+  type: 'test'
+  ...
+# Subtest: an allowed old unmarked traversal rebases before App Router replaces state
+ok 80 - an allowed old unmarked traversal rebases before App Router replaces state
+  ---
+  duration_ms: 0.351215
+  type: 'test'
+  ...
+# Subtest: declining an unknown traversal starts a new epoch before later pushes
+ok 81 - declining an unknown traversal starts a new epoch before later pushes
+  ---
+  duration_ms: 0.431011
+  type: 'test'
+  ...
+# Subtest: DELETE preserves the JSON operation receipt through signed transport
+ok 82 - DELETE preserves the JSON operation receipt through signed transport
+  ---
+  duration_ms: 29.228976
+  type: 'test'
+  ...
+# Subtest: GET forwards only allowed encoded query keys
+ok 83 - GET forwards only allowed encoded query keys
+  ---
+  duration_ms: 2.116432
+  type: 'test'
+  ...
+# Subtest: arbitrary admin route
+ok 84 - arbitrary admin route
+  ---
+  duration_ms: 1.985833
+  type: 'test'
+  ...
+# Subtest: encoded traversal
+ok 85 - encoded traversal
+  ---
+  duration_ms: 1.476038
+  type: 'test'
+  ...
+# Subtest: unexpected query
+ok 86 - unexpected query
+  ---
+  duration_ms: 1.560073
+  type: 'test'
+  ...
+# Subtest: publish GET
+ok 87 - publish GET
+  ---
+  duration_ms: 1.716126
+  type: 'test'
+  ...
+# Subtest: missing CSRF cannot mutate
+ok 88 - missing CSRF cannot mutate
+  ---
+  duration_ms: 1.595738
+  type: 'test'
+  ...
+# Subtest: missing session cannot mutate
+ok 89 - missing session cannot mutate
+  ---
+  duration_ms: 1.136411
+  type: 'test'
+  ...
+# Subtest: oversized chunked JSON is cancelled before signed transport
+ok 90 - oversized chunked JSON is cancelled before signed transport
+  ---
+  duration_ms: 2.147089
+  type: 'test'
+  ...
+# (node:198955) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspaces/AiogramShopBot-action-registry/dashboard-next/lib/workflows/state.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /workspaces/AiogramShopBot-action-registry/dashboard-next/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: connection replaces an outgoing port and updates canonical button target
+ok 91 - connection replaces an outgoing port and updates canonical button target
+  ---
+  duration_ms: 1.231586
+  type: 'test'
+  ...
+# Subtest: undo and redo preserve typed values and reject redo after a new edit
+ok 92 - undo and redo preserve typed values and reject redo after a new edit
+  ---
+  duration_ms: 0.751157
+  type: 'test'
+  ...
+# Subtest: delete removes edges, layout, entry points and button targets without mutating source
+ok 93 - delete removes edges, layout, entry points and button targets without mutating source
+  ---
+  duration_ms: 1.418832
+  type: 'test'
+  ...
+# Subtest: copy remaps internal node IDs, transitions, goto and button targets
+ok 94 - copy remaps internal node IDs, transitions, goto and button targets
+  ---
+  duration_ms: 0.457308
+  type: 'test'
+  ...
+# Subtest: layout is deterministic, finite, covers cycles and preserves domain graph
+ok 95 - layout is deterministic, finite, covers cycles and preserves domain graph
+  ---
+  duration_ms: 1.274772
+  type: 'test'
+  ...
+# Subtest: canonical fingerprint ignores object key insertion order
+ok 96 - canonical fingerprint ignores object key insertion order
+  ---
+  duration_ms: 0.164402
+  type: 'test'
+  ...
+# Subtest: late save response keeps edits made in flight and advances confirmed revision
+ok 97 - late save response keeps edits made in flight and advances confirmed revision
+  ---
+  duration_ms: 0.662068
+  type: 'test'
+  ...
+# Subtest: reconciled historical operation never adopts a newer head as its save base
+ok 98 - reconciled historical operation never adopts a newer head as its save base
+  ---
+  duration_ms: 0.812138
+  type: 'test'
+  ...
+# Subtest: a clipboard snapshot survives deleting or editing its original nodes
+ok 99 - a clipboard snapshot survives deleting or editing its original nodes
+  ---
+  duration_ms: 0.623526
+  type: 'test'
+  ...
+1..99
+# tests 99
+# suites 0
+# pass 99
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6490.295891
+
+[6/6] Next.js production build
+
+> dual-messenger-shop-admin@0.1.0 build
+> next build
+
+▲ Next.js 16.4.3 (Turbopack)
+✓ Running next.config.ts took 54ms
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+- Experiments (use with caution):
+  · serverActions
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 22.6s
+  Running TypeScript ...
+  Finished TypeScript in 14.6s ...
+  Collecting page data using 1 worker ...
+  Generating static pages using 1 worker (0/46) ...
+  Generating static pages using 1 worker (11/46)
+  Generating static pages using 1 worker (22/46)
+  Generating static pages using 1 worker (34/46)
+✓ Generating static pages using 1 worker (46/46) in 459ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /account
+├ ○ /activate
+├ ƒ /api/account/[action]
+├ ƒ /api/admin/actions/[[...path]]
+├ ƒ /api/admin/bot-connections
+├ ƒ /api/admin/bot-connections/mode-request
+├ ƒ /api/admin/categories
+├ ƒ /api/admin/customers/[id]/export
+├ ƒ /api/admin/data-models/[model]/[action]
+├ ƒ /api/admin/data-models/[model]/import
+├ ƒ /api/admin/digital-assets/[id]
+├ ƒ /api/admin/preview/[kind]/[id]
+├ ƒ /api/admin/product-media/[id]
+├ ƒ /api/admin/products
+├ ƒ /api/admin/shop-settings
+├ ƒ /api/admin/telegram-transport/[operation]
+├ ƒ /api/admin/upload
+├ ƒ /api/admin/workflows/[[...path]]
+├ ƒ /api/auth/challenge
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/redeem
+├ ƒ /audit
+├ ƒ /bot-connections
+├ ƒ /bots
+├ ƒ /bots/[id]
+├ ƒ /campaigns
+├ ƒ /campaigns/[id]
+├ ƒ /campaigns/new
+├ ƒ /categories
+├ ƒ /coupons
+├ ƒ /customer-notifications
+├ ƒ /customers
+├ ƒ /customers/[id]
+├ ƒ /customers/retention
+├ ƒ /dashboard
+├ ƒ /data-models/[model]
+├ ƒ /digital-deliveries
+├ ƒ /finance
+├ ƒ /fulfillments
+├ ƒ /login
+├ ƒ /media
+├ ƒ /orders
+├ ƒ /payment-accounts
+├ ƒ /permissions
+├ ƒ /products
+├ ƒ /products/[id]/digital
+├ ƒ /products/[id]/edit
+├ ƒ /products/new
+├ ƒ /relay-workers
+├ ƒ /reports
+├ ƒ /reviews
+├ ƒ /settings
+├ ƒ /shipping
+├ ƒ /staff
+├ ƒ /staff/[id]/stores
+├ ƒ /store-customers
+├ ƒ /store-customers/[id]
+├ ƒ /stores
+├ ƒ /studio/actions
+├ ƒ /studio/workflows
+├ ƒ /studio/workflows/[id]
+├ ƒ /studio/workflows/[id]/preview
+├ ƒ /studio/workflows/[id]/settings
+├ ƒ /studio/workflows/[id]/versions
+├ ƒ /studio/workflows/new
+├ ƒ /support-tickets
+├ ƒ /support-tickets/[id]
+└ ƒ /uoms
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+
+PASS: all offline checks completed.
+Separate PostgreSQL fresh-schema, two-provider E2E and browser gates remain required.

@@ -1,0 +1,49 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Non-root app can write only the declared media/private mounts",
+    "Dashboard, app and shared worker stopped for consistent backup",
+    "Fresh private PostgreSQL SQL backup saved before retirement",
+    "Obsolete schema retired atomically; all 119 modern tables and records preserved",
+    "Current private Codespace stack now uses Registry-only images and source"
+  ],
+  "database": {
+    "status": "PASS",
+    "retired_tables": [
+      "reviews",
+      "buyItem",
+      "cart_items",
+      "items",
+      "buys",
+      "deposits",
+      "payments",
+      "referral_bonus",
+      "carts",
+      "users",
+      "coupons",
+      "shipping_options",
+      "buttons_media",
+      "categories",
+      "subcategories",
+      "shop_bot_profiles",
+      "shop_payment_rails",
+      "shop_channel_features",
+      "shop_telegram_transport_changes",
+      "shop_telegram_transport",
+      "shop_connection_changes",
+      "shop_connection_configs",
+      "shop_settings",
+      "shop_customer_identity_links"
+    ],
+    "preserved_modern_tables": 119,
+    "modern_counts": {
+      "shop_admin_profiles": 1,
+      "shop_admin_sessions": 1,
+      "shop_bots": 0,
+      "shop_orders": 0,
+      "shop_products": 0,
+      "shop_staff": 1,
+      "shop_stores": 1
+    }
+  }
+}

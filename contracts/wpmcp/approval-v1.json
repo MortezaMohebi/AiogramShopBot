@@ -1,0 +1,35 @@
+{
+  "artifact_utf8": "{\"label\":\"فارسی\",\"number\":1.0,\"tiny\":1e-06,\"\":\"private-use-key\",\"😀\":\"astral\"}",
+  "claims": {
+    "approval_id": "60000000-0000-4000-8000-000000000001",
+    "aud": "urn:bot-workflows:30000000-0000-4000-8000-000000000001",
+    "client_id": "gateway-test-client",
+    "connection_id": "40000000-0000-4000-8000-000000000003",
+    "exp": 1794000090,
+    "grant_id": "40000000-0000-4000-8000-000000000004",
+    "grant_version": 1,
+    "iat": 1794000000,
+    "intent_id": "60000000-0000-4000-8000-000000000003",
+    "intent_sha256": "6c4945561bcf2a627f22443c002589ddb53cc858b26c0eb9ac4266beb3a1c155",
+    "iss": "https://gateway.example.test",
+    "jti": "60000000-0000-4000-8000-000000000002",
+    "kind": "workflow.publish",
+    "operation_id": "60000000-0000-4000-8000-000000000003",
+    "store_id": "10000000-0000-4000-8000-000000000001",
+    "sub": "gateway-test-owner",
+    "tenant_id": "40000000-0000-4000-8000-000000000001",
+    "v": 1,
+    "workspace_id": "40000000-0000-4000-8000-000000000002"
+  },
+  "header": {
+    "alg": "EdDSA",
+    "kid": "wpmcp-approval-test",
+    "typ": "wpmcp-approval+jwt"
+  },
+  "installation_id": "30000000-0000-4000-8000-000000000001",
+  "intent_expires_at": 1794000180,
+  "key_seed_hex": "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100",
+  "now": 1794000000,
+  "test_only": true,
+  "token": "eyJhbGciOiJFZERTQSIsImtpZCI6IndwbWNwLWFwcHJvdmFsLXRlc3QiLCJ0eXAiOiJ3cG1jcC1hcHByb3ZhbCtqd3QifQ.eyJhcHByb3ZhbF9pZCI6IjYwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsImF1ZCI6InVybjpib3Qtd29ya2Zsb3dzOjMwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsImNsaWVudF9pZCI6ImdhdGV3YXktdGVzdC1jbGllbnQiLCJjb25uZWN0aW9uX2lkIjoiNDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIiwiZXhwIjoxNzk0MDAwMDkwLCJncmFudF9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNCIsImdyYW50X3ZlcnNpb24iOjEsImlhdCI6MTc5NDAwMDAwMCwiaW50ZW50X2lkIjoiNjAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAzIiwiaW50ZW50X3NoYTI1NiI6IjZjNDk0NTU2MWJjZjJhNjI3ZjIyNDQzYzAwMjU4OWRkYjUzY2M4NThiMjZjMGViOWFjNDI2NmJlYjNhMWMxNTUiLCJpc3MiOiJodHRwczovL2dhdGV3YXkuZXhhbXBsZS50ZXN0IiwianRpIjoiNjAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwia2luZCI6IndvcmtmbG93LnB1Ymxpc2giLCJvcGVyYXRpb25faWQiOiI2MDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiLCJzdG9yZV9pZCI6IjEwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInN1YiI6ImdhdGV3YXktdGVzdC1vd25lciIsInRlbmFudF9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInYiOjEsIndvcmtzcGFjZV9pZCI6IjQwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMiJ9.mKQy3NF8OsvjstEK-Gz7muKxuQgyFGQxT4fp48IsBWtNBfqcd12fvcqWhVBSBui3VtcM2s_CUpB5WsrP-d-lDg"
+}

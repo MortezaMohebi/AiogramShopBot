@@ -1,0 +1,59 @@
+✖ native form rejection stays on the browser hostname when a proxy uses loopback internally (196.441488ms)
+✖ direct auth navigation never redirects the browser to an internal development origin (75.817359ms)
+✔ default login is a browser-session Cookie with an eight-hour signed limit (67.305463ms)
+✔ remember me agrees across backend request, signed envelope and persistent Cookie (41.288602ms)
+✔ a backend that does not grant persistence cannot receive a longer browser session (48.714266ms)
+✔ string remember flags cannot silently opt a user into persistence (42.100795ms)
+✔ internal unauthorized responses are service errors, not false password failures (47.090664ms)
+✔ known password failures retain401 and their safe correlation ID without a session (35.280051ms)
+✔ ordinary login remains compatible with a strict older short-session backend (47.105184ms)
+✔ initial login asks for credentials without an MFA field or recovery code (412.478757ms)
+✔ authenticator input accepts Persian/Arabic digits and copied groups (109.333762ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 9
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1247.903452
+
+✖ failing tests:
+
+test at tests/login-session-policy.test.mts:40:1
+✖ native form rejection stays on the browser hostname when a proxy uses loopback internally (196.441488ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'https://localhost:3005/login?error=security_check_failed'
+  - '/login?error=security_check_failed'
+
+      at TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/login-session-policy.test.mts:42:43)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'https://localhost:3005/login?error=security_check_failed',
+    expected: '/login?error=security_check_failed',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/login-session-policy.test.mts:44:1
+✖ direct auth navigation never redirects the browser to an internal development origin (75.817359ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'https://localhost:3005/login'
+  - '/login'
+
+      at TestContext.<anonymous> (file:///workspace/scratch/3348955ffaf6/AiogramShopBot-ui-ux/dashboard-next/tests/login-session-policy.test.mts:45:109)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'https://localhost:3005/login',
+    expected: '/login',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

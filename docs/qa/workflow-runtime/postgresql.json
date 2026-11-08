@@ -1,0 +1,101 @@
+{
+  "status": "PASS",
+  "environment": "aiogram-workflow-runtime-qa isolated PostgreSQL",
+  "fake_providers_only": true,
+  "live_provider_calls": 0,
+  "checks": [
+    {
+      "check": "isolated PostgreSQL and network boundary",
+      "status": "PASS"
+    },
+    {
+      "check": "signed publication, exact retry, conflict and namespaced gates",
+      "status": "PASS"
+    },
+    {
+      "check": "Telegram complete Wholesale, typed input, verified PDF and one receipt",
+      "status": "PASS"
+    },
+    {
+      "check": "Bale complete Wholesale, typed input, verified PDF and one receipt",
+      "status": "PASS"
+    },
+    {
+      "check": "callback ownership, forgery, expiry and stale replay",
+      "status": "PASS"
+    },
+    {
+      "check": "durable Inbox commit crash and competing restart workers",
+      "status": "PASS"
+    },
+    {
+      "check": "durable Inbox ordering while Action is pending",
+      "status": "PASS"
+    },
+    {
+      "check": "Layer 2 commit crash reconciliation preserves one business effect",
+      "status": "PASS"
+    },
+    {
+      "check": "concurrent outbox workers preserve per-Run order",
+      "status": "PASS"
+    },
+    {
+      "check": "definite rejection retries are bounded",
+      "status": "PASS"
+    },
+    {
+      "check": "ambiguous provider response is quarantined without resend",
+      "status": "PASS"
+    },
+    {
+      "check": "process crash after send is quarantined without resend",
+      "status": "PASS"
+    },
+    {
+      "check": "competing timeout workers and timeout versus input",
+      "status": "PASS"
+    },
+    {
+      "check": "Back, optional document, cancellation and restart",
+      "status": "PASS"
+    },
+    {
+      "check": "immutable snapshot, version pinning and rollback",
+      "status": "PASS"
+    },
+    {
+      "check": "emergency gates preserve accepted ownership and legacy handoff",
+      "status": "PASS"
+    },
+    {
+      "check": "receiver Runtime precedes legacy receipts and old claims stay quarantined",
+      "status": "PASS"
+    },
+    {
+      "check": "legacy start, catalog, cart, checkout, orders and payment bypass",
+      "status": "PASS"
+    },
+    {
+      "check": "signed Store isolation, private metadata and audited recovery",
+      "status": "PASS"
+    },
+    {
+      "check": "skip locked Run and Slot before ordered worker limits",
+      "status": "PASS"
+    },
+    {
+      "check": "emergency gate serialization with claim and independent Layer 2 commit",
+      "status": "PASS"
+    },
+    {
+      "check": "absent entry ownership and retirement are serialized",
+      "status": "PASS"
+    },
+    {
+      "check": "commerce, stock and payment state remain unchanged",
+      "status": "PASS"
+    }
+  ],
+  "denied_network_calls": 0
+}

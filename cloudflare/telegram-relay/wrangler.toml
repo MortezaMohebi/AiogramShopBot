@@ -1,0 +1,24 @@
+# Replace the Worker name and register its origin in the Relay Worker Pool.
+# Sensitive credentials must ONLY be supplied as Cloudflare Secrets:
+#   npx wrangler secret put RELAY_CLIENTS_JSON
+name = "telegram-shop-api-relay"
+main = "src/index.mjs"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Both the per-bot registry secret and Durable Object quota are mandatory.
+# Provision only the explicitly reviewed bot UUID/token hash/key versions.
+[vars]
+RELAY_GLOBAL_RPS = "20"
+RELAY_GLOBAL_INFLIGHT = "20"
+
+[[durable_objects.bindings]]
+name = "RELAY_QUOTA"
+class_name = "RelayQuota"
+
+[[migrations]]
+tag = "v2-relay-pool"
+new_sqlite_classes = ["RelayQuota"]
+
+[observability]
+enabled = false

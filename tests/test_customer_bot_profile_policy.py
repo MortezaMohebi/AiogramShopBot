@@ -1,0 +1,237 @@
+"""Offline CRM, provider-policy and verified linking behavioral tests.
+
+These exercise real SQLAlchemy constraints and application services. They
+never call Telegram/Bale, create real orders, or change live webhook state.
+"""
+
+from __future__ import annotations
+
+from tests.schema_support import create_shop_schema, seed_registry, TEST_BOT_IDS
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from models.base import Base
+from models.shop_admin_control import AdminEvent
+from models.shop_content import ShopIdentity
+from models.shop_customer_crm import (
+    ShopCustomerAudit,
+    ShopCustomerConsentEvent,
+    ShopCustomerNote,
+    ShopCustomerProfile,
+)
+from models.shop_customer_links import (
+    ShopCustomerLinkRequest,
+)
+from models.shop_store_commerce import ShopStoreCustomerLinkEvent
+from models.shop_staff import ShopStaff
+from models.shop_staff_state import ShopStaffState
+from models.shop_admin_control import AdminSession
+from services import shop_admin_security as security
+from services import shop_customer_crm as crm
+from services import shop_identity_links as linking
+from services import shop_payment_rails as rails
+
+
+@pytest.fixture
+def session():
+    """Build an isolated relational store with no provider side effects."""
+    engine = create_engine("sqlite:///:memory:")
+    create_shop_schema(engine)
+    with Session(engine) as db:
+        seed_registry(db)
+        db.add_all([
+            ShopStaff(
+                id=10, username="operator", password_hash="test-hash",
+                role="superadmin", is_active=True, session_version=1,
+            ),
+            ShopStaff(
+                id=11, username="salesagent", password_hash="test-hash",
+                role="sales", is_active=True, session_version=1,
+            ),
+            ShopIdentity(
+                id=101, platform="telegram", bot_id=TEST_BOT_IDS["telegram"], platform_user_id=5001,
+                username="sender", first_name="Sender",
+                is_blocked=False, allow_announcements=False,
+            ),
+            ShopIdentity(
+                id=102, platform="bale", bot_id=TEST_BOT_IDS["bale"], platform_user_id=6001,
+                username="receiver", first_name="Receiver",
+                is_blocked=False, allow_announcements=False,
+            ),
+            ShopIdentity(
+                id=103, platform="bale", bot_id=TEST_BOT_IDS["bale"], platform_user_id=7001,
+                username="intruder", first_name="Intruder",
+                is_blocked=False, allow_announcements=False,
+            ),
+        ])
+        from models.shop_store_commerce import ShopStoreCustomer
+        for identity in db.query(ShopIdentity).all():
+            customer = ShopStoreCustomer(store_id=identity.store_id, display_name=identity.first_name)
+            db.add(customer)
+            db.flush()
+            identity.customer_id = customer.id
+        db.commit()
+        yield db
+    engine.dispose()
+
+
+class AsyncSessionAdapter:
+    """Forward async ORM operations to a synchronous disposable SQLite session."""
+
+    def __init__(self, db: Session):
+        """Store a test-only transactional session."""
+        self.db = db
+
+    async def get(self, model, key):
+        """Read a mapped object using the same SQLAlchemy metadata."""
+        return self.db.get(model, key)
+
+    async def scalar(self, statement):
+        """Read one ORM scalar."""
+        return self.db.scalar(statement)
+
+    async def execute(self, statement):
+        """Execute the real ownership-update statement inside a test transaction."""
+        return self.db.execute(statement)
+
+    async def scalars(self, statement):
+        """Read SQLAlchemy scalar results."""
+        return self.db.scalars(statement)
+
+    async def flush(self):
+        """Flush profile ownership within the linking transaction."""
+        self.db.flush()
+
+    async def commit(self):
+        """Commit the current isolated transaction."""
+        self.db.commit()
+
+    async def run_sync(self, operation):
+        """Execute the production transactional helper on the test session."""
+        return operation(self.db)
+
+    def add(self, item):
+        """Attach a mapped record."""
+        self.db.add(item)
+
+
+def test_customer_notes_and_documented_expiring_restrictions(session):
+    """Block state has a reason and expiry; no consent flag is changed."""
+    crm.add_note(session, identity_id=101, actor_id=10, content="Follow-up")
+    until = datetime(2026, 11, 4, tzinfo=timezone.utc)
+    crm.change_restriction(
+        session, identity_id=101, actor_id=10,
+        blocked=True, reason="Repeated spam complaints",
+        until=until, now=datetime(2026, 11, 3, tzinfo=timezone.utc),
+    )
+    session.commit()
+    profile = session.get(ShopCustomerProfile, 101)
+    assert profile.restriction_reason == "Repeated spam complaints"
+    assert session.get(ShopIdentity, 101).allow_announcements is False
+    assert len(session.query(ShopCustomerNote).all()) == 1
+    assert crm.effective_restriction(
+        True, until, now=datetime(2026, 11, 3, tzinfo=timezone.utc),
+    )
+    assert not crm.effective_restriction(
+        True, until, now=datetime(2026, 11, 5, tzinfo=timezone.utc),
+    )
+
+
+def test_staff_cannot_fabricate_marketing_consent(session):
+    """CRM edits may assign labels but never toggle the customer opt-in."""
+    crm.update_profile(
+        session, identity_id=101, actor_id=10,
+        tags=["VIP", "Dealer", "VIP"], owner_staff_id=10,
+        support_status="pending",
+    )
+    session.commit()
+    profile = session.get(ShopCustomerProfile, 101)
+    assert crm.tags_from_json(profile.tags_json) == ["VIP", "Dealer"]
+    assert session.get(ShopIdentity, 101).allow_announcements is False
+    assert session.query(ShopCustomerConsentEvent).count() == 0
+    assert session.query(ShopCustomerAudit).count() == 1
+
+
+def test_three_step_link_requires_source_confirmation(session):
+    """A claim alone never links two users or their financial histories."""
+    adapter = AsyncSessionAdapter(session)
+    token = asyncio.run(linking.begin(
+        adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001,
+    ))
+    assert len(token) == 43
+    assert token not in session.query(ShopCustomerLinkRequest).first().token_hash
+
+    with pytest.raises(linking.LinkRejected):
+        asyncio.run(linking.claim(
+            adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001, token=token,
+        ))
+    asyncio.run(linking.claim(
+        adapter, bot_id=TEST_BOT_IDS["bale"], platform="bale", user_id=6001, token=token,
+    ))
+    assert session.query(ShopStoreCustomerLinkEvent).count() == 0
+
+    with pytest.raises(linking.LinkRejected):
+        asyncio.run(linking.approve(
+            adapter, bot_id=TEST_BOT_IDS["bale"], platform="bale", user_id=6001, token=token,
+        ))
+    asyncio.run(linking.approve(
+        adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001, token=token,
+    ))
+    assert session.query(ShopStoreCustomerLinkEvent).count() == 1
+    assert session.get(ShopIdentity, 101).customer_id == session.get(ShopIdentity, 102).customer_id
+    with pytest.raises(linking.LinkRejected):
+        asyncio.run(linking.approve(
+            adapter, bot_id=TEST_BOT_IDS["telegram"], platform="telegram", user_id=5001, token=token,
+        ))
+
+
+def test_payment_methods_require_explicit_registered_accounts(session):
+    """An unconfigured bot cannot inherit a platform-wide payment rail."""
+    adapter = AsyncSessionAdapter(session)
+    assert not asyncio.run(rails.rail_enabled(
+        adapter, "telegram", "telegram_stars", bot_id=TEST_BOT_IDS["telegram"],
+    ))
+    assert not asyncio.run(rails.rail_enabled(
+        adapter, "bale", "telegram_stars", bot_id=TEST_BOT_IDS["bale"],
+    ))
+    assert asyncio.run(rails.rail_enabled(
+        adapter, "telegram", "store_credit", bot_id=TEST_BOT_IDS["telegram"],
+    ))
+
+
+@pytest.mark.asyncio
+async def test_staff_suspension_revokes_login_and_preserves_last_admin(session):
+    """Separate suspended status from disabled with live session revocation."""
+    from dashboard.admin_control_api import StaffUpdate, change_staff
+
+    actor = session.get(ShopStaff, 10)
+    employee = session.get(ShopStaff, 11)
+    assert employee.is_active is True
+    adapter = AsyncSessionAdapter(session)
+    result = await change_staff(
+        member_id=employee.id,
+        payload=StaffUpdate(
+            status="suspended", reason="Pending internal security review",
+        ),
+        staff=actor,
+        db=adapter,
+    )
+    assert result["status"] == "suspended"
+    assert session.get(ShopStaffState, employee.id).status == "suspended"
+    assert employee.is_active is False
+    assert employee.session_version == 2
+
+    with pytest.raises(security.SecurityRejected) as refused:
+        await change_staff(
+            member_id=actor.id,
+            payload=StaffUpdate(status="disabled"),
+            staff=actor,
+            db=adapter,
+        )
+    assert refused.value.code == "use_my_account"
+    assert actor.is_active is True

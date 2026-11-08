@@ -1,0 +1,97 @@
+{
+  "phase": "all",
+  "driver": "Playwright",
+  "source_commit": "cffa94215ef636cabadcdb4c77f5647f71a678ee",
+  "checks": [
+    {
+      "check": "Next MCP confirms this checkout and running dev server",
+      "status": "PASS"
+    },
+    {
+      "check": "Normal password and MFA browser login",
+      "status": "PASS"
+    },
+    {
+      "check": "Create Start, End, message, buttons and condition; connect, validate, autosave and reload",
+      "status": "PASS"
+    },
+    {
+      "check": "Copy snapshot, delete, paste, Undo and Redo preserve graph",
+      "status": "PASS"
+    },
+    {
+      "check": "Modify message and save a fresh revision",
+      "status": "PASS"
+    },
+    {
+      "check": "Keyboard Undo/Redo and removal of stale selection",
+      "status": "PASS"
+    },
+    {
+      "check": "Desktop Canvas renders every node and connection without overflow",
+      "status": "PASS"
+    },
+    {
+      "check": "Created workflow preview traverses platform condition: telegram",
+      "status": "PASS"
+    },
+    {
+      "check": "Created workflow preview traverses platform condition: bale",
+      "status": "PASS"
+    },
+    {
+      "check": "Full synthetic Return Request, typed input, photo metadata and explicit stub: telegram",
+      "status": "PASS"
+    },
+    {
+      "check": "Full synthetic Return Request, typed input, photo metadata and explicit stub: bale",
+      "status": "PASS"
+    },
+    {
+      "check": "Preview Back and Cancel",
+      "status": "PASS"
+    },
+    {
+      "check": "Empty-order scenario remains cancellable",
+      "status": "PASS"
+    },
+    {
+      "check": "Compare immutable versions, inspect Snapshot and restore as a new revision",
+      "status": "PASS"
+    },
+    {
+      "check": "Abort save, inspect missing receipt, retain local text and retry exact operation once",
+      "status": "PASS"
+    },
+    {
+      "check": "Store context refresh remounts owned workflow read-only and restores eligible editing",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 320px",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 390px",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 768px",
+      "status": "PASS"
+    },
+    {
+      "check": "Six Studio routes, RTL, light and dark themes at 1440px",
+      "status": "PASS"
+    },
+    {
+      "check": "Customer, cart, order, payment and support table counts unchanged",
+      "status": "PASS"
+    },
+    {
+      "check": "Next MCP reports no configuration or browser session errors",
+      "status": "PASS"
+    }
+  ],
+  "live_provider_calls": 0,
+  "runtime_enabled": false
+}

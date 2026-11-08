@@ -20,12 +20,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    from enums.buy_status import BuyStatus
-    from enums.item_type import ItemType
     op.execute("PRAGMA foreign_keys=0;")
 
-    item_type_enum = sa.Enum(ItemType)
-    buy_status_enum = sa.Enum(BuyStatus)
+    item_type_enum = sa.Enum("DIGITAL", "PHYSICAL", name="itemtype")
+    buy_status_enum = sa.Enum("PAID", "SHIPPED", "DELIVERED", "COMPLETED", "REFUNDED", name="buystatus")
 
     with op.batch_alter_table("items") as batch_op:
         batch_op.add_column(
@@ -48,7 +46,7 @@ def upgrade() -> None:
     )
 
     op.execute(
-        items.update().values(item_type=ItemType.DIGITAL.value)
+        items.update().values(item_type="DIGITAL")
     )
     op.create_table('shipping_options',
                     sa.Column('id', sa.Integer(), nullable=False),
@@ -71,7 +69,7 @@ def upgrade() -> None:
         column("item_type", item_type_enum)
     )
     op.execute(
-        cart_items.update().values(item_type=ItemType.DIGITAL.value)
+        cart_items.update().values(item_type="DIGITAL")
     )
 
     with op.batch_alter_table("cart_items") as batch_op:
@@ -129,13 +127,13 @@ def upgrade() -> None:
     op.execute(
         buys.update()
         .where(buys.c.is_refunded == sa.false())
-        .values(status=BuyStatus.COMPLETED.value)
+        .values(status="COMPLETED")
     )
 
     op.execute(
         buys.update()
         .where(buys.c.is_refunded == sa.true())
-        .values(status=BuyStatus.REFUNDED.value)
+        .values(status="REFUNDED")
     )
 
     with op.batch_alter_table("buys") as batch:

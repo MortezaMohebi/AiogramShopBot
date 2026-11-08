@@ -1,0 +1,40 @@
+# No-domain, temporary Cloudflare QA overlay. Each start gets new HTTPS URLs.
+# The admin tunnel has email authentication; the webhook tunnel is unprotected
+# at the edge but reaches only the narrow POST-only gateway.
+services:
+  webhook-gateway:
+    image: nginx:1.29-alpine
+    user: "101:101"
+    volumes:
+      - ./deploy/local-tunnel/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      bot:
+        condition: service_healthy
+    networks: [private]
+    expose: ["8080"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/_edge/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  cloudflared-webhooks:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--url", "http://webhook-gateway:8080"]
+    networks: [private]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: unless-stopped
+
+  cloudflared-admin:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--url", "http://next-admin:3000", "--allowed-mail", "${TEST_ADMIN_EMAIL:?Set your own email in .env}"]
+    networks: [private]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: unless-stopped

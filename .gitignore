@@ -1,1 +1,22 @@
 /data/
+
+# Private uploads and operational state: never commit user data.
+media_data/
+postgres_data/
+*.sqlite3
+__pycache__/
+.pytest_cache/
+
+# Never commit Next.js BFF sessions, bridge credentials or production secrets.
+.env.next-admin
+.env
+.secrets/
+
+# Only generated, local integration-lab credentials; never check in.
+.env.test.local
+
+# Browser test artifacts are never included in images or Git.
+.test-artifacts/
+
+# Private real Codespaces provider tokens and first-login administrator password.
+.codespaces/
