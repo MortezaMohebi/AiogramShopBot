@@ -194,7 +194,10 @@ async def address_reply(
     ):
         return None
     if state is None or state.store_id != store_id:
-        return BotReply("ابتدا نشانی جدید را از فهرست نشانی‌ها انتخاب کنید.")
+        return BotReply(
+            "ثبت نشانی هنوز شروع نشده است. از نشانی‌های من یک نشانی جدید اضافه کنید.",
+            _rows(("نشانی‌های من", "ux:addresses")),
+        )
     if action == "ux:address:cancel":
         state.action, state.context_ref, state.address_draft = "idle", None, None
         _clear_parked_address(state)
@@ -286,7 +289,10 @@ async def address_reply(
     elif action == "ux:address:confirm" and _step(state) == "confirm":
         values = _draft(state)
         if any(not values.get(field) for field in STEPS[:-1]):
-            return BotReply("نشانی کامل نیست؛ به مرحلهٔ قبل برگردید.")
+            return BotReply(
+                "نشانی کامل نیست. به مرحلهٔ قبل برگردید و آن را کامل کنید.",
+                _rows(("مرحلهٔ قبل", "ux:address:back"), ("نشانی‌های من", "ux:addresses")),
+            )
         count = int(await db.scalar(select(func.count()).select_from(
             ShopCustomerAddress,
         ).where(

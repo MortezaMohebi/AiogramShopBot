@@ -27,6 +27,10 @@ if TYPE_CHECKING:
     from aiogram import Bot
 
 
+class InvoiceDispatchUnknown(PaymentRejected):
+    """The invoice may have reached the provider and must be reconciled."""
+
+
 async def send_order_invoice(
     session: AsyncSession,
     *, platform: Platform, user_id: int, order_id: int,
@@ -122,7 +126,7 @@ async def send_order_invoice(
         await ShopPaymentService.mark_invoice_dispatch(
             session, plan.attempt_id, sent=False,
         )
-        raise PaymentRejected(
+        raise InvoiceDispatchUnknown(
             "وضعیت ارسال فاکتور نامشخص است و نیازمند بررسی مدیر است."
         ) from None
 

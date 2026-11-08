@@ -97,7 +97,7 @@ async def clear_pending_on_navigation(
         }
     )
     account_navigation = action.startswith((
-        "ux:profile", "ux:addresses", "ux:address:choose:",
+        "ux:account:", "ux:profile", "ux:addresses", "ux:address:choose:",
         "ux:address:delete:", "ux:wish", "ux:links", "ux:notifications",
         "ux:notify:", "ux:stock:", "ux:language", "ux:privacy",
         "ux:ticket:", "ux:tickets",

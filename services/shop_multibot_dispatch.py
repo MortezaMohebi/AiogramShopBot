@@ -24,7 +24,7 @@ from channels.contracts import (
     BotReply, InboundEvent, InlineAction, Platform, ReplyPurpose,
     ViewOutcome, ViewResult, normalize_update,
 )
-from channels.shop_payment_dispatch import send_order_invoice
+from channels.shop_payment_dispatch import InvoiceDispatchUnknown, send_order_invoice
 from channels.telegram import TelegramTransport
 from db import session_maker
 from services.shop_bale_payments import (
@@ -52,7 +52,7 @@ from services.shop_customer_views import (
 from services.shop_engagement_flow import ShopEngagementFlow
 from services.shop_identity import is_blocked, register_customer
 from services.shop_orders import ORDER_PAGE, ShopOrdersFlow
-from services.shop_payments import PaymentRejected, ShopPaymentService
+from services.shop_payments import ShopPaymentService
 from services.shop_referrals import ShopReferralService
 from services.shop_runtime.ingress import suspend_for_commerce, try_ingress
 
@@ -203,6 +203,7 @@ async def _send(
         await db.commit()
     elif context.status == "active" and not recovery and (
         reply.menu_view or reply.show_main_keyboard or data.get("keyboard")
+        or native_shortcut(event.text or "")
     ) and state.action != "phone_verification":
         await _sync_keyboard(db, context, transport, event, state, reply, lease_check)
         data = envelope(state)
@@ -633,13 +634,20 @@ async def _dispatch_chat(db, context, client, event, payload, lease_check) -> di
                 telegram_bot=client if context.platform == Platform.TELEGRAM else None,
                 bale_transport=client if context.platform == Platform.BALE else None,
             )
-        except (PaymentRejected, ValueError):
+        except ValueError as error:
             await db.rollback()
+            uncertain = isinstance(error, InvoiceDispatchUnknown)
+            message = (
+                "وضعیت ارسال فاکتور مشخص نیست. سفارش‌های من را بررسی کنید یا از پشتیبانی کمک بگیرید."
+                if uncertain else
+                "پرداخت این سفارش اکنون در دسترس نیست. وضعیت را از سفارش‌های من بررسی کنید."
+            )
+            rows = ((InlineAction("سفارش‌های من", "shop:orders"),),)
+            if uncertain:
+                rows += ((InlineAction("پشتیبانی", "ux:support"),),)
             await _send(
-                context, client, event.chat_id, BotReply(
-                    "آماده‌سازی پرداخت انجام نشد. وضعیت را از سفارش‌های من بررسی کنید.",
-                    ((InlineAction("سفارش‌های من", "shop:orders"),),),
-                ), event=event, db=db, lease_check=lease_check,
+                context, client, event.chat_id, BotReply(message, rows),
+                event=event, db=db, lease_check=lease_check,
             )
         return {"status": "invoice_requested"}
 

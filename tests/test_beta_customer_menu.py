@@ -91,3 +91,29 @@ async def test_home_and_keyboard_follow_ordered_live_policy(db, monkeypatch, pla
                      if item.get("keyboard_rows") is not None]
         assert [button for row in keyboards[-1] for button in row] == expected
     assert len(keyboards) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", list(Platform))
+async def test_legacy_native_shortcut_refreshes_keyboard_on_first_use(db, monkeypatch, platform):
+    """Existing shoppers get current shortcuts even without a stored keyboard fingerprint."""
+    scope, client = await setup_dispatch(db, monkeypatch, platform)
+    db.session.add(ShopBotMenuPolicy(
+        bot_id=scope.bot_id, store_id=scope.store_id, actions_json='["shop","orders"]',
+    ))
+    db.session.commit()
+    payload = raw(message=MENU_LABELS["orders"])
+    for _ in range(2):
+        assert (await dispatch(scope, client, payload))["status"] == "processed"
+    state = db.session.get(ShopCustomerChatState, (scope.bot_id, 101))
+    assert state.view_state.get("keyboard")
+    if platform == Platform.TELEGRAM:
+        keyboards = [item["reply_markup"].keyboard for item in client.messages
+                     if hasattr(item.get("reply_markup"), "keyboard")]
+        labels = [button.text for row in keyboards[0] for button in row]
+    else:
+        keyboards = [item["keyboard_rows"] for item in client.messages
+                     if item.get("keyboard_rows") is not None]
+        labels = [button for row in keyboards[0] for button in row]
+    assert labels == [MENU_LABELS["shop"], MENU_LABELS["orders"]]
+    assert len(keyboards) == 1

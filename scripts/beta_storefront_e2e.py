@@ -774,33 +774,16 @@ async def menus(fixture: dict) -> None:
         ask = journey.ask
 
         home = await ask(message="/start")
-        assert set(await journey.actions(home)) <= HOME
-        shortcuts = {
-            "shop:list:0": "🛍 فروشگاه",
-            "shop:cart": "🛒 سبد خرید",
-            "shop:orders": "📦 سفارش‌های من",
-            "ux:support": "💬 پشتیبانی",
-        }
+        assert set(await journey.actions(home)) == HOME
         for action in sorted(HOME):
-            home = await ask(message="/start")
-            if action in await journey.actions(home):
-                await ask(action)
-            else:
-                # The pre-repair baseline puts four destinations solely in the
-                # Reply Keyboard. Use only a label the fake actually received.
-                label = shortcuts[action]
-                assert any(
-                    button["text"] == label
-                    for msg in native.messages
-                    for row in (msg.get("reply_markup") or {}).get("keyboard", [])
-                    for button in row
-                ), label
-                await ask(message=label)
+            await ask(message="/start")
+            await ask(action)
         await ask(message="/search")
         found = await ask(message="توضیح فارسی")
-        assert "نتیجه" in found["text"], found["text"]
+        assert "توضیح فارسی" in found["text"], found["text"]
+        foreign_action = f"shop:item:{fixture['foreign_product']}"
         assert all(
-            not action.endswith(f":{fixture['foreign_product']}")
+            action != foreign_action and not action.startswith(f"{foreign_action}:")
             for action in await journey.actions(found)
         ), "Cross-Store search result button leaked"
         async with session_maker() as db:

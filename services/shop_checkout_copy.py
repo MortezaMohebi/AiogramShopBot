@@ -6,6 +6,15 @@ already have been verified and expressed in the correct provider currency.
 
 from __future__ import annotations
 
+import re
+
+_STAR_AMOUNT = re.compile(r"[0-9][0-9,٬]* Stars \(XTR\)")
+
+
+def isolate_reference(value: str) -> str:
+    """Keep an ASCII reference in reading order within Persian text."""
+    return f"\u2066{value}\u2069" if value.isascii() else value
+
 
 def checkout_confirmation_text(
     *, item_count: int, price_label: str, checkout_mode: str,
@@ -32,13 +41,14 @@ def checkout_confirmation_text(
         if split else ""
     )
     delivery = f"{delivery_label}\n" if delivery_label else ""
+    display_price = _STAR_AMOUNT.sub(lambda match: isolate_reference(match[0]), price_label)
     return (
         "🧾 بررسی نهایی سفارش\n"
         f"تعداد اقلام: {item_count}\n"
-        f"مبلغ نهایی: {price_label}\n"
+        f"مبلغ نهایی: {display_price}\n"
         f"{delivery}"
-        f"مسیر: {mode_label}\n"
-        f"شرایط خرید: نسخهٔ {terms_version}\n"
+        f"مرحلهٔ بعد: {mode_label}\n"
+        f"شرایط خرید: نسخهٔ {isolate_reference(terms_version)}\n"
         f"{split_note}"
         "متن کامل از «مشاهده شرایط خرید» در دسترس است. "
         "با ثبت سفارش، شرایط این نسخه را می‌پذیرید. هنوز وجهی دریافت نشده است."

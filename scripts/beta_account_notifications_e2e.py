@@ -7,6 +7,7 @@ and receipts are additive; no table, existing fixture or credential is reset.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 from contextlib import asynccontextmanager
 import hashlib
@@ -53,9 +54,10 @@ from scripts.beta_storefront_e2e import (  # noqa: E402
     MANIFEST,
     FakeBaleSession,
     FakeTelegram,
+    VisibleTap,
     callbacks,
     context,
-    inbound,
+    seed,
 )
 from services import shop_admin_security as security  # noqa: E402
 from services.shop_customer_notifications import (  # noqa: E402
@@ -64,7 +66,6 @@ from services.shop_customer_notifications import (  # noqa: E402
     prepare_stock_alerts,
 )
 from services.shop_identity import register_customer  # noqa: E402
-from services.shop_multibot_dispatch import dispatch  # noqa: E402
 from services.shop_refunds import ShopRefundService  # noqa: E402
 from services.shop_store_context import StoreContext, memberships  # noqa: E402
 from services.shop_wallet import ShopWalletService, StoreCreditRejected  # noqa: E402
@@ -181,8 +182,35 @@ async def enrollment_races(scopes: dict, base: int, run: str) -> None:
     stage("PASS  PostgreSQL: concurrent enrollment, no orphan, four-Bot ID isolation")
 
 
+ACCOUNT_GROUPS = ("ux:account:benefits", "ux:account:settings")
+
+
+async def account_action(journey: Journey, action: str) -> dict:
+    """Find an action through Account or one of its visible groups."""
+    await journey.ask(message="/account")
+    if action in await journey.actions():
+        return await journey.ask(action)
+    for group in ACCOUNT_GROUPS:
+        await journey.ask(message="/account")
+        await journey.ask(group)
+        if action in await journey.actions():
+            return await journey.ask(action)
+    raise AssertionError(f"Account action {action} is missing from both visible groups")
+
+
+async def raw_denial(journey: Journey, action: str, *withheld: str) -> dict:
+    """Inject an intentionally forged old read and inspect only its own response."""
+    before = len(journey.native.messages)
+    prior = journey.native.messages[-1]
+    result = await journey.tap(VisibleTap(prior["message_id"], action))
+    assert result["status"] in {"processed", "stale_callback", "blocked"}, result
+    fresh = journey.native.messages[before:]
+    assert all(secret not in reply["text"] for secret in withheld for reply in fresh)
+    return fresh[-1] if fresh else {"text": ""}
+
+
 async def account_menu(journey: Journey) -> None:
-    """Follow every actual Account menu callback through native serialization."""
+    """Follow every visible Account action within at most two selections."""
     expected = {
         "ux:profile": "مشخصات", "ux:addresses": "نشانی",
         "ux:wallet": "موجودی", "ux:wishlist": "علاقه",
@@ -191,18 +219,27 @@ async def account_menu(journey: Journey) -> None:
         "ux:language": "فارسی", "ux:privacy": "حریم خصوصی",
         "shop:home": None,
     }
-    page = await journey.ask("ux:account")
-    assert set(callbacks(page)) == set(expected), page["text"]
+    page = await journey.ask(message="/account")
+    direct = list(await journey.actions(page))
+    assert direct == ["ux:profile", "ux:addresses", *ACCOUNT_GROUPS, "shop:home"], direct
+    secondary = []
+    for group in ACCOUNT_GROUPS:
+        await journey.ask(message="/account")
+        options = await journey.ask(group)
+        secondary.extend(
+            action for action in await journey.actions(options)
+            if action not in {"ux:account", "shop:home"}
+        )
+    assert set(secondary) == set(expected) - {"ux:profile", "ux:addresses", "shop:home"}
+    assert len(secondary) == len(set(secondary))
     for action, fragment in expected.items():
-        before = len(journey.native.messages)
-        reply = await journey.ask(action)
-        assert len(journey.native.messages) == before + 1
+        reply = await account_action(journey, action)
         assert 1 <= len(reply["text"]) <= 4096
         assert all(len(value.encode("utf-8")) <= 64 for value in callbacks(reply))
         if fragment:
             assert fragment in reply["text"], (action, reply["text"])
         else:
-            assert "ux:account" in callbacks(reply)
+            assert "ux:account" in await journey.actions(reply)
 
 
 async def fund_credit(journey: Journey, amount: int, run: str) -> None:
@@ -243,8 +280,9 @@ async def link_history(fixture: dict, tg: Journey, bale: Journey,
     assert first["customer_id"] != second["customer_id"]
     tg_order = (await tg.order(fixture, ("physical",)))[0]
     bale_order = (await bale.order(fixture, ("physical",)))[0]
-    refused = await tg.ask(f"ux:order:detail:{bale_order}")
+    refused = await raw_denial(tg, f"ux:order:detail:{bale_order}", "qa-v1")
     assert "پیدا نشد" in refused["text"]
+    await account_action(tg, "ux:links")
     challenge = await tg.ask("ux:links:start")
     token = re.search(r"/linkconfirm ([A-Za-z0-9_-]{43})", challenge["text"])
     assert token is not None, challenge["text"]
@@ -282,15 +320,16 @@ async def link_history(fixture: dict, tg: Journey, bale: Journey,
         assert old.customer_id == second["customer_id"]
         assert old.bot_id == bale.scope.bot_id and old.platform_user_id == bale.user_id
     for journey in (tg, bale):
-        history = await journey.ask("shop:orders")
+        history = await journey.ask(message="/orders")
         assert {f"ux:order:detail:{tg_order}", f"ux:order:detail:{bale_order}"} <= set(
-            callbacks(history)
+            await journey.actions(history)
         )
         for order_id in (tg_order, bale_order):
+            await journey.ask(message="/orders")
             details = await journey.ask(f"ux:order:detail:{order_id}")
             assert f"#{order_id}" in details["text"] and "qa-v1" in details["text"]
     for journey in (outsider, foreign):
-        denied = await journey.ask(f"ux:order:detail:{tg_order}")
+        denied = await raw_denial(journey, f"ux:order:detail:{tg_order}", "qa-v1")
         assert "پیدا نشد" in denied["text"]
     await tg.ask(message=f"/linkapprove {token}")
     await proof("confirmed")
@@ -332,20 +371,21 @@ async def credit_and_shipment(fixture: dict, tg: Journey, bale: Journey,
         assert await ShopWalletService.balance(
             db, bale.scope.platform, bale.user_id, bot_id=bale.scope.bot_id,
         ) == 3000
-    preview = await tg.ask(f"shop:creditpay:{order_id}")
-    confirmation = f"shop:creditconfirm:{order_id}"
-    assert confirmation in callbacks(preview), preview["text"]
+    await tg.ask(message="/orders")
+    await tg.ask(f"shop:creditpay:{order_id}")
+    confirmation = await tg.prepare(f"shop:creditconfirm:{order_id}")
     async with session_maker() as db:
         assert (await db.get(ShopOrder, order_id)).status == "approved_unpaid"
     # Even a verified linked account cannot initiate another Bot's payment.
-    await bale.ask(confirmation)
-    await outsider.ask(confirmation)
+    for other in (bale, outsider):
+        assert (await other.tap(confirmation))["status"] == "stale_callback"
     async with session_maker() as db:
         assert (await db.get(ShopOrder, order_id)).status == "approved_unpaid"
-    await asyncio.wait_for(
-        asyncio.gather(tg.ask(confirmation), tg.ask(confirmation)), timeout=45,
+    outcomes = await asyncio.wait_for(
+        asyncio.gather(tg.tap(confirmation), tg.tap(confirmation)), timeout=45,
     )
-    await tg.ask(confirmation)
+    assert sorted(item["status"] for item in outcomes) == ["processed", "stale_callback"]
+    assert (await tg.tap(confirmation))["status"] == "stale_callback"
     async with session_maker() as db:
         order = await db.get(ShopOrder, order_id)
         assert order.status == "paid" and order.provider == "store_credit"
@@ -376,9 +416,11 @@ async def credit_and_shipment(fixture: dict, tg: Journey, bale: Journey,
         )
         assert shipped["status"] == "shipped" and shipped["version"] == 3
     for journey in (tg, bale):
+        await journey.ask(message="/orders")
+        await journey.ask(f"ux:order:detail:{order_id}")
         reply = await journey.ask(f"ux:order:track:{order_id}")
         assert tracking in reply["text"] and "shipped" in reply["text"]
-    refused = await outsider.ask(f"ux:order:track:{order_id}")
+    refused = await raw_denial(outsider, f"ux:order:track:{order_id}", tracking)
     assert tracking not in refused["text"]
     async with session_maker() as db:
         case = await ShopRefundService.request(
@@ -550,9 +592,10 @@ async def notification_journeys(fixture: dict, scopes: dict,
                 original.scope, base + 100 + offset * 10 + index,
             )
             await journey.ask(message="/start")
+            await journey.open_product(product_id)
             await journey.ask(f"ux:stock:toggle:{product_id}")
-            listed = await journey.ask("ux:stock:list")
-            assert f"ux:stock:toggle:{product_id}" in callbacks(listed)
+            listed = await account_action(journey, "ux:stock:list")
+            assert f"ux:stock:toggle:{product_id}" in await journey.actions(listed)
             if outcome == "no_queue":
                 await journey.ask(f"ux:stock:toggle:{product_id}")
             async with session_maker() as db:
@@ -607,6 +650,7 @@ async def notification_journeys(fixture: dict, scopes: dict,
         key = f"qa-marketing:{run}:{offset}"
         assert not (await identity_for(journey))["consent"]
         assert not await enqueue(journey, topic="marketing", key=key, body=body)
+        await account_action(journey, "ux:notifications")
         await journey.ask("ux:notify:on")
         assert (await identity_for(journey))["consent"] is True
         if offset == 0:
@@ -620,6 +664,7 @@ async def notification_journeys(fixture: dict, scopes: dict,
         revoked_key = f"qa-marketing-revoked:{run}:{offset}"
         revoked_body = f"QA revoked consent {run} {offset}"
         assert await enqueue(journey, topic="marketing", key=revoked_key, body=revoked_body)
+        await account_action(journey, "ux:notifications")
         await journey.ask("ux:notify:off")
         assert (await identity_for(journey))["consent"] is False
         assert not await enqueue(
@@ -661,12 +706,13 @@ async def support_replies(fixture: dict, tg: Journey, bale: Journey,
     """Execute real authorized staff reply plus atomic native outbox delivery."""
     stage("RUN   Customer support and authorized staff reply/outbox transaction")
     for journey in (tg, bale):
+        await journey.ask(message="/support")
         await journey.ask("ux:ticket:new")
         await journey.ask("ux:ticket:topic:general")
         customer_body = f"درخواست پشتیبانی آزمایشی {run}"
         created = await journey.ask(message=customer_body)
         detail = next(
-            action for action in callbacks(created) if action.startswith("ux:ticket:view:")
+            action for action in await journey.actions(created) if action.startswith("ux:ticket:view:")
         )
         ticket_id = int(detail.rsplit(":", 1)[-1])
         answer_body = f"پاسخ کارکنان آزمایشی {run} {journey.scope.platform.value}"
@@ -694,37 +740,51 @@ async def support_replies(fixture: dict, tg: Journey, bale: Journey,
         assert customer_body in first_page["text"]
         # Follow the provider's visible navigation rather than assuming that
         # all messages in a paginated thread appear on its opening page.
-        next_buttons = [
-            button["callback_data"]
-            for row in first_page["reply_markup"]["inline_keyboard"]
-            for button in row
-            if button.get("text") == "بعدی"
-        ]
-        assert len(next_buttons) == 1, "Staff reply navigation was not rendered"
-        staff_page = await journey.ask(next_buttons[0])
+        next_action = await action_with_label(journey, first_page, "بعدی")
+        next_tap = await journey.prepare(next_action, first_page)
+        staff_page = await journey.ask(next_action)
         assert answer_body in staff_page["text"]
-        previous_buttons = [
-            button["callback_data"]
-            for row in staff_page["reply_markup"]["inline_keyboard"]
-            for button in row
-            if button.get("text") == "قبلی"
-        ]
-        assert len(previous_buttons) == 1, "Thread return navigation was not rendered"
-        assert customer_body in (await journey.ask(previous_buttons[0]))["text"]
-        for action in (detail, next_buttons[0]):
-            denied = await outsider.ask(action)
-            assert answer_body not in denied["text"]
-            assert customer_body not in denied["text"]
+        previous_action = await action_with_label(journey, staff_page, "قبلی")
+        assert customer_body in (await journey.ask(previous_action))["text"]
+        await raw_denial(outsider, detail, answer_body, customer_body)
+        before = len(outsider.native.messages)
+        assert (await outsider.tap(next_tap))["status"] == "stale_callback"
+        assert all(
+            answer_body not in reply["text"] and customer_body not in reply["text"]
+            for reply in outsider.native.messages[before:]
+        )
         await harness.drain()
         await harness.drain()
         assert harness.sent(journey, notice) == 1
     stage("PASS  Support: paginated staff reply, next/previous, foreign denial, atomic outbox, one native notice")
 
 
+async def action_with_label(journey: Journey, reply: dict, label: str) -> str:
+    """Find the logical action only if the actual provider rendered its label."""
+    payloads = {
+        button["callback_data"]
+        for row in reply["reply_markup"]["inline_keyboard"]
+        for button in row
+        if button.get("text") == label
+    }
+    actions = [
+        action for action, tap in (await journey.actions(reply)).items()
+        if tap.data in payloads
+    ]
+    assert len(actions) == 1, (label, actions)
+    return actions[0]
+
+
 async def main() -> None:
     """Reuse the exact synthetic fixture without changing external settings."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fresh-fixture", action="store_true")
+    args = parser.parse_args()
     try:
-        fixture = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        fixture = (
+            await seed(persist_manifest=False)
+            if args.fresh_fixture else json.loads(MANIFEST.read_text(encoding="utf-8"))
+        )
         await postgres_guard(fixture)
         scopes = {key: await context(fixture, key) for key in (
             "telegram", "telegram_second", "bale", "foreign",
@@ -738,7 +798,7 @@ async def main() -> None:
         foreign = Journey(scopes["foreign"], base + 43)
         for journey in (tg, bale, outsider, foreign):
             await journey.ask(message="/start")
-        stage("RUN   All direct Account menu callbacks on Telegram and Bale")
+        stage("RUN   Direct and grouped Account actions on Telegram and Bale")
         await account_menu(tg)
         await account_menu(bale)
         stage("PASS  Account: every menu callback routes through native provider output")

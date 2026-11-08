@@ -9,17 +9,19 @@ provider-authenticated Contact.user_id equality, not typed phone input.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from channels.contracts import BotReply, InboundEvent, InlineAction
+from channels.contracts import BotReply, InboundEvent, InlineAction, Platform
 from models.shop_content import Product, ShopIdentity
 from models.shop_customer_account_data import (
     ShopCustomerAddress, ShopCustomerPreference, ShopCustomerWishlist,
 )
 from models.shop_customer_navigation import ShopCustomerChatState
+from models.shop_multibot import ShopBot
 from models.shop_store_commerce import ShopStoreCustomer
 from services.shop_bot_catalog_acl import allowed_for_bot, permitted_product_clause, resolve_scope
 from services.shop_bot_context import BotContext
@@ -31,6 +33,24 @@ _CALLBACK_ADDRESS_DELETE = re.compile(r"ux:address:delete:([1-9][0-9]{0,18})\Z")
 _CALLBACK_ADDRESS_REMOVE = re.compile(r"ux:address:remove:([1-9][0-9]{0,18})\Z")
 _PHONE = re.compile(r"^\+?[0-9]{7,16}\Z")
 _ADDRESS_TTL = timedelta(minutes=15)
+_BENEFITS = "ux:account:benefits"
+_SETTINGS = "ux:account:settings"
+_GROUPS = {
+    _BENEFITS: (
+        "خرید و امکانات",
+        (
+            ("اعتبار داخلی", "ux:wallet"), ("علاقه‌مندی‌ها", "ux:wishlist"),
+            ("معرفی دوستان", "ux:referral"), ("اعلان موجودی", "ux:stock:list"),
+        ),
+    ),
+    _SETTINGS: (
+        "تنظیمات و حساب‌های متصل",
+        (
+            ("حساب‌های متصل", "ux:links"), ("اطلاعیه‌ها", "ux:notifications"),
+            ("زبان", "ux:language"), ("حریم خصوصی", "ux:privacy"),
+        ),
+    ),
+}
 
 
 def verified_contact(event: InboundEvent) -> str:
@@ -52,6 +72,17 @@ def _actions(*items: tuple[str, str]) -> tuple[tuple[InlineAction, ...], ...]:
     return tuple(
         (InlineAction(label, callback),) for label, callback in items
     )
+
+
+def _group_back(reply: BotReply | None, group: str) -> BotReply | None:
+    """Return to the originating Account group from a delegated view."""
+    if reply is None:
+        return None
+    rows = tuple(
+        filtered for row in reply.rows
+        if (filtered := tuple(button for button in row if button.callback_data != "ux:account"))
+    )
+    return replace(reply, rows=rows + _actions((f"بازگشت به {_GROUPS[group][0]}", group)))
 
 
 async def customer_for_bot(
@@ -129,7 +160,7 @@ class CustomerAccountFlow:
             )
         except ValueError:
             return BotReply(
-                "ابتدا /start را در همین بات ارسال کنید.",
+                "حساب شما هنوز آماده نیست. از منوی اصلی وارد فروشگاه شوید.",
                 _actions(("🏠 منوی اصلی", "shop:home")),
             )
 
@@ -237,17 +268,15 @@ class CustomerAccountFlow:
                 _actions(
                     ("🪪 مشخصات من", "ux:profile"),
                     ("📍 نشانی‌های من", "ux:addresses"),
-                    ("💳 اعتبار داخلی", "ux:wallet"),
-                    ("♡ علاقه‌مندی‌ها", "ux:wishlist"),
-                    ("🔗 حساب‌های متصل", "ux:links"),
-                    ("🎁 معرفی دوستان", "ux:referral"),
-                    ("🔔 اطلاعیه‌ها", "ux:notifications"),
-                    ("📦 اعلان موجودی", "ux:stock:list"),
-                    ("🌐 زبان", "ux:language"),
-                    ("🔒 حریم خصوصی", "ux:privacy"),
+                    (_GROUPS[_BENEFITS][0], _BENEFITS),
+                    (_GROUPS[_SETTINGS][0], _SETTINGS),
                     ("🏠 منوی اصلی", "shop:home"),
                 ),
             )
+
+        if action in _GROUPS:
+            title, options = _GROUPS[action]
+            return BotReply(title, _actions(*options, ("بازگشت به حساب من", "ux:account")))
 
         if action == "ux:profile" or text == "/profile":
             phone_label = (
@@ -259,7 +288,7 @@ class CustomerAccountFlow:
                 f"نام: {customer.display_name or identity.first_name or 'ثبت نشده'}\n"
                 f"شماره تماس: {phone_label}\n"
                 f"شماره تماس گیرنده: {customer.contact_phone or 'ثبت نشده'}\n"
-                "تأیید حساب فقط با اشتراک Contact متعلق به خودتان انجام می‌شود.",
+                "برای تأیید شماره، شمارهٔ خودتان را با دکمهٔ اشتراک شمارهٔ تماس بفرستید.",
                 _actions(
                     ("📱 تأیید شماره تماس", "ux:phone"),
                     ("📍 نشانی‌های من", "ux:addresses"),
@@ -286,9 +315,9 @@ class CustomerAccountFlow:
             state.expires_at = datetime.now(timezone.utc) + _ADDRESS_TTL
             await db.commit()
             return BotReply(
-                "برای تأیید مالکیت شماره، از دکمهٔ رسمی اشتراک شمارهٔ تماس "
-                "در پیام‌رسان استفاده کنید. اگر دکمه در Client شما کار نکرد، "
-                "شماره را بنویسید؛ شمارهٔ دستی فقط برای تماس ذخیره می‌شود.",
+                "برای تأیید مالکیت، «اشتراک شمارهٔ تماس» را بزنید. "
+                "اگر این دکمه در دسترس نیست، شماره را بنویسید. "
+                "شماره‌ای که می‌نویسید فقط برای تماس ذخیره می‌شود.",
                 request_contact=True,
             )
 
@@ -442,7 +471,7 @@ class CustomerAccountFlow:
                     "♡ هنوز محصول قابل‌نمایشی در علاقه‌مندی‌ها ندارید.",
                     _actions(
                         ("🛍 محصولات", "shop:categories"),
-                        ("👤 حساب من", "ux:account"),
+                        ("بازگشت به خرید و امکانات", _BENEFITS),
                     ),
                 )
             buttons = _actions(*(
@@ -451,40 +480,44 @@ class CustomerAccountFlow:
             ))
             return BotReply(
                 f"♡ علاقه‌مندی‌ها — {len(rows)} محصول قابل‌مشاهده",
-                buttons + _actions(("👤 حساب من", "ux:account")),
+                buttons + _actions(("بازگشت به خرید و امکانات", _BENEFITS)),
             )
 
         if action == "ux:links":
-            linked = (await db.scalars(select(ShopIdentity).where(
+            linked = (await db.execute(select(ShopIdentity, ShopBot.name).join(
+                ShopBot, ShopBot.id == ShopIdentity.bot_id,
+            ).where(
                 ShopIdentity.store_id == self.context.store_id,
+                ShopBot.store_id == self.context.store_id,
                 ShopIdentity.customer_id == customer.id,
             ).order_by(ShopIdentity.id))).all()
             lines = ["🔗 حساب‌های تأییدشدهٔ این فروشگاه"]
-            for item in linked:
-                lines.append(f"• {item.platform} — Bot {item.bot_id[:8]}")
+            for item, name in linked:
+                messenger = "تلگرام" if item.platform == Platform.TELEGRAM else "بله"
+                lines.append(f"• {messenger} — {name.strip() or 'فروشگاه'}")
             return BotReply(
                 "\n".join(lines),
                 _actions(
                     ("➕ اتصال حساب دیگر", "ux:links:start"),
-                    ("👤 حساب من", "ux:account"),
+                    ("بازگشت به تنظیمات", _SETTINGS),
                 ),
             )
         if action == "ux:links:start":
             from services.shop_engagement_flow import ShopEngagementFlow
 
-            return await ShopEngagementFlow(
+            return _group_back(await ShopEngagementFlow(
                 bot_context=self.context,
             ).reply(InboundEvent(
                 platform=event.platform, chat_id=event.chat_id,
                 user_id=event.user_id, text="/linkstart",
-            ), db)
+            ), db), _SETTINGS)
 
         if action == "ux:stock:list":
             from services.shop_customer_notifications import list_stock_alerts
 
-            return await list_stock_alerts(
+            return _group_back(await list_stock_alerts(
                 db, context=self.context, user_id=event.user_id,
-            )
+            ), _BENEFITS)
         if action.startswith("ux:stock:toggle:"):
             from services.shop_customer_notifications import toggle_stock_alert
 
@@ -502,19 +535,19 @@ class CustomerAccountFlow:
         if action in {"ux:wallet", "ux:referral"}:
             from services.shop_engagement_flow import ShopEngagementFlow
 
-            return await ShopEngagementFlow(
+            return _group_back(await ShopEngagementFlow(
                 bot_context=self.context,
             ).reply(InboundEvent(
                 platform=event.platform, chat_id=event.chat_id,
                 user_id=event.user_id,
                 text="/wallet" if action == "ux:wallet" else "/referral",
-            ), db)
+            ), db), _BENEFITS)
 
         if action in {"ux:notifications", "ux:notify:on", "ux:notify:off"}:
             if action != "ux:notifications":
                 from services.shop_engagement_flow import ShopEngagementFlow
 
-                return await ShopEngagementFlow(
+                return _group_back(await ShopEngagementFlow(
                     bot_context=self.context,
                 ).reply(InboundEvent(
                     platform=event.platform, chat_id=event.chat_id,
@@ -522,31 +555,31 @@ class CustomerAccountFlow:
                     text=(
                         "/subscribe" if action.endswith(":on") else "/unsubscribe"
                     ),
-                ), db)
+                ), db), _SETTINGS)
             return BotReply(
-                "🔔 اطلاعیه‌های این بات\n"
-                "پیام‌های عملیاتی سفارش از تبلیغات جدا هستند.\n"
+                "🔔 اطلاعیه‌های فروشگاه\n"
+                "تغییر این گزینه روی پیام‌های مربوط به سفارش‌ها اثر ندارد.\n"
                 f"تبلیغات: {'فعال' if identity.allow_announcements else 'غیرفعال'}",
                 _actions(
                     ("✅ فعال‌سازی تبلیغات", "ux:notify:on"),
                     ("🔕 لغو تبلیغات", "ux:notify:off"),
-                    ("👤 حساب من", "ux:account"),
+                    ("بازگشت به تنظیمات", _SETTINGS),
                 ),
             )
 
         if action == "ux:language":
             return BotReply(
                 "🌐 زبان فعلی: فارسی. ترجمهٔ کامل زبان‌های دیگر هنوز فعال نیست.",
-                _actions(("👤 حساب من", "ux:account")),
+                _actions(("بازگشت به تنظیمات", _SETTINGS)),
             )
         if action == "ux:privacy":
             return BotReply(
-                "🔒 حریم خصوصی\nاطلاعات مشتری فقط در همان Store استفاده "
-                "می‌شود. اتصال هویت‌ها نیازمند تأیید مالکیت است. برای "
+                "🔒 حریم خصوصی\nاطلاعات شما فقط در همین فروشگاه استفاده "
+                "می‌شود. برای اتصال حساب دیگر، مالکیت آن را تأیید کنید. برای "
                 "دسترسی، اصلاح یا بررسی حذف داده‌ها با پشتیبانی تماس بگیرید.",
                 _actions(
                     ("🆘 پشتیبانی", "ux:support"),
-                    ("👤 حساب من", "ux:account"),
+                    ("بازگشت به تنظیمات", _SETTINGS),
                 ),
             )
         return None

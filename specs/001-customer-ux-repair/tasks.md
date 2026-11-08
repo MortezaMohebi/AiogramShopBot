@@ -256,12 +256,12 @@ changes to the approved design are part of this task list.
 
 ### Regression tests first
 
-- [ ] T047 [US6] Write paired Account, contact and address regressions (R-09) in `tests/test_beta_customer_account.py` and `tests/test_beta_cart_form_navigation.py`.
+- [X] T047 [US6] Write paired Account, contact and address regressions (R-09) in `tests/test_beta_customer_account.py` and `tests/test_beta_cart_form_navigation.py`.
   **Depends on**: T046. **Verify and accept**: Run red first for the flat Account menu; assert at most four choices excluding Home/Back, all allowed actions within two selections, scoped Back, contact exit, invalid input followed by navigation, and safe draft resume. Verify saved physical address reuse, one field per new address step and no shipping prompt for digital-only checkout. Also verify existing link authorization and safe return from denied linking.
 
 ### Implementation and verification
 
-- [ ] T048 [US6] Group Account choices and wire group-aware Back in `services/shop_customer_account.py` and `services/shop_address_wizard.py`.
+- [X] T048 [US6] Group Account choices and wire group-aware Back in `services/shop_customer_account.py` and `services/shop_address_wizard.py`.
   **Depends on**: T047. **Verify and accept**: Pass R-09 using the two approved group purposes, direct Profile/Addresses and existing allowed routes. Keep account linking/verification semantics, review before save, original valid draft step and unmodified unrelated cart data.
 
 ---
@@ -274,15 +274,15 @@ changes to the approved design are part of this task list.
 
 ### Regression tests first
 
-- [ ] T049 [US7] Write paired Persian copy and safe-error assertions (automated part of R-10) in `tests/test_beta_checkout_copy.py` and `tests/test_beta_customer_account.py`.
+- [X] T049 [US7] Write paired Persian copy and safe-error assertions (automated part of R-10) in `tests/test_beta_checkout_copy.py` and `tests/test_beta_customer_account.py`.
   **Depends on**: T048. **Verify and accept**: Run new assertions before copy edits. Verify named actions and currencies, meaningful scoped references, visible next steps and absence of raw provider diagnostics, internal IDs and unexplained Contact/Client jargon.
 
 ### Implementation and verification
 
-- [ ] T050 [US7] Refine touched checkout, account and verification copy in `services/shop_checkout_copy.py`, `services/shop_customer_account.py` and `services/shop_cart.py`.
+- [X] T050 [US7] Refine touched checkout, account and verification copy in `services/shop_checkout_copy.py`, `services/shop_customer_account.py` and `services/shop_cart.py`.
   **Depends on**: T049. **Verify and accept**: Pass T049; explain provider limitations and the order/payment effect, retain exact material terms and amount/currency, use a scoped shopper-facing linked-account label and explain why verified contact is needed.
 
-- [ ] T051 [US7] Refine touched stale, invalid input and unavailable/empty recovery messages in `services/shop_multibot_dispatch.py`, `services/shop_customer_experience.py`, `services/shop_customer_search.py` and `services/shop_address_wizard.py`.
+- [X] T051 [US7] Refine touched stale, invalid input and unavailable/empty recovery messages in `services/shop_multibot_dispatch.py`, `services/shop_customer_experience.py`, `services/shop_customer_search.py` and `services/shop_address_wizard.py`.
   **Depends on**: T049, T050. **Verify and accept**: Run paired error/copy/form tests; customer receives a plain explanation and authorized next action. Keep valid entries and distinguish uncertain outcomes from failed operations; no auto-retry or false success.
 
 ---
@@ -295,12 +295,12 @@ changes to the approved design are part of this task list.
 
 ### Regression tests first
 
-- [ ] T052 [US8] Write paired automated label, form and accessibility contract checks (R-10) in `tests/test_beta_conversation_ux.py`, `tests/test_beta_terms_navigation.py` and `tests/test_beta_cart_form_navigation.py`.
+- [X] T052 [US8] Write paired automated label, form and accessibility contract checks (R-10) in `tests/test_beta_conversation_ux.py`, `tests/test_beta_terms_navigation.py` and `tests/test_beta_cart_form_navigation.py`.
   **Depends on**: T051. **Verify and accept**: Run checks before presentation corrections. Require text labels and named recovery, readable mixed-script text fixtures, full terms via reachable pages, explicit Home/Back/Cancel as applicable, and no stale form consuming input for a new journey. Do not treat snapshots as native accessibility proof. Treat right-to-left rendering as a native check; automated tests cover text content and controls.
 
 ### Implementation and verification
 
-- [ ] T053 [US8] Apply small presentation corrections needed for the text/RTL contract in `services/shop_customer_experience.py`, `services/shop_checkout_copy.py`, `services/shop_customer_account.py` and `services/shop_channel_catalog.py`.
+- [X] T053 [US8] Apply small presentation corrections needed for the text/RTL contract in `services/shop_customer_experience.py`, `services/shop_checkout_copy.py`, `services/shop_customer_account.py` and `services/shop_channel_catalog.py`.
   **Depends on**: T052. **Verify and accept**: Pass T052. Text alone conveys action/outcome without relying on emoji or color, amounts and order references retain meaning, and required text is not clipped. Preserve control order, access and backend behavior.
 
 - [ ] T054 [US8] Perform the native and Persian review for R-10 and native exceptions using `specs/001-customer-ux-repair/quickstart.md`, `specs/001-customer-ux-repair/contracts/customer-conversation.md` and `dashboard-next/components/blocks/customer-experience-policy-panel.tsx` (read-only).
@@ -316,10 +316,10 @@ changes to the approved design are part of this task list.
 
 **Stories supported**: US1–US8; all priority gates.
 
-- [ ] T055 Run the complete paired commerce safety regression (R-11) in `scripts/beta_commerce_e2e.py`, `scripts/beta_digital_refund_e2e.py` and `scripts/beta_account_notifications_e2e.py`.
+- [X] T055 Run the complete paired commerce safety regression (R-11) in `scripts/beta_commerce_e2e.py`, `scripts/beta_digital_refund_e2e.py` and `scripts/beta_account_notifications_e2e.py`.
   **Depends on**: T028, T046, T053. **Verify and accept**: On guarded PostgreSQL with fake transports, replay confirmation, refund, delivery and settlement using fresh synthetic fixtures; assert exact counts, one authorized outcome and intact receipts. Include Telegram native invoice semantics and existing Bale eligible payment/mixed-cart guards; no real invoice or charge.
 
-- [ ] T056 Close P2 with `specs/001-customer-ux-repair/quickstart.md`, `specs/001-customer-ux-repair/traceability.md` and `.specify/memory/constitution.md`.
+- [X] T056 Close P2 with `specs/001-customer-ux-repair/quickstart.md`, `specs/001-customer-ux-repair/traceability.md` and `.specify/memory/constitution.md`.
   **Depends on**: T053, T055. **Verify and accept**: Run `python -m pytest -q tests` and review all 11 paired cases, migration/legacy-state proof, 8 outcomes and 13 principles. Require before/after evidence for state, labels/order, controls, messages and durable records. Review T054 evidence separately. If unavailable, keep T054 open as a release requirement and record the gap.
 
 ## Dependencies & execution order
@@ -442,3 +442,5 @@ resolved the findings above before their respective gates.
 | --- | --- |
 | P0 | 193 focused tests passed in Python 3.12 Docker. Private PostgreSQL passed the additive upgrade with an unchanged draft and null metadata, paired storefront and callback races, all four Terms/provider/mode combinations, both checkout policy race orderings, and fake-provider commerce settlement, refunds and delivery replay. |
 | P1 | Menu/transport checkpoint 82 passed, search/catalog/forms 77 passed and requested-media/gallery 10 passed. Private PostgreSQL passed keyboard, search and discovery for both providers, including edit counts, definitive replacement, uncertainty and durable media. |
+| P2 | 82 focused tests passed. Three guarded PostgreSQL runners passed for commerce, digital refund and Account/notifications. Native client evidence T054 remains open for a Persian narrow-screen and assistive review and actual provider keyboard/media/legacy-ack behavior. |
+| Final | 1,458 tests passed in isolated Python 3.12 Docker, with 12 collection warnings from four workers reporting the same existing helper classes. The exact final code also passed Python compilation and Git whitespace checks. Linux shell line endings were normalized only in the disposable test snapshot. |
