@@ -20,7 +20,9 @@ const state=await import("../lib/runtime/state.ts");
 const shared=evaluate("../components/runtime/shared.tsx",{"react/jsx-runtime":jsx,"next/link":{default:Link},"@/components/ui/badge":{Badge},"@/lib/runtime/state":state});
 let recoveryProps: unknown;
 const operations={RetryDelivery:()=>null,ApproveAction:()=>null,RecoverRun:(props:unknown)=>{recoveryProps=props;return null;}};
-const lists=evaluate("../components/runtime/lists.tsx",{"react/jsx-runtime":jsx,"next/link":{default:Link},"./shared":shared,"./operations":operations});
+const recordArea=evaluate("../components/ui/record-click-area.tsx",{"react/jsx-runtime":jsx,"@/lib/utils":{cn:(...classes:unknown[])=>classes.filter(Boolean).join(" ")}});
+const recordLink=evaluate("../components/ui/record-link.tsx",{"react/jsx-runtime":jsx,"next/link":{default:({prefetch,...props}:Record<string,unknown>)=>{void prefetch;return Link(props);}},"@/lib/utils":{cn:(...classes:unknown[])=>classes.filter(Boolean).join(" ")}});
+const lists=evaluate("../components/runtime/lists.tsx",{"react/jsx-runtime":jsx,"next/link":{default:Link},"./shared":shared,"./operations":operations,"@/components/ui/record-click-area":recordArea,"@/components/ui/record-link":recordLink});
 test("delivery HTML distinguishes queued, sent and unknown without outbound payloads",()=>{
  const items=["pending","sent","uncertain"].map((status,index)=>({id:`d${index}`,run_id:"r",node_id:"n",kind:"text",sequence:index,attempts:1,status,message_ids:[],error_code:status==="uncertain"?"runtime_delivery_unknown":null,payload:{text:privateText}}));
  const html=renderToStaticMarkup(createElement(lists.RuntimeDeliveries as never,{items,canManage:false}));

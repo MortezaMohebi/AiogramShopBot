@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,23 +30,25 @@ export function ProductsTable({ data, page, search, canEdit }: Props & { data: P
               <TableHead><BulkSelectCheckbox all /></TableHead>
               <TableHead>محصول</TableHead><TableHead>کد</TableHead>
               <TableHead>قیمت</TableHead><TableHead>موجودی</TableHead>
-              <TableHead>انتشار</TableHead><TableHead>عملیات</TableHead>
+              <TableHead>انتشار</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {data.items.map((item) => (
-                <TableRow key={item.id}>
+              {data.items.map((item) => {
+                const cells = <>
                   <TableCell><BulkSelectCheckbox id={item.id} /></TableCell>
-                  <TableCell className="max-w-64 font-semibold">{item.name}</TableCell>
+                  <TableCell className="max-w-64 font-semibold">{canEdit
+                    ? <RecordLink href={`/products/${item.id}/edit`}>{item.name}</RecordLink>
+                    : item.name}</TableCell>
                   <TableCell dir="ltr" className="text-start text-xs text-muted-foreground">{item.sku}</TableCell>
                   <TableCell className="whitespace-nowrap tabular">{formatIrr(item.price_irr)}</TableCell>
                   <TableCell className="tabular">{item.stock_quantity}</TableCell>
                   <TableCell><Badge tone={item.is_published ? "success" : "neutral"}>{item.is_published ? "منتشرشده" : "پیش‌نویس"}</Badge></TableCell>
-                  <TableCell>
-                    {canEdit ? <Link className="text-sm font-semibold text-primary hover:underline" href={`/products/${item.id}/edit`}>ویرایش</Link> : <span className="text-muted-foreground">فقط مشاهده</span>}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!data.items.length ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
+                </>;
+                return canEdit
+                  ? <RecordClickArea as="tr" key={item.id} className="border-b border-border">{cells}</RecordClickArea>
+                  : <TableRow key={item.id}>{cells}</TableRow>;
+              })}
+              {!data.items.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">{search ? "محصولی با این نام یا SKU پیدا نشد. جست‌وجو را تغییر دهید." : "هنوز محصولی ثبت نشده است."}</TableCell></TableRow> : null}
             </TableBody>
           </Table>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">

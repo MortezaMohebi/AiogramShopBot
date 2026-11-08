@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { notFound } from "next/navigation";
 import { Bot, Plus } from "lucide-react";
 import { PageHeading } from "@/components/blocks/page-heading";
@@ -79,19 +81,17 @@ export default async function BotsPage({
         </form>
         <p className="text-xs text-muted-foreground">{result.total_bots.toLocaleString("fa-IR")} ربات ثبت‌شده</p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-right text-sm">
+          <table className="w-full min-w-[550px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
               <th className="p-3">نام ربات</th><th className="p-3">پیام‌رسان</th>
               <th className="p-3">وضعیت عملیاتی</th><th className="p-3">هویت تأییدشده</th>
-              <th className="p-3">تنظیمات</th>
             </tr></thead>
-            <tbody>{result.bots.map(bot => <tr key={bot.id} className="border-b align-top">
-              <td className="p-3"><strong>{bot.name}</strong><p dir="ltr" className="text-xs text-muted-foreground">{bot.slug}</p></td>
+            <tbody>{result.bots.map(bot => <RecordClickArea as="tr" key={bot.id} className="border-b align-top">
+              <td className="p-3"><RecordLink href={`/bots/${bot.id}`}>{bot.name}</RecordLink><p dir="ltr" className="text-xs text-muted-foreground">{bot.slug}</p></td>
               <td className="p-3">{botPlatformLabel(bot.platform)}</td>
               <td className="p-3"><Badge tone={bot.operations.desired_state === "active" && bot.operations.runtime_ready ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge></td>
               <td className="p-3 text-xs">{bot.provider_bot_id ?? "هنوز تأیید نشده"}</td>
-              <td className="p-3"><Button asChild variant="outline" size="sm"><Link href={`/bots/${bot.id}`}>مدیریت ربات</Link></Button></td>
-            </tr>)}</tbody>
+            </RecordClickArea>)}</tbody>
           </table>
           {!result.bots.length ? <p className="py-8 text-center text-sm text-muted-foreground">{platform || store_id ? "رباتی با این فیلترها پیدا نشد." : "هنوز رباتی ثبت نشده است. از فرم زیر ربات ایجاد کنید."}</p> : null}
         </div>

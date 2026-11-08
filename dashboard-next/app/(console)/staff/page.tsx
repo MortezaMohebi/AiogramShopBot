@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { ReauthenticateButton } from "@/components/blocks/reauthentication";
 import { notFound } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
@@ -45,13 +47,11 @@ export default async function StaffPage({ searchParams }: { searchParams: Params
         فروشگاه‌های مجاز و فروشگاه پیش‌فرض هر کاربر را جداگانه تعیین کنید. نقش کاربر، سطح دسترسی او را محدود می‌کند.
       </p>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {members.map(member => <div key={member.id}
-          className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
-          <span className="min-w-0 truncate"><bdi>{member.username}</bdi> · {({ viewer: "مشاهده‌گر", sales: "فروش", content: "محتوا", finance: "مالی", marketing: "بازاریابی", superadmin: "مدیر اصلی" } as Record<string, string>)[member.role] ?? member.role}</span>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/staff/${member.id}/stores`}>فروشگاه‌های مجاز</Link>
-          </Button>
-        </div>)}
+        {members.map(member => <RecordClickArea as="div" key={member.id}
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border p-3 text-sm">
+          <RecordLink href={`/staff/${member.id}/stores`} className="min-w-0 break-words"><bdi>{member.username}</bdi></RecordLink>
+          <span className="text-muted-foreground">{({ viewer: "مشاهده‌گر", sales: "فروش", content: "محتوا", finance: "مالی", marketing: "بازاریابی", superadmin: "مدیر اصلی" } as Record<string, string>)[member.role] ?? member.role}</span>
+        </RecordClickArea>)}
       </div>
     </section>
   </div>;

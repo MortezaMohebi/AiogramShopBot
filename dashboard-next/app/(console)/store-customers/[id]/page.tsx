@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
@@ -48,12 +50,10 @@ export default async function StoreCustomerPage({
       <CardHeader><CardTitle>هویت‌های ارتباطی تأییدشده</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         {data.identities.map(identity =>
-          <div key={identity.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
-            <span>{identity.platform === "bale" ? "بله" : "تلگرام"} · ربات <bdi dir="ltr">{identity.bot_id.slice(0, 8)}</bdi> · کاربر <bdi dir="ltr">{identity.platform_user_id}</bdi></span>
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/customers/${identity.id}`}>پروندهٔ این حساب</Link>
-            </Button>
-          </div>)}
+          <RecordClickArea as="div" key={identity.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">
+            <RecordLink href={`/customers/${identity.id}`}>{identity.platform === "bale" ? "بله" : "تلگرام"} · کاربر <bdi dir="ltr">{identity.platform_user_id}</bdi></RecordLink>
+            <span className="text-muted-foreground">ربات <bdi dir="ltr">{identity.bot_id.slice(0, 8)}</bdi></span>
+          </RecordClickArea>)}
       </CardContent>
     </Card>
     <Card>

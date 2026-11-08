@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { Megaphone, Plus, ShieldAlert } from "lucide-react";
 import { changeCampaign } from "@/app/(console)/campaigns/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
@@ -56,10 +58,10 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
             campaign.bot_id === null || capabilities.broadcast_registry_enabled
           );
           return (
-            <Card key={campaign.id}>
+            <RecordClickArea as="section" key={campaign.id} className="rounded-xl border border-border bg-card text-card-foreground shadow-sm hover:bg-muted/30">
               <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
                 <div>
-                  <CardTitle>{campaign.title}</CardTitle>
+                  <CardTitle><RecordLink href={`/campaigns/${campaign.id}`}>{campaign.title}</RecordLink></CardTitle>
                   <p className="mt-2 text-xs text-muted-foreground">
                     #{campaign.id} · {campaign.bot_id ? "مشتریان همین ربات" : campaign.audience === "all" ? "هر دو پیام‌رسان" : campaign.audience === "bale" ? "بله" : "تلگرام"}
                     {" · "}{total} مخاطب
@@ -88,8 +90,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
                   <span>فایل: {campaign.media_count}</span>
                   {campaign.bale_mode === "business" ? <span>درخواست پولی: {campaign.paid_calls_reserved}/{campaign.max_paid_calls}</span> : null}
                 </div>
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <Button asChild size="sm" variant="outline"><Link href={`/campaigns/${campaign.id}`}>جزئیات و بررسی تحویل</Link></Button>
+                <div className="flex flex-wrap items-end gap-3 empty:hidden">
                   {manage && campaign.status === "draft" ? (
                     <form action={changeCampaign} className="flex items-end gap-2">
                       <input type="hidden" name="id" value={campaign.id} />
@@ -126,7 +127,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pa
                   ) : null}
                 </div>
               </CardContent>
-            </Card>
+            </RecordClickArea>
           );
         })}
         {!campaigns.length ? (

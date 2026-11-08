@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
@@ -33,13 +35,13 @@ export default async function StoreCustomersPage({
       <CardHeader><CardTitle>پرونده‌های مستقل مشتریان ({data.total})</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[660px] text-right text-sm">
+          <table className="w-full min-w-[480px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
               <th className="p-3">مشتری</th><th className="p-3">فروشگاه</th>
-              <th className="p-3">هویت‌های تأییدشده</th><th className="p-3">جزئیات</th>
+              <th className="p-3">هویت‌های تأییدشده</th>
             </tr></thead>
-            <tbody>{data.items.map(row => <tr key={row.id} className="border-b">
-              <td className="p-3">#{row.id} · {row.display_name || "نام ثبت نشده"}</td>
+            <tbody>{data.items.map(row => <RecordClickArea as="tr" key={row.id} className="border-b">
+              <td className="p-3"><RecordLink href={`/store-customers/${row.id}`}>#{row.id} · {row.display_name || "نام ثبت نشده"}</RecordLink></td>
               <td className="p-3 text-xs" dir="ltr">{row.store_id}</td>
               <td className="p-3">
                 {row.identities.map(identity =>
@@ -47,10 +49,7 @@ export default async function StoreCustomersPage({
                     {identity.platform === "bale" ? "بله" : "تلگرام"} · ربات <bdi dir="ltr">{identity.bot_id.slice(0, 8)}</bdi> · <bdi dir="ltr">{identity.platform_user_id}</bdi>
                   </p>)}
               </td>
-              <td className="p-3"><Button asChild variant="outline" size="sm">
-                <Link href={`/store-customers/${row.id}`}>پرونده</Link>
-              </Button></td>
-            </tr>)}</tbody>
+            </RecordClickArea>)}</tbody>
           </table>
         </div>
         {!data.items.length ? <p className="text-sm text-muted-foreground">

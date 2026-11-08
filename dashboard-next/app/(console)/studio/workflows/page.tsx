@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { StudioHomeNav } from "@/components/workflows/studio-home-nav";
 import { adminFetch } from "@/lib/bridge";
 import { PageHeading } from "@/components/blocks/page-heading";
@@ -78,18 +80,14 @@ export default async function WorkflowsPage({
       </form>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.items.map((item) => (
-          <article
+          <RecordClickArea
+            as="article"
             key={item.id}
             className="min-w-0 space-y-3 rounded-xl border bg-card p-5"
           >
             <div className="flex items-start justify-between gap-3">
               <h2 className="break-words font-semibold">
-                <Link
-                  href={`/studio/workflows/${item.id}`}
-                  className="text-primary hover:underline"
-                >
-                  {item.name}
-                </Link>
+                <RecordLink href={`/studio/workflows/${item.id}`}>{item.name}</RecordLink>
               </h2>
               <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-[10px]">
                 {item.status === "draft"
@@ -132,7 +130,7 @@ export default async function WorkflowsPage({
                 تنظیمات
               </Link>
             </div>
-          </article>
+          </RecordClickArea>
         ))}
       </div>
       {!data.items.length && (

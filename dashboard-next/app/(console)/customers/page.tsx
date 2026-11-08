@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -106,16 +108,20 @@ export default async function CustomersPage({
     </CardContent></Card>
     <Card><CardContent className="overflow-x-auto pt-5">
       <p className="mb-3 text-xs text-muted-foreground">{result.total.toLocaleString("fa-IR")} مشتری مطابق جست‌وجو</p>
-      <table className="w-full min-w-[820px] text-right text-sm">
+      <table className="w-full min-w-[580px] text-right text-sm">
         <thead><tr className="border-b text-muted-foreground">
           <th className="p-3">نام و شناسه</th><th className="p-3">پیام‌رسان</th>
           <th className="p-3">وضعیت فروشگاه</th><th className="p-3">رضایت تبلیغاتی</th>
-          <th className="p-3">مسئول و برچسب</th><th className="p-3">پرونده</th>
+          <th className="p-3">مسئول و برچسب</th>
         </tr></thead>
-        <tbody>{result.items.map((customer) => <tr key={customer.id} className="border-b align-top">
+        <tbody>{result.items.map((customer) => <RecordClickArea as="tr" key={customer.id} className="border-b align-top">
           <td className="p-3">
-            <p className="font-semibold">{customer.name || "بدون نام"}</p>
-            <p dir="ltr" className="text-xs text-muted-foreground">{customer.username ? `@${customer.username}` : customer.user_id}</p>
+            <RecordLink href={`/customers/${customer.id}`}>
+              {customer.name || (customer.username ? <bdi>@{customer.username}</bdi> : <>مشتری <bdi>{customer.user_id}</bdi></>)}
+            </RecordLink>
+            {customer.name || customer.username ? <p dir="ltr" className="text-xs text-muted-foreground">
+              {customer.name && customer.username ? `@${customer.username}` : customer.user_id}
+            </p> : null}
           </td>
           <td className="p-3">{customer.platform === "telegram" ? "تلگرام" : "بله"}</td>
           <td className="p-3"><Badge tone={customer.is_blocked ? "danger" : "neutral"}>{customer.is_blocked ? "محدود" : "فعال"}</Badge>
@@ -125,8 +131,7 @@ export default async function CustomersPage({
           <td className="p-3"><p className="text-xs">{customer.owner_staff_id ? usernames.get(customer.owner_staff_id) ?? "—" : "بدون مسئول"}</p>
             <p className="mt-1 max-w-48 break-words text-xs text-muted-foreground">{customer.tags.join("، ") || "بدون برچسب"}</p>
           </td>
-          <td className="p-3"><Button asChild variant="outline" size="sm"><Link href={`/customers/${customer.id}`}>مشاهده و ویرایش</Link></Button></td>
-        </tr>)}</tbody>
+        </RecordClickArea>)}</tbody>
       </table>
       {!result.items.length ? <p className="py-9 text-center text-sm text-muted-foreground">{hasFilters
         ? "مشتری‌ای با این فیلترها پیدا نشد. فیلترها را تغییر دهید یا پاک کنید."

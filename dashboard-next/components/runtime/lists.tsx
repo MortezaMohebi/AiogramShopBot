@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { RuntimeDate, RuntimeEmpty, RuntimeId, RuntimeStatus } from "./shared";
 import { RetryDelivery } from "./operations";
 import type { Binding, HistoryItem, OutboxItem, Run } from "@/lib/runtime/types";
@@ -10,13 +12,13 @@ export function RuntimeRuns({
   filtered?: boolean;
 }) {
   return <div className="space-y-3">
-  {items.map(run => <article key={run.id} className="min-w-0 space-y-3 rounded-xl border bg-card p-4">
+  {items.map(run => <RecordClickArea as="article" key={run.id} className="min-w-0 space-y-3 rounded-xl border bg-card p-4 hover:bg-muted/30">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <Link href={`/studio/runtime/runs/${run.id}`} className="text-primary underline">
+      <RecordLink href={`/studio/runtime/runs/${run.id}`}>
         <RuntimeId>
           {run.id}
         </RuntimeId>
-      </Link>
+      </RecordLink>
       <RuntimeStatus status={run.status} />
     </div>
     <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
@@ -35,7 +37,7 @@ export function RuntimeRuns({
     {run.error_code && <p className="text-xs">کد خطا <RuntimeId>
         {run.error_code}
       </RuntimeId></p>}
-  </article>)}
+  </RecordClickArea>)}
   {!items.length && <RuntimeEmpty>
     {filtered ? "اجرایی با این فیلترها پیدا نشد." : "اجرایی در این صفحه ثبت نشده است."}
   </RuntimeEmpty>}

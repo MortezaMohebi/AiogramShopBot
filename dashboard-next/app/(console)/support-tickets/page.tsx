@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,27 +40,23 @@ export default async function SupportTickets({
       <CardHeader><CardTitle>درخواست‌های مشتریان ({results.items.length})</CardTitle></CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[670px] text-right text-sm">
+          <table className="w-full min-w-[530px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
               <th className="p-3">شناسه</th>
               <th className="p-3">مشتری</th>
               <th className="p-3">موضوع</th>
               <th className="p-3">فروشگاه / ربات</th>
               <th className="p-3">وضعیت</th>
-              <th className="p-3">جزئیات</th>
             </tr></thead>
-            <tbody>{results.items.map(ticket => <tr key={ticket.id} className="border-b">
-              <td className="p-3">#{ticket.id}</td>
+            <tbody>{results.items.map(ticket => <RecordClickArea as="tr" key={ticket.id} className="border-b">
+              <td className="p-3"><RecordLink href={`/support-tickets/${ticket.id}`}>#{ticket.id}</RecordLink></td>
               <td className="p-3">#{ticket.customer_id}</td>
               <td className="p-3">{ticket.topic}</td>
               <td className="p-3 text-xs" dir="ltr">
                 {ticket.store_id.slice(0, 8)} / {ticket.bot_id.slice(0, 8)}
               </td>
               <td className="p-3">{STATUS_LABELS[ticket.status] ?? ticket.status}</td>
-              <td className="p-3"><Button asChild variant="outline" size="sm">
-                <Link href={`/support-tickets/${ticket.id}`}>مشاهده</Link>
-              </Button></td>
-            </tr>)}</tbody>
+            </RecordClickArea>)}</tbody>
           </table>
         </div>
         {!results.items.length ? <p className="p-4 text-sm text-muted-foreground">
