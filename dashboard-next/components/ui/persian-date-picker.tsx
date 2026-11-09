@@ -5,7 +5,7 @@ import {
   toCalendarDateTime, today, toZoned, type CalendarDate,
 } from "@internationalized/date";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import {
   Button as AriaButton, Calendar, CalendarCell, CalendarGrid, CalendarGridBody, CalendarGridHeader,
   CalendarHeaderCell, CalendarMonthPicker, CalendarYearPicker, Dialog,
@@ -49,6 +49,8 @@ export function PersianDatePicker({
 }: PickerValue & { label: string; withTime?: boolean }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
+  const formValue = useRef<HTMLInputElement>(null);
+  const notifyForm = useRef(false);
   const zone = useSyncExternalStore(subscribeToZone, getLocalTimeZone, () => "UTC");
   const [localValue, setLocalValue] = useState(defaultValue);
   const [open, setOpen] = useState(false);
@@ -58,6 +60,11 @@ export function PersianDatePicker({
   const [hour, setHour] = useState(0);
   const [minute, setMinute] = useState(0);
   const value = controlledValue ?? localValue;
+  useEffect(() => {
+    if (!notifyForm.current) return;
+    notifyForm.current = false;
+    formValue.current?.dispatchEvent(new Event("input", { bubbles: true }));
+  }, [value]);
   const utc = withTime ? utcPickerValue(value) : "";
   const local = utc ? fromDate(new Date(utc), zone) : null;
   const datePart = local?.toString().slice(0, 10) ?? value;
@@ -81,7 +88,10 @@ export function PersianDatePicker({
 
   function commit(nextValue: string) {
     if (onChange) onChange(nextValue);
-    else setLocalValue(nextValue);
+    else if (nextValue !== value) {
+      notifyForm.current = true;
+      setLocalValue(nextValue);
+    }
     setOpen(false);
   }
 
@@ -120,7 +130,7 @@ export function PersianDatePicker({
 
   return <div className="relative grid min-w-0 gap-2 text-sm">
     <label id={`${id}-label`} htmlFor={id}>{label}</label>
-    {name ? <input type="hidden" name={name} value={selected ? value : ""} /> : null}
+    {name ? <input ref={formValue} data-draft-field type="hidden" name={name} value={selected ? value : ""} /> : null}
     <I18nProvider locale="fa-IR-u-ca-persian">
       <DialogTrigger isOpen={open} onOpenChange={changeOpen}>
         <AriaButton ref={trigger} id={id} aria-labelledby={`${id}-label ${id}-value`}

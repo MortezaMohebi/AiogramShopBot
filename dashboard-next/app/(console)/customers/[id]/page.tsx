@@ -1,3 +1,4 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -86,7 +87,7 @@ export default async function CustomerDetailPage({
     </CardContent></Card>
     <div className="grid gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>پرونده و پیگیری</CardTitle></CardHeader><CardContent>
-        <form action={saveCustomerProfile} className="space-y-4">
+        <DraftForm saveAction={saveCustomerProfile} className="space-y-4">
           <input type="hidden" name="customer_id" value={id} />
           <label className="block space-y-2 text-sm">برچسب‌ها (با کاما جدا شوند؛ حداکثر ۱۲ برچسب)
             <Input name="tags" defaultValue={customer.tags.join("، ").replaceAll("، ", ", ")} maxLength={500} />
@@ -102,8 +103,7 @@ export default async function CustomerDetailPage({
               <option value="open">باز</option><option value="pending">در انتظار</option><option value="resolved">حل‌شده</option>
             </select>
           </label>
-          <Button type="submit">ذخیره پرونده</Button>
-        </form>
+        </DraftForm>
       </CardContent></Card>
       <Card><CardHeader><CardTitle>محدودسازی فروشگاه</CardTitle></CardHeader><CardContent className="space-y-4">
         <p className="text-xs leading-7 text-muted-foreground">این محدودیت فقط مربوط به فروشگاه است و به معنای مسدودشدن ربات توسط مشتری نیست. تأثیری روی سفارش‌های تسویه‌شده ندارد.</p>

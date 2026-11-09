@@ -1,3 +1,4 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import { StoreScopeNotice } from "@/components/blocks/store-scope-notice";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -43,7 +44,7 @@ export default async function CustomerRetentionPage({
           "عملیات کامل نشد؛ وضعیت سرویس و داده‌ها را بررسی کنید."}
     </p> : null}
     <Card><CardHeader><CardTitle>دوره‌های نگهداری</CardTitle></CardHeader><CardContent className="space-y-5">
-      <form action={saveRetentionPolicy} className="grid gap-4 md:grid-cols-2">
+      <DraftForm saveAction={saveRetentionPolicy} autosave={false} footerClassName="md:col-span-2" className="grid gap-4 md:grid-cols-2">
         <label className="space-y-2 text-sm">نگهداری یادداشت‌های داخلی (روز)
           <Input name="note_retention_days" type="number" min={30} max={3650} required defaultValue={policy.note_retention_days} />
         </label>
@@ -53,8 +54,7 @@ export default async function CustomerRetentionPage({
         <p className="md:col-span-2 text-xs leading-7 text-muted-foreground">
           تغییر سیاست موجب پاکسازی خودکار نمی‌شود. سوابق پشتیبانی برای بررسی‌های بعدی محفوظ می‌ماند؛ پاکسازی زیر تنها یادداشت‌های داخلی قدیمی را دربر می‌گیرد.
         </p>
-        <Button type="submit" className="md:justify-self-start">ذخیره سیاست</Button>
-      </form>
+      </DraftForm>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>پاکسازی کنترل‌شدهٔ یادداشت‌ها</CardTitle></CardHeader><CardContent className="space-y-4">
       <p className="text-sm leading-7">فقط یادداشت‌های قدیمی‌تر از مدت تعیین‌شده حذف می‌شوند. هیچ سفارش، تراکنش کیف پول، رضایت تبلیغاتی یا پروندهٔ مشتری حذف نخواهد شد.</p>

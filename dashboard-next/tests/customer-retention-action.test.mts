@@ -21,6 +21,7 @@ function fixture(receipt: unknown, error?: ApiError) {
   const requests: { path: string; method: string; data: unknown }[] = [];
   const evaluatedModule = { exports: {} as { purgeCustomerNotes: (form: FormData) => Promise<void> } };
   const dependencies: Record<string, unknown> = {
+    "@/lib/draft-mutation": { saveDraftMutation() { throw new Error("Unexpected policy write"); } },
     "next/cache": { revalidatePath() {} },
     "next/navigation": {
       redirect(destination: string) {

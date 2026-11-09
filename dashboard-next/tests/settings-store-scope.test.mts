@@ -32,6 +32,7 @@ async function page(mode:"supported"|"restricted"|"failure") {
   const deps:Record<string,unknown>={
     "react/jsx-runtime":jsx,"next/link":{default:Link},"next/navigation":{notFound(){throw Error("404");}},
     "@/app/(console)/settings/actions":{saveChannelFeatures(){},savePaymentRails(){},saveReferralPolicy(){},savePwaAppearance(){}},
+    "@/components/blocks/draft-form":{DraftForm:Box},
     "@/components/blocks/shop-settings-form":{ShopSettingsForm:({initial}:{initial:{brand_name:string}})=>createElement("p",{"data-brand":true},initial.brand_name)},
     "@/components/blocks/page-heading":{PageHeading:({title}:{title:string})=>createElement("h1",null,title)},
     "@/components/ui/card":{Card:Box,CardHeader:Box,CardContent:Box,CardTitle:Box,CardDescription:Box},

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { saveDraftMutation } from "@/lib/draft-mutation";
 import { redirect } from "next/navigation";
 import { adminFetch } from "@/lib/bridge";
 
@@ -12,19 +13,12 @@ function idOf(form: FormData): string {
 
 /** Editing the customer's testimonial automatically revokes prior approval. */
 export async function editReview(form: FormData) {
-  const id = idOf(form);
-  let failed = false;
-  try {
-    await adminFetch(`/testimonials/${id}`, "PATCH", {
-      text: String(form.get("text") ?? "").trim(),
-      position: Number(form.get("position")),
-    });
-  } catch {
-    failed = true;
-  }
-  if (failed) redirect("/reviews?error=edit");
-  revalidatePath("/reviews");
-  redirect("/reviews?saved=1");
+  const id = String(form.get("id") ?? "");
+  if (!/^[1-9]\d*$/.test(id)) return { ok: false, code: "validation" } as const;
+  return saveDraftMutation(`/testimonials/${id}`, "PATCH", {
+    text: String(form.get("text") ?? "").trim(),
+    position: Number(form.get("position")),
+  }, "/reviews");
 }
 
 /** Approve only after the operator has reviewed the underlying evidence. */

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
 import { safeLoginFetchMetadata, verifyLoginChallenge } from "@/lib/login-challenge";
 import { readSession } from "@/lib/session";
-import type { Staff } from "@/lib/types";
+import type { Product, Staff } from "@/lib/types";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 120_000;
@@ -58,11 +58,19 @@ async function save(request: NextRequest, method: "POST" | "PATCH") {
     if (!["superadmin", "content"].includes(staff.role)) {
       return failed("permission_denied", 403);
     }
-    const saved = await bridgeFetch<{ id: number }>(
+    const saved = await bridgeFetch<{ id: number; product?: Product }>(
       method === "POST" ? "/products" : "/products/" + String(id),
       method, values, session,
     );
-    return NextResponse.json({ ok: true, id: saved.id }, {
+    let product = saved.product;
+    if (method === "PATCH" && !product) {
+      try {
+        product = await bridgeFetch<Product>("/products/" + String(saved.id), "GET", null, session);
+      } catch {
+        return failed("service_unavailable", 503);
+      }
+    }
+    return NextResponse.json({ ok: true, id: saved.id, product }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

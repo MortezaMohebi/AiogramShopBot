@@ -8,6 +8,7 @@ interface FieldEyeProps {
   label: string;
   initial?: boolean;
   required?: boolean;
+  onChange?: () => void;
 }
 
 /**
@@ -21,6 +22,7 @@ export function FieldEye({
   label,
   initial = true,
   required = false,
+  onChange,
 }: FieldEyeProps) {
   const [visible, setVisible] = useState(initial);
 
@@ -39,7 +41,10 @@ export function FieldEye({
         title={required
           ? "اطلاعات ضروری خرید همیشه نمایش داده می‌شوند"
           : "کنترل نمایش این فیلد و مقدار آن در تلگرام و بله"}
-        onClick={() => setVisible((previous) => !previous)}
+        onClick={() => {
+          setVisible((previous) => !previous);
+          onChange?.();
+        }}
         className={
           "inline-flex size-9 shrink-0 items-center justify-center rounded-md " +
           "border border-input focus-visible:outline-2 focus-visible:outline-ring " +

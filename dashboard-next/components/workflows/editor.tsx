@@ -15,11 +15,11 @@ import {
   LayoutGrid,
   Plus,
   Redo2,
-  Save,
   Trash2,
   Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DraftActions } from "@/components/ui/draft-actions";
 import { ActivityIndicator } from "@/components/ui/activity-indicator";
 import { FormSkeleton } from "@/components/data/skeletons";
 import { Input } from "@/components/ui/input";
@@ -361,20 +361,9 @@ export function WorkflowEditor({
             <Download />
             دریافت JSON
           </Button>
-          <Button
-            size="sm"
-            disabled={
-              disabled ||
-              saving.status === "saving" ||
-              saving.status === "unknown" ||
-              saving.status === "conflict" ||
-              !saving.dirty
-            }
-            onClick={() => void saving.save()}
-          >
-            <Save />
-            ذخیره
-          </Button>
+          {!disabled && saving.status !== "unknown" && saving.status !== "conflict" &&
+            <DraftActions dirty={saving.dirty} pending={saving.status === "saving"}
+              onSave={() => void saving.save()} onDiscard={saving.discard} />}
           <Button
             size="sm"
             variant="outline"

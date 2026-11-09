@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { saveDraftMutation } from "@/lib/draft-mutation";
 import { redirect } from "next/navigation";
 import { ApiError, adminFetch } from "@/lib/bridge";
 
@@ -41,8 +42,9 @@ function positiveInt(value: FormDataEntryValue | null): number | null {
 }
 
 /** Save public copy and operator assignment without touching credentials. */
-export async function saveBotDetails(form: FormData): Promise<void> {
-  const id = idFrom(form);
+export async function saveBotDetails(form: FormData) {
+  const id = String(form.get("id") ?? "");
+  if (!UUID.test(id)) return { ok: false, code: "validation" } as const;
   const expected_version = positiveInt(form.get("expected_version"));
   const name = String(form.get("name") ?? "").trim();
   const environment = String(form.get("environment") ?? "");
@@ -56,20 +58,15 @@ export async function saveBotDetails(form: FormData): Promise<void> {
     (owner && !positiveInt(form.get("owner_staff_id"))) ||
     welcome_message.length > 4096 || maintenance_message.length > 4096 ||
     support_url.length > 500
-  ) redirect(`/bots/${id}?error=validation`);
-  try {
-    await adminFetch(`/bot-registry/${id}/settings`, "PATCH", {
-      expected_version, name,
-      owner_staff_id: owner ? Number(owner) : null,
-      environment,
-      welcome_message: welcome_message || null,
-      maintenance_message: maintenance_message || null,
-      support_url,
-    });
-  } catch (error) { failure(error, id); }
-  revalidatePath("/bots");
-  revalidatePath(`/bots/${id}`);
-  redirect(`/bots/${id}?saved=settings`);
+  ) return { ok: false, code: "validation" } as const;
+  return saveDraftMutation(`/bot-registry/${id}/settings`, "PATCH", {
+    expected_version, name,
+    owner_staff_id: owner ? Number(owner) : null,
+    environment,
+    welcome_message: welcome_message || null,
+    maintenance_message: maintenance_message || null,
+    support_url,
+  }, "/bots", `/bots/${id}`);
 }
 
 /** Immediately restrict bot commerce; retain all pending payment receipts. */

@@ -1,5 +1,6 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import { notFound } from "next/navigation";
-import { saveShipping } from "@/app/(console)/shipping/actions";
+import { saveShipping, saveShippingDraft } from "@/app/(console)/shipping/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +53,8 @@ export default async function ShippingPage() {
                     <Badge tone={item.is_active ? "success" : "neutral"}>{item.is_active ? "فعال" : "غیرفعال"}</Badge>
                   </div>
                 </summary>
-                <form action={saveShipping} className="mt-4 grid gap-3 rounded-lg bg-muted/60 p-4">
+                <DraftForm saveAction={saveShippingDraft} className="mt-4 grid gap-3 rounded-lg bg-muted/60 p-4"
+                  conflictMessage="روش ارسال دیگری با این نام وجود دارد. نام دیگری وارد کنید.">
                   <input type="hidden" name="id" value={item.id} />
                   <label className="block space-y-2 text-sm">نام روش ارسال
                     <Input name="name" defaultValue={item.name} required maxLength={120} />
@@ -68,8 +70,7 @@ export default async function ShippingPage() {
                       <input type="checkbox" name="is_active" defaultChecked={item.is_active} className="accent-primary" /> فعال
                     </label>
                   </div>
-                  <Button size="sm" type="submit">ذخیرهٔ تغییرات</Button>
-                </form>
+                </DraftForm>
               </details>
             ))}
             {shipping.length === 0 ? <p className="py-8 text-center text-muted-foreground">هنوز روش ارسالی تعریف نشده است.</p> : null}

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { saveDraftMutation } from "@/lib/draft-mutation";
 import { redirect } from "next/navigation";
 import { ApiError, adminFetch } from "@/lib/bridge";
 import { parseCalendarDate } from "@/lib/persian-calendar";
@@ -30,21 +31,18 @@ export async function addCustomerNote(form: FormData): Promise<void> {
 }
 
 /** Update only CRM tags, assignee and support status. */
-export async function saveCustomerProfile(form: FormData): Promise<void> {
-  const id = customerId(form);
+export async function saveCustomerProfile(form: FormData) {
+  const id = String(form.get("customer_id") ?? "");
+  if (!/^[1-9]\d*$/.test(id)) return { ok: false, code: "validation" } as const;
   const tags = String(form.get("tags") ?? "").split(",").map(value => value.trim()).filter(Boolean);
   const owner = String(form.get("owner_staff_id") ?? "");
   const support_status = String(form.get("support_status") ?? "open");
   if (tags.length > 12 || tags.some(tag => tag.length > 32) ||
       !["open", "pending", "resolved"].includes(support_status) ||
-      (owner && !/^[1-9][0-9]*$/.test(owner))) redirect(`/customers/${id}?error=validation`);
-  try {
-    await adminFetch(`/customers/${id}/profile`, "POST", {
-      tags, owner_staff_id: owner ? Number(owner) : null, support_status,
-    });
-  } catch (error) { fail(id, error); }
-  revalidatePath(`/customers/${id}`);
-  redirect(`/customers/${id}?saved=1`);
+      (owner && !/^[1-9][0-9]*$/.test(owner))) return { ok: false, code: "validation" } as const;
+  return saveDraftMutation(`/customers/${id}/profile`, "POST", {
+    tags, owner_staff_id: owner ? Number(owner) : null, support_status,
+  }, `/customers/${id}`);
 }
 
 /** Require a documented reason to create a time-bounded shop restriction. */

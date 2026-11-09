@@ -1,3 +1,4 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { savePwaAppearance, saveReferralPolicy } from "@/app/(console)/settings/actions";
@@ -38,7 +39,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
           <CardDescription>این نام و رنگ روی صفحهٔ اصلی گوشی نمایش داده می‌شوند.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={savePwaAppearance} className="grid gap-4 sm:grid-cols-2">
+          <DraftForm saveAction={savePwaAppearance} autosave={false}
+            footerClassName="sm:col-span-2" className="grid gap-4 sm:grid-cols-2">
             <input type="hidden" name="version" value={appearance.version} />
             <label className="space-y-2 text-sm">نام کامل برنامه
               <Input name="name" defaultValue={appearance.name} minLength={2} maxLength={80} required />
@@ -50,15 +52,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
               <Input type="color" name="theme_color" defaultValue={appearance.theme_color} required
                 className="h-11 w-24 cursor-pointer" />
             </label>
-            <div className="sm:col-span-2"><Button type="submit">ذخیره ظاهر برنامه</Button></div>
-          </form>
+          </DraftForm>
           <p className="mt-4 text-xs leading-6 text-muted-foreground">اگر برنامه از قبل نصب شده، برای دیدن نام و آیکون تازه آن را از صفحهٔ اصلی حذف و دوباره نصب کنید.</p>
         </CardContent>
       </Card>
       {policy ? <Card className="mt-6 max-w-4xl">
         <CardHeader><CardTitle>پاداش معرفی مشتری</CardTitle><CardDescription>پاداش خرید اول از اعتبار داخلی فروشگاه تأمین می‌شود؛ هیچ موجودی بله یا رمز ارز تغییر نمی‌کند.</CardDescription></CardHeader>
         <CardContent>
-          <form action={saveReferralPolicy} className="grid gap-4 md:grid-cols-2">
+          <DraftForm saveAction={saveReferralPolicy} autosave={false} footerClassName="md:col-span-2" className="grid gap-4 md:grid-cols-2">
             <label className="flex items-center gap-2 text-sm md:col-span-2">
               <input type="checkbox" name="is_enabled" defaultChecked={policy.is_enabled} className="size-4 accent-primary" />
               فعال‌بودن پاداش معرفی
@@ -72,8 +73,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
             <label className="space-y-2 text-sm">سقف پاداش به ریال
               <Input type="number" name="max_bonus_irr" min={0} max={100000000000} defaultValue={policy.max_bonus_irr} required />
             </label>
-            <div className="md:col-span-2"><Button type="submit">ذخیره پاداش معرفی</Button></div>
-          </form>
+          </DraftForm>
         </CardContent>
       </Card> : null}
       {<Card className="mt-6 max-w-4xl">

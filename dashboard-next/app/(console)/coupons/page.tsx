@@ -1,5 +1,6 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import { notFound } from "next/navigation";
-import { saveCoupon } from "@/app/(console)/coupons/actions";
+import { saveCoupon, saveCouponDraft } from "@/app/(console)/coupons/actions";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,9 @@ export default async function CouponsPage() {
                 </summary>
                 <p className="mt-2 text-xs text-muted-foreground">استفاده: {coupon.used_count} / {coupon.max_uses ?? "نامحدود"} · حداقل خرید: {formatIrr(coupon.minimum_subtotal_irr)}</p>
                 {edit ? (
-                  <form action={saveCoupon} className="mt-3 grid gap-3 rounded-lg bg-muted/60 p-4 sm:grid-cols-2">
+                  <DraftForm saveAction={saveCouponDraft} footerClassName="sm:col-span-2"
+                    className="mt-3 grid gap-3 rounded-lg bg-muted/60 p-4 sm:grid-cols-2"
+                    conflictMessage="این کد تخفیف قبلاً ثبت شده است. کد دیگری وارد کنید.">
                     <input type="hidden" name="id" value={coupon.id} />
                     <label className="block space-y-2 text-sm">کد تخفیف
                       <Input name="code" defaultValue={coupon.code} required minLength={3} maxLength={32} dir="ltr" />
@@ -89,8 +92,7 @@ export default async function CouponsPage() {
                     <PersianDatePicker key={coupon.expires_at} name="expires_at" label="تاریخ انقضا (UTC)"
                       defaultValue={coupon.expires_at?.slice(0, 10) ?? ""} />
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked={coupon.is_active} className="accent-primary" /> فعال</label>
-                    <Button size="sm" type="submit">ذخیرهٔ تغییرات</Button>
-                  </form>
+                  </DraftForm>
                 ) : null}
               </details>
             ))}

@@ -11,11 +11,12 @@ export function BotConfigVersionProvider({ initialVersion, children }: {
   initialVersion: number;
   children: ReactNode;
 }) {
-  const [version, setVersion] = useState(initialVersion);
+  const [confirmedVersion, setVersion] = useState(initialVersion);
+  const version = Math.max(initialVersion, confirmedVersion);
   return <Context.Provider value={{
     version,
     // Other forms may advance only across this page's own confirmed write.
-    advance: (from, to) => setVersion(current => current === from ? to : current),
+    advance: (from, to) => setVersion(current => Math.max(initialVersion, current) === from ? to : current),
   }}>{children}</Context.Provider>;
 }
 

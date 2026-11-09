@@ -1,12 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { adminFetch } from "@/lib/bridge";
+import { saveDraftMutation } from "@/lib/draft-mutation";
 
-/** Coupon issuance changes the authoritative SQLAlchemy marketing policy. */
-export async function saveCoupon(form: FormData) {
-  const id = String(form.get("id") ?? "").trim();
+function couponsFields(form: FormData) {
   const rawExpiry = String(form.get("expires_at") ?? "");
   const payload = {
     code: String(form.get("code") ?? "").trim().toUpperCase(),
@@ -17,17 +14,21 @@ export async function saveCoupon(form: FormData) {
     expires_at: rawExpiry ? `${rawExpiry}T23:59:59+00:00` : null,
     is_active: form.has("is_active"),
   };
-  let failed = false;
-  try {
-    await adminFetch(
-      id ? `/coupons/${id}` : "/coupons",
-      id ? "PATCH" : "POST",
-      payload,
-    );
-  } catch {
-    failed = true;
-  }
-  if (failed) redirect("/coupons?error=1");
-  revalidatePath("/coupons");
+  return payload;
+}
+
+/** Coupon issuance changes the authoritative SQLAlchemy marketing policy. */
+export async function saveCoupon(form: FormData) {
+  const id = String(form.get("id") ?? "").trim();
+  if (id && !/^[1-9]\d*$/.test(id)) redirect("/coupons?error=1");
+  const result = await saveDraftMutation(id ? `/coupons/${id}` : "/coupons", id ? "PATCH" : "POST",
+    couponsFields(form), "/coupons");
+  if (!result.ok) redirect("/coupons?error=1");
   redirect("/coupons?saved=1");
+}
+
+export async function saveCouponDraft(form: FormData) {
+  const id = String(form.get("id") ?? "").trim();
+  if (!/^[1-9]\d*$/.test(id)) return { ok: false, code: "validation" } as const;
+  return saveDraftMutation(`/coupons/${id}`, "PATCH", couponsFields(form), "/coupons");
 }

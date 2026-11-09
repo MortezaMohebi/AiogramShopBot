@@ -151,12 +151,19 @@ export function useDraftSave(
     () => registerWorkflowGuard(() => dirty || pending.current !== null),
     [dirty],
   );
+  function discard() {
+    if (busy.current || pending.current || status === "conflict") return;
+    replaceRef.current(documentOf(record));
+    setStatus("idle");
+    setError("");
+  }
   return {
     record,
     dirty,
     status,
     error,
     save: () => submit(),
+    discard,
     retry: () => submit(true),
     reconcile,
     loadRemote,

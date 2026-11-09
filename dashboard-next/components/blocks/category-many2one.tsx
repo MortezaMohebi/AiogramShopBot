@@ -10,6 +10,7 @@ interface Props {
   categories: Category[];
   initialId?: number | null;
   canCreate?: boolean;
+  onSelectionChange?: () => void;
 }
 
 const normalized = (value: string) => value.normalize("NFKC").trim().toLocaleLowerCase();
@@ -36,6 +37,7 @@ export function CategoryMany2One({
   categories,
   initialId = null,
   canCreate = true,
+  onSelectionChange,
 }: Props) {
   const id = useId();
   const [options, setOptions] = useState(categories);
@@ -63,6 +65,7 @@ export function CategoryMany2One({
   function choose(option: Category) {
     setValue(option.name);
     setSelectedId(option.id);
+    if (option.id !== selectedId) onSelectionChange?.();
     setExpanded(false);
     setError(null);
   }
@@ -193,7 +196,7 @@ export function CategoryMany2One({
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setExpanded(false);
-          if (selectedId === null) setValue("");
+          setValue(options.find((option) => option.id === selectedId)?.name ?? "");
         }
       }}
     >
@@ -215,7 +218,6 @@ export function CategoryMany2One({
           maxLength={255}
           onChange={(event) => {
             setValue(event.target.value);
-            setSelectedId(null);
             setHighlight(0);
             setExpanded(true);
           }}
@@ -231,6 +233,7 @@ export function CategoryMany2One({
             onClick={() => {
               setValue("");
               setSelectedId(null);
+              onSelectionChange?.();
             }}
             className="absolute end-2 rounded p-1 text-muted-foreground hover:text-foreground"
           >

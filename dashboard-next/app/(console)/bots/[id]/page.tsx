@@ -1,3 +1,4 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -116,7 +117,7 @@ export default async function BotDetailPage({
   const active = bot.operations.desired_state === "active";
   const receiverActive = receiver.configured && receiver.state === "active";
   const mayChangeState = receiverActive && health.runtime_ready;
-  return <BotConfigVersionProvider key={`${bot.id}:${bot.version}`} initialVersion={bot.version}>
+  return <BotConfigVersionProvider key={bot.id} initialVersion={bot.version}>
   <div className="space-y-6">
     <Suspense fallback={null}><ConsumeBotResult /></Suspense>
     <div className="flex flex-wrap gap-2">
@@ -162,7 +163,7 @@ export default async function BotDetailPage({
     <div className="grid gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings2 className="size-5" /> مشخصات و پیام‌ها</CardTitle></CardHeader>
         <CardContent>
-          <form action={saveBotDetails} className="space-y-4">
+          <DraftForm saveAction={saveBotDetails} className="space-y-4">
             <input type="hidden" name="id" value={bot.id} />
             <BotConfigVersionField />
             <label className="block space-y-2 text-sm">نام ربات
@@ -203,8 +204,7 @@ export default async function BotDetailPage({
             <p className="text-xs leading-6 text-muted-foreground">
               پیام خوش‌آمد و پشتیبانی پس از فعال‌سازی دریافت پیام این ربات استفاده می‌شوند.
             </p>
-            <Button type="submit">ذخیرهٔ مشخصات این ربات</Button>
-          </form>
+          </DraftForm>
         </CardContent>
       </Card>
 

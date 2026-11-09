@@ -1,9 +1,8 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
-import { CheckCircle2, LoaderCircle, TriangleAlert } from "lucide-react";
+import { useState } from "react";
+import { DraftForm, type DraftReceipt } from "@/components/blocks/draft-form";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ShopSettings } from "@/lib/types";
@@ -34,29 +33,15 @@ const messages: Record<Code, string> = {
 
 /** Show real save status, never claim success until FastAPI confirms a read-back. */
 export function ShopSettingsForm({ initial }: { initial: ShopSettings }) {
-  const [saving, setSaving] = useState(false);
-  const [outcome, setOutcome] = useState<{
-    ok: boolean;
-    text: string;
-    requestId?: string;
-  } | null>(null);
+  const [saved, setSaved] = useState(initial);
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (saving) return;
-
-    const form = event.currentTarget;
-    if (!form.reportValidity()) return;
-
-    const values = new FormData(form);
+  async function save(values: FormData): Promise<DraftReceipt> {
     const payload: ShopSettings = {
       brand_name: String(values.get("brand_name") ?? "").trim(),
       welcome_message: String(values.get("welcome_message") ?? "").trim(),
       faq_text: String(values.get("faq_text") ?? "").trim(),
       support_url: String(values.get("support_url") ?? "").trim(),
     };
-    setSaving(true);
-    setOutcome(null);
     try {
       const csrf = await requestBrowserChallenge();
       const response = await fetch("/api/admin/shop-settings", {
@@ -83,77 +68,38 @@ export function ShopSettingsForm({ initial }: { initial: ShopSettings }) {
           result.code && Object.hasOwn(messages, result.code)
             ? result.code
             : "service_unavailable";
-        setOutcome({
-          ok: false,
-          text: messages[code],
-          requestId: result.requestId,
-        });
-        return;
+        return { ok: false, message: messages[code], requestId: result.requestId };
       }
-      setOutcome({ ok: true, text: "تنظیمات ذخیره شد." });
+      if (!result.settings) return { ok: false, code: "outcome_unknown" };
+      setSaved(result.settings);
+      return { ok: true, data: null };
     } catch {
-      setOutcome({
-        ok: false,
-        text: "ارتباط با سرور برقرار نشد. وضعیت فعلی تنظیمات را بررسی کنید.",
-      });
-    } finally {
-      setSaving(false);
+      return { ok: false, message: "ارتباط با سرور برقرار نشد. وضعیت فعلی تنظیمات را بررسی کنید." };
     }
   }
 
   return (
-    <form onSubmit={save} className="space-y-5" aria-busy={saving}>
+    <DraftForm saveAction={save} className="space-y-5">
       <label className="block space-y-2 text-sm font-medium">
         نام فروشگاه
-        <Input name="brand_name" maxLength={255} defaultValue={initial.brand_name ?? ""} disabled={saving} />
+        <Input name="brand_name" maxLength={255} defaultValue={saved.brand_name ?? ""} />
       </label>
       <label className="block space-y-2 text-sm font-medium">
         پیام خوش‌آمدگویی
-        <Textarea name="welcome_message" rows={5} maxLength={4096} defaultValue={initial.welcome_message ?? ""} disabled={saving} />
+        <Textarea name="welcome_message" rows={5} maxLength={4096} defaultValue={saved.welcome_message ?? ""} />
       </label>
       <label className="block space-y-2 text-sm font-medium">
         پرسش‌های متداول
-        <Textarea name="faq_text" rows={7} maxLength={20000} defaultValue={initial.faq_text ?? ""} disabled={saving} />
+        <Textarea name="faq_text" rows={7} maxLength={20000} defaultValue={saved.faq_text ?? ""} />
       </label>
       <label className="block space-y-2 text-sm font-medium">
         لینک پشتیبانی (HTTPS)
         <Input
           name="support_url" dir="ltr" type="url" className="text-start"
-          maxLength={500} defaultValue={initial.support_url ?? ""}
-          placeholder="https://..." disabled={saving}
+          maxLength={500} defaultValue={saved.support_url ?? ""}
+          placeholder="https://..."
         />
       </label>
-      {outcome ? (
-        <div
-          role={outcome.ok ? "status" : "alert"}
-          className={
-            outcome.ok
-              ? "flex items-start gap-2 rounded-lg bg-accent p-3 text-sm text-accent-foreground"
-              : "flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
-          }
-        >
-          {outcome.ok
-            ? <CheckCircle2 aria-hidden="true" className="mt-1 size-4 shrink-0" />
-            : <TriangleAlert aria-hidden="true" className="mt-1 size-4 shrink-0" />}
-          <div>
-            <p>{outcome.text}</p>
-            {outcome.requestId ? (
-              <details className="mt-2 text-xs"><summary className="cursor-pointer">اطلاعات پیگیری</summary><p dir="ltr" className="mt-2 break-all">Request ID: {outcome.requestId}</p></details>
-            ) : null}
-            {outcome.ok === false && outcome.text === messages.session_expired ? (
-              <a href="/login" className="mt-2 inline-block underline">ورود مجدد</a>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      <Button type="submit" disabled={saving}>
-        {saving ? (
-          <>
-            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-            در حال ذخیره…
-          </>
-        ) : "ذخیره تنظیمات"}
-      </Button>
-    </form>
+    </DraftForm>
   );
 }

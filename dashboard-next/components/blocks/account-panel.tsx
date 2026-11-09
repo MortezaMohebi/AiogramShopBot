@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
+import { DraftForm, type DraftReceipt } from "@/components/blocks/draft-form";
 import { useRouter } from "next/navigation";
 import { AccountSecurityWizard, type SecurityAction } from "@/components/blocks/account-security-wizard";
 import { ReauthenticateButton } from "@/components/blocks/reauthentication";
@@ -47,6 +48,8 @@ type SessionTarget = { action: "revoke-others" } | { action: "revoke-session"; i
 export function AccountPanel({ initial }: { initial: AccountData }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [profile, setProfile] = useState({ display_name: initial.display_name, time_zone: initial.time_zone });
+  const [preferences, setPreferences] = useState(initial.preferences);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [wizard, setWizard] = useState<SecurityAction | null>(null);
   const [sessionTarget, setSessionTarget] = useState<SessionTarget | null>(null);
@@ -54,14 +57,14 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
   const zones = typeof Intl.supportedValuesOf === "function"
     ? Intl.supportedValuesOf("timeZone")
     : ["Asia/Tehran", "Asia/Tokyo", "Europe/London", "UTC"];
-  if (!zones.includes(initial.time_zone)) zones.push(initial.time_zone);
+  if (!zones.includes(profile.time_zone)) zones.push(profile.time_zone);
   zones.sort((a, b) => a.localeCompare(b));
   const calendarLocale =
-    initial.preferences.calendar === "gregorian" ? "fa-IR-u-ca-gregory" :
-    initial.preferences.calendar === "jalali" ? "fa-IR-u-ca-persian" :
-    initial.preferences.language === "en" ? "en-US-u-ca-gregory" : "fa-IR-u-ca-persian";
+    preferences.calendar === "gregorian" ? "fa-IR-u-ca-gregory" :
+    preferences.calendar === "jalali" ? "fa-IR-u-ca-persian" :
+    preferences.language === "en" ? "en-US-u-ca-gregory" : "fa-IR-u-ca-persian";
   const formatter = new Intl.DateTimeFormat(calendarLocale, {
-    timeZone: initial.time_zone, dateStyle: "short", timeStyle: "short",
+    timeZone: profile.time_zone, dateStyle: "short", timeStyle: "short",
   });
   const date = (value: string) => formatter.format(new Date(value));
 
@@ -75,7 +78,6 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
       if (result.login_required) { window.location.replace("/login"); return; }
       setSessionTarget(null);
       const messages: Record<string, string> = {
-        profile: "مشخصات ذخیره شد.", preferences: "ترجیحات ذخیره شد.",
         "revoke-others": "از دستگاه‌های دیگر خارج شدید.", "revoke-session": "نشست دستگاه بسته شد.",
       };
       setNotice({ ok: true, text: messages[action] ?? "تغییرات حساب ذخیره شد." });
@@ -87,9 +89,41 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     } finally { setBusy(false); }
   }
 
-  function submit(event: FormEvent<HTMLFormElement>, action: string) {
-    event.preventDefault();
-    void perform(action, Object.fromEntries(new FormData(event.currentTarget)));
+  async function saveProfile(data: FormData) {
+    const updated = {
+      display_name: String(data.get("display_name") ?? "").trim(),
+      time_zone: String(data.get("time_zone") ?? ""),
+    };
+    return savePreference("profile", updated, () => setProfile(updated));
+  }
+
+  async function savePreferences(data: FormData) {
+    const language = data.get("language");
+    const calendar = data.get("calendar");
+    if ((language !== "fa" && language !== "en") ||
+        (calendar !== "auto" && calendar !== "jalali" && calendar !== "gregorian")) {
+      return { ok: false, code: "validation" } as const;
+    }
+    const updated: AccountData["preferences"] = {
+      language, calendar,
+      notify_orders: data.has("notify_orders"),
+      notify_campaigns: data.has("notify_campaigns"),
+      notify_finance: data.has("notify_finance"),
+      notify_system: data.has("notify_system"),
+    };
+    return savePreference("preferences", updated, () => setPreferences(updated));
+  }
+
+  async function savePreference(action: string, data: unknown, confirm: () => void): Promise<DraftReceipt> {
+    try {
+      const result = await controlAction(action, data);
+      if (result.login_required) return { ok: false, code: "session_expired" };
+      confirm();
+      router.refresh();
+      return { ok: true, data: null };
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : "ذخیره تأیید نشد." };
+    }
   }
 
   const needsEnrollment = initial.mfa_required_by_role && !initial.mfa_enabled;
@@ -122,40 +156,27 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
     <section id="account-profile" aria-label="مشخصات و ترجیحات" className="scroll-mt-5 space-y-4">
     <Card><CardHeader><CardTitle>مشخصات من</CardTitle></CardHeader><CardContent>
       <p className="mb-4 text-sm">نام کاربری: <b dir="ltr">{initial.username}</b> · نقش: <b>{roleLabels[initial.role] ?? "کاربر"}</b></p>
-      <form onSubmit={(event) => submit(event, "profile")} className="grid gap-4 md:grid-cols-2">
-        <label className="block space-y-2 text-sm">نام نمایشی<Input className="h-10 w-full" name="display_name" defaultValue={initial.display_name} maxLength={120} disabled={busy} /></label>
+      <DraftForm saveAction={saveProfile} className="grid gap-4 md:grid-cols-2" footerClassName="md:col-span-2">
+        <label className="block space-y-2 text-sm">نام نمایشی<Input className="h-10 w-full" name="display_name" defaultValue={profile.display_name} maxLength={120} /></label>
         <label className="block space-y-2 text-sm">منطقهٔ زمانی
-          <select name="time_zone" defaultValue={initial.time_zone} required disabled={busy} dir="ltr" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+          <select name="time_zone" defaultValue={profile.time_zone} required dir="ltr" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
             {zones.map((zone) => <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>)}
           </select>
         </label>
-        <Button type="submit" disabled={busy}>ذخیره مشخصات</Button>
-      </form>
+      </DraftForm>
     </CardContent></Card>
     <Card><CardHeader><CardTitle>زبان، تقویم و اعلان‌های کاری</CardTitle></CardHeader><CardContent>
-      <form onSubmit={(event) => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const data = new FormData(form);
-        void perform("preferences", {
-          language: String(data.get("language") ?? "fa"),
-          calendar: String(data.get("calendar") ?? "auto"),
-          notify_orders: data.has("notify_orders"),
-          notify_campaigns: data.has("notify_campaigns"),
-          notify_finance: data.has("notify_finance"),
-          notify_system: data.has("notify_system"),
-        });
-      }} className="space-y-4">
+      <DraftForm saveAction={savePreferences} className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block space-y-2 text-sm">زبان ترجیحی پنل
-            <select name="language" defaultValue={initial.preferences.language} disabled={busy}
+            <select name="language" defaultValue={preferences.language}
               className="h-10 w-full rounded-md border bg-background px-3">
               <option value="fa">فارسی</option>
               <option value="en">English</option>
             </select>
           </label>
           <label className="block space-y-2 text-sm">نمایش تاریخ در حساب من
-            <select name="calendar" defaultValue={initial.preferences.calendar} disabled={busy}
+            <select name="calendar" defaultValue={preferences.calendar}
               className="h-10 w-full rounded-md border bg-background px-3">
               <option value="auto">خودکار</option>
               <option value="jalali">جلالی</option>
@@ -172,14 +193,13 @@ export function AccountPanel({ initial }: { initial: AccountData }) {
             ["notify_system", "اعلان کارهای سیستمی"],
           ] as const).map(([field, title]) =>
             <label key={field} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name={field} defaultChecked={initial.preferences[field]}
-                disabled={busy} className="size-4 accent-primary" />{title}
+              <input type="checkbox" name={field} defaultChecked={preferences[field]}
+                className="size-4 accent-primary" />{title}
             </label>
           )}
         </div>
         <p className="text-xs text-muted-foreground">اعلان‌های امنیتی ضروری از این تنظیمات تأثیر نمی‌گیرند.</p>
-        <Button type="submit" variant="outline" disabled={busy}>ذخیره ترجیحات</Button>
-      </form>
+      </DraftForm>
     </CardContent></Card>
     </section>
     <section id="account-security" aria-label="ورود و امنیت" className="scroll-mt-5 space-y-4">

@@ -1,10 +1,13 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, LoaderCircle, TriangleAlert, CheckCircle2 } from "lucide-react";
+import { TriangleAlert, CheckCircle2 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { CategoryMany2One } from "@/components/blocks/category-many2one";
+import { useDraftNavigation } from "@/components/blocks/use-draft-navigation";
+import { DraftActions } from "@/components/ui/draft-actions";
+import { Button } from "@/components/ui/button";
 import { ProductBotMany2ManyPanel } from "@/components/blocks/product-bot-many2many-panel";
 import type { ProductBotCatalogList } from "@/lib/bot-catalog-acl";
 import { FieldEye } from "@/components/blocks/field-eye";
@@ -12,7 +15,6 @@ import {
   ProductMediaPanel,
   type ProductFile,
 } from "@/components/blocks/product-media-panel";
-import { Button } from "@/components/ui/button";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from "@/components/ui/card";
@@ -50,7 +52,7 @@ interface ProductEditorProps {
 
 /** Real PostgreSQL-backed product editor with explicit public-field eyes. */
 export function ProductEditor({
-  product,
+  product: initialProduct,
   categories,
   uoms,
   media = [],
@@ -60,11 +62,17 @@ export function ProductEditor({
   botAccessError = false,
 }: ProductEditorProps) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+  const pending = useRef(false);
+  const needsReview = useRef(false);
+  const [product, setProduct] = useState(initialProduct);
+  const [formVersion, setFormVersion] = useState(0);
+  const defaultUom = uoms.find(item => item.code === "piece")?.id ?? "";
   const [kind, setKind] = useState<"physical" | "digital">(
     product?.product_type ?? "physical",
   );
   const [uomId, setUomId] = useState(
-    product?.uom_id ?? uoms.find((item) => item.code === "piece")?.id ?? "",
+    product?.uom_id ?? defaultUom,
   );
   const [purchaseUnit, setPurchaseUnit] = useState(
     product?.purchase_uom_id ?? "",
@@ -74,19 +82,30 @@ export function ProductEditor({
     item.active && item.category_id === currentCategory,
   );
   const [saving, setSaving] = useState(false);
+  const [formChanged, setFormChanged] = useState(false);
+  const markChanged = () => setFormChanged(true);
   const [notice, setNotice] = useState<{
     ok: boolean; message: string; requestId?: string;
   } | null>(null);
+  const dirty = formChanged;
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (saving) return;
-    const form = event.currentTarget;
-    if (!form.reportValidity()) return;
+  function resetDraft(record = product) {
+    setKind(record?.product_type ?? "physical");
+    setUomId(record?.uom_id ?? defaultUom);
+    setPurchaseUnit(record?.purchase_uom_id ?? "");
+    needsReview.current = false;
+    setFormChanged(false);
+    setFormVersion(version => version + 1);
+  }
+
+  async function save(navigating = false) {
+    const form = formRef.current;
+    if (pending.current || !form || !form.reportValidity()) return false;
+    if (product && !dirty) return true;
+    if (navigating && needsReview.current) return false;
     const data = new FormData(form);
     const value = (name: string) => String(data.get(name) ?? "").trim();
-    const payload = {
-      ...(product ? { id: product.id } : {}),
+    const snapshot = {
       name: value("name"),
       sku: value("sku"),
       uom_id: uomId || null,
@@ -110,6 +129,25 @@ export function ProductEditor({
       show_reviews: value("show_reviews") === "true",
     };
 
+    const baseline: Record<string, unknown> = {
+      ...product,
+      show_description: product?.show_description ?? true,
+      show_stock: product?.show_stock ?? true,
+      show_media: product?.show_media ?? true,
+      show_reviews: product?.show_reviews ?? true,
+    };
+    const payload = product ? {
+      id: product.id,
+      ...Object.fromEntries(Object.entries(snapshot).filter(([key, value]) =>
+        value !== baseline[key])),
+    } : snapshot;
+    if (product && Object.keys(payload).length === 1) {
+      resetDraft();
+      setNotice(null);
+      return true;
+    }
+
+    pending.current = true;
     setSaving(true);
     setNotice(null);
     try {
@@ -132,8 +170,10 @@ export function ProductEditor({
       }
       const result = await response.json() as {
         ok?: boolean; id?: number; code?: SaveCode; requestId?: string;
+        product?: Product;
       };
       if (!response.ok || !result.ok || !Number.isSafeInteger(result.id)) {
+        needsReview.current = result.code === "service_unavailable";
         setNotice({
           ok: false,
           message: result.code && Object.hasOwn(messages, result.code)
@@ -141,31 +181,58 @@ export function ProductEditor({
             : "ذخیره محصول انجام نشد؛ وضعیت فعلی را بررسی کنید.",
           requestId: result.requestId,
         });
-        return;
+        return false;
       }
       if (!product) {
         // The persisted item now owns private media. Add images in the
         // same product-editing experience, without typing a numeric ID.
         router.push("/products/" + result.id + "/edit?created=1#media");
       } else {
+        if (!result.product || result.product.id !== product.id) throw new Error("Missing saved record");
+        const saved = result.product;
+        setProduct(saved);
+        resetDraft(saved);
         setNotice({ ok: true, message: "تغییرات محصول ذخیره شد." });
-        router.refresh();
+        if (!navigating) router.refresh();
       }
+      return true;
     } catch (cause) {
+      needsReview.current = true;
       setNotice({
         ok: false,
         message: cause instanceof Error
           ? "ارتباط در هنگام ذخیره برقرار نشد. پیش از تلاش مجدد، وضعیت محصول را بررسی کنید."
           : "ذخیره انجام نشد.",
       });
+      return false;
     } finally {
+      pending.current = false;
       setSaving(false);
     }
   }
 
+  useDraftNavigation(Boolean(product && (dirty || saving)), () => save(true));
+  const draftActions = <DraftActions dirty={Boolean(product && dirty)} pending={saving} submit formId="product-editor-form"
+    onDiscard={() => { resetDraft(); setNotice(null); }} />;
+
   return (
     <div className="space-y-6">
-      <form onSubmit={save} aria-busy={saving} className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+      {((product && (dirty || saving)) || notice) && <div className="sticky top-16 z-20 border-b bg-background/95 py-2">
+        {draftActions}
+        {notice && <p role={notice.ok ? "status" : "alert"} className={notice.ok
+          ? "mt-2 flex items-center gap-2 text-sm text-muted-foreground"
+          : "mt-2 flex items-center gap-2 text-sm text-destructive"}>
+          {notice.ok ? <CheckCircle2 aria-hidden="true" className="size-4" /> : <TriangleAlert aria-hidden="true" className="size-4" />}
+          {notice.message}{notice.requestId && <span dir="ltr" className="break-all text-xs">{notice.requestId}</span>}
+        </p>}
+      </div>}
+      <form key={formVersion} ref={formRef} id="product-editor-form" method="post"
+        onSubmit={event => { event.preventDefault(); void save(); }} aria-busy={saving}
+        data-dirty={dirty}
+        onChange={(event) => {
+          if (event.target.matches("input[name], select[name], textarea[name]")) markChanged();
+        }}
+        className="grid gap-5 xl:grid-cols-[1.6fr_1fr]">
         <fieldset disabled={saving} className="contents">
           <Card>
             <CardHeader>
@@ -205,7 +272,7 @@ export function ProductEditor({
                   <label htmlFor="product-description" className="text-sm font-medium">
                     توضیحات (اختیاری)
                   </label>
-                  <FieldEye name="show_description" label="توضیحات"
+                  <FieldEye name="show_description" label="توضیحات" onChange={markChanged}
                     initial={product?.show_description ?? true} />
                 </div>
                 <Textarea id="product-description" name="description"
@@ -214,7 +281,7 @@ export function ProductEditor({
               <div className="space-y-2">
                 <label className="text-sm font-medium">دسته‌بندی (اختیاری)</label>
                 <CategoryMany2One categories={categories}
-                  initialId={product?.category_id ?? null} canCreate />
+                  initialId={product?.category_id ?? null} canCreate onSelectionChange={markChanged} />
               </div>
             </CardContent>
           </Card>
@@ -268,7 +335,7 @@ export function ProductEditor({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label htmlFor="product-stock" className="text-sm font-medium">تعداد موجودی</label>
-                    <FieldEye name="show_stock" label="تعداد موجودی"
+                    <FieldEye name="show_stock" label="تعداد موجودی" onChange={markChanged}
                       initial={product?.show_stock ?? true} />
                   </div>
                   <Input id="product-stock" type="number" dir="ltr" name="stock_quantity"
@@ -316,12 +383,12 @@ export function ProductEditor({
                 </p>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm">تصاویر و فایل‌های محصول</span>
-                  <FieldEye name="show_media" label="رسانه‌ها"
+                  <FieldEye name="show_media" label="رسانه‌ها" onChange={markChanged}
                     initial={product?.show_media ?? true} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm">رضایت مشتریان</span>
-                  <FieldEye name="show_reviews" label="رضایت مشتریان"
+                  <FieldEye name="show_reviews" label="رضایت مشتریان" onChange={markChanged}
                     initial={product?.show_reviews ?? true} />
                 </div>
                 <label className="flex items-center gap-2 text-sm">
@@ -330,35 +397,14 @@ export function ProductEditor({
                     className="size-4 accent-primary" />
                   محصول برای مشتریان منتشر شود
                 </label>
-                <Button type="submit" className="w-full" disabled={saving}>
-                  {saving
-                    ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-                    : <Save className="size-4" aria-hidden="true" />}
-                  {saving ? "در حال ذخیره..." : "ذخیره محصول"}
-                </Button>
+                {!product && <Button type="submit" className="w-full" disabled={saving}>
+                  {saving ? "در حال ذخیره…" : "ایجاد محصول"}
+                </Button>}
               </CardContent>
             </Card>
           </div>
         </fieldset>
       </form>
-
-      {notice ? (
-        <div role={notice.ok ? "status" : "alert"}
-          className={notice.ok
-            ? "flex gap-2 rounded-lg bg-accent p-3 text-sm"
-            : "flex gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"}>
-          {notice.ok
-            ? <CheckCircle2 aria-hidden="true" className="size-4" />
-            : <TriangleAlert aria-hidden="true" className="size-4" />}
-          <div>
-            <p>{notice.message}</p>
-            {notice.requestId ? <details className="mt-2 text-xs">
-              <summary className="cursor-pointer">اطلاعات پیگیری</summary>
-              <p dir="ltr" className="mt-1 break-all">{notice.requestId}</p>
-            </details> : null}
-          </div>
-        </div>
-      ) : null}
 
       {product && botAccess ? (
         <ProductBotMany2ManyPanel

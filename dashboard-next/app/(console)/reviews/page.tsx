@@ -1,3 +1,4 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteReview, editReview, moderateReview } from "@/app/(console)/reviews/actions";
@@ -69,7 +70,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Para
                 <Badge tone={review.is_approved ? "success" : "warning"}>{review.is_approved ? "تأییدشده" : "در انتظار بررسی"}</Badge>
               </div>
               {review.has_file ? <a href={`/api/admin/preview/testimonial/${review.id}`} target="_blank" rel="noopener noreferrer" className="text-sm text-primary underline">مشاهده فایل {review.media_kind ?? ""}</a> : null}
-              <form action={editReview} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_7rem_auto] lg:items-end">
+              <DraftForm saveAction={editReview} autosave={!review.is_approved} footerClassName="lg:col-span-1" className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_7rem_auto] lg:items-end">
                 <input type="hidden" name="id" value={review.id} />
                 <label className="space-y-2 text-xs">متن
                   <Textarea name="text" rows={2} maxLength={2000} defaultValue={review.text ?? ""} />
@@ -77,8 +78,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Para
                 <label className="space-y-2 text-xs">ترتیب
                   <Input type="number" min={0} max={1000000} name="position" defaultValue={review.position} />
                 </label>
-                <Button type="submit" variant="outline" size="sm">ذخیره</Button>
-              </form>
+              </DraftForm>
               <div className="flex flex-wrap items-center gap-3">
                 <form action={moderateReview}>
                   <input type="hidden" name="id" value={review.id} />

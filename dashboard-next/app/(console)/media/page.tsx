@@ -1,3 +1,4 @@
+import { DraftForm } from "@/components/blocks/draft-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteMedia, editMedia, moderateMedia } from "@/app/(console)/media/actions";
@@ -79,7 +80,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
                 <a href={`/api/admin/preview/product/${item.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-medium text-primary underline underline-offset-4">پیش‌نمایش فایل</a>
               </div>
               <div className="space-y-3">
-                <form action={editMedia} className="grid grid-cols-[minmax(0,1fr)_6rem_auto] items-end gap-2">
+                <DraftForm saveAction={editMedia} autosave={!item.is_published} footerClassName="col-span-full sm:col-span-1" className="grid grid-cols-[minmax(0,1fr)_6rem] sm:grid-cols-[minmax(0,1fr)_6rem_auto] items-end gap-2">
                   <input type="hidden" name="id" value={item.id} />
                   <label className="space-y-1 text-xs">توضیح
                     <Input name="caption" maxLength={2000} defaultValue={item.caption ?? ""} />
@@ -87,8 +88,7 @@ export default async function MediaPage({ searchParams }: { searchParams: Params
                   <label className="space-y-1 text-xs">ترتیب
                     <Input name="position" type="number" min={0} max={1000000} required defaultValue={item.position} />
                   </label>
-                  <Button variant="outline" type="submit" size="sm">ذخیره</Button>
-                </form>
+                </DraftForm>
                 <div className="flex flex-wrap items-center gap-3">
                   <form action={moderateMedia}>
                     <input type="hidden" name="id" value={item.id} />

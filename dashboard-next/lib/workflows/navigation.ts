@@ -1,6 +1,6 @@
 /** Protect transient drafts and receipts before App Router processes history events. */
 export function createNavigationGuard(host: Window) {
-  const blockers = new Set<() => boolean>();
+  const blockers = new Map<() => boolean, boolean>();
   const existing = host.history.state?.__shopWorkflowPosition as
     | { scope?: unknown; index?: unknown }
     | undefined;
@@ -17,11 +17,11 @@ export function createNavigationGuard(host: Window) {
   let index = previousPosition?.index ?? 0,
     restoring = false,
     approvedLeave = false;
-  const blocked = () => [...blockers].some((fn) => fn());
-  const confirm = () =>
-    !blocked() ||
+  const blocked = (linksOnly = false) => [...blockers].some(([fn, historyOnly]) => (!linksOnly || !historyOnly) && fn());
+  const confirm = (linksOnly = false) =>
+    !blocked(linksOnly) ||
     host.confirm(
-      "تغییر ذخیره‌نشده یا عملیات تأییدنشده دارید. پیش از خروج JSON و رسید عملیات را بررسی کنید. خروج از صفحه؟",
+      "تغییر ذخیره‌نشده یا عملیات تأییدنشده دارید. از این صفحه خارج می‌شوید؟",
     );
   const stamped = (state: unknown, position: number) => ({
     ...(state && typeof state === "object" ? state : {}),
@@ -100,7 +100,7 @@ export function createNavigationGuard(host: Window) {
     "click",
     (event) => {
       if (
-        !blocked() ||
+        !blocked(true) ||
         event.defaultPrevented ||
         event.metaKey ||
         event.ctrlKey ||
@@ -121,7 +121,7 @@ export function createNavigationGuard(host: Window) {
       const href = anchor.getAttribute("href");
       if (!href || href.startsWith("#") || anchor.href === host.location.href)
         return;
-      if (!confirm()) {
+      if (!confirm(true)) {
         event.preventDefault();
         event.stopPropagation();
       } else approvedLeave = true;
@@ -129,9 +129,9 @@ export function createNavigationGuard(host: Window) {
     true,
   );
   return {
-    register(fn: () => boolean) {
+    register(fn: () => boolean, historyOnly = false) {
       approvedLeave = false;
-      blockers.add(fn);
+      blockers.set(fn, historyOnly);
       return () => {
         blockers.delete(fn);
       };
@@ -143,9 +143,9 @@ export function createNavigationGuard(host: Window) {
 // this application session to carry a position. No draft content enters history.
 let current: ReturnType<typeof createNavigationGuard> | null =
   typeof window !== "undefined" ? createNavigationGuard(window) : null;
-export function registerWorkflowGuard(blocker: () => boolean): () => void {
+export function registerWorkflowGuard(blocker: () => boolean, { historyOnly = false } = {}): () => void {
   current ??= createNavigationGuard(window);
-  return current.register(blocker);
+  return current.register(blocker, historyOnly);
 }
 /** Store switching refreshes the route without an anchor or traversal event. */
 export function confirmWorkflowNavigation(): boolean {
