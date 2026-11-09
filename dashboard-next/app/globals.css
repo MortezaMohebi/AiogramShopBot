@@ -113,6 +113,16 @@
   .scrollbar-thin { scrollbar-width: thin; }
 }
 
+html:has(.mobile-navigation-drawer[open]) { overflow: hidden; }
+.mobile-navigation-drawer[open] {
+  --drawer-offset: -100%;
+  animation: mobile-navigation-enter 180ms ease-out;
+}
+.mobile-navigation-drawer[open]:dir(rtl) { --drawer-offset: 100%; }
+@keyframes mobile-navigation-enter {
+  from { transform: translateX(var(--drawer-offset)); }
+}
+
 /* The diagram stays LTR inside the RTL dashboard and inherits both themes. */
 .studio-canvas .react-flow {
   --xy-background-color: var(--background);
