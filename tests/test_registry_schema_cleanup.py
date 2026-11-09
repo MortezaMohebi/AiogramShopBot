@@ -179,7 +179,11 @@ def test_retirement_revision_keeps_one_connected_historical_head():
     configuration = Config(str(ROOT / "alembic.ini"))
     configuration.set_main_option("script_location", str(ROOT / "migrations"))
     revisions = ScriptDirectory.from_config(configuration)
-    assert revisions.get_heads() == ["20261108v001"]
+    assert revisions.get_heads() == ["20261109w005"]
+    assert revisions.get_revision("20261109w004").down_revision == "20261109w003"
+    assert revisions.get_revision("20261109w003").down_revision == "20261109w002"
+    assert revisions.get_revision("20261109w002").down_revision == "20261109w001"
+    assert revisions.get_revision("20261109w001").down_revision == "20261108v001"
     assert revisions.get_revision("20261108v001").down_revision == "20261107u004"
     assert list(revisions.walk_revisions())[-1].revision == "1555220764ee"
 
