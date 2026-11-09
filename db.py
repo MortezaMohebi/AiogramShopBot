@@ -79,6 +79,7 @@ from models.shop_mcp import MCP_MODELS
 from models.shop_wholesale import ShopWholesaleApplication
 from models.shop_action import ShopActionExecution, ShopActionAuthorization
 from models.shop_product_visibility import ShopProductVisibility
+from models.shop_product_attribute import ShopAttribute, ShopAttributeValue, ShopProductAttribute, ShopProductAttributeValue
 from models.shop_delivery import ShopRemoteFile, ShopInboundUpdate
 from models.shop_engagement import (
     ShopWalletAccount, ShopWalletEntry, ShopReferralProfile,

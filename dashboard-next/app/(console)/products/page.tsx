@@ -1,3 +1,4 @@
+import { productListSearch } from "@/lib/product-list-context";
 import { ListSearch } from "@/components/blocks/search-tools";
 import { Suspense } from "react";
 import { ProductsResults } from "@/components/data/products";
@@ -15,7 +16,7 @@ type Params = Promise<{ page?: string; search?: string; saved?: string }>;
 export default async function ProductsPage({ searchParams }: { searchParams: Params }) {
   const q = await searchParams;
   const page = Math.max(1, Math.min(100000, Number.parseInt(q.page ?? "1", 10) || 1));
-  const search = (q.search ?? "").slice(0, 100);
+  const search = productListSearch(q.search);
   const staff = await currentStaff();
   const canEdit = staff.role === "superadmin" || staff.role === "content";
 

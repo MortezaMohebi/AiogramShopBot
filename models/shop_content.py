@@ -29,10 +29,16 @@ class ShopCategory(Base):
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     __table_args__ = (
-        UniqueConstraint(
-            "store_id", "name", name="uq_shop_category_store_name",
+        UniqueConstraint("store_id", "name", name="uq_shop_category_store_name"),
+        UniqueConstraint("store_id", "id", name="uq_shop_category_store_id"),
+        ForeignKeyConstraint(
+            ("store_id", "parent_id"), ("shop_categories.store_id", "shop_categories.id"),
+            name="fk_shop_category_parent", ondelete="RESTRICT",
         ),
+        CheckConstraint("parent_id IS NULL OR parent_id <> id", name="ck_shop_category_not_own_parent"),
+        Index("ix_shop_category_siblings", "store_id", "parent_id", "position", "id"),
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_published: Mapped[bool] = mapped_column(

@@ -16,9 +16,7 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
     adminFetch<Category[]>("/categories"),
     adminFetch<StoreContextSnapshot>("/store-context"),
   ]);
-  const units = await adminFetch<UomList>(
-    `/stores/${context.current_store_id}/uoms`,
-  );
+  const units = await adminFetch<UomList>(`/stores/${context.current_store_id}/uoms`);
   const params = await searchParams;
   return (
     <div>
@@ -37,7 +35,8 @@ export default async function NewProductPage({ searchParams }: { searchParams: P
           <p dir="ltr" className="mt-1 break-all font-mono">{params.ref}</p>
         </details> : null}
       </div> : null}
-      <ProductEditor categories={categories} uoms={units.items} />
+      <ProductEditor categories={categories.filter((item) => item.store_id === context.current_store_id)}
+        uoms={units.items} storeId={context.current_store_id} />
     </div>
   );
 }

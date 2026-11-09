@@ -48,6 +48,12 @@ class AsyncSessionProxy:
         """Read one record by primary key without network requests."""
         return self.session.get(model, key)
 
+    def add(self, record):
+        self.session.add(record)
+
+    async def flush(self):
+        self.session.flush()
+
 
 @pytest.fixture
 def session():
@@ -411,3 +417,34 @@ async def test_dynamic_category_and_unpublished_media(session, platform):
     )
     assert len(attachment.attachments) == 1
     assert attachment.attachments[0].mime_type == "application/pdf"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.TELEGRAM, Platform.BALE])
+async def test_published_category_tree_reaches_products_without_exposing_hidden_parents(session, platform):
+    root = ShopCategory(name="مراقبت", is_published=True)
+    hidden = ShopCategory(name="والد خصوصی", is_published=False)
+    session.add_all([root, hidden])
+    session.flush()
+    child = ShopCategory(name="مو", parent_id=root.id, is_published=True)
+    promoted = ShopCategory(name="قابل مشاهده", parent_id=hidden.id, is_published=True)
+    session.add_all([child, promoted])
+    session.flush()
+    session.add_all([
+        Product(name="شامپو", sku="TREE-1", description="", category_id=child.id, price=500, is_published=True),
+        Product(name="صابون", sku="TREE-2", description="", category_id=promoted.id, price=500, is_published=True),
+    ])
+    allow_test_catalog(session)
+    session.commit()
+
+    flow = CatalogFlow(bot_context=test_bot_context(platform))
+    db = AsyncSessionProxy(session)
+    roots = await flow.reply(event(platform, callback="shop:categories"), db)
+    assert [row[0].label for row in roots.rows] == ["مراقبت", "قابل مشاهده", "همه محصولات"]
+    nested = await flow.reply(event(platform, callback=f"shop:category:{root.id}:0"), db)
+    assert nested.rows[0][0].callback_data == f"shop:category:{child.id}:0"
+    items = await flow.reply(event(platform, callback=nested.rows[0][0].callback_data), db)
+    assert "شامپو" in items.text
+    unavailable = await flow.reply(event(platform, callback=f"shop:subcategories:{hidden.id}:0"), db)
+    assert "والد خصوصی" not in unavailable.text
+    assert unavailable.rows[0][0].callback_data == "shop:categories"

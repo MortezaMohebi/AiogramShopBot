@@ -130,6 +130,7 @@ const SAFE_CODES = new Set([
   "relay_secret_binding_mismatch", "duplicate_relay_credential",
   "invalid_uom", "uom_already_exists", "uom_category_not_found",
   "uom_not_available", "uom_category_mismatch", "uom_locked",
+  "catalog_spec_in_use", "catalog_spec_conflict", "catalog_term_parent_fixed",
   "uom_in_use", "unknown_model", "unknown_model_field",
   "invalid_model_filter", "invalid_model_operator",
   "invalid_model_pagination", "invalid_model_group",

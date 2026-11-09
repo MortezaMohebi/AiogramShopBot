@@ -133,6 +133,43 @@ export interface ProductBotCatalogList {
   page_size: number;
 }
 
+export const productBotQuery = {
+  keys: ["bot_q", "bot_page"],
+  read(params: Pick<URLSearchParams, "get">) {
+    return {
+      q: (params.get("bot_q") ?? "").trim().slice(0, 100),
+      page: pageNumber(params.get("bot_page") ?? "") ?? 1,
+    };
+  },
+  write(query: { q: string; page: number }) {
+    const params = new URLSearchParams();
+    if (query.q) params.set("bot_q", query.q);
+    if (query.page > 1) params.set("bot_page", String(query.page));
+    return params;
+  },
+};
+
+export interface ProductBotAssignment {
+  bot_id: string;
+  effect: CatalogEffect;
+  expected_version: number;
+}
+
+export function parseProductBotAssignments(input: unknown): ProductBotAssignment[] | null {
+  if (!Array.isArray(input) || input.length < 1 || input.length > 100) return null;
+  const ids = new Set<string>();
+  const result: ProductBotAssignment[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Object.keys(item).length !== 3) return null;
+    const { bot_id, effect, expected_version } = item as Partial<ProductBotAssignment>;
+    if (typeof bot_id !== "string" || !catalogBotId.test(bot_id) || ids.has(bot_id.toLowerCase())
+      || !isEffect(effect) || !positiveInt(expected_version)) return null;
+    ids.add(bot_id.toLowerCase());
+    result.push({ bot_id, effect, expected_version });
+  }
+  return result;
+}
+
 export const catalogEffectLabels: Record<CatalogEffect, string> = {
   allow: "مجاز",
   deny: "ممنوع",

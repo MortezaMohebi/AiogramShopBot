@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
 from sqlalchemy import func, or_, select, text, true
@@ -58,6 +58,11 @@ from services.shop_broadcast_scope import registry_dispatch_enabled
 from services.shop_campaigns import ShopCampaignService
 from utils.utils import verify_password
 from utils.shop_text import clean_text
+from services.shop_product_attributes import ProductAttributes, attribute_options, read_product_attributes, save_product_attributes
+from services.shop_attribute_admin import (
+    CatalogKind, CatalogSpecError, CatalogSpecPayload, change_catalog_spec, list_catalog_specs,
+)
+from dashboard.shop_admin_order import DisplayOrder, apply_display_order
 
 
 router = APIRouter(prefix="/internal/admin/v1", tags=["Next Admin bridge"])
@@ -286,6 +291,7 @@ class CategoryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=255)
     is_published: bool = False
+    parent_id: int | None = Field(default=None, strict=True, gt=0, le=2147483647)
 
 
 class CategoryPatch(BaseModel):
@@ -295,6 +301,7 @@ class CategoryPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     position: int | None = Field(default=None, ge=0, le=1_000_000)
     is_published: bool | None = None
+    parent_id: int | None = Field(default=None, strict=True, gt=0, le=2147483647)
 
 
 class BulkUnpublishPayload(BaseModel):
@@ -315,6 +322,7 @@ class ProductPayload(BaseModel):
     purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=40_000)
+    attributes: ProductAttributes = Field(default_factory=list)
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int = Field(ge=0, le=PRICE_LIMIT)
     stock_quantity: int = Field(default=0, ge=0, le=100_000_000)
@@ -337,6 +345,7 @@ class ProductPatch(BaseModel):
     purchase_uom_id: str | None = Field(default=None, max_length=36)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=40_000)
+    attributes: ProductAttributes | None = None
     category_id: int | None = Field(default=None, ge=1)
     price_irr: int | None = Field(default=None, ge=0, le=PRICE_LIMIT)
     stock_quantity: int | None = Field(default=None, ge=0, le=100_000_000)
@@ -507,6 +516,7 @@ async def categories(staff: Staff, session: Db) -> list[dict]:
         {
             "id": row.id, "name": row.name, "store_id": row.store_id,
             "position": row.position, "is_published": row.is_published,
+            "parent_id": row.parent_id,
         }
         for row in items
     ]
@@ -545,6 +555,46 @@ async def bulk_unpublish_categories(
     return await bulk_unpublish_rows(ShopCategory, payload.ids, staff, session)
 
 
+async def lock_category_tree(session: AsyncSession, store_id: str) -> None:
+    # A single lock order serializes tree edits and sibling reorder operations.
+    await session.scalar(select(ShopStore.id).where(ShopStore.id == store_id).with_for_update())
+
+
+async def validate_category_parent(
+    session: AsyncSession, store_id: str, parent_id: int | None,
+    category_id: int | None = None,
+) -> None:
+    if parent_id is None:
+        return
+    parents = dict((await session.execute(select(ShopCategory.id, ShopCategory.parent_id).where(
+        ShopCategory.store_id == store_id,
+    ))).tuples().all())
+    visited = {category_id}
+    while parent_id is not None:
+        if parent_id in visited or parent_id not in parents:
+            raise HTTPException(status_code=422, detail="invalid_category_parent")
+        visited.add(parent_id)
+        parent_id = parents[parent_id]
+
+
+@router.post("/categories/order")
+async def reorder_categories(
+    payload: DisplayOrder, staff: Staff, session: Db,
+    parent_id: Annotated[int | None, Query(gt=0, le=2147483647)] = None,
+) -> dict:
+    """Change the display order of siblings in the current Store."""
+    scope = admin_store_context(require_staff(staff, "content"))
+    store_id = scope.current_store_id
+    require_store_access(scope, store_id, write=True)
+    await lock_category_tree(session, store_id)
+    rows = list((await session.scalars(select(ShopCategory).where(
+        ShopCategory.store_id == store_id, ShopCategory.parent_id == parent_id,
+    ).order_by(ShopCategory.id).limit(2001).with_for_update())).all())
+    apply_display_order(rows, payload)
+    await session.commit()
+    return {"ids": payload.ids}
+
+
 @router.post("/categories", status_code=201)
 async def create_category(
     payload: CategoryPayload, staff: Staff, session: Db
@@ -558,6 +608,8 @@ async def create_category(
     if not fields["name"]:
         raise HTTPException(status_code=422, detail="invalid_request")
     fields["store_id"] = scope.current_store_id
+    await lock_category_tree(session, scope.current_store_id)
+    await validate_category_parent(session, scope.current_store_id, payload.parent_id)
     fields["position"] = await session.run_sync(
         lambda sync: next_display_position(sync, ShopCategory)
     )
@@ -579,16 +631,25 @@ async def edit_category(
     """Edit one category and preserve all product foreign keys."""
     user = require_staff(staff, "content")
     scope = admin_store_context(user)
+    store_id = await session.scalar(select(ShopCategory.store_id).where(
+        ShopCategory.id == category_id, ShopCategory.store_id.in_(scope.active_store_ids),
+    ))
+    if store_id is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    require_store_access(scope, store_id, write=True)
+    await lock_category_tree(session, store_id)
     record = await session.scalar(select(ShopCategory).where(
-        ShopCategory.id == category_id,
-        ShopCategory.store_id.in_(scope.active_store_ids),
+        ShopCategory.id == category_id, ShopCategory.store_id == store_id,
     ).with_for_update())
     if record is None:
         raise HTTPException(status_code=404, detail="Category not found")
-    # Map ownership denial before the mounted business app starts a response.
-    require_store_access(scope, record.store_id, write=True)
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        if value is None:
+    fields = payload.model_dump(exclude_unset=True)
+    if "parent_id" in fields:
+        await validate_category_parent(session, store_id, payload.parent_id, category_id)
+        if payload.parent_id != record.parent_id and "position" not in fields:
+            fields["position"] = await session.run_sync(lambda sync: next_display_position(sync, ShopCategory))
+    for field, value in fields.items():
+        if value is None and field != "parent_id":
             raise HTTPException(status_code=422, detail="Null not allowed")
         if field == "name":
             value = clean_text(value)
@@ -603,6 +664,20 @@ async def edit_category(
     return {"id": record.id}
 
 
+PRODUCT_PAGE_SIZE = 80
+
+
+def product_list_conditions(search: str):
+    """Use the same Store and search filters for lists and record navigation."""
+    conditions = [_store_rows(Product)]
+    if search:
+        conditions.append(or_(
+            Product.name.ilike(f"%{search}%"),
+            Product.sku.ilike(f"%{search}%"),
+        ))
+    return conditions
+
+
 @router.get("/products")
 async def products(
     staff: Staff, session: Db, page: int = 1, search: str = ""
@@ -611,28 +686,16 @@ async def products(
     require_staff(staff, "content")
     if page < 1 or page > 100_000 or len(search) > 100:
         raise HTTPException(status_code=400, detail="Invalid page/search")
-    predicate = (
-        or_(
-            Product.name.ilike(f"%{search}%"),
-            Product.sku.ilike(f"%{search}%"),
-        )
-        if search else None
-    )
-    count_statement = select(func.count()).select_from(Product).where(
-        _store_rows(Product),
-    )
-    list_statement = select(Product).where(_store_rows(Product))
-    if predicate is not None:
-        count_statement = count_statement.where(predicate)
-        list_statement = list_statement.where(predicate)
+    conditions = product_list_conditions(search)
+    count_statement = select(func.count()).select_from(Product).where(*conditions)
     total = int(await session.scalar(count_statement) or 0)
     items = (await session.execute(
-        list_statement.order_by(Product.id.desc())
-        .offset((page - 1) * 20).limit(20)
+        select(Product).where(*conditions).order_by(Product.id.desc())
+        .offset((page - 1) * PRODUCT_PAGE_SIZE).limit(PRODUCT_PAGE_SIZE)
     )).scalars().all()
     return {
         "items": [product_data(item) for item in items],
-        "total": total, "page": page, "page_size": 20,
+        "total": total, "page": page, "page_size": PRODUCT_PAGE_SIZE,
     }
 
 
@@ -644,8 +707,33 @@ async def bulk_unpublish_products(
     return await bulk_unpublish_rows(Product, payload.ids, staff, session)
 
 
+async def product_list_navigation(session: AsyncSession, product_id: int, search: str) -> dict | None:
+    """Get the rank and adjacent IDs in the catalogue's descending ID order."""
+    before = Product.id > product_id
+    after = Product.id < product_id
+    total, current, preceding, previous_id, next_id = (await session.execute(
+        select(
+            func.count(),
+            func.count().filter(Product.id == product_id),
+            func.count().filter(before),
+            func.min(Product.id).filter(before),
+            func.max(Product.id).filter(after),
+        ).select_from(Product).where(*product_list_conditions(search))
+    )).one()
+    if not current:
+        return None
+    return {
+        "position": preceding + 1, "total": total,
+        "previous_id": previous_id, "next_id": next_id,
+        "page": preceding // PRODUCT_PAGE_SIZE + 1,
+    }
+
+
 @router.get("/products/{product_id}")
-async def product(product_id: int, staff: Staff, session: Db) -> dict:
+async def product(
+    product_id: int, staff: Staff, session: Db,
+    list_search: Annotated[str | None, Query(max_length=100)] = None,
+) -> dict:
     """Read a single product for the editable dashboard form."""
     member = require_staff(staff, "content")
     scope = admin_store_context(member)
@@ -655,7 +743,69 @@ async def product(product_id: int, staff: Staff, session: Db) -> dict:
     if item is None:
         raise HTTPException(status_code=404, detail="Product not found")
     visibility = await session.get(ShopProductVisibility, product_id)
-    return {**product_data(item), **public_field_values(visibility)}
+    data = {
+        **product_data(item), **public_field_values(visibility),
+        "attributes": await read_product_attributes(session, item.id),
+    }
+    if list_search is not None:
+        data["navigation"] = await product_list_navigation(session, item.id, list_search)
+    return data
+
+
+@router.get("/stores/{store_id}/product-attribute-options")
+async def product_attribute_options(store_id: str, staff: Staff, session: Db) -> list[dict]:
+    """List reusable definitions and terms from one authorized catalog."""
+    member = require_staff(staff, "content")
+    require_store_access(admin_store_context(member), store_id)
+    return await attribute_options(session, store_id)
+
+
+@router.get("/catalog-specs/{store_id}/{kind}")
+async def catalog_specs(
+    store_id: str, kind: CatalogKind, staff: Staff, session: Db,
+    q: Annotated[str, Query(max_length=80)] = "",
+    page: Annotated[int, Query(ge=1, le=10000)] = 1,
+    definition_id: Annotated[int | None, Query(gt=0, le=2147483647)] = None,
+) -> dict:
+    """Search definitions or values in the authorized Store."""
+    require_store_access(admin_store_context(require_staff(staff, "content")), store_id)
+    return await list_catalog_specs(session, store_id, kind, q, page, definition_id)
+
+
+async def _write_catalog_spec(
+    store_id: str, kind: CatalogKind, staff: ShopStaff | None, session: AsyncSession,
+    item_id: int | None, payload: CatalogSpecPayload | None,
+) -> dict:
+    require_store_access(admin_store_context(require_staff(staff, "content")), store_id, write=True)
+    try:
+        return await change_catalog_spec(session, store_id, kind, item_id, payload)
+    except CatalogSpecError as error:
+        raise HTTPException(status_code=error.status, detail=str(error)) from None
+
+
+CatalogItemId = Annotated[int, Path(gt=0, le=2147483647)]
+
+
+@router.post("/catalog-specs/{store_id}/{kind}")
+async def create_catalog_spec(
+    store_id: str, kind: CatalogKind, staff: Staff, session: Db, payload: CatalogSpecPayload,
+) -> dict:
+    return await _write_catalog_spec(store_id, kind, staff, session, None, payload)
+
+
+@router.patch("/catalog-specs/{store_id}/{kind}/{item_id}")
+async def update_catalog_spec(
+    store_id: str, kind: CatalogKind, item_id: CatalogItemId, staff: Staff, session: Db,
+    payload: CatalogSpecPayload,
+) -> dict:
+    return await _write_catalog_spec(store_id, kind, staff, session, item_id, payload)
+
+
+@router.delete("/catalog-specs/{store_id}/{kind}/{item_id}")
+async def delete_catalog_spec(
+    store_id: str, kind: CatalogKind, item_id: CatalogItemId, staff: Staff, session: Db,
+) -> dict:
+    return await _write_catalog_spec(store_id, kind, staff, session, item_id, None)
 
 
 def validated_product_values(
@@ -689,6 +839,7 @@ async def create_product(
     """Create a product with a unique SKU and safe unpublished default."""
     member = require_staff(staff, "content")
     fields = payload.model_dump()
+    attributes = fields.pop("attributes")
     visibility = {name: fields.pop(name) for name in PUBLIC_OPTIONAL_FIELDS}
     # Keep historic NOT NULL and UNIQUE constraints without forcing the
     # merchant to invent an SKU for every new product.
@@ -721,8 +872,12 @@ async def create_product(
     session.add(record)
     try:
         await session.flush()
+        await save_product_attributes(session, record.id, attributes)
         session.add(ShopProductVisibility(product_id=record.id, **visibility))
         await session.commit()
+    except ValueError as error:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from None
     except IntegrityError:
         await session.rollback()
         raise HTTPException(status_code=409, detail="SKU already exists") from None
@@ -769,11 +924,13 @@ async def edit_product(
         if value is None:
             raise HTTPException(status_code=422, detail=f"{name} must be boolean")
     for required in (
-        "name", "description", "price_irr", "stock_quantity",
+        "name", "description", "attributes", "price_irr", "stock_quantity",
         "position", "product_type", "requires_shipping", "is_published",
     ):
         if required in fields and fields[required] is None:
             raise HTTPException(status_code=422, detail="Null not allowed")
+    fields.pop("attributes", None)
+    attributes = [item.model_dump() for item in payload.attributes] if payload.attributes is not None else None
     if "sku" in fields:
         fields["sku"] = (fields["sku"] or "").strip() or f"AUTO-{secrets.token_hex(8).upper()}"
     if "uom_id" in fields or "purchase_uom_id" in fields:
@@ -823,11 +980,22 @@ async def edit_product(
             for key, value in visibility.items():
                 setattr(existing_policy, key, value)
     try:
+        if attributes is not None:
+            await save_product_attributes(session, product_id, attributes)
         await session.commit()
+    except ValueError as error:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail=str(error)) from None
     except IntegrityError:
         await session.rollback()
         raise HTTPException(status_code=409, detail="SKU already exists") from None
-    return {"id": record.id}
+    visibility_row = await session.get(ShopProductVisibility, product_id)
+    response = {"id": record.id, "product": {
+        **product_data(record), **public_field_values(visibility_row),
+    }}
+    if attributes is not None:
+        response["attributes"] = await read_product_attributes(session, product_id)
+    return response
 
 
 @router.get("/orders")

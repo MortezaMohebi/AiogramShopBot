@@ -11,10 +11,11 @@ const controls = [
 
 /** Keep table and card semantics; the record's title link owns navigation and focus. */
 export function RecordClickArea({
-  as: Element, className, children,
+  as: Element, className, children, orderId,
 }: {
   as: "tr" | "article" | "section" | "div";
   className?: string;
+  orderId?: string;
   children: ReactNode;
 }) {
   function openRecord(event: MouseEvent<HTMLElement>) {
@@ -30,11 +31,12 @@ export function RecordClickArea({
     if (selection && !selection.isCollapsed &&
         (area.contains(selection.anchorNode) || area.contains(selection.focusNode))) return;
 
-    area.querySelector<HTMLAnchorElement>("a[data-record-link]")?.click();
+    area.querySelector<HTMLElement>("a[data-record-link], button[data-record-trigger]")?.click();
   }
 
   return <Element
     data-record-area
+    data-order-row={orderId}
     className={cn("cursor-pointer hover:bg-muted/45 focus-within:bg-muted/30 motion-safe:transition-colors", className)}
     onClick={openRecord}
   >{children}</Element>;

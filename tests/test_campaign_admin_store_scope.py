@@ -428,6 +428,26 @@ async def test_campaign_controls_cannot_mutate_another_selected_store(
 
 
 @pytest.mark.asyncio
+async def test_campaign_media_order_is_locked_after_draft(campaign_app):
+    row = campaign_app.campaign()
+    ids = []
+    for caption in ("first", "second"):
+        result = await campaign_app.request("POST", "/upload/campaign", file=True,
+                                            fields={"campaign_id": str(row.id), "caption": caption})
+        assert result.status_code == 201, result.text
+        ids.append(result.json()["id"])
+    url = f"/campaigns/{row.id}/media"
+    saved = await campaign_app.request("POST", url + "/order", payload={"expected": ids, "ids": ids[::-1]})
+    assert saved.status_code == 200, saved.text
+    row.status = "approved"
+    campaign_app.db.commit()
+    denied = await campaign_app.request("POST", url + "/order", payload={"expected": ids[::-1], "ids": ids})
+    assert denied.status_code == 409, denied.text
+    listing = await campaign_app.request("GET", url)
+    assert [item["id"] for item in listing.json()["items"]] == ids[::-1]
+
+
+@pytest.mark.asyncio
 async def test_campaign_draft_media_round_trip_is_store_scoped(
     campaign_app, tmp_path,
 ):

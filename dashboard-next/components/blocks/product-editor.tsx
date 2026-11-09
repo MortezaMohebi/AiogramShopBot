@@ -1,16 +1,20 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TriangleAlert, CheckCircle2 } from "lucide-react";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { CategoryMany2One } from "@/components/blocks/category-many2one";
+import { ProductRecordPager } from "@/components/blocks/product-record-pager";
 import { useDraftNavigation } from "@/components/blocks/use-draft-navigation";
 import { DraftActions } from "@/components/ui/draft-actions";
 import { Button } from "@/components/ui/button";
+import type { ProductNavigation } from "@/lib/product-list-context";
 import { ProductBotMany2ManyPanel } from "@/components/blocks/product-bot-many2many-panel";
 import type { ProductBotCatalogList } from "@/lib/bot-catalog-acl";
 import { FieldEye } from "@/components/blocks/field-eye";
+import { ProductAttributesFields } from "@/components/blocks/product-attributes-fields";
+import type { AttributeDraft } from "@/lib/product-attribute-drafts";
 import {
   ProductMediaPanel,
   type ProductFile,
@@ -20,7 +24,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { Category, Product } from "@/lib/types";
+import type { Category, Product, ProductAttribute } from "@/lib/types";
 import type { UomUnit } from "@/lib/uoms";
 
 type SaveCode =
@@ -29,7 +33,7 @@ type SaveCode =
   | "service_unavailable" | "invalid_request";
 
 const messages: Record<SaveCode, string> = {
-  invalid_product: "اطلاعات محصول معتبر نیست. قیمت، موجودی، نوع کالا و دسته‌بندی را بررسی کنید.",
+  invalid_product: "اطلاعات محصول معتبر نیست. قیمت، موجودی، نوع کالا و ویژگی‌ها را بررسی کنید.",
   sku_exists: "این کد SKU قبلاً ثبت شده است؛ کد دیگری انتخاب کنید یا کادر SKU را خالی بگذارید.",
   uom_locked: "واحد فروش محصول دارای موجودی، سبد فعال یا سابقهٔ سفارش را نمی‌توان تغییر داد؛ ابتدا موجودی را صفر و سوابق را بررسی کنید.",
   permission_denied: "حساب شما اجازهٔ ایجاد یا ویرایش محصول را ندارد.",
@@ -40,6 +44,7 @@ const messages: Record<SaveCode, string> = {
 };
 
 interface ProductEditorProps {
+  storeId: string;
   product?: Product;
   categories: Category[];
   uoms: UomUnit[];
@@ -48,10 +53,13 @@ interface ProductEditorProps {
   botAccessQuery?: string;
   botAccessSaved?: boolean;
   botAccessError?: boolean;
+  list?: { navigation: ProductNavigation | null; search: string };
+  children?: ReactNode;
 }
 
 /** Real PostgreSQL-backed product editor with explicit public-field eyes. */
 export function ProductEditor({
+  storeId,
   product: initialProduct,
   categories,
   uoms,
@@ -60,6 +68,8 @@ export function ProductEditor({
   botAccessQuery = "",
   botAccessSaved = false,
   botAccessError = false,
+  list,
+  children,
 }: ProductEditorProps) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -84,15 +94,23 @@ export function ProductEditor({
   const [saving, setSaving] = useState(false);
   const [formChanged, setFormChanged] = useState(false);
   const markChanged = () => setFormChanged(true);
+  const [attributes, setAttributes] = useState<AttributeDraft[]>(() =>
+    (product?.attributes ?? []).map((attribute) => ({ rowId: attribute.key, attribute })),
+  );
+  const [attributesChanged, setAttributesChanged] = useState(false);
+  const [attributeError, setAttributeError] = useState("");
   const [notice, setNotice] = useState<{
     ok: boolean; message: string; requestId?: string;
   } | null>(null);
-  const dirty = formChanged;
+  const dirty = formChanged || attributesChanged;
 
   function resetDraft(record = product) {
     setKind(record?.product_type ?? "physical");
     setUomId(record?.uom_id ?? defaultUom);
     setPurchaseUnit(record?.purchase_uom_id ?? "");
+    setAttributes((record?.attributes ?? []).map(attribute => ({ rowId: attribute.key, attribute })));
+    setAttributesChanged(false);
+    setAttributeError("");
     needsReview.current = false;
     setFormChanged(false);
     setFormVersion(version => version + 1);
@@ -103,6 +121,12 @@ export function ProductEditor({
     if (pending.current || !form || !form.reportValidity()) return false;
     if (product && !dirty) return true;
     if (navigating && needsReview.current) return false;
+    if ((!product || attributesChanged) && attributes.some(({ attribute }) =>
+      !attribute.definition_id || !attribute.values.length || attribute.values.some((value) => !value.value_id))) {
+      setAttributeError("برای هر ردیف، یک ویژگی و دست‌کم یک مقدار از فهرست انتخاب کنید.");
+      document.getElementById("product-attributes-title")?.focus();
+      return false;
+    }
     const data = new FormData(form);
     const value = (name: string) => String(data.get(name) ?? "").trim();
     const snapshot = {
@@ -111,6 +135,12 @@ export function ProductEditor({
       uom_id: uomId || null,
       purchase_uom_id: purchaseUnit || null,
       description: value("description"),
+      ...(!product || attributesChanged ? {
+        attributes: attributes.map(({ attribute }) => ({
+          ...attribute,
+          aliases: (attribute.aliases ?? []).map((alias) => alias.trim()).filter(Boolean),
+        })),
+      } : {}),
       category_id: value("category_id") ? Number(value("category_id")) : null,
       price_irr: value("price_irr"),
       price_stars: kind === "digital" && value("price_stars")
@@ -139,7 +169,7 @@ export function ProductEditor({
     const payload = product ? {
       id: product.id,
       ...Object.fromEntries(Object.entries(snapshot).filter(([key, value]) =>
-        value !== baseline[key])),
+        key === "attributes" || value !== baseline[key])),
     } : snapshot;
     if (product && Object.keys(payload).length === 1) {
       resetDraft();
@@ -170,7 +200,7 @@ export function ProductEditor({
       }
       const result = await response.json() as {
         ok?: boolean; id?: number; code?: SaveCode; requestId?: string;
-        product?: Product;
+        attributes?: ProductAttribute[]; product?: Product;
       };
       if (!response.ok || !result.ok || !Number.isSafeInteger(result.id)) {
         needsReview.current = result.code === "service_unavailable";
@@ -189,7 +219,7 @@ export function ProductEditor({
         router.push("/products/" + result.id + "/edit?created=1#media");
       } else {
         if (!result.product || result.product.id !== product.id) throw new Error("Missing saved record");
-        const saved = result.product;
+        const saved = { ...result.product, attributes: result.attributes ?? product.attributes };
         setProduct(saved);
         resetDraft(saved);
         setNotice({ ok: true, message: "تغییرات محصول ذخیره شد." });
@@ -217,15 +247,17 @@ export function ProductEditor({
 
   return (
     <div className="space-y-6">
-      {((product && (dirty || saving)) || notice) && <div className="sticky top-16 z-20 border-b bg-background/95 py-2">
-        {draftActions}
+      {product && <h1 className="sr-only">{product.name}</h1>}
+      <div className="sticky top-16 z-20 border-b bg-background/95 py-2">
+        {list ? <ProductRecordPager {...list} actions={draftActions} /> : draftActions}
         {notice && <p role={notice.ok ? "status" : "alert"} className={notice.ok
           ? "mt-2 flex items-center gap-2 text-sm text-muted-foreground"
           : "mt-2 flex items-center gap-2 text-sm text-destructive"}>
           {notice.ok ? <CheckCircle2 aria-hidden="true" className="size-4" /> : <TriangleAlert aria-hidden="true" className="size-4" />}
           {notice.message}{notice.requestId && <span dir="ltr" className="break-all text-xs">{notice.requestId}</span>}
         </p>}
-      </div>}
+      </div>
+      {children}
       <form key={formVersion} ref={formRef} id="product-editor-form" method="post"
         onSubmit={event => { event.preventDefault(); void save(); }} aria-busy={saving}
         data-dirty={dirty}
@@ -283,6 +315,12 @@ export function ProductEditor({
                 <CategoryMany2One categories={categories}
                   initialId={product?.category_id ?? null} canCreate onSelectionChange={markChanged} />
               </div>
+              <ProductAttributesFields rows={attributes} saved={product?.attributes ?? []} storeId={storeId}
+                error={attributeError} onChange={(rows) => {
+                  setAttributes(rows);
+                  setAttributesChanged(true);
+                  setAttributeError("");
+                }} />
             </CardContent>
           </Card>
 

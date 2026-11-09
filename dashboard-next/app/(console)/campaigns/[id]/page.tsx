@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { changeCampaign, reconcileDelivery, deleteCampaignMedia } from "@/app/(console)/campaigns/actions";
+import { changeCampaign, reconcileDelivery } from "@/app/(console)/campaigns/actions";
+import { CampaignMediaOrder, type CampaignFile } from "@/components/blocks/campaign-media-order";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,6 @@ import { uploadErrorMessage } from "@/lib/upload-errors";
 
 type Params = Promise<{ id: string }>;
 type Query = Promise<{ saved?: string; error?: string }>;
-
-interface CampaignFile {
-  id: number; kind: string; filename: string; size_bytes: number;
-  position: number; caption: string | null;
-}
 
 interface Delivery {
   id: number;
@@ -103,7 +99,7 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">فایل‌ها به‌ترتیب ارسال می‌شوند و پس از تأیید مخاطبان دیگر قابل تغییر نیستند.</p>
           {media.can_edit ? (
-            <form method="post" encType="multipart/form-data" action="/api/admin/upload?target=campaign" className="grid gap-3 md:grid-cols-[1fr_1fr_7rem_auto] md:items-end">
+            <form method="post" encType="multipart/form-data" action="/api/admin/upload?target=campaign" className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
               <input type="hidden" name="campaign_id" value={id} />
               <label className="space-y-2 text-xs">فایل
                 <Input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,audio/mpeg,audio/ogg,application/pdf" required />
@@ -111,33 +107,10 @@ export default async function CampaignDetailsPage({ params, searchParams }: { pa
               <label className="space-y-2 text-xs">توضیح
                 <Input name="caption" maxLength={1024} />
               </label>
-              <label className="space-y-2 text-xs">ترتیب
-                <Input type="number" name="position" min={0} max={1000000} defaultValue={0} required />
-              </label>
               <Button type="submit">بارگذاری</Button>
             </form>
           ) : null}
-          {media.items.map((file) => (
-            <div key={file.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
-              <div className="min-w-0">
-                <p className="break-all text-sm" dir="ltr">{file.filename}</p>
-                <p className="text-xs text-muted-foreground">{file.kind} · {(file.size_bytes / 1000000).toFixed(1)} MB · ترتیب {file.position}</p>
-                {file.caption ? <p className="text-xs">{file.caption}</p> : null}
-              </div>
-              <div className="flex items-center gap-2">
-                <a className="text-sm text-primary underline" target="_blank" rel="noopener noreferrer" href={`/api/admin/preview/campaign/${file.id}`}>پیش‌نمایش</a>
-                {media.can_edit ? (
-                  <form action={deleteCampaignMedia} className="flex flex-wrap items-center gap-2">
-                    <input type="hidden" name="campaign_id" value={id} />
-                    <input type="hidden" name="media_id" value={file.id} />
-                    <Input name="confirmation" required dir="ltr" placeholder="DELETE_DRAFT_ATTACHMENT" aria-label="عبارت تأیید حذف" className="w-52 text-xs" />
-                    <Button type="submit" size="sm" variant="destructive">حذف</Button>
-                  </form>
-                ) : null}
-              </div>
-            </div>
-          ))}
-          {!media.items.length ? <p className="text-sm text-muted-foreground">هیچ فایلی به کمپین پیوست نشده است.</p> : null}
+          <CampaignMediaOrder campaignId={Number(id)} files={media.items} editable={media.can_edit} />
         </CardContent>
       </Card>
     </div>

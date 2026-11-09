@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "@fontsource-variable/vazirmatn/wght.css";
 
+[data-order-dragging] > td,
+[data-order-dragging] > tr > td {
+  background-color: var(--accent);
+}
+
+[data-order-target] > td,
+[data-order-target] > tr:first-child > td {
+  box-shadow: inset 0 2px var(--primary);
+}
+
 /* shadcn/ui-style semantic tokens. All layout positions use logical RTL CSS. */
 :root {
   --background: #f7f8fa;

@@ -54,6 +54,23 @@ test("product search controls render while matching results remain pending",asyn
  assert.deepEqual(calls,["/products?page=2&search=%D9%81%DB%8C%D9%84%D8%AA%D8%B1%20%D8%B1%D9%88%D8%BA%D9%86"]);
  }finally{held.resolve(pageData);rendered?.abort();await work;}
 });
+test("the product range is above the main table and opening a row keeps the active search", async () => {
+ const item={id:75,name:"QA_FILTERED_PRODUCT",sku:"QA75",price_irr:"1000",stock_quantity:1,is_published:true};
+ const work=loader(async()=>({items:[item],total:81,page:2,page_size:80}))("products")({
+  searchParams:Promise.resolve({page:"2",search:"مراقبت & A+B"}),
+ });
+ const rendered=await stream(await work);
+ try {
+  await rendered.done;
+  const html=rendered.text();
+  assert(html.includes("صفحه‌گردان فهرست محصولات"));
+  assert(html.indexOf("صفحه‌گردان فهرست محصولات") < html.indexOf("<table"));
+  assert(html.includes('aria-label="صفحهٔ بعدی" disabled'));
+  const href=html.match(/href="(\/products\/75\/edit\?[^"]+)"/)?.[1];
+  assert(href);
+  assert.equal(new URL(href,"https://example.test").searchParams.get("list_search"),"مراقبت & A+B");
+ } finally {rendered.abort();}
+});
 test("dashboard heading resolves before the single overview response",async()=>{
  const held=deferred<unknown>(),calls:string[]=[];const work=loader(async path=>{calls.push(path);return held.promise;})("dashboard")({});let rendered:Awaited<ReturnType<typeof stream>>|undefined;
  try{rendered=await stream(await shellBeforeRead(work));await rendered.waitFor("نمای کلی فروشگاه");assert(rendered.text().includes("در حال دریافت نمای کلی"));assert(!rendered.text().includes("محصولات تعریف‌شده"));held.resolve({products:0,published_products:0,open_refunds:0,channels:[],recent_orders:[],campaigns:{queued:0,unknown:0}});await rendered.done;assert.deepEqual(calls,["/overview"]);}finally{held.resolve({products:0,published_products:0,open_refunds:0,channels:[],recent_orders:[],campaigns:{queued:0,unknown:0}});rendered?.abort();await work;}

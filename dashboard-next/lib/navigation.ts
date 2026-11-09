@@ -1,4 +1,5 @@
 import type { StaffRole } from "@/lib/types";
+import { ListTree, Tags } from "lucide-react";
 import { Workflow, BarChart3, Bot, Boxes, Ruler, Database, ClipboardList, ContactRound, Store, Wallet, Users, ServerCog, FolderTree, LayoutDashboard, Megaphone, Settings2, Webhook, Truck, TicketPercent, MessagesSquare, ShieldCheck, UserCog, UserRound, KeyRound, type LucideIcon } from "lucide-react";
 export interface NavigationItem { title: string; href: string; icon: LucideIcon; roles: StaffRole[] }
 const all: StaffRole[] = ["superadmin", "sales", "content", "finance", "marketing", "viewer"];
@@ -9,6 +10,8 @@ export const navigation: NavigationItem[] = [
   { title: "حساب من", href: "/account", icon: UserRound, roles: all },
   { title: "مجوزها و نقش‌ها", href: "/permissions", icon: KeyRound, roles: all },
   { title: "محصولات", href: "/products", icon: Boxes, roles: ["superadmin", "content"] },
+  { title: "ویژگی‌های محصول", href: "/product-attributes", icon: ListTree, roles: ["superadmin", "content"] },
+  { title: "مقدارهای ویژگی", href: "/product-attribute-values", icon: Tags, roles: ["superadmin", "content"] },
   { title: "واحدهای اندازه‌گیری", href: "/uoms", icon: Ruler, roles: ["superadmin"] },
   { title: "ورود و خروج داده", href: "/data-models/products", icon: Database, roles: ["superadmin", "content"] },
   { title: "دسته‌بندی‌ها", href: "/categories", icon: FolderTree, roles: ["superadmin", "content"] },

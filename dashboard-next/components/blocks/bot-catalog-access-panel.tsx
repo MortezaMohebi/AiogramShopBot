@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { RelationTag } from "@/components/ui/relation-tag";
 import { SectionSearch } from "@/components/blocks/section-search";
 import { ReauthenticationForm } from "@/components/blocks/reauthentication";
 import { useBotConfigVersion } from "@/components/blocks/bot-config-version";
 import { useSectionCommand } from "@/components/runtime/use-section-command";
 import { useSectionList } from "@/components/runtime/use-section-list";
 import {
-  botCatalogQuery, catalogEffectLabels, type BotCatalogRuleList, type CatalogAuditRow,
+  botCatalogQuery, catalogEffectLabels, type BotCatalogCandidate, type BotCatalogRuleList, type CatalogAuditRow,
   type CatalogChange, type CatalogEffect, type CatalogListQuery,
 } from "@/lib/bot-catalog-acl";
 import { listBotCatalog, listBotCatalogAudit } from "@/lib/bot-catalog-client";
@@ -46,7 +47,9 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
   const list = useSectionList(botCatalogQuery, initialQuery, initialData, read);
   const { data, key, query, pending, error, navigate, reload } = list;
   const command = useSectionCommand((input: CatalogChange) => setBotCatalogRules(botId, input));
-  const [selection, setSelection] = useState<{ key: string; ids: number[] }>({ key, ids: [] });
+  const [selection, setSelection] = useState<{
+    kind: CatalogListQuery["kind"]; version: number; rows: BotCatalogCandidate[];
+  }>();
   const [effect, setEffect] = useState<CatalogEffect>("allow");
   const [proof, setProof] = useState<{ pathname: string; key: string; input: CatalogChange } | null>(null);
   const [audit, setAudit] = useState(initialAudit);
@@ -56,11 +59,11 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
   const category = query.kind === "category";
   const activeProof = proof?.key === key ? proof : null;
   const locked = command.pending || activeProof !== null;
-  const selected = selection.key === key
-    ? data.items.filter(row => selection.ids.includes(row.id)).map(row => row.id) : [];
+  const selected = selection?.kind === query.kind ? selection.rows : [];
   const maxPage = Math.min(100_000, Math.max(1, Math.ceil(data.total / data.page_size)));
   const rejected = command.result?.ok === false ? command.result.code : null;
-  const needsReadback = rejected === "conflict" || rejected === "outcome_unknown";
+  const staleSelection = selected.length > 0 && !pending && !error && selection?.version !== data.version;
+  const needsReadback = rejected === "conflict" || rejected === "outcome_unknown" || staleSelection;
 
   useEffect(() => {
     mounted.current = true;
@@ -87,7 +90,7 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
 
   function changeQuery(next: CatalogListQuery) {
     if (botCatalogQuery.write(next).toString() === key) return;
-    setSelection({ key, ids: [] });
+    if (next.kind !== query.kind) setSelection(undefined);
     setProof(null);
     if (!needsReadback) command.clear();
     navigate(next);
@@ -99,7 +102,7 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
     if (!result || !mounted.current || window.location.pathname !== pathname) return;
     if (result.ok) {
       advance(input.expected_version, result.data.version);
-      setSelection({ key: queryKey, ids: [] });
+      setSelection(undefined);
       reload();
       if (result.data.changed > 0) void refreshAudit();
     } else if (result.code === "reauthentication_required" && !verified) {
@@ -110,7 +113,8 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (locked || pending || error || needsReadback || !selected.length || !data.policy_ready) return;
-    void apply({ kind: query.kind, effect, expected_version: data.version, target_ids: selected }, key);
+    if (!selection) return;
+    void apply({ kind: query.kind, effect, expected_version: selection.version, target_ids: selected.map(({ id }) => id) }, key);
   }
 
   return <>
@@ -155,14 +159,22 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
           <Button type="button" size="sm" variant="outline" onClick={reload}>تلاش دوباره</Button>
         </div> : null}
         <form onSubmit={save} className="space-y-3">
+          {selected.length > 0 && <div className="flex flex-wrap gap-1.5" aria-label="موارد انتخاب‌شده">
+            {selected.map((item) => <RelationTag key={item.id} label={item.name}
+              removeLabel={`برداشتن ${item.name} از انتخاب`} disabled={locked}
+              onRemove={() => setSelection((previous) => previous
+                ? { ...previous, rows: previous.rows.filter(({ id }) => id !== item.id) } : undefined)} />)}
+          </div>}
           <div aria-busy={pending} className="max-h-[420px] overflow-auto rounded-lg border">
             <fieldset disabled={locked || pending || !!error} className={pending ? "opacity-60" : undefined}>
               {data.items.map(item => <label key={item.id}
                 className="flex cursor-pointer flex-wrap items-center gap-3 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/40">
-                <input type="checkbox" checked={selected.includes(item.id)} className="size-4 accent-primary"
+                <input type="checkbox" checked={selected.some(({ id }) => id === item.id)} className="size-4 accent-primary"
+                  disabled={needsReadback || (selected.length >= 100 && !selected.some(({ id }) => id === item.id))}
                   onChange={event => {
                     const checked = event.target.checked;
-                    setSelection({ key, ids: checked ? [...selected, item.id] : selected.filter(id => id !== item.id) });
+                    const rows = checked ? [...selected, item] : selected.filter(({ id }) => id !== item.id);
+                    setSelection({ kind: query.kind, version: selected.length ? selection!.version : data.version, rows });
                   }} />
                 <span className="min-w-32 flex-1 font-medium">{item.name}</span>
                 <span className="text-xs text-muted-foreground">{catalogEffectLabels[item.effect]}</span>
@@ -201,7 +213,9 @@ export function BotCatalogAccessPanel({ botId, initialData, initialQuery, initia
             : "قانون موارد انتخاب‌شده از قبل همین مقدار بود."}
         </p> : null}
         {rejected && !activeProof ? <p role="alert" className="text-sm text-destructive">{errors[rejected]}</p> : null}
+        {staleSelection && !rejected && <p role="alert" className="text-sm text-destructive">{errors.conflict}</p>}
         {needsReadback ? <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => {
+          setSelection(undefined);
           command.clear();
           reload();
           void refreshAudit();

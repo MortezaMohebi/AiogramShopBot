@@ -1,3 +1,4 @@
+import { CustomerMenuOrder } from "@/components/blocks/customer-menu-order";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,29 +52,7 @@ export function CustomerExperiencePolicyPanel({
           <input type="hidden" name="scope" value={scope} />
           <input type="hidden" name="target_id" value={id} />
           <input type="hidden" name="expected_version" value={menu.version} />
-          <div className="space-y-2">
-            {menu.available_actions.map((action, i) =>
-              <div key={action.key} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
-                <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
-                  <input type="checkbox" name="menu_action"
-                    value={action.key}
-                    defaultChecked={menu.actions.includes(action.key)}
-                    disabled={action.key === "shop"} />
-                  {action.key === "shop" ? <input type="hidden" name="menu_action" value="shop" /> : null}
-                  <span className="break-words">{action.label}</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs">
-                  ترتیب
-                  <select name={`order:${action.key}`} aria-label={`ترتیب ${action.label}`}
-                    defaultValue={menu.actions.indexOf(action.key) >= 0
-                      ? menu.actions.indexOf(action.key) + 1 : i + 1}
-                    className="h-9 rounded-md border bg-background px-2">
-                    {[1, 2, 3, 4, 5, 6].map(value =>
-                      <option key={value} value={value}>{value}</option>)}
-                  </select>
-                </label>
-              </div>)}
-          </div>
+          <CustomerMenuOrder key={`${id}:${menu.version}`} menu={menu} />
           <Proof />
           <Button type="submit" variant="outline">ذخیرهٔ منوی مشتری</Button>
         </form>

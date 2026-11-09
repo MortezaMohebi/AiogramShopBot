@@ -22,7 +22,13 @@ function loadAction() {
     require: (name: string) => {
       if (name === "next/cache") return { revalidatePath: () => undefined };
       if (name === "next/navigation") return { redirect: (url: string) => { throw new Error(`redirect:${url}`); } };
+      if (name === "@/lib/session") return { readSession: async () => ({ id: 1 }) };
+      if (name === "@/lib/section-rpc-server") return { sectionRpcError: () => "outcome_unknown" };
       if (name === "@/lib/bridge") return {
+        bridgeFetch: async (requestPath: string, method: string, payload: Record<string, unknown>) => {
+          requests.push({ path: requestPath, method, payload });
+          return { id: 42 };
+        },
         adminFetch: async (requestPath: string, method: string, payload: Record<string, unknown>) => {
           requests.push({ path: requestPath, method, payload });
           return { id: 42 };
@@ -33,6 +39,8 @@ function loadAction() {
   });
   return {
     saveCategory: evaluated.exports.saveCategory as (form: FormData) => Promise<void>,
+    saveCategoryDraft: evaluated.exports.saveCategoryDraft as
+      (id: number, patch: { parent_id: number | null }) => Promise<unknown>,
     requests,
   };
 }
@@ -58,5 +66,14 @@ test("editing a category retains its requested display position", async () => {
   await assert.rejects(saveCategory(form), /redirect:\/categories\?saved=1/);
   assert.deepEqual(JSON.parse(JSON.stringify(requests)), [
     { path: "/categories/42", method: "PATCH", payload: { name: "QA دیجیتال", position: 20, is_published: false } },
+  ]);
+});
+
+test("saving an inline draft can remove its parent without rewriting other fields", async () => {
+  const { saveCategoryDraft, requests } = loadAction();
+  const receipt = await saveCategoryDraft(42, { parent_id: null });
+  assert.deepEqual(JSON.parse(JSON.stringify(receipt)), { ok: true, data: { id: 42 } });
+  assert.deepEqual(JSON.parse(JSON.stringify(requests)), [
+    { path: "/categories/42", method: "PATCH", payload: { parent_id: null } },
   ]);
 });

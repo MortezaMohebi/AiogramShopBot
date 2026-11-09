@@ -12,6 +12,9 @@ import {
   FileAudio, FileImage, FileText,
   FileVideo, LoaderCircle, Trash2, UploadCloud,
 } from "lucide-react";
+import { DisplayOrderControls } from "@/components/blocks/display-order-controls";
+import { useDisplayOrder } from "@/components/blocks/use-display-order";
+import { OrderHandle, orderOperations } from "@/components/ui/order-handle";
 import { requestBrowserChallenge } from "@/lib/browser-challenge";
 import { MediaThumbnail } from "@/components/blocks/media-thumbnail";
 import { Button } from "@/components/ui/button";
@@ -90,6 +93,7 @@ export function ProductMediaPanel({
   initial: ProductFile[];
 }) {
   const id = useId();
+  const order = useDisplayOrder(initial, "product-media", productId);
   const input = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
@@ -290,13 +294,16 @@ export function ProductMediaPanel({
           </div>
         ) : null}
         {initial.length ? (
-          <div className="space-y-2">
-            {initial.map((item) => (
-              <div
-                key={item.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
-              >
-                <div className="flex min-w-0 items-center gap-3">
+          <>
+          <div className="overflow-x-auto rounded-md border">
+            <table data-order-list className="w-full min-w-96 text-sm">
+              <thead className="bg-muted"><tr><th scope="col" className="p-2 text-start">رسانه</th>
+                <th scope="col" className="p-2 text-start">توضیح</th>
+                <th scope="col" className={orderOperations}>عملیات</th></tr></thead>
+              <tbody>{order.rows.map((item) => (
+              <tr key={item.id} data-order-row={String(item.id)} className="border-t">
+                <td><div className="flex min-w-0 items-center gap-2 p-1">
+                  <OrderHandle id={String(item.id)} label={item.filename} ids={order.ids} move={order.move} disabled={busy || order.pending} />
                   <MediaThumbnail mediaId={item.id} mimeType={item.mime_type} alt={item.caption || item.filename} />
                   <KindIcon kind={item.kind} />
                   <div className="min-w-0">
@@ -306,8 +313,9 @@ export function ProductMediaPanel({
                       {" · "}{(item.size_bytes / 1_000_000).toFixed(1)} MB
                     </p>
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
+                </div></td>
+                <td className="px-2 text-xs"><span dir="auto">{item.caption || "—"}</span></td>
+                <td className={orderOperations}><div className="flex flex-wrap items-center gap-2 py-1">
                   <a
                     target="_blank"
                     rel="noopener noreferrer"
@@ -318,7 +326,7 @@ export function ProductMediaPanel({
                   </a>
                   <Button
                     type="button" size="sm" variant="outline"
-                    disabled={busy}
+                    disabled={busy || order.pending}
                     onClick={() => void mutate(item, "publish")}
                   >
                     {item.is_published ? "لغو انتشار" : "تأیید انتشار"}
@@ -326,17 +334,19 @@ export function ProductMediaPanel({
                   {!item.is_published ? (
                     <Button
                       type="button" size="sm" variant="destructive"
-                      disabled={busy}
+                      disabled={busy || order.pending}
                       onClick={() => void mutate(item, "delete")}
                     >
                       <Trash2 aria-hidden="true" className="size-4" />
                       حذف
                     </Button>
                   ) : null}
-                </div>
-              </div>
-            ))}
+                </div></td>
+              </tr>
+            ))}</tbody></table>
           </div>
+          <DisplayOrderControls order={order} />
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">هنوز رسانه‌ای برای این محصول وجود ندارد.</p>
         )}

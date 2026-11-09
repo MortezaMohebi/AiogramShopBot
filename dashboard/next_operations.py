@@ -24,6 +24,7 @@ from dashboard.media_storage import (
     safe_media_path,
     save_media,
 )
+from dashboard.shop_admin_order import DisplayOrder, apply_display_order
 from dashboard.next_api import (
     Db, Staff, admin_store_context, campaign_for_store,
     order_payment_data, require_staff, require_store_access,
@@ -184,6 +185,21 @@ async def product_media_for_editor(
             for item in items
         ],
     }
+
+
+@router.post("/products/{product_id}/media/order")
+async def reorder_product_media(
+    product_id: int, payload: DisplayOrder, staff: Staff, session: Db,
+) -> dict:
+    """Reorder one Product's files without changing their publication."""
+    require_staff(staff, "content")
+    await product_for_store(session, product_id, write=True)
+    rows = list((await session.scalars(select(ProductMedia).where(
+        ProductMedia.product_id == product_id,
+    ).order_by(ProductMedia.id).limit(101).with_for_update())).all())
+    apply_display_order(rows, payload)
+    await session.commit()
+    return {"ids": payload.ids}
 
 
 @router.post("/upload/{target}", status_code=201)
@@ -511,6 +527,23 @@ async def delete_campaign_media(
     await session.commit()
     safe_media_path(config.SHOP_MEDIA_ROOT, key).unlink(missing_ok=True)
     return {"deleted": True}
+
+
+@router.post("/campaigns/{campaign_id}/media/order")
+async def reorder_campaign_media(
+    campaign_id: int, payload: DisplayOrder, staff: Staff, session: Db,
+) -> dict:
+    """Change the send order only while the owning campaign is a draft."""
+    require_staff(staff, "marketing")
+    campaign = await campaign_for_store(session, campaign_id, write=True, lock=True)
+    if campaign.status != "draft":
+        raise HTTPException(409, "Only draft attachments can change")
+    rows = list((await session.scalars(select(ShopCampaignMedia).where(
+        ShopCampaignMedia.campaign_id == campaign_id,
+    ).order_by(ShopCampaignMedia.id).limit(201).with_for_update())).all())
+    apply_display_order(rows, payload)
+    await session.commit()
+    return {"ids": payload.ids}
 
 
 @router.get("/wallets/identities")

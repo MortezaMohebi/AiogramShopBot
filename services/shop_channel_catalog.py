@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from channels.contracts import (
     BotReply, InboundEvent, InlineAction, MediaAttachment, Platform,
@@ -23,6 +24,7 @@ from models.shop_content import (
 from services.shop_money import format_rials
 from models.shop_product_visibility import ShopProductVisibility
 from services.shop_presentation import product_message
+from services.shop_product_attributes import match_attributes, public_attributes, read_product_attributes
 from models.shop_uom import ShopUom
 from services.shop_channel_features import get_features
 from services.shop_bot_catalog_acl import (
@@ -30,6 +32,7 @@ from services.shop_bot_catalog_acl import (
 )
 from services.shop_bot_context import BotContext
 from services.shop_admin_security import SecurityRejected
+from models.shop_bot_catalog_acl import ShopBotCategoryRule
 from models.shop_bot_operations import ShopBotOperations
 from models.shop_store_commerce import ShopStoreSettings
 
@@ -39,6 +42,7 @@ _REVIEW_PAGE_SIZE = 3
 _MEDIA_PAGE_SIZE = 4
 _LIST_PATTERN = re.compile(r"shop:list:(0|[1-9][0-9]{0,18})\Z")
 _CATEGORY_PATTERN = re.compile(r"shop:category:([1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z")
+_SUBCATEGORY_PATTERN = re.compile(r"shop:subcategories:([1-9][0-9]{0,9}):(0|[1-9][0-9]{0,9})\Z")
 _CATEGORY_LIST_PATTERN = re.compile(r"shop:categories:(0|[1-9][0-9]{0,18})\Z")
 _GALLERY_PATTERN = re.compile(
     r"shop:gallery:(0|[1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})\Z"
@@ -68,6 +72,7 @@ _SEARCH_PRODUCT_ROUTES = (
 )
 
 
+
 def _price(value: Decimal) -> str:
     """Format a Decimal without floating-point conversion."""
     formatted = format(value, ",.2f")
@@ -95,9 +100,10 @@ def _product_links(reply: BotReply, *, suffix: str, back: InlineAction) -> BotRe
         return action
 
     rows = tuple(tuple(contextual(action) for action in row) for row in reply.rows)
-    return replace(reply, rows=rows or (
-        (back,),
-    ))
+    return replace(
+        reply, rows=rows or ((back,),),
+        product_action=reply.product_action + suffix if reply.product_action else None,
+    )
 
 
 class CatalogFlow:
@@ -141,6 +147,14 @@ class CatalogFlow:
         if footer:
             rows.append(footer)
         return BotReply("\n".join(lines), tuple(rows))
+
+    def _price_label(self, product: Product, platform: str) -> str:
+        """Use the same amount and payment unit as the product card."""
+        if platform == "telegram" and product.product_type == "digital":
+            if type(product.price_stars) is int and product.price_stars > 0:
+                return f"{product.price_stars} Stars (XTR)"
+            return "قیمت Stars تعیین نشده"
+        return format_rials(product.price, self.display_unit)
 
     async def reply(
         self, event: InboundEvent, session: AsyncSession
@@ -213,31 +227,11 @@ class CatalogFlow:
             gallery_detail = _GALLERY_DETAIL_PATTERN.fullmatch(data)
             match = gallery_detail or _DETAIL_PATTERN.fullmatch(data)
             if match:
-                product_id = int(match.group(1))
-                card = await self._product(
-                    session, product_id, event.platform.value, scope,
-                    navigation=() if gallery_detail else None,
+                reply = await self._product(
+                    session, int(match[1]), event.platform.value, scope,
+                    return_to=back.callback_data, details=True,
                     gallery_context=(int(match.group(2)), int(match.group(3)))
                     if gallery_detail else None,
-                )
-                product = await session.scalar(select(Product).where(
-                    Product.id == product_id,
-                    permitted_product_clause(scope),
-                ))
-                if product is None:
-                    return product_links(card)
-                visibility = await session.get(ShopProductVisibility, product_id)
-                description = (
-                    product.description or ""
-                    if visibility is None or visibility.show_description else ""
-                )
-                reply = BotReply(
-                    (card.text + "\n\n" + description)[:4096],
-                    ((_button(
-                        "بازگشت به محصول",
-                        f"g:{product_id}:{gallery_detail.group(2)}:{gallery_detail.group(3)}"
-                        if gallery_detail else f"shop:item:{product_id}",
-                    ),),),
                 )
                 return product_links(reply)
             match = _REVIEW_PATTERN.fullmatch(data)
@@ -264,6 +258,12 @@ class CatalogFlow:
                 return await self._settings_text(session, key="support", platform=event.platform.value)
             if data == "shop:faq":
                 return await self._settings_text(session, key="faq", platform=event.platform.value)
+            match = _SUBCATEGORY_PATTERN.fullmatch(data)
+            if match:
+                return await self._categories_or_products(
+                    session, requested_page=int(match.group(2)),
+                    parent_id=int(match.group(1)), scope=scope,
+                )
             match = _CATEGORY_LIST_PATTERN.fullmatch(data)
             if match:
                 return await self._categories_or_products(
@@ -341,57 +341,80 @@ class CatalogFlow:
             rows=((_button("🏠 صفحه اول", "shop:home"),),),
         )
 
-    async def _categories_or_products(
-        self, session: AsyncSession, requested_page: int = 0,
-        *, scope: CatalogScope,
-    ) -> BotReply:
-        """Paginate an unlimited number of administrator-created categories."""
-        category_has_permitted_product = select(Product.id).where(
+    @staticmethod
+    def _visible_category_tree(scope: CatalogScope):
+        # Keep the same product rule precedence. Ancestors provide navigation,
+        # but unpublished or denied ancestor names are never exposed.
+        direct = select(Product.id).where(
             Product.category_id == ShopCategory.id,
             permitted_product_clause(scope),
         ).correlate(ShopCategory).exists()
+        tree = select(ShopCategory.id, ShopCategory.parent_id).where(
+            ShopCategory.store_id == scope.store_id,
+            ShopCategory.is_published.is_(True),
+            direct,
+        ).cte(recursive=True)
+        parent = aliased(ShopCategory)
+        denied = select(ShopBotCategoryRule.category_id).where(
+            ShopBotCategoryRule.bot_id == scope.bot_id,
+            ShopBotCategoryRule.category_id == parent.id,
+            ShopBotCategoryRule.effect == "deny",
+        ).correlate(parent).exists()
+        return tree.union(select(parent.id, parent.parent_id).join(
+            tree, tree.c.parent_id == parent.id,
+        ).where(
+            parent.store_id == scope.store_id, parent.is_published.is_(True), ~denied,
+        ))
+
+    async def _categories_or_products(
+        self, session: AsyncSession, requested_page: int = 0,
+        *, scope: CatalogScope, parent_id: int | None = None,
+    ) -> BotReply:
+        """Paginate visible roots or the children of one visible category."""
+        tree = self._visible_category_tree(scope)
+        members = select(tree.c.id)
+        parent = None
+        if parent_id is not None:
+            parent = await session.scalar(select(ShopCategory).where(
+                ShopCategory.id == parent_id, ShopCategory.id.in_(members),
+            ))
+            if parent is None:
+                return BotReply("این دسته‌بندی در دسترس نیست.", ((_button("دسته‌بندی‌ها", "shop:categories"),),))
         condition = (
-            ShopCategory.is_published.is_(True)
-            & (ShopCategory.store_id == scope.store_id)
-            & category_has_permitted_product
+            ShopCategory.parent_id == parent_id if parent_id is not None
+            else or_(ShopCategory.parent_id.is_(None), ShopCategory.parent_id.not_in(members))
         )
-        count = await session.scalar(
-            select(func.count()).select_from(ShopCategory).where(condition)
-        )
-        if not count:
+        query = select(ShopCategory).where(ShopCategory.id.in_(members), condition)
+        count = await session.scalar(select(func.count()).select_from(query.subquery()))
+        if not count and parent is None:
             return await self._list_products(session, 0, scope=scope)
+        if not count:
+            return BotReply("زیردسته‌ای برای نمایش وجود ندارد.", ((_button("دسته‌بندی‌ها", "shop:categories"),),))
         last_page = (count - 1) // _CATEGORY_PAGE_SIZE
         page = min(requested_page, last_page)
-        result = await session.execute(
-            select(ShopCategory)
-            .where(condition)
-            .order_by(ShopCategory.position, ShopCategory.id)
-            .offset(page * _CATEGORY_PAGE_SIZE)
-            .limit(_CATEGORY_PAGE_SIZE)
-        )
-        rows = [
-            (_button(item.name, f"shop:category:{item.id}:0"),)
-            for item in result.scalars().all()
-        ]
+        items = await session.scalars(query.order_by(
+            ShopCategory.position, ShopCategory.id,
+        ).offset(page * _CATEGORY_PAGE_SIZE).limit(_CATEGORY_PAGE_SIZE))
+        rows = [(_button(item.name, f"shop:category:{item.id}:0"),) for item in items]
+        prefix = f"shop:subcategories:{parent_id}" if parent_id is not None else "shop:categories"
         controls = []
         if page:
-            controls.append(
-                _button("صفحه قبل", f"shop:categories:{page - 1}")
-            )
+            controls.append(_button("صفحه قبل", f"{prefix}:{page - 1}"))
         if page < last_page:
-            controls.append(
-                _button("صفحه بعد", f"shop:categories:{page + 1}")
-            )
+            controls.append(_button("صفحه بعد", f"{prefix}:{page + 1}"))
         if controls:
             rows.append(tuple(controls))
-        rows.append((_button("همه محصولات", "shop:list:0"),))
-        return BotReply(
-            text=(
-                "🗂️ دسته‌بندی محصولات را انتخاب کنید:\n"
-                f"صفحه {page + 1} از {last_page + 1}"
-            ),
-            rows=tuple(rows),
-        )
+        if parent is not None:
+            target = "shop:categories"
+            if parent.parent_id is not None and await session.scalar(
+                select(tree.c.id).where(tree.c.id == parent.parent_id)
+            ) is not None:
+                target = f"shop:subcategories:{parent.parent_id}:0"
+            rows.append((_button("بازگشت به دسته‌بندی‌ها", target),))
+        else:
+            rows.append((_button("همه محصولات", "shop:list:0"),))
+        title = parent.name if parent is not None else "🗂️ دسته‌بندی محصولات را انتخاب کنید:"
+        return BotReply(text=f"{title}\nصفحه {page + 1} از {last_page + 1}", rows=tuple(rows))
 
     async def _list_products(
         self,
@@ -402,6 +425,7 @@ class CatalogFlow:
     ) -> BotReply:
         """Render a bounded page of published products."""
         filters = [permitted_product_clause(scope)]
+        child_link = None
         if category_id is not None:
             selected = await session.scalar(
                 select(ShopCategory.id).where(
@@ -416,11 +440,20 @@ class CatalogFlow:
                     ((_button("همه محصولات", "shop:list:0"),),),
                 )
             filters.append(Product.category_id == category_id)
+            tree = self._visible_category_tree(scope)
+            visible_parent = tree.alias("visible_parent")
+            if await session.scalar(select(tree.c.id).where(
+                tree.c.parent_id == category_id,
+                select(visible_parent.c.id).where(visible_parent.c.id == category_id).exists(),
+            ).limit(1)) is not None:
+                child_link = _button("زیردسته‌ها", f"shop:subcategories:{category_id}:0")
         count_result = await session.execute(
             select(func.count()).select_from(Product).where(*filters)
         )
         count = count_result.scalar_one()
         if count == 0:
+            if child_link is not None:
+                return await self._categories_or_products(session, scope=scope, parent_id=category_id)
             return BotReply(
                 "هنوز محصولی برای نمایش منتشر نشده است.",
                 ((_button("منوی اصلی", "shop:home"),),),
@@ -447,6 +480,7 @@ class CatalogFlow:
         if page < last_page:
             controls.append(_button("صفحه بعد", f"{prefix}:{page + 1}"))
         footer = (
+            *((child_link,) if child_link is not None else ()),
             _button("دسته‌بندی‌ها", "shop:categories"),
             _button("منوی اصلی", "shop:home"),
         )
@@ -492,6 +526,7 @@ class CatalogFlow:
                 product, price_label=price_label, unit_symbol=unit.symbol,
                 show_description=False,
                 show_stock=visibility is None or visibility.show_stock,
+                attributes=await read_product_attributes(session, product.id, display_store_id=product.store_id),
             )
             cards.append(BotReply(
                 text=card_text[:4096], preview=preview,
@@ -518,6 +553,7 @@ class CatalogFlow:
         *, navigation: tuple[InlineAction, ...] | None = None,
         return_to: str = "shop:list:0",
         gallery_context: tuple[int, int] | None = None,
+        details: bool = False,
     ) -> BotReply:
         """Show an active product, never exposing an unpublished record."""
         result = await session.execute(
@@ -549,20 +585,26 @@ class CatalogFlow:
             or type(product.price_stars) is int
             and product.price_stars > 0
         )
-        price_label = (
-            f"{product.price_stars} Stars (XTR)"
-            if telegram_digital and stars_ready
-            else "قیمت Stars تعیین نشده"
-            if telegram_digital else
-            format_rials(product.price, self.display_unit)
-        )
+        price_label = self._price_label(product, platform)
+        attributes = await read_product_attributes(session, product.id, display_store_id=product.store_id)
         body = product_message(
             product,
             price_label=price_label,
             unit_symbol=unit.symbol,
             show_description=show_description,
             show_stock=show_stock,
+            full_attributes=details,
+            attributes=attributes,
         )
+        product_action = (
+            f"g:{product.id}:{gallery_context[0]}:{gallery_context[1]}"
+            if gallery_context else f"shop:item:{product.id}"
+        )
+        if details:
+            return BotReply(
+                body, ((_button("بازگشت به محصول", product_action),),),
+                product_action=product_action,
+            )
         features = await get_features(
             session, platform,
             bot_id=self.bot_context.bot_id,
@@ -626,6 +668,7 @@ class CatalogFlow:
                 body = product_message(
                     product, price_label=price_label, unit_symbol=unit.symbol,
                     show_description=False, show_stock=show_stock,
+                    attributes=attributes,
                 )
                 preview = MediaAttachment(
                     storage_key=cover.storage_key, kind=cover.kind,
@@ -639,7 +682,7 @@ class CatalogFlow:
             ))
             if total_media:
                 body += f"\n📎 {total_media} رسانه؛ فقط با درخواست شما باز می‌شوند."
-        if show_description and product.description:
+        if (show_description and product.description) or public_attributes(attributes):
             detail_target = (
                 f"d:{product.id}:{gallery_context[0]}:{gallery_context[1]}"
                 if gallery_context else f"shop:detail:{product.id}"
@@ -647,7 +690,7 @@ class CatalogFlow:
             rows.insert(1, (_button("مشاهده جزئیات", detail_target),))
         if navigation is not None:
             body = f"🛍 {body}"
-        return BotReply(text=body[:4096], rows=tuple(rows), preview=preview)
+        return BotReply(text=body[:4096], rows=tuple(rows), preview=preview, product_action=product_action)
 
     async def _media(
         self, session: AsyncSession, product_id: int,

@@ -89,6 +89,8 @@ class BotReply:
     purpose: ReplyPurpose = ReplyPurpose.NAVIGATION
     keyboard_rows: tuple[tuple[str, ...], ...] | None = None
     menu_view: bool = False
+    # Internal, read-only return route for a confirmed single-product view.
+    product_action: str | None = None
 
     def __post_init__(self) -> None:
         """Validate common limits before handing data to an adapter."""

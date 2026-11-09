@@ -18,6 +18,9 @@ function load(relative:string):Record<string,unknown> {
  const code=ts.transpileModule(readFileSync(filename,"utf8"),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
  runInNewContext(code,{module:evaluated,exports:evaluated.exports,require:(name:string)=>{
   if(name==="next/navigation")return {useRouter:()=>({refresh(){}})};
+  if(name==="@/app/(console)/display-order-actions")return {
+    saveDisplayOrder() { throw new Error("A static render must not call a server action."); },
+  };
   if(name.startsWith("@/"))return load(name.slice(2));
   if(name.startsWith("."))return load(path.relative(root,path.resolve(path.dirname(filename),name)));
   return nativeRequire(name);

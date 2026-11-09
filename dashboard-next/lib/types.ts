@@ -46,6 +46,22 @@ export interface Overview {
   campaigns: CampaignSummary;
 }
 
+export interface ProductAttribute {
+  key: string;
+  definition_id?: number;
+  label: string;
+  values: { id?: number; value_id?: number; label: string; external_ids?: Record<string, string> }[];
+  aliases?: string[];
+  unit: string | null;
+  visible: boolean;
+  variation: boolean;
+  external_ids?: Record<string, string>;
+}
+
+export type ProductAttributeOption = Pick<ProductAttribute, "label" | "unit" | "aliases" | "external_ids" | "values"> & {
+  definition_id: number;
+};
+
 export interface Product {
   id: number;
   sku: string;
@@ -57,6 +73,7 @@ export interface Product {
   category_id: number | null;
   name: string;
   description: string;
+  attributes?: ProductAttribute[];
   price_irr: string;
   price_stars: number | null;
   digital_delivery_mode: "none" | "file" | "license";
@@ -73,6 +90,8 @@ export interface Product {
 
 export interface Category {
   id: number;
+  store_id?: string;
+  parent_id?: number | null;
   name: string;
   position: number;
   is_published: boolean;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  botCatalogQuery, catalogListParams, parseCatalogChange, parseCatalogListParams,
+  botCatalogQuery, catalogListParams, parseCatalogChange, parseCatalogListParams, parseProductBotAssignments,
 } from "../lib/bot-catalog-acl.ts";
 
 test("catalog filters have a canonical URL and a bounded GET contract", () => {
@@ -13,6 +13,14 @@ test("catalog filters have a canonical URL and a bounded GET contract", () => {
   assert.equal(parseCatalogListParams(new URLSearchParams("path=/staff")), null);
   assert.equal(parseCatalogListParams(new URLSearchParams("page=1e2")), null);
   assert.equal(parseCatalogListParams(new URLSearchParams("q=" + "x".repeat(101))), null);
+});
+
+test("product catalog assignments cannot target the same bot twice with different UUID casing", () => {
+  const bot_id = "abcdefab-cdef-4abc-8def-abcdefabcdef";
+  const assignment = { bot_id, effect: "allow", expected_version: 2 };
+  assert.deepEqual(parseProductBotAssignments([assignment]), [assignment]);
+  assert.equal(parseProductBotAssignments([assignment, { ...assignment, bot_id: bot_id.toUpperCase(), effect: "deny" }]), null);
+  assert.equal(parseProductBotAssignments([{ ...assignment, expected_version: "2" }]), null);
 });
 
 test("a typed catalog command also validates untrusted server-action arguments", () => {

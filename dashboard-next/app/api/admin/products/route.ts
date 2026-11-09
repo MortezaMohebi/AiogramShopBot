@@ -3,13 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ApiError, bridgeFetch } from "@/lib/bridge";
 import { safeLoginFetchMetadata, verifyLoginChallenge } from "@/lib/login-challenge";
 import { readSession } from "@/lib/session";
-import type { Product, Staff } from "@/lib/types";
+import type { Product, ProductAttribute, Staff } from "@/lib/types";
 
 export const runtime = "nodejs";
 const MAX_BYTES = 120_000;
 const keys = new Set([
   "sku", "uom_id", "purchase_uom_id",
-  "name", "description", "category_id", "price_irr",
+  "name", "description", "attributes", "category_id", "price_irr",
   "price_stars", "stock_quantity", "product_type", "requires_shipping",
   "is_published", "show_description", "show_stock", "show_media", "show_reviews",
 ]);
@@ -58,7 +58,7 @@ async function save(request: NextRequest, method: "POST" | "PATCH") {
     if (!["superadmin", "content"].includes(staff.role)) {
       return failed("permission_denied", 403);
     }
-    const saved = await bridgeFetch<{ id: number; product?: Product }>(
+    const saved = await bridgeFetch<{ id: number; attributes?: ProductAttribute[]; product?: Product }>(
       method === "POST" ? "/products" : "/products/" + String(id),
       method, values, session,
     );
@@ -70,7 +70,7 @@ async function save(request: NextRequest, method: "POST" | "PATCH") {
         return failed("service_unavailable", 503);
       }
     }
-    return NextResponse.json({ ok: true, id: saved.id, product }, {
+    return NextResponse.json({ ok: true, id: saved.id, attributes: saved.attributes, product }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

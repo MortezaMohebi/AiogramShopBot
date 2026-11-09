@@ -76,7 +76,7 @@ def _legacy_read(action: str) -> bool:
 def _view_read(action: str) -> bool:
     """Allow a truly unchanged read view to keep its current generation."""
     return _legacy_read(action) or action.startswith((
-        "shop:list:", "shop:detail:", "shop:category:", "shop:categories:",
+        "shop:list:", "shop:detail:", "shop:category:", "shop:categories:", "shop:subcategories:",
         "shop:files:", "shop:reviews:", "shop:orders:page:", "shop:cart:page:",
         "ux:terms:", "shop:checkout:",
     ))

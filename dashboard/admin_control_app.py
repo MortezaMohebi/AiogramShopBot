@@ -92,7 +92,13 @@ def permission_for(path: str, method: str) -> str | None:
         ("/uoms", "/uom-categories")
     ):
         return "catalog.read" if method == "GET" else "catalog.write"
-    if resource in {"products", "categories"}:
+    if resource == "stores" and path.endswith("/product-attribute-options"):
+        return "catalog.read" if method == "GET" else None
+    if method == "POST" and re.fullmatch(
+        re.escape(PREFIX) + r"/products/[1-9][0-9]*/media/order", path,
+    ):
+        return "media.manage"
+    if resource in {"products", "categories", "catalog-specs"}:
         return "catalog.read" if method == "GET" else "catalog.write"
     if method == "GET" and re.fullmatch(
         re.escape(PREFIX) + r"/media/preview/campaign/[1-9][0-9]*", path,
@@ -160,7 +166,7 @@ def store_scoped_campaign_route(path: str, method: str) -> bool:
         ))
     if method == "POST":
         return route in {"/campaigns", "/upload/campaign"} or bool(re.fullmatch(
-            r"/campaigns/[1-9][0-9]*/(?:approve|start|pause|resume|cancel|reconcile)",
+            r"/campaigns/[1-9][0-9]*/(?:approve|start|pause|resume|cancel|reconcile|media/order)",
             route,
         ))
     return method == "DELETE" and bool(re.fullmatch(
@@ -321,6 +327,7 @@ def create_app(base: FastAPI, *, live_receivers: bool = False) -> FastAPI:
                         "bot-catalog",
                         "products",
                         "categories",
+                        "catalog-specs",
                         "orders",
                         "customers",
                         "overview",

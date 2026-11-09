@@ -25,7 +25,7 @@ export function Sidebar({ staff }: { staff: Staff }) {
 
   const groups = [
     { title: "فروش", paths: ["/dashboard", "/orders", "/fulfillments", "/shipping", "/digital-deliveries", "/finance", "/reports"] },
-    { title: "محصولات", paths: ["/products", "/categories", "/uoms", "/data-models/products"] },
+    { title: "محصولات", paths: ["/products", "/product-attributes", "/product-attribute-values", "/categories", "/uoms", "/data-models/products"] },
     { title: "مشتریان", paths: ["/customers", "/store-customers", "/support-tickets", "/reviews", "/campaigns", "/coupons", "/customer-notifications"] },
     { title: "تنظیمات", paths: ["/studio/workflows", "/bots", "/stores", "/payment-accounts", "/relay-workers", "/staff", "/permissions", "/services", "/settings", "/account"] },
   ];
