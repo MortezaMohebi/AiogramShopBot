@@ -6,12 +6,7 @@
  * This boundary must render <html> and <body> without importing the
  * application providers, theme or server-only data dependencies.
  */
-export default function GlobalError({
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+export default function GlobalError() {
   return (
     <html lang="fa" dir="rtl">
       <body
@@ -34,7 +29,7 @@ export default function GlobalError({
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             <button
               type="button"
-              onClick={reset}
+              onClick={() => window.location.reload()}
               style={{
                 padding: "8px 20px",
                 borderRadius: 8,

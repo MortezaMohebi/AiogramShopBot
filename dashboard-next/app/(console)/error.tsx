@@ -13,10 +13,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
  */
 export default function DashboardError({
   error,
-  reset,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
 }) {
   return (
     <div className="mx-auto max-w-xl py-16">
@@ -35,7 +33,7 @@ export default function DashboardError({
             <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">اطلاعات پشتیبانی</summary><p dir="ltr" className="break-all">Error reference: {error.digest}</p></details>
           ) : null}
           <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={reset}>
+            <Button type="button" onClick={() => window.location.reload()}>
               <RotateCcw aria-hidden="true" className="size-4" />
               بارگذاری دوباره
             </Button>

@@ -60,7 +60,7 @@ export function SectionSearch<Filter extends string>({
         </Button>
       </div> : null}
     </form>
-    <details ref={filters} className="relative">
+    {choices.length > 0 && <details ref={filters} className="relative">
       <summary aria-disabled={disabled} onClick={event => { if (disabled) event.preventDefault(); }}
         className="flex cursor-pointer list-none items-center gap-2 rounded-md border px-3 py-2 text-sm focus-visible:outline [&::-webkit-details-marker]:hidden">
         <SlidersHorizontal aria-hidden="true" className="size-4" /> فیلترها
@@ -74,6 +74,6 @@ export function SectionSearch<Filter extends string>({
             input.current?.focus({ preventScroll: true });
           }}>{choice.label}</Button>)}
       </div>
-    </details>
+    </details>}
   </div>;
 }

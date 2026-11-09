@@ -13,10 +13,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
  */
 export default function ApplicationError({
   error,
-  reset,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
 }) {
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl items-center p-5" dir="rtl">
@@ -35,7 +33,7 @@ export default function ApplicationError({
             <details className="text-xs text-muted-foreground"><summary className="cursor-pointer py-2">اطلاعات پشتیبانی</summary><p dir="ltr" className="break-all">Error reference: {error.digest}</p></details>
           ) : null}
           <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={reset}>
+            <Button type="button" onClick={() => window.location.reload()}>
               <RefreshCw aria-hidden="true" className="size-4" />
               بارگذاری دوباره
             </Button>

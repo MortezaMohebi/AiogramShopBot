@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { StaffStoreTable } from "@/components/blocks/staff-store-table";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,37 +64,7 @@ export default async function StaffStoresPage({
         </p> : null}
         <form action={saveStaffStoreAccess} className="space-y-5">
           <input type="hidden" name="staff_id" value={memberId} />
-          <div className="space-y-3">
-            {data.stores.map(store => <div key={store.id}
-              className="grid gap-3 rounded-xl border p-3 sm:grid-cols-[1fr_auto] sm:items-center">
-              <label className="flex items-center gap-3 text-sm">
-                <input name="store_ids" type="checkbox" value={store.id}
-                  defaultChecked={store.granted} />
-                <span className="min-w-0">
-                  <span className="block font-semibold">{store.name}</span>
-                  <span className="text-xs text-muted-foreground"><bdi>{store.slug}</bdi> · {({ active: "فعال", paused: "متوقف", disabled: "غیرفعال", draft: "پیش‌نویس", archived: "بایگانی‌شده" } as Record<string, string>)[store.state] ?? store.state}</span>
-                </span>
-              </label>
-              <label className="block space-y-2 text-sm">سطح دسترسی
-                <select name={`access:${store.id}`}
-                  defaultValue={store.access_level ?? "viewer"}
-                  className="block h-10 rounded-md border bg-background px-3">
-                  <option value="viewer">مشاهده‌گر — فقط خواندن</option>
-                  <option value="editor">ویرایشگر — ویرایش مطابق نقش</option>
-                  <option value="manager">مدیر — مدیریت فروشگاه</option>
-                </select>
-              </label>
-            </div>)}
-          </div>
-          <label className="block max-w-xl space-y-2 text-sm">
-            فروشگاه پیش‌فرض کاربر پس از ورود
-            <select name="default_store_id"
-              defaultValue={data.default_store_id ?? data.stores.find(x => x.granted)?.id ?? ""}
-              className="block h-10 w-full rounded-md border bg-background px-3">
-              {data.stores.map(store =>
-                <option key={store.id} value={store.id}>{store.name}</option>)}
-            </select>
-          </label>
+          <StaffStoreTable data={data} />
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block space-y-2 text-sm">رمز فعلی مدیر
               <Input name="current_password" type="password" required
