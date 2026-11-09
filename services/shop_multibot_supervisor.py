@@ -10,12 +10,9 @@ a second time.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import logging
 from datetime import datetime, timezone
 from typing import Mapping
-from uuid import UUID
 
 from sqlalchemy import select, text
 
@@ -30,6 +27,7 @@ from services.shop_bot_context import resolve_bot_context
 from services.shop_bot_secrets import resolve_active_token
 from services.shop_multibot_client import provider_client
 from services.shop_multibot_dispatch import dispatch
+from services.shop_multibot_webhook import authenticate_webhook
 from services.shop_runtime.ingress import try_ingress
 from services.shop_updates import claim_update, finish_update
 
@@ -187,34 +185,10 @@ class MultiBotSupervisor:
     ) -> dict:
         """Authenticate an opaque binding and route to exactly one saved bot."""
         await self.check_lease()
-        try:
-            binding_id = str(UUID(binding_id))
-        except ValueError:
-            raise security.SecurityRejected("not_found", 404) from None
-        if not isinstance(secret, str) or len(secret) != 43:
-            raise security.SecurityRejected("not_found", 404)
-
         async with session_maker() as db:
-            row = await db.scalar(select(ShopBotReceiver).where(
-                ShopBotReceiver.binding_id == binding_id,
-                ShopBotReceiver.mode == "webhook",
-                ShopBotReceiver.state == "active",
-            ))
-            if row is None:
-                raise security.SecurityRejected("not_found", 404)
-            digest = hashlib.sha256(secret.encode("ascii")).hexdigest()
-            if not hmac.compare_digest(digest, row.webhook_secret_digest):
-                raise security.SecurityRejected("not_found", 404)
-            bot = await db.get(ShopBot, row.bot_id)
-            if bot is None:
-                raise security.SecurityRejected("not_found", 404)
-            # Telegram's optional server-provided header is mandatory here.
-            if bot.platform == "telegram" and (
-                telegram_header is None
-                or not hmac.compare_digest(telegram_header, secret)
-            ):
-                raise security.SecurityRejected("not_found", 404)
-            bot_id = row.bot_id
+            bot_id = await authenticate_webhook(
+                db, binding_id=binding_id, secret=secret, telegram_header=telegram_header,
+            )
 
         update_id = payload.get("update_id")
         if type(update_id) is not int or update_id < 0:

@@ -9,18 +9,39 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
+from db import session_maker
 from services import shop_admin_security as security
+from services.shop_bot_secrets import webhook_probe_signature
+from services.shop_multibot_webhook import (
+    PROBE_HEADER, PROOF_HEADER, TELEGRAM_SECRET_HEADER, authenticate_webhook, probe_nonce,
+)
 
 router = APIRouter(tags=["Multi-bot provider webhook"])
 
 
-@router.post("/webhooks/v2/{binding_id}/{route_secret}")
+@router.post("/webhooks/v2/{binding_id}/{route_secret}", response_model=None)
 async def receive_multibot_webhook(
     binding_id: str, route_secret: str, request: Request,
-) -> dict:
+) -> dict | Response:
     """Claim a provider update in one bot-specific receipt before any send."""
+    telegram_header = request.headers.get(TELEGRAM_SECRET_HEADER)
+    challenge = request.headers.get(PROBE_HEADER)
+    if challenge is not None:
+        try:
+            nonce = probe_nonce(binding_id, challenge)
+            async with session_maker() as db:
+                await authenticate_webhook(
+                    db, binding_id=binding_id, secret=route_secret,
+                    telegram_header=telegram_header, probe=True,
+                )
+        except security.SecurityRejected:
+            raise HTTPException(status_code=404, detail="Not found") from None
+        return Response(status_code=204, headers={
+            PROOF_HEADER: webhook_probe_signature(binding_id, nonce, response=True),
+            "Cache-Control": "no-store",
+        })
     supervisor = getattr(
         request.app.state, "multi_bot_supervisor", None,
     )
@@ -44,9 +65,7 @@ async def receive_multibot_webhook(
         return await supervisor.dispatch_webhook(
             binding_id=binding_id,
             secret=route_secret,
-            telegram_header=request.headers.get(
-                "X-Telegram-Bot-Api-Secret-Token"
-            ),
+            telegram_header=telegram_header,
             payload=payload,
         )
     except security.SecurityRejected as error:

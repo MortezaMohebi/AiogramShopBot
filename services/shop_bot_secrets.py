@@ -67,6 +67,13 @@ def _cipher() -> Fernet:
     return Fernet(base64.urlsafe_b64encode(_key_bytes()))
 
 
+def webhook_probe_signature(binding_id: str, nonce: str, *, response: bool = False) -> str:
+    """Sign one readiness exchange with the server key, separate from bot secrets."""
+    direction = "response" if response else "request"
+    message = f"webhook-probe:v1:{direction}:{binding_id}:{nonce}".encode("ascii")
+    return hmac.new(_key_bytes(), message, hashlib.sha256).hexdigest()
+
+
 def fingerprint_token(platform: str, token: str) -> str:
     """HMAC a bot token for deduplication without a reversible public digest."""
     if not _valid_token(token, platform):

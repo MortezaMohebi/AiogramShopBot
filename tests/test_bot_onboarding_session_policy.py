@@ -10,10 +10,11 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from cryptography.fernet import Fernet
 
 import config
-from dashboard import shop_multibot_management_api, shop_multibot_receiver_api
+from dashboard import multibot_webhook, shop_multibot_management_api, shop_multibot_receiver_api
 from models.shop_admin_control import AdminSession
 from models.shop_multibot import ShopBot, ShopBotCredential
 from models.shop_multibot_receiver import ShopBotReceiver
@@ -21,6 +22,8 @@ from models.shop_staff import ShopStaff
 from services import shop_admin_security as security
 from services import shop_bot_verification as verification
 from services import shop_multibot_receiver_control as receivers
+from services.shop_bot_secrets import webhook_probe_signature
+from services.shop_multibot_webhook import PROBE_HEADER, PROOF_HEADER, TELEGRAM_SECRET_HEADER
 from tests.test_campaign_admin_store_scope import STORE_A, campaign_app
 
 TOKEN = "12345678:" + "A" * 35
@@ -97,6 +100,32 @@ def onboarding_app(campaign_app, monkeypatch):
         yield Provider()
 
     monkeypatch.setattr(receivers, "provider_client", provider)
+    fixture.app.state.test_probes = []
+
+    @asynccontextmanager
+    async def probe_session():
+        """Keep the actual webhook auth on the isolated database."""
+        from tests.test_campaign_admin_store_scope import AsyncDb
+
+        yield AsyncDb(fixture.db)
+
+    monkeypatch.setattr(multibot_webhook, "session_maker", probe_session)
+
+    async def probe(url, binding_id, secret, *, public):
+        """Exercise the real HTTP route with no socket or provider calls."""
+        fixture.app.state.test_probes.append(public)
+        nonce = "a" * 32
+        async with AsyncClient(transport=ASGITransport(app=fixture.app)) as client:
+            response = await client.post(url, headers={
+                PROBE_HEADER: f"{nonce}.{webhook_probe_signature(binding_id, nonce)}",
+                TELEGRAM_SECRET_HEADER: secret,
+            })
+        assert response.status_code == 204, response.text
+        assert response.headers[PROOF_HEADER] == webhook_probe_signature(
+            binding_id, nonce, response=True,
+        )
+
+    monkeypatch.setattr(receivers, "probe_webhook", probe)
     return fixture
 
 
@@ -157,6 +186,7 @@ async def test_onboarding_and_activation_do_not_repeat_password_or_mfa(onboardin
     assert app.db.get(ShopBot, bot_id).status == "active"
     assert app.db.get(ShopBotReceiver, bot_id).state == "active"
     assert app.app.state.test_started_bots == ([bot_id] if mode == "polling" else [])
+    assert app.app.state.test_probes == ([] if mode == "polling" else [False, True])
     credential = app.db.query(ShopBotCredential).filter_by(
         bot_id=bot_id, version=version,
     ).one()
@@ -222,6 +252,84 @@ async def test_webhook_preflight_timeout_keeps_verified_receiver_retryable(onboa
     assert response.json()["detail"] == "provider_state_unavailable"
     row = app.db.get(ShopBotReceiver, bot_id)
     assert row.state == "staged" and row.last_error_code == "provider_state_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_webhook_local_check_does_not_require_public_origin(onboarding_app, monkeypatch):
+    app = onboarding_app
+    bot_id, _ = await create_verified_bot(app)
+    path = f"/bot-registry/{bot_id}/receiver"
+    monkeypatch.delenv("MULTIBOT_WEBHOOK_BASE_URL", raising=False)
+    staged = await app.request("POST", f"{path}/stage", payload={"mode": "webhook"})
+    response = await app.request("POST", f"{path}/check-local", payload={
+        "expected_version": staged.json()["version"],
+    })
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert app.db.get(ShopBotReceiver, bot_id).state == "staged"
+    assert not hasattr(app.app.state, "test_registered_webhook")
+    assert app.app.state.test_probes == [False]
+
+
+@pytest.mark.asyncio
+async def test_unreachable_public_webhook_never_contacts_provider(onboarding_app, monkeypatch):
+    app = onboarding_app
+    bot_id, _ = await create_verified_bot(app)
+    path = f"/bot-registry/{bot_id}/receiver"
+    staged = await app.request("POST", f"{path}/stage", payload={"mode": "webhook"})
+    calls = []
+
+    async def probe(*args, public):
+        calls.append(public)
+        if public:
+            raise security.SecurityRejected("webhook_public_unreachable", 503)
+
+    monkeypatch.setattr(receivers, "probe_webhook", probe)
+    response = await app.request("POST", f"{path}/activate", payload={
+        "expected_version": staged.json()["version"],
+    })
+    assert response.status_code == 503
+    assert response.json()["detail"] == "webhook_public_unreachable"
+    assert calls == [False, True]
+    assert app.db.get(ShopBotReceiver, bot_id).state == "staged"
+    assert not hasattr(app.app.state, "test_registered_webhook")
+
+
+@pytest.mark.asyncio
+async def test_restage_reuses_local_route_and_external_destination_stays_intact(onboarding_app, monkeypatch):
+    app = onboarding_app
+    bot_id, _ = await create_verified_bot(app)
+    path = f"/bot-registry/{bot_id}/receiver"
+    first = await app.request("POST", f"{path}/stage", payload={"mode": "webhook"})
+    assert first.status_code == 201
+    row = app.db.get(ShopBotReceiver, bot_id)
+    original = (row.binding_id, row.webhook_secret_digest)
+    second = await app.request("POST", f"{path}/stage", payload={"mode": "webhook"})
+    assert second.status_code == 201
+    assert (row.binding_id, row.webhook_secret_digest) == original
+
+    class ExistingProvider:
+        async def get_me(self):
+            return SimpleNamespace(id=12345678)
+
+        async def get_webhook_info(self):
+            return SimpleNamespace(url="https://another-service.example/webhook")
+
+        async def set_webhook(self, **kwargs):
+            pytest.fail("Existing provider destination must not be overwritten")
+
+    @asynccontextmanager
+    async def provider(*args, **kwargs):
+        yield ExistingProvider()
+
+    monkeypatch.setattr(receivers, "provider_client", provider)
+    response = await app.request("POST", f"{path}/activate", payload={
+        "expected_version": second.json()["version"],
+    })
+    assert response.status_code == 409
+    assert response.json()["detail"] == "webhook_owned_elsewhere"
+    assert app.app.state.test_probes == [False, True]
+    assert row.state == "staged"
 
 
 @pytest.mark.asyncio

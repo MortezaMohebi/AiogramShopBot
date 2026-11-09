@@ -381,10 +381,9 @@ async def receiver_checks(fixture: dict) -> None:
                         assert len(case.native.messages) == 1, (
                             "Token rotation replayed a prior update"
                         )
-                        fresh = await client.post(
-                            case.route, headers=headers,
-                            json=update_payload(actor, 202),
-                        )
+                        fresh_payload = update_payload(actor, 202)
+                        fresh_payload["message"]["text"] = "/catalog"
+                        fresh = await client.post(case.route, headers=headers, json=fresh_payload)
                         expect_status(
                             fresh, 200, "Fresh update after fake token rotation",
                         )
@@ -397,6 +396,12 @@ async def receiver_checks(fixture: dict) -> None:
                             ))
                             assert receipt is not None
                             assert receipt.bot_fingerprint == original_fingerprint
+                            latest = await db.scalar(select(ShopInboundUpdate).where(
+                                ShopInboundUpdate.bot_id == case.bot_id,
+                                ShopInboundUpdate.update_id == 202,
+                            ))
+                            assert latest is not None and latest.status == "processed"
+                            assert latest.bot_fingerprint != original_fingerprint
                         print(
                             f"PASS  {case.platform}: concurrent webhook sends "
                             "once; rotation preserves receipt"

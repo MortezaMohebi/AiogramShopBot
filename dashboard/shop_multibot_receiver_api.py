@@ -108,3 +108,14 @@ async def activate_receiver(
         expected_version=payload.expected_version,
         supervisor=supervisor,
     )
+
+
+@router.post("/bot-registry/{bot_id}/receiver/check-local")
+async def check_local_receiver(
+    bot_id: UUID, payload: ReceiverApply, staff: Staff, db: Db,
+) -> dict:
+    """Check the local endpoint without returning its secret or calling a provider."""
+    actor = require(staff, "bots.configure")
+    await throttle("multibot-check-local:" + str(actor.id), 6, 60)
+    await control.check_local_receiver(db, str(bot_id), payload.expected_version)
+    return {"ok": True}

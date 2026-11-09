@@ -53,8 +53,10 @@ const errors: Record<string, string> = {
   multibot_runtime_disabled: "سرویس چندرباتی در سرور غیرفعال است.",
   bot_credential_not_verified: "Token ربات هنوز با getMe تأیید نشده است.",
   receiver_change_in_progress: "دریافت پیام در حال تغییر یا نیازمند بررسی است.",
-  webhook_url_invalid: "آدرس عمومی HTTPS مربوط به Webhook پیکربندی نشده است.",
-  webhook_owned_elsewhere: "Webhook این ربات در مقصد دیگری ثبت شده؛ انتقال خودکار انجام نمی‌شود.",
+  webhook_url_invalid: "برای ثبت در پیام‌رسان، مسیر وب‌هوک را با یک آدرس عمومی HTTPS در دسترس قرار دهید.",
+  webhook_local_unreachable: "آزمون مسیر وب‌هوک در این سرور موفق نبود. سرویس دریافت پیام را بررسی کنید.",
+  webhook_public_unreachable: "مسیر وب‌هوک از اینترنت پاسخ معتبر نداد. آدرس HTTPS و تونل را بررسی کنید.",
+  webhook_owned_elsewhere: "پیام‌رسان هنوز پیام‌های این توکن را به اتصال قبلی می‌فرستد. اگر قصد جابه‌جایی دارید، ابتدا اتصال قبلی را از همان سرویس قطع کنید.",
   receiver_needs_review: "نتیجهٔ تغییر روش دریافت پیام مشخص نیست؛ بررسی دستی لازم است.",
   invalid_operation_state: "وضعیت فعلی ربات برای عملیات مجاز نیست.",
   configuration_changed: "نسخهٔ تنظیمات تغییر کرده است؛ صفحه را دوباره بارگذاری کنید.",
@@ -131,7 +133,8 @@ export default async function BotDetailPage({
       {query.saved === "verified" ? "هویت ربات با getMe تأیید شد. مرحلهٔ بعد تنظیم و فعال‌سازی دریافت پیام است." :
         query.saved === "staged" ? "Token برای بررسی ثبت شد؛ ربات همچنان غیرفعال است." :
         query.saved === "state" ? "وضعیت فروش ربات ذخیره شد؛ دریافت پیام و رسیدهای تسویه تغییر نکردند." :
-        query.saved === "receiver_staged" ? "روش دریافت پیام ثبت شد؛ اتصال هنوز تغییر نکرده است." :
+        query.saved === "receiver_staged" ? "روش دریافت پیام آماده شد." :
+        query.saved === "receiver_local" ? "مسیر وب‌هوک در همین سرور پاسخ داد. حالا می‌توانید آن را با HTTPS منتشر کنید." :
         query.saved === "receiver_active" ? "درخواست فعال‌سازی دریافت پیام ثبت شد؛ وضعیت فعلی را در گزارش سلامت بررسی کنید." :
         "تغییرات ربات ثبت شد."}
     </p> : null}

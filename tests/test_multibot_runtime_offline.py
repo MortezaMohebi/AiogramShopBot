@@ -316,6 +316,25 @@ def test_webhook_url_rejects_private_or_insecure_origin(monkeypatch) -> None:
         webhook_url(binding_id, "short")
 
 
+def test_webhook_origin_override_is_scoped_to_one_binding(monkeypatch) -> None:
+    """A tunnel for one receiver leaves the shared origin for other bots."""
+    selected, other = str(uuid4()), str(uuid4())
+    secret = "Z" * 43
+    monkeypatch.setenv("MULTIBOT_WEBHOOK_BASE_URL", "https://hooks.example.org")
+    monkeypatch.setenv("MULTIBOT_WEBHOOK_BINDING_ID", selected)
+    monkeypatch.setenv("MULTIBOT_WEBHOOK_BINDING_BASE_URL", "https://bale.example.org")
+
+    assert webhook_url(selected, secret) == (
+        f"https://bale.example.org/webhooks/v2/{selected}/{secret}"
+    )
+    assert webhook_url(other, secret) == (
+        f"https://hooks.example.org/webhooks/v2/{other}/{secret}"
+    )
+    monkeypatch.setenv("MULTIBOT_WEBHOOK_BINDING_BASE_URL", "https://127.0.0.1")
+    with pytest.raises(security.SecurityRejected):
+        webhook_url(selected, secret)
+
+
 def test_registry_broadcast_requires_explicit_deployment_permission(monkeypatch) -> None:
     """An unapproved Registry broadcast cannot claim recipients or contact providers."""
     monkeypatch.setattr(config, "SHOP_CAMPAIGN_DISPATCH_ENABLED", True)

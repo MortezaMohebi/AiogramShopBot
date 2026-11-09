@@ -134,6 +134,17 @@ export async function stageBotReceiver(form: FormData): Promise<void> {
   redirect(`/bots/${id}?saved=receiver_staged`);
 }
 
+/** Verify the staged endpoint without contacting the messenger. */
+export async function checkBotReceiverLocal(form: FormData): Promise<void> {
+  const id = idFrom(form);
+  const expected_version = positiveInt(form.get("expected_version"));
+  if (!expected_version) redirect(`/bots/${id}?error=validation`);
+  try {
+    await adminFetch(`/bot-registry/${id}/receiver/check-local`, "POST", { expected_version });
+  } catch (error) { failure(error, id); }
+  redirect(`/bots/${id}?saved=receiver_local`);
+}
+
 export async function revealBotWebhookUrl(id: string): Promise<
   { url: string } | { error: string }
 > {

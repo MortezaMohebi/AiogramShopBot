@@ -30,7 +30,7 @@ from services.shop_bot_secrets import (
     decrypt_for_bot, decrypt_receiver_secret, encrypt_receiver_secret,
 )
 from services.shop_multibot_client import provider_client
-from services.shop_multibot_webhook import webhook_url
+from services.shop_multibot_webhook import local_webhook_url, probe_webhook, webhook_url
 
 
 def _event(
@@ -75,7 +75,7 @@ async def stage_receiver(
     ).with_for_update())
     if row is not None and row.state not in {"staged"}:
         raise security.SecurityRejected("receiver_change_in_progress", 409)
-    secret = secrets.token_urlsafe(32)
+    rotate_secret = row is None or row.credential_version != credential.version
     if row is None:
         row = ShopBotReceiver(
             bot_id=bot_id, binding_id=str(uuid4()),
@@ -86,10 +86,10 @@ async def stage_receiver(
         row.version += 1
     row.mode = mode
     row.credential_version = credential.version
-    row.webhook_secret_ciphertext = encrypt_receiver_secret(bot_id, secret)
-    row.webhook_secret_digest = hashlib.sha256(
-        secret.encode("ascii")
-    ).hexdigest()
+    if rotate_secret:
+        secret = secrets.token_urlsafe(32)
+        row.webhook_secret_ciphertext = encrypt_receiver_secret(bot_id, secret)
+        row.webhook_secret_digest = hashlib.sha256(secret.encode("ascii")).hexdigest()
     row.updated_by = actor_id
     row.last_error_code = None
     bot.version += 1
@@ -128,6 +128,24 @@ async def receiver_snapshot(db: AsyncSession, bot_id: str) -> dict:
         "last_error_code": row.last_error_code,
         # Binding URLs and secrets are not returned, even to superadmin.
     }
+
+
+async def _check_local(row: ShopBotReceiver, secret: str) -> None:
+    """Exercise the staged route on the local backend listener."""
+    await probe_webhook(
+        local_webhook_url(row.binding_id, secret), row.binding_id, secret, public=False,
+    )
+
+
+async def check_local_receiver(db: AsyncSession, bot_id: str, expected_version: int) -> None:
+    """Verify a staged revision without a tunnel, worker lease or provider call."""
+    row = await db.get(ShopBotReceiver, bot_id)
+    if row is None or row.state != "staged" or row.mode != "webhook":
+        raise security.SecurityRejected("invalid_operation_state", 409)
+    if row.version != expected_version:
+        raise security.SecurityRejected("configuration_changed", 409)
+    secret = decrypt_receiver_secret(bot_id, row.webhook_secret_ciphertext)
+    await _check_local(row, secret)
 
 
 async def _guard_existing_provider_webhook(
@@ -247,9 +265,13 @@ async def activate_receiver(
         bot.id, bot.platform, credential.ciphertext,
     )
     secret = decrypt_receiver_secret(bot.id, row.webhook_secret_ciphertext)
-    url = webhook_url(row.binding_id, secret)
-    if row.mode == "webhook" and not url:
-        raise security.SecurityRejected("webhook_url_invalid", 422)
+    url = ""
+    if row.mode == "webhook":
+        await _check_local(row, secret)
+        url = webhook_url(row.binding_id, secret)
+        if not url:
+            raise security.SecurityRejected("webhook_url_invalid", 422)
+        await probe_webhook(url, row.binding_id, secret, public=True)
 
     row.state = "applying"
     row.updated_by = actor_id

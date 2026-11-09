@@ -68,7 +68,7 @@ def bot_onboarding_route(path: str, method: str) -> bool:
         re.escape(PREFIX) + r"/bot-registry/"
         r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/"
-        r"(?:credentials/stage|verify|receiver/stage|receiver/activate)",
+        r"(?:credentials/stage|verify|receiver/stage|receiver/check-local|receiver/activate)",
         path,
     ))
 
