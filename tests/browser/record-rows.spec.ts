@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
   if (storageState) return;
   const password = process.env.LAB_ADMIN_PASSWORD;
   if (!password) throw new Error("Lab admin credentials are required.");
-  await page.goto("/login");
+  await page.goto("/login", { waitUntil: "networkidle" });
   await page.getByLabel("نام کاربری").fill("labadmin");
   await page.getByLabel("رمز عبور").fill(password);
   await page.getByRole("button", { name: "ادامه", exact: true }).click();
@@ -15,7 +15,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("customer opens by clicking any non-control cell, without a detail column", async ({ page }) => {
-  await page.goto("/customers");
+  await page.goto("/customers", { waitUntil: "networkidle" });
   const table = page.getByRole("table");
   const row = table.locator("tbody tr").first();
   await expect(row).toBeVisible();
@@ -31,7 +31,7 @@ test("customer opens by clicking any non-control cell, without a detail column",
 });
 
 test("the real record link works with the keyboard", async ({ page }) => {
-  await page.goto("/customers");
+  await page.goto("/customers", { waitUntil: "networkidle" });
   const row = page.getByRole("table").locator("tbody tr").first();
   const link = row.getByRole("link");
   const detail = await link.getAttribute("href");
@@ -44,7 +44,7 @@ test("the real record link works with the keyboard", async ({ page }) => {
 });
 
 test("product row selection and opening the record are independent", async ({ page }) => {
-  await page.goto("/products");
+  await page.goto("/products", { waitUntil: "networkidle" });
   const table = page.getByRole("table");
   const row = table.locator("tbody tr").first();
   await expect(row).toBeVisible();
@@ -60,7 +60,7 @@ test("product row selection and opening the record are independent", async ({ pa
 });
 
 test("record metadata remains selectable", async ({ page }) => {
-  await page.goto("/customers");
+  await page.goto("/customers", { waitUntil: "networkidle" });
   const status = page.getByRole("table").locator("tbody tr").first().getByRole("cell").nth(2);
   await expect(status).toBeVisible();
   await status.evaluate(cell => {
@@ -73,7 +73,7 @@ test("record metadata remains selectable", async ({ page }) => {
 });
 
 test("a staff access card opens from its role text", async ({ page }) => {
-  await page.goto("/staff");
+  await page.goto("/staff", { waitUntil: "networkidle" });
   const section = page.getByRole("region", { name: "دسترسی کاربران به فروشگاه‌ها" });
   const card = section.locator("[data-record-area]").first();
   const detail = await card.getByRole("link").getAttribute("href");

@@ -33,7 +33,7 @@ test("category parents are selectable, discardable and persisted", async ({ page
   await openChild();
   await expect(selectedParent).toHaveValue("");
   await editor.getByRole("button", { name: "بدون والد", exact: true }).click();
-  const options = editor.getByRole("listbox");
+  const options = page.getByRole("listbox", { name: "بدون والد", exact: true });
   await expect(options.getByRole("option", { name: rootName, exact: true })).toBeVisible();
   await expect(options.getByRole("option", { name: childName, exact: true })).toHaveCount(0);
   await options.getByRole("option", { name: rootName, exact: true }).click();
