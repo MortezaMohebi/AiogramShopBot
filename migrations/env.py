@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 import db
+from scripts.initialize_registry_database import initialize_postgresql_upgrade
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -58,7 +59,8 @@ def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
-        context.run_migrations()
+        if not initialize_postgresql_upgrade(context.get_context()):
+            context.run_migrations()
 
 
 async def run_async_migrations() -> None:

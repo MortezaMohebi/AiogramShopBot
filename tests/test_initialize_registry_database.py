@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, func, inspect, select, text
@@ -10,6 +12,68 @@ from models.base import Base
 from models.shop_multibot import DEFAULT_STORE_ID, ShopBot, ShopBotCredential, ShopStore
 from models.shop_uom import ShopUom
 from scripts import initialize_registry_database as initializer
+
+
+def _postgres_upgrade(*, stamp=False, current=(), destination="head"):
+    scripts, head = initializer._current_migration_head()
+    step = SimpleNamespace(
+        source_revision_ids=(), destination_revision_ids=(head,),
+        is_migration=not stamp, is_upgrade=True,
+    )
+    return SimpleNamespace(
+        connection=SimpleNamespace(dialect=SimpleNamespace(name="postgresql")),
+        as_sql=False,
+        script=scripts,
+        opts={
+            "destination_rev": destination,
+            "fn": lambda *_: [SimpleNamespace(info=step)],
+        },
+        get_current_heads=lambda: current,
+    )
+
+
+def test_online_postgresql_upgrade_to_head_uses_registry_initializer(monkeypatch):
+    migration = _postgres_upgrade()
+    initialized = []
+    monkeypatch.setattr(initializer, "initialize_registry_schema", initialized.append)
+    assert initializer.initialize_postgresql_upgrade(migration)
+    assert initialized == [migration.connection]
+
+
+@pytest.mark.parametrize("options", [
+    {"stamp": True},
+    {"current": ("20261108v001",)},
+    {"destination": "20261108v001"},
+    {"destination": None},
+])
+def test_other_alembic_operations_keep_their_migration_plan(monkeypatch, options):
+    def unexpected_initializer(_):
+        pytest.fail("This operation must not initialize the database")
+
+    monkeypatch.setattr(initializer, "initialize_registry_schema", unexpected_initializer)
+    assert not initializer.initialize_postgresql_upgrade(_postgres_upgrade(**options))
+
+
+def test_unversioned_nonempty_database_still_refuses_to_initialize(monkeypatch):
+    def refuse(_):
+        raise initializer.RegistryDatabaseNotEmpty("existing tables")
+
+    monkeypatch.setattr(initializer, "initialize_registry_schema", refuse)
+    with pytest.raises(initializer.RegistryDatabaseNotEmpty, match="existing tables"):
+        initializer.initialize_postgresql_upgrade(_postgres_upgrade())
+
+
+def test_concurrent_initializer_leaves_the_second_upgrade_on_normal_path(monkeypatch):
+    migration = _postgres_upgrade()
+    _, head = initializer._current_migration_head()
+    snapshots = iter([(), (head,)])
+    migration.get_current_heads = lambda: next(snapshots)
+
+    def completed_while_waiting(_):
+        raise initializer.RegistryDatabaseNotEmpty("existing tables")
+
+    monkeypatch.setattr(initializer, "initialize_registry_schema", completed_while_waiting)
+    assert not initializer.initialize_postgresql_upgrade(migration)
 
 
 def test_fresh_initialization_seeds_store_and_units_without_bots():

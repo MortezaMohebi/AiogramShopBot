@@ -93,8 +93,10 @@ docker compose @composeFiles run --rm --no-deps bot python -m scripts.initialize
 docker compose @composeFiles up -d --wait
 ```
 
-For an existing database, use the reviewed migration route instead of the
-initializer. Do not use `docker compose down -v` to update the stack.
+An online `alembic upgrade head` against an empty PostgreSQL database uses the
+same initialization path. On a versioned database it applies pending revisions.
+Use the reviewed migration route for existing installations. Do not use
+`docker compose down -v` to update the stack.
 
 Check the local gateway and public origin:
 

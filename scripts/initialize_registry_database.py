@@ -22,6 +22,10 @@ from sqlalchemy.orm import Session
 _BOOTSTRAP_LOCK = 90211003
 
 
+class RegistryDatabaseNotEmpty(RuntimeError):
+    """An existing database cannot be initialized as a fresh installation."""
+
+
 def _current_migration_head() -> tuple[ScriptDirectory, str]:
     """Resolve the single installed revision head without running its code."""
     root = Path(__file__).resolve().parents[1]
@@ -45,7 +49,7 @@ def _require_empty_database(connection: Connection) -> None:
     )
     for schema in schemas:
         if inspector.get_table_names(schema=schema):
-            raise RuntimeError(
+            raise RegistryDatabaseNotEmpty(
                 "Fresh initialization requires a completely empty database; "
                 "existing installations must use a reviewed Alembic upgrade"
             )
@@ -93,6 +97,47 @@ def initialize_registry_schema(connection: Connection) -> str:
         session.flush()
     _stamp_current_head(connection, scripts, head)
     return head
+
+
+def initialize_postgresql_upgrade(migration: MigrationContext) -> bool:
+    """Bootstrap online PostgreSQL upgrades from an empty database to head."""
+    connection = migration.connection
+    scripts = migration.script
+    destination = migration.opts.get("destination_rev")
+    plan = migration.opts.get("fn")
+    if (
+        connection is None or migration.as_sql
+        or connection.dialect.name != "postgresql"
+        or scripts is None or not destination or plan is None
+    ):
+        return False
+
+    heads = tuple(scripts.get_heads())
+    if (
+        len(heads) != 1
+        or scripts.as_revision_number(destination) not in (heads[0], heads)
+        or migration.get_current_heads()
+    ):
+        return False
+
+    # Alembic supplies the plan for this invocation. A stamp can target head
+    # too, but its steps must never create or seed the application schema.
+    steps = [step.info for step in plan((), migration)]
+    if (
+        not steps or steps[0].source_revision_ids
+        or steps[-1].destination_revision_ids != heads
+        or not all(step.is_migration and step.is_upgrade for step in steps)
+    ):
+        return False
+
+    try:
+        initialize_registry_schema(connection)
+    except RegistryDatabaseNotEmpty:
+        # Another installer may have completed while we waited on its lock.
+        if not migration.get_current_heads():
+            raise
+        return False
+    return True
 
 
 async def initialize_database() -> str:
