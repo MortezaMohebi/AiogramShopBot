@@ -11,7 +11,7 @@ import re
 import unicodedata
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from models.shop_multibot import (
@@ -214,13 +214,14 @@ def serialize_bot(db: Session, bot: ShopBot) -> dict:
 
 def registry_snapshot(
     db: Session, *, store_id: str | None = None,
-    platform: str | None = None, page: int = 1, page_size: int = 50,
+    platform: str | None = None, page: int = 1, page_size: int = 50, search: str = "",
 ) -> dict:
     """Return a paginated, provider-scoped registry without a hidden cap."""
     if (
         not 1 <= page <= 100_000
         or not 1 <= page_size <= 100
         or (platform is not None and platform not in _ALLOWED_PLATFORMS)
+        or len(search) > 160
     ):
         raise security.SecurityRejected("invalid_request", 422)
 
@@ -238,6 +239,12 @@ def registry_snapshot(
         conditions.append(ShopBot.store_id == store_id)
     if platform is not None:
         conditions.append(ShopBot.platform == platform)
+    if term := search.strip().removeprefix("@"):
+        conditions.append(or_(
+            ShopBot.name.icontains(term, autoescape=True),
+            ShopBot.slug.icontains(term, autoescape=True),
+            ShopBot.provider_username.icontains(term, autoescape=True),
+        ))
 
     total = int(db.scalar(
         select(func.count()).select_from(ShopBot).where(*conditions)

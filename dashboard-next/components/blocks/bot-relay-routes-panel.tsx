@@ -1,161 +1,67 @@
 import Link from "next/link";
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
+import { assignRelayRoute } from "@/app/(console)/bots/[id]/relay-actions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { RecordClickArea } from "@/components/ui/record-click-area";
+import { RecordLink } from "@/components/ui/record-link";
 import type { BotRecord } from "@/lib/bot-registry";
-import type {
-  BotRelayRoute, BotRelaySnapshot, RelayWorkersSnapshot,
-} from "@/lib/relay-pool";
-import {
-  activateRelayRoute, assignRelayRoute, pauseRelayRoute,
-  revokeRelayCredential, stageRelayCredential,
-} from "@/app/(console)/bots/[id]/relay-actions";
+import { relayMessage, relayRouteLabel, type BotRelaySnapshot, type RelayWorkersSnapshot } from "@/lib/relay-pool";
 
-const stateLabels: Record<string, string> = { staged: "ثبت اولیه", active: "فعال", paused: "متوقف", draft: "پیش‌نویس", disabled: "غیرفعال", retiring: "در حال جایگزینی", revoked: "لغوشده" };
+export function BotRelayRoutesPanel({ bot, workers, routes, error, saved }: {
+  bot: BotRecord; workers: RelayWorkersSnapshot; routes: BotRelaySnapshot; error?: string; saved?: string;
+}) {
+  if (bot.platform !== "telegram") return null;
+  const assigned = new Set(routes.items.map(row => row.worker_id));
+  const priorities = new Set(routes.items.map(row => row.priority));
+  const nextPriority = Array.from({ length: 1000 }, (_, index) => index + 1)
+    .find(value => value % 10 === 0 && !priorities.has(value)) ??
+    Array.from({ length: 1000 }, (_, index) => index + 1).find(value => !priorities.has(value));
+  const available = workers.items.filter(row => !assigned.has(row.id) && row.status !== "disabled");
 
-interface Props {
-  bot: BotRecord;
-  workers: RelayWorkersSnapshot;
-  routes: BotRelaySnapshot;
-}
-
-function CredentialProof() {
-  return <div className="grid gap-3 sm:grid-cols-2">
-    <label className="block space-y-2 text-sm">رمز فعلی مدیر
-      <Input name="current_password" type="password"
-        autoComplete="current-password" maxLength={256} required />
-    </label>
-    <label className="block space-y-2 text-sm">کد MFA
-      <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
-        maxLength={6} autoComplete="one-time-code" required />
-    </label>
-  </div>;
-}
-
-function RouteControls({
-  bot, route, enabled,
-}: { bot: BotRecord; route: BotRelayRoute; enabled: boolean }) {
-  const canActivate = Boolean(
-    enabled && (
-      route.credential_state === "staged" ||
-      (route.status === "paused" && route.credential_state === "active")
-    ) && route.credential_version && route.worker_status !== "disabled",
-  );
-  return <div className="space-y-4 rounded-xl border p-4">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="font-semibold">{route.worker_name}</p>
-      <p className="text-xs text-muted-foreground">
-        اولویت {route.priority} · {stateLabels[route.status]} · نسخه {route.version}
-      </p>
-    </div>
-    <p className="text-xs text-muted-foreground">
-      وضعیت Worker: {stateLabels[route.worker_status]} · آخرین کلید:
-      {route.credential_version ?? "ثبت نشده"} ({route.credential_state ? stateLabels[route.credential_state] : "—"})
-    </p>
-    {route.status !== "active" ? <form action={assignRelayRoute}
-      className="flex flex-wrap items-end gap-3">
-      <input type="hidden" name="bot_id" value={bot.id} />
-      <input type="hidden" name="worker_id" value={route.worker_id} />
-      <input type="hidden" name="expected_version" value={route.version} />
-      <label className="space-y-2 text-sm">ویرایش اولویت
-        <Input name="priority" type="number" min={1} max={1000}
-          defaultValue={route.priority} required />
-      </label>
-      <Button type="submit" variant="outline">ثبت اولویت</Button>
-    </form> : null}
-
-    <form action={stageRelayCredential} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-      <input type="hidden" name="bot_id" value={bot.id} />
-      <input type="hidden" name="worker_id" value={route.worker_id} />
-      <label className="block space-y-2 text-sm">
-        Secret مستقل همین ربات در این Worker
-        <Input name="secret" type="password" minLength={32} maxLength={256}
-          autoComplete="new-password" dir="ltr" required
-          placeholder="همان کلید نسخه‌دار در Cloudflare Secret" />
-      </label>
-      <Button type="submit" variant="outline">ثبت کلید جدید</Button>
-    </form>
-    {canActivate ? <form action={activateRelayRoute}
-      className="space-y-3 rounded-lg border p-3">
-      <p className="text-sm leading-7">پس از تنظیم همان نسخهٔ کلید و Token SHA-256 در Cloudflare،
-        getMe تأییدشده اجرا می‌شود. این مرحله فقط Key و Route را فعال می‌کند؛
-        هیچ پیام یا پرداختی ارسال نمی‌شود.</p>
-      <input type="hidden" name="bot_id" value={bot.id} />
-      <input type="hidden" name="worker_id" value={route.worker_id} />
-      <input type="hidden" name="expected_version" value={route.version} />
-      <input type="hidden" name="credential_version" value={route.credential_version ?? ""} />
-      <CredentialProof />
-      <Button type="submit">تأیید getMe و فعال‌سازی مسیر</Button>
-    </form> : null}
-    {route.status === "active" ? <form action={pauseRelayRoute}
-      className="space-y-3 rounded-lg border p-3">
-      <p className="text-sm leading-7">توقف مسیر فقط بر ارسال‌های جدید اثر می‌گذارد.
-        ارسال دارای نتیجهٔ نامشخص روی Worker دیگری تکرار نمی‌شود.</p>
-      <input type="hidden" name="bot_id" value={bot.id} />
-      <input type="hidden" name="worker_id" value={route.worker_id} />
-      <input type="hidden" name="expected_version" value={route.version} />
-      <CredentialProof />
-      <Button type="submit" variant="outline">توقف انتخاب این مسیر</Button>
-    </form> : null}
-    {route.credential_history.filter(item =>
-      item.state === "staged" || item.state === "retiring",
-    ).map(item => <form key={item.version}
-      action={revokeRelayCredential} className="space-y-3 rounded-lg border p-3">
-      <input type="hidden" name="bot_id" value={bot.id} />
-      <input type="hidden" name="worker_id" value={route.worker_id} />
-      <input type="hidden" name="version" value={item.version} />
-      <p className="text-xs leading-6">کلید نسخهٔ {item.version} ({stateLabels[item.state]}):
-        ابتدا این نسخه را از RELAY_CLIENTS_JSON Worker حذف کنید، سپس
-        با MFA آن را در این پنل لغو کنید.</p>
-      <CredentialProof />
-      <Button type="submit" variant="outline">لغو نسخهٔ {item.version}</Button>
-    </form>)}
-  </div>;
-}
-
-/** Show authenticated many-to-many routing without exposing keys or Bot API tokens. */
-export function BotRelayRoutesPanel({ bot, workers, routes }: Props) {
-  if (bot.platform !== "telegram") {
-    return null;
-  }
-  const assignedIds = new Set(routes.items.map(row => row.worker_id));
-  const available = workers.items.filter(row =>
-    !assignedIds.has(row.id) && row.status !== "disabled",
-  );
-  return <Card>
-    <CardHeader><CardTitle>مسیرهای Relay ربات</CardTitle></CardHeader>
-    <CardContent className="space-y-5 text-sm">
-      <p className="leading-7">برای هر ربات می‌توانید چند Worker با اولویت متفاوت تعیین کنید. جابه‌جایی خودکار مسیر فقط برای درخواست‌های خواندنی انجام می‌شود.</p>
-      <p>وضعیت Relay:
-        <strong> {workers.enabled ? "فعال در سرور" : "خاموش در سرور"}</strong>
-        {" "}· <Link href="/relay-workers" className="underline">فهرست Workerها و ظرفیت</Link>
-      </p>
-      {available.length ? <form action={assignRelayRoute}
-        className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
-        <input type="hidden" name="bot_id" value={bot.id} />
-        <label className="block space-y-2">Worker
-          <select name="worker_id" required
-            className="block h-10 min-w-52 rounded-md border bg-background px-3">
-            {available.map(worker => <option key={worker.id} value={worker.id}>
-              {worker.name} ({worker.slug})
-            </option>)}
-          </select>
-        </label>
-        <label className="block space-y-2">اولویت (کمتر = مقدم)
-          <Input name="priority" type="number" min={1} max={1000}
-            defaultValue={routes.items.length * 10 + 10} required />
-        </label>
-        <Button type="submit" variant="outline">افزودن مسیر غیرفعال</Button>
-      </form> : null}
-      {routes.items.length ? routes.items.map(route =>
-        <RouteControls key={route.worker_id} bot={bot}
-          route={route} enabled={workers.enabled} />) :
-        <p className="rounded-lg border p-3 text-muted-foreground">
-          برای این ربات هنوز هیچ Worker ثبت نشده است.
-        </p>}
-      <p className="text-xs leading-7 text-muted-foreground">
-        برای تعویض کلید، ابتدا کلید جدید را در Cloudflare تنظیم کنید، سپس آن را در این پنل ثبت و با getMe تأیید کنید. پس از حذف کلید قبلی از Cloudflare، نسخهٔ قبلی را در این صفحه لغو کنید.
-      </p>
+  return <Card id="bot-relays" className="scroll-mt-24">
+    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+      <CardTitle>مسیرهای Relay ربات</CardTitle>
+      <Button asChild variant="ghost" size="sm"><Link href="/relay-workers">مدیریت Workerها</Link></Button>
+    </CardHeader>
+    <CardContent className="space-y-3 text-sm">
+      {!workers.enabled && <p>سرویس Relay متوقف است. <Link href="/services" className="text-primary underline">تنظیم سرویس</Link></p>}
+      {error && <p role="alert" className="text-destructive">{relayMessage(error)}</p>}
+      {saved === "removed" && <p role="status">مسیر از این ربات حذف شد.</p>}
+      {routes.items.length ? <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-80 text-sm">
+          <thead className="bg-muted"><tr>
+            <th scope="col" className="p-2 text-start">Worker</th>
+            <th scope="col" className="p-2 text-start">اولویت</th>
+            <th scope="col" className="p-2 text-start">اتصال تلگرام</th>
+          </tr></thead>
+          <tbody>{routes.items.map(route => {
+            const status = relayRouteLabel(route, workers.enabled);
+            return <RecordClickArea as="tr" key={route.worker_id} className="border-t">
+              <td className="p-2"><RecordLink href={`/bots/${bot.id}/relay/${route.worker_id}`}>{route.worker_name}</RecordLink></td>
+              <td className="p-2">{route.priority.toLocaleString("fa-IR")}</td>
+              <td className="p-2"><Badge tone={status === "متصل" ? "success" : "neutral"}>{status}</Badge></td>
+            </RecordClickArea>;
+          })}</tbody>
+        </table>
+      </div> : <p className="text-muted-foreground">هنوز مسیری برای این ربات ثبت نشده است.</p>}
+      {available.length > 0 && <details>
+        <summary className="w-fit cursor-pointer rounded-md px-1 font-medium text-primary hover:underline">افزودن مسیر</summary>
+        <PasswordActionForm action={assignRelayRoute} when="required" includePassword={false} className="mt-3 flex flex-wrap items-end gap-3">
+          <input type="hidden" name="bot_id" value={bot.id} />
+          <label className="block space-y-2">Worker
+            <select name="worker_id" required className="block h-10 max-w-full rounded-md border bg-background px-3">
+              {available.map(worker => <option key={worker.id} value={worker.id}>{worker.name}</option>)}
+            </select>
+          </label>
+          <label className="block space-y-2">اولویت
+            <Input name="priority" type="number" min={1} max={1000} defaultValue={nextPriority} required className="w-24" />
+          </label>
+          <Button type="submit" size="sm">افزودن</Button>
+        </PasswordActionForm>
+      </details>}
     </CardContent>
   </Card>;
 }

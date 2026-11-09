@@ -21,14 +21,13 @@ function failure(error: unknown): never {
   redirect(`/payment-accounts?error=${error.code && codes.has(error.code) ? error.code : "save"}`);
 }
 
-function proof(form: FormData): { current_password: string; second_factor: string } {
+function proof(form: FormData): { current_password: string } {
   const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
-  if (!current_password || current_password.length > 256 ||
-      !/^[0-9]{6}$/.test(second_factor)) {
+
+  if (!current_password || current_password.length > 256) {
     redirect("/payment-accounts?error=validation");
   }
-  return { current_password, second_factor };
+  return { current_password };
 }
 
 /** Store secrets server-side; do not activate or grant any bot automatically. */

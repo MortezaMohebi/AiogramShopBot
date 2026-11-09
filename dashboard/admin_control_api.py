@@ -207,8 +207,9 @@ def own_session(request: Request) -> str:
 async def fresh_proof(
     db: AsyncSession, staff: ShopStaff, payload: Proof, *,
     request: Request | None = None,
+    require_factor: bool = False,
 ) -> None:
-    """Serialize security changes against password rotation and MFA replay."""
+    """Check the current password under the security lock; verify a factor for MFA changes."""
     await throttle("reauth:" + str(staff.id), 8, 60)
     await db.execute(select(ShopStaff.id).where(ShopStaff.id == staff.id).with_for_update())
     await db.refresh(staff)
@@ -222,10 +223,11 @@ async def fresh_proof(
             raise security.SecurityRejected("session_expired", 401)
     if not await asyncio.to_thread(verify_password, payload.current_password, staff.password_hash):
         raise security.SecurityRejected("invalid_credentials", 401)
-    def verify(sync):
-        profile = security.profile_for(sync, staff.id)
-        security.verify_second_factor(sync, profile, payload.second_factor)
-    await db.run_sync(verify)
+    if require_factor:
+        def verify(sync):
+            profile = security.profile_for(sync, staff.id)
+            security.verify_second_factor(sync, profile, payload.second_factor)
+        await db.run_sync(verify)
 
 
 async def lock_account_session(db: AsyncSession, member: ShopStaff, request: Request) -> AdminSession:
@@ -263,9 +265,12 @@ async def require_account_proof(
     db: AsyncSession, member: ShopStaff, request: Request, action: str,
     payload: Proof | VerifiedProof,
 ) -> None:
-    """Validate wizard proof or the legacy password-and-factor contract."""
+    """Validate wizard proof or the legacy current-password contract."""
     if isinstance(payload, Proof):
-        await fresh_proof(db, member, payload, request=request)
+        await fresh_proof(
+            db, member, payload, request=request,
+            require_factor=action == "mfa-disable",
+        )
         return
     row = await lock_account_session(db, member, request)
     if not account_proof.valid(
@@ -495,7 +500,7 @@ async def mfa_setup(
         await require_account_proof(db, member, request, "mfa-setup", payload)
     elif payload.current_password:
         # Keep the previous explicit-proof contract during dashboard rollout.
-        await fresh_proof(db, member, payload, request=request)
+        await fresh_proof(db, member, payload, request=request, require_factor=True)
     else:
         await throttle("reauth:" + str(member.id), 8, 60)
         await db.execute(select(ShopStaff.id).where(

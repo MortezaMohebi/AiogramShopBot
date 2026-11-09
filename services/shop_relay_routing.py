@@ -109,6 +109,7 @@ async def build_bot_relay_session(bot_id: str) -> RelayPoolTelegramSession:
                 ShopBotRelayRoute.bot_id == bot_id,
                 ShopBotRelayRoute.status == "active",
                 ShopRelayWorker.status == "active",
+                ShopRelayWorker.archived_at.is_(None),
             )
             .order_by(
                 ShopBotRelayRoute.priority, ShopRelayWorker.id,

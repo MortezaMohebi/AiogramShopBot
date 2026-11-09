@@ -1,8 +1,7 @@
 """Signed Next.js administration API for many bot/Cloudflare Worker routes.
 
 Every mutation requires a revocable admin session, server-side permission
-and a recent reauthentication. Provider probing additionally requires fresh
-password/MFA; no route secret or Telegram token is ever returned.
+and recent password confirmation. Provider probes never return credentials.
 """
 
 from __future__ import annotations
@@ -46,11 +45,24 @@ class WorkerCreate(StrictPayload):
     max_inflight: int = Field(default=10, ge=1, le=50)
 
 
-class WorkerState(Proof):
-    """Require MFA for availability state changes."""
+class RelayRevision(Proof):
+    """Versioned action with explicit confirmation."""
 
     expected_version: int = Field(ge=1)
+
+
+class WorkerState(RelayRevision):
     state: Literal["active", "paused", "disabled"]
+
+
+class WorkerEdit(StrictPayload):
+    slug: str = Field(min_length=3, max_length=64)
+    name: str = Field(min_length=1, max_length=160)
+    origin: str | None = Field(default=None, min_length=8, max_length=300)
+    max_rps: int = Field(ge=1, le=20)
+    max_inflight: int = Field(ge=1, le=50)
+    expected_version: int = Field(ge=1)
+    current_password: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class RouteAssign(StrictPayload):
@@ -65,19 +77,13 @@ class SecretStage(StrictPayload):
     """Accept an external-provisioning key only once, never for GET."""
 
     secret: str = Field(min_length=32, max_length=256)
+    expected_version: int | None = Field(default=None, ge=1)
 
 
-class RouteApply(Proof):
-    """Require fresh MFA and optimistic versions before outbound getMe."""
+class RouteApply(RelayRevision):
+    """Require password proof and current revisions before outbound getMe."""
 
-    expected_version: int = Field(ge=1)
     credential_version: int = Field(ge=1)
-
-
-class RoutePause(Proof):
-    """Disable a route without dropping any delivery or replay receipt."""
-
-    expected_version: int = Field(ge=1)
 
 
 class SecretRevoke(Proof):
@@ -104,11 +110,39 @@ async def create_worker(
     )
 
 
+@router.get("/relay-workers/{worker_id}")
+async def read_worker(worker_id: UUID, staff: Actor, db: Db) -> dict:
+    require(staff, "bots.read")
+    return await pool.read_worker(db, str(worker_id))
+
+
+@router.patch("/relay-workers/{worker_id}")
+async def edit_worker(worker_id: UUID, payload: WorkerEdit, staff: Actor, db: Db) -> dict:
+    actor = require(staff, "bots.apply")
+    if payload.origin is not None:
+        if payload.current_password is None:
+            raise security.SecurityRejected("reauthentication_required", 403)
+        await fresh_proof(db, actor, Proof(current_password=payload.current_password))
+    return await pool.edit_worker(
+        db, worker_id=str(worker_id), actor_id=actor.id,
+        **payload.model_dump(exclude={"current_password"}),
+    )
+
+
+@router.post("/relay-workers/{worker_id}/remove")
+async def remove_worker(worker_id: UUID, payload: RelayRevision, staff: Actor, db: Db) -> dict:
+    actor = require(staff, "bots.apply")
+    await fresh_proof(db, actor, payload)
+    return await pool.remove_worker(
+        db, worker_id=str(worker_id), expected_version=payload.expected_version, actor_id=actor.id,
+    )
+
+
 @router.post("/relay-workers/{worker_id}/state")
 async def change_worker_state(
     worker_id: UUID, payload: WorkerState, staff: Actor, db: Db,
 ) -> dict:
-    """Pause or resume a worker only with a fresh second factor."""
+    """Pause or resume a worker with password confirmation."""
     actor = require(staff, "bots.apply")
     await fresh_proof(db, actor, payload)
     return await pool.update_worker_state(
@@ -169,7 +203,7 @@ async def stage_route_key(
     actor = require(staff, "bots.configure")
     return await pool.stage_credential(
         db, bot_id=str(bot_id), worker_id=str(worker_id),
-        secret=payload.secret, actor_id=actor.id,
+        secret=payload.secret, actor_id=actor.id, expected_version=payload.expected_version,
     )
 
 
@@ -178,7 +212,7 @@ async def activate_route(
     bot_id: UUID, worker_id: UUID, payload: RouteApply,
     staff: Actor, db: Db,
 ) -> dict:
-    """Prove read-only provider identity; promote a route with fresh MFA."""
+    """Prove read-only provider identity before promoting the route."""
     actor = require(staff, "bots.apply")
     await throttle("relay-apply:" + str(actor.id), 3, 60)
     await fresh_proof(db, actor, payload)
@@ -191,13 +225,25 @@ async def activate_route(
 
 @router.post("/bot-registry/{bot_id}/relay-routes/{worker_id}/pause")
 async def pause_route(
-    bot_id: UUID, worker_id: UUID, payload: RoutePause,
+    bot_id: UUID, worker_id: UUID, payload: RelayRevision,
     staff: Actor, db: Db,
 ) -> dict:
     """Stop selecting a route while retaining receipts and credentials."""
     actor = require(staff, "bots.apply")
     await fresh_proof(db, actor, payload)
     return await pool.pause_route(
+        db, bot_id=str(bot_id), worker_id=str(worker_id),
+        expected_version=payload.expected_version, actor_id=actor.id,
+    )
+
+
+@router.post("/bot-registry/{bot_id}/relay-routes/{worker_id}/remove")
+async def remove_route(
+    bot_id: UUID, worker_id: UUID, payload: RelayRevision, staff: Actor, db: Db,
+) -> dict:
+    actor = require(staff, "bots.apply")
+    await fresh_proof(db, actor, payload)
+    return await pool.remove_route(
         db, bot_id=str(bot_id), worker_id=str(worker_id),
         expected_version=payload.expected_version, actor_id=actor.id,
     )

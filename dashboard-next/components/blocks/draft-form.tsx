@@ -14,7 +14,7 @@ const errors: Record<SectionRpcError, string> = {
   session_expired: "نشست پایان یافته است. پس از ورود دوباره تلاش کنید.",
   permission_denied: "حساب شما مجوز ذخیرهٔ این تغییرات را ندارد.",
   store_switch_required: "فروشگاه مربوط به این فرم را انتخاب کنید.",
-  reauthentication_required: "هویت خود را دوباره تأیید کنید و ذخیره را بزنید.",
+  reauthentication_required: "برای ذخیرهٔ تغییرات، هویت خود را تأیید کنید.",
   conflict: "این رکورد تغییر کرده است. صفحه را دوباره باز کنید و تغییرات را بررسی کنید.",
   unavailable: "سرویس در دسترس نیست. کمی بعد دوباره تلاش کنید.",
   outcome_unknown: "ذخیره تأیید نشد. پیش از تلاش دوباره، وضعیت رکورد را بررسی کنید.",
@@ -157,7 +157,8 @@ export function DraftForm({
             setReceipt(null);
           }} />
         {error && <p role="alert" className="mt-1 text-sm text-destructive">{error}</p>}
-        {receipt && !receipt.ok && "code" in receipt && receipt.code === "reauthentication_required" && <ReauthenticateButton />}
+        {receipt && !receipt.ok && "code" in receipt && receipt.code === "reauthentication_required" &&
+          <ReauthenticateButton onVerified={async () => { await save(); }} />}
         {receipt && "requestId" in receipt && receipt.requestId && <details className="text-xs">
           <summary>اطلاعات پیگیری</summary><p dir="ltr">{receipt.requestId}</p>
         </details>}

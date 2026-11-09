@@ -3,127 +3,112 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, adminFetch } from "@/lib/bridge";
+import { needsRelayProof, relayError, relayId, relayInt, relayPassword } from "@/lib/relay-pool";
+import type { DraftReceipt } from "@/components/blocks/draft-form";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ERRORS = new Set([
-  "configuration_changed", "invalid_relay_priority",
-  "relay_priority_taken",
-  "relay_route_not_supported", "relay_route_must_pause",
-  "duplicate_relay_credential", "invalid_worker_secret",
-  "relay_pool_disabled", "relay_activation_not_ready",
-  "relay_probe_failed", "bot_identity_mismatch",
-  "transport_endpoint_not_approved", "invalid_credential_state",
-  "relay_worker_not_found", "invalid_operation_state",
-]);
-
-function id(form: FormData, key: string): string {
-  const value = String(form.get(key) ?? "");
-  if (!UUID.test(value)) redirect("/bots?error=validation");
-  return value;
+function ids(form: FormData) {
+  const bot = relayId(form.get("bot_id"));
+  const worker = relayId(form.get("worker_id"));
+  if (!bot || !worker) redirect("/bots?error=validation");
+  return { bot, worker, route: `/bots/${bot}/relay/${worker}`, api: `/bot-registry/${bot}/relay-routes/${worker}` };
 }
 
-function int(form: FormData, key: string): number {
-  const value = String(form.get(key) ?? "");
-  return /^[1-9][0-9]*$/.test(value) ? Number(value) : 0;
-}
-
-function fail(error: unknown, botId: string): never {
-  if (!(error instanceof ApiError)) throw error;
-  if (error.status === 401) redirect("/login?expired=1");
-  if (error.code === "reauthentication_required" || error.status === 428) redirect(`/bots/${botId}?relay_error=reauth`);
-  redirect(`/bots/${botId}?relay_error=${
-    error.code && ERRORS.has(error.code) ? error.code : "save"
-  }`);
-}
-
-function done(botId: string, action: string): never {
+function refresh(bot: string, route: string) {
   revalidatePath("/relay-workers");
-  revalidatePath(`/bots/${botId}`);
-  redirect(`/bots/${botId}?relay_saved=${action}`);
+  revalidatePath(`/bots/${bot}`);
+  revalidatePath(route);
 }
 
-function proof(form: FormData): { current_password: string; second_factor: string } {
-  const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
-  if (!current_password || current_password.length > 256 ||
-    !/^[0-9]{6}$/.test(second_factor)) {
-    redirect("/bots?error=validation");
-  }
-  return { current_password, second_factor };
+function fail(error: unknown, route: string): never {
+  if (error instanceof ApiError && error.status === 401 && error.code !== "invalid_credentials") redirect("/login?expired=1");
+  redirect(`${route}?error=${relayError(error)}`);
 }
 
-/** Stage a Many2many assignment without sending a provider request. */
-export async function assignRelayRoute(form: FormData): Promise<void> {
-  const botId = id(form, "bot_id");
-  const worker_id = id(form, "worker_id");
-  const priority = int(form, "priority");
-  const expected_version = int(form, "expected_version") || null;
-  if (priority < 1 || priority > 1000) redirect(`/bots/${botId}?relay_error=validation`);
+export async function assignRelayRoute(form: FormData) {
+  const { bot, worker, route } = ids(form);
+  const priority = relayInt(form.get("priority"), 1000);
+  if (!priority) redirect(`/bots/${bot}?relay_error=validation#bot-relays`);
   try {
-    await adminFetch(`/bot-registry/${botId}/relay-routes`, "POST", {
-      worker_id, priority, expected_version,
-    });
-  } catch (error) { fail(error, botId); }
-  done(botId, "assigned");
+    await adminFetch(`/bot-registry/${bot}/relay-routes`, "POST", { worker_id: worker, priority });
+  } catch (error) {
+    if (needsRelayProof(error)) return { reauthenticate: true } as const;
+    if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1");
+    redirect(`/bots/${bot}?relay_error=${relayError(error)}#bot-relays`);
+  }
+  refresh(bot, route);
+  redirect(`${route}?saved=assigned`);
 }
 
-/** Record an independent Worker secret; never expose it again in the UI. */
-export async function stageRelayCredential(form: FormData): Promise<void> {
-  const botId = id(form, "bot_id");
-  const workerId = id(form, "worker_id");
+export async function saveRelayPriority(form: FormData): Promise<DraftReceipt> {
+  const { bot, worker, route } = ids(form);
+  const priority = relayInt(form.get("priority"), 1000);
+  const expected_version = relayInt(form.get("expected_version"));
+  if (!priority || !expected_version) return { ok: false, code: "validation" };
+  try {
+    await adminFetch(`/bot-registry/${bot}/relay-routes`, "POST", { worker_id: worker, priority, expected_version });
+  } catch (error) {
+    if (needsRelayProof(error)) return { ok: false, code: "reauthentication_required" };
+    if (error instanceof ApiError && error.status === 401) return { ok: false, code: "session_expired" };
+    return { ok: false, message: relayError(error, true) };
+  }
+  refresh(bot, route);
+  return { ok: true, data: null };
+}
+
+export async function stageRelayCredential(form: FormData) {
+  const { bot, route, api } = ids(form);
   const secret = String(form.get("secret") ?? "");
-  if (secret.length < 32 || secret.length > 256) {
-    redirect(`/bots/${botId}?relay_error=validation`);
-  }
+  const expected_version = relayInt(form.get("expected_version"));
+  if (!expected_version) redirect(`${route}?error=validation`);
+  if (!/^[!-~]{32,256}$/.test(secret)) redirect(`${route}?error=invalid_worker_secret`);
   try {
-    await adminFetch(
-      `/bot-registry/${botId}/relay-routes/${workerId}/credentials/stage`,
-      "POST", { secret },
-    );
-  } catch (error) { fail(error, botId); }
-  done(botId, "staged");
+    await adminFetch(`${api}/credentials/stage`, "POST", { secret, expected_version });
+  } catch (error) {
+    if (needsRelayProof(error)) return { reauthenticate: true } as const;
+    fail(error, route);
+  }
+  refresh(bot, route);
+  redirect(`${route}?saved=staged`);
 }
 
-/** Probe the Worker without creating an invoice, message or webhook. */
+async function apply(form: FormData, operation: "activate" | "pause" | "remove" | "revoke"): Promise<void> {
+  const { bot, route, api } = ids(form);
+  const current_password = relayPassword(form.get("current_password"));
+  const expected_version = relayInt(form.get("expected_version"));
+  const credential_version = relayInt(form.get("credential_version"), 999_999_999);
+  if (!current_password || (operation === "revoke" ? !credential_version :
+    !expected_version || (operation === "activate" && !credential_version))) {
+    redirect(`${route}?error=validation`);
+  }
+  try {
+    if (operation === "remove") {
+      await adminFetch(`${api}/remove`, "POST", { expected_version, current_password });
+    } else if (operation === "revoke") {
+      await adminFetch(`${api}/credentials/revoke`, "POST", { version: credential_version, current_password });
+    } else {
+      await adminFetch(`${api}/${operation}`, "POST", {
+        expected_version, current_password, ...(operation === "activate" && { credential_version }),
+      }, operation === "activate" ? 45_000 : undefined);
+    }
+  } catch (error) {
+    fail(error, route);
+  }
+  refresh(bot, route);
+  redirect(operation === "remove" ? `/bots/${bot}?relay_saved=removed#bot-relays` : `${route}?saved=${operation}`);
+}
+
 export async function activateRelayRoute(form: FormData): Promise<void> {
-  const botId = id(form, "bot_id");
-  const workerId = id(form, "worker_id");
-  const expected_version = int(form, "expected_version");
-  const credential_version = int(form, "credential_version");
-  if (!expected_version || !credential_version) {
-    redirect(`/bots/${botId}?relay_error=validation`);
-  }
-  try {
-    await adminFetch(`/bot-registry/${botId}/relay-routes/${workerId}/activate`,
-      "POST", { expected_version, credential_version, ...proof(form) }, 45_000);
-  } catch (error) { fail(error, botId); }
-  done(botId, "activated");
+  await apply(form, "activate");
 }
 
-/** Stop new route selection without retrying prior ambiguous sends. */
 export async function pauseRelayRoute(form: FormData): Promise<void> {
-  const botId = id(form, "bot_id");
-  const workerId = id(form, "worker_id");
-  const expected_version = int(form, "expected_version");
-  if (!expected_version) redirect(`/bots/${botId}?relay_error=validation`);
-  try {
-    await adminFetch(`/bot-registry/${botId}/relay-routes/${workerId}/pause`,
-      "POST", { expected_version, ...proof(form) });
-  } catch (error) { fail(error, botId); }
-  done(botId, "paused");
+  await apply(form, "pause");
 }
 
-/** Revoke only inactive keys after removing them from the Worker secret JSON. */
+export async function removeRelayRoute(form: FormData): Promise<void> {
+  await apply(form, "remove");
+}
+
 export async function revokeRelayCredential(form: FormData): Promise<void> {
-  const botId = id(form, "bot_id");
-  const workerId = id(form, "worker_id");
-  const version = int(form, "version");
-  if (!version) redirect(`/bots/${botId}?relay_error=validation`);
-  try {
-    await adminFetch(
-      `/bot-registry/${botId}/relay-routes/${workerId}/credentials/revoke`,
-      "POST", { version, ...proof(form) },
-    );
-  } catch (error) { fail(error, botId); }
-  done(botId, "revoked");
+  await apply(form, "revoke");
 }

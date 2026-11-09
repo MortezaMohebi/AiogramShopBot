@@ -138,13 +138,13 @@ async def change_store_state(
 async def list_bots(
     staff: Staff, db: Db, store_id: UUID | None = None,
     platform: Literal["telegram", "bale"] | None = None,
-    page: int = 1, page_size: int = 50,
+    page: int = 1, page_size: int = 50, search: str = "",
 ) -> dict:
     """Return paginated redacted bots without an artificial 300-bot limit."""
     require(staff, "bots.read")
     return await db.run_sync(lambda sync: registry.registry_snapshot(
         sync, store_id=str(store_id) if store_id else None,
-        platform=platform, page=page, page_size=page_size,
+        platform=platform, page=page, page_size=page_size, search=search,
     ))
 
 

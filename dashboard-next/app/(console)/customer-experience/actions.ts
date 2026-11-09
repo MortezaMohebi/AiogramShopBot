@@ -24,15 +24,14 @@ function target(form: FormData): { scope: "store" | "bot"; id: string; url: stri
 }
 
 function proof(form: FormData, destination: string): {
-  current_password: string; second_factor: string;
+  current_password: string;
 } {
   const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
-  if (!current_password || current_password.length > 256 ||
-    !/^[0-9]{6}$/.test(second_factor)) {
+
+  if (!current_password || current_password.length > 256) {
     redirect(`${destination}?ux_error=validation`);
   }
-  return { current_password, second_factor };
+  return { current_password };
 }
 
 function failure(error: unknown, destination: string): never {

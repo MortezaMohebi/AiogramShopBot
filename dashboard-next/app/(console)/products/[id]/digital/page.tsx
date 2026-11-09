@@ -1,9 +1,9 @@
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import { DigitalFileUploader } from "@/components/blocks/digital-file-uploader";
@@ -90,7 +90,7 @@ export default async function DigitalProductPage({
         {snapshot.mode !== "file" ? <Card>
           <CardHeader><CardTitle>ثبت لایسنس‌های یک‌بارمصرف</CardTitle></CardHeader>
           <CardContent>
-            <form action={saveDigitalLicenses} className="space-y-3">
+            <PasswordActionForm action={saveDigitalLicenses} className="space-y-3">
               <input type="hidden" name="product_id" value={id} />
               <label className="block space-y-2 text-sm">
                 کدهای جدید (هر سطر یک کد، حداکثر ۱۰۰)
@@ -101,19 +101,8 @@ export default async function DigitalProductPage({
                 موجودی از کدهای استفاده‌نشده تعیین می‌شود؛
                 موجودی را از فرم عمومی محصول ویرایش نکنید.
               </p>
-              <label className="block space-y-1 text-sm">
-                رمز فعلی مدیر
-                <Input name="current_password" type="password"
-                  required autoComplete="current-password" />
-              </label>
-              <label className="block space-y-1 text-sm">
-                کد احراز هویت دومرحله‌ای
-                <Input name="second_factor" inputMode="numeric"
-                  pattern="[0-9]{6}" maxLength={6} required
-                  autoComplete="one-time-code" />
-              </label>
               <Button type="submit">افزودن لایسنس‌ها</Button>
-            </form>
+            </PasswordActionForm>
           </CardContent>
         </Card> : null}
       </div>

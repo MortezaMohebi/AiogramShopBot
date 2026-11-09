@@ -1,3 +1,4 @@
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import { BotPaymentTable } from "@/components/blocks/bot-payment-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,19 +15,6 @@ interface Props {
   paymentAccounts: BotPaymentList;
 }
 
-function MfaFields() {
-  return <div className="grid gap-3 sm:grid-cols-2">
-    <label className="block space-y-2 text-sm">رمز فعلی مدیر
-      <Input type="password" name="current_password" required
-        autoComplete="current-password" maxLength={256} />
-    </label>
-    <label className="block space-y-2 text-sm">کد MFA
-      <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
-        maxLength={6} autoComplete="one-time-code" required />
-    </label>
-  </div>;
-}
-
 /** Every new registered bot requires explicit merchant feature permission. */
 export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
   return <Card>
@@ -35,7 +23,7 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
       <p className="leading-7 text-muted-foreground">
         سبد خرید، اعتبار داخلی و حساب‌های پرداخت مجاز این ربات را تنظیم کنید.
       </p>
-      <form action={saveBotCommercePolicy} className="space-y-4 rounded-xl border p-4">
+      <PasswordActionForm action={saveBotCommercePolicy} className="space-y-4 rounded-xl border p-4">
         <p className="font-semibold">سبد خرید و اعتبار داخلی — نسخه {policy.version}</p>
         <input type="hidden" name="bot_id" value={bot.id} />
         <input type="hidden" name="expected_version" value={policy.version} />
@@ -63,11 +51,10 @@ export function BotCommercePanel({ bot, policy, paymentAccounts }: Props) {
               defaultValue={policy.credit_label ?? ""} placeholder="اعتبار فروشگاه" />
           </label>
         </div>
-        <MfaFields />
         <Button type="submit" variant="outline">ذخیرهٔ مجوزهای این ربات</Button>
-      </form>
+      </PasswordActionForm>
 
-      <BotPaymentTable botId={bot.id} accounts={paymentAccounts.items} proof={<MfaFields />} />
+      <BotPaymentTable botId={bot.id} accounts={paymentAccounts.items} />
     </CardContent>
   </Card>;
 }

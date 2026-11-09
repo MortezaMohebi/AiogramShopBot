@@ -19,7 +19,7 @@ from uuid import uuid4
 
 from aiogram.exceptions import TelegramNetworkError
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.shop_multibot import ShopBot, ShopStore, ShopBotCredential
@@ -89,6 +89,17 @@ def _event(
     ))
 
 
+async def _save_worker_change(
+    db: AsyncSession, worker: ShopRelayWorker, actor_id: int, action: str,
+) -> dict:
+    worker.version += 1
+    worker.updated_by = actor_id
+    worker.updated_at = datetime.now(timezone.utc)
+    _event(db, worker.id, None, actor_id, action)
+    await db.commit()
+    return _safe_worker(worker)
+
+
 def _origin(value: str) -> str:
     """Require an approved public relay origin from deployment policy."""
     try:
@@ -139,7 +150,8 @@ async def list_workers(
 ) -> dict:
     """List shared endpoints, optionally counting only one authorized Store."""
     rows = (await db.scalars(
-        select(ShopRelayWorker).order_by(ShopRelayWorker.name).limit(500)
+        select(ShopRelayWorker).where(ShopRelayWorker.archived_at.is_(None))
+        .order_by(ShopRelayWorker.name, ShopRelayWorker.id).limit(500)
     )).all()
     assignments = select(
         ShopBotRelayRoute.worker_id,
@@ -172,7 +184,7 @@ async def list_bot_routes(
         select(ShopBotRelayRoute, ShopRelayWorker)
         .join(
             ShopRelayWorker, ShopRelayWorker.id == ShopBotRelayRoute.worker_id,
-        ).where(ShopBotRelayRoute.bot_id == bot_id)
+        ).where(ShopBotRelayRoute.bot_id == bot_id, ShopRelayWorker.archived_at.is_(None))
         .order_by(ShopBotRelayRoute.priority).limit(100)
     )).all()
     items = []
@@ -198,11 +210,10 @@ async def list_bot_routes(
     return {"bot_id": bot_id, "items": items}
 
 
-async def create_worker(
-    db: AsyncSession, *, slug: str, name: str, origin: str,
-    max_rps: int, max_inflight: int, actor_id: int,
+def _worker_fields(
+    slug: str, name: str, origin: str, max_rps: int, max_inflight: int,
+    *, current_origin: str | None = None,
 ) -> dict:
-    """Create an inert worker record without contacting its HTTPS endpoint."""
     if (
         not isinstance(slug, str) or not _SLUG.fullmatch(slug)
         or not isinstance(name, str) or not 1 <= len(name.strip()) <= 160
@@ -210,22 +221,103 @@ async def create_worker(
         or type(max_inflight) is not int or not 1 <= max_inflight <= 50
     ):
         raise security.SecurityRejected("invalid_relay_worker", 422)
-    endpoint = _origin(origin)
-    existing = await db.scalar(select(ShopRelayWorker.id).where(
-        (ShopRelayWorker.slug == slug)
-        | (ShopRelayWorker.origin == endpoint),
-    ))
-    if existing:
-        raise security.SecurityRejected("relay_worker_exists", 409)
+    return dict(slug=slug, name=name.strip(), origin=origin if origin == current_origin else _origin(origin),
+                max_rps=max_rps, max_inflight=max_inflight)
+
+
+async def create_worker(
+    db: AsyncSession, *, slug: str, name: str, origin: str,
+    max_rps: int, max_inflight: int, actor_id: int,
+) -> dict:
+    """Register a new Worker or reopen an archived registry identity."""
+    fields = _worker_fields(slug, name, origin, max_rps, max_inflight)
+    matches = (await db.scalars(select(ShopRelayWorker).where(
+        (ShopRelayWorker.slug == slug) | (ShopRelayWorker.origin == fields["origin"]),
+    ).order_by(ShopRelayWorker.id).with_for_update())).all()
+    if matches:
+        worker = matches[0]
+        if len(matches) != 1 or worker.archived_at is None:
+            raise security.SecurityRejected("relay_worker_exists", 409)
+        for field, value in fields.items():
+            setattr(worker, field, value)
+        worker.archived_at = None
+        worker.status = "draft"
+        return await _save_worker_change(db, worker, actor_id, "restored")
     worker = ShopRelayWorker(
-        id=str(uuid4()), slug=slug, name=name.strip(), origin=endpoint,
-        max_rps=max_rps, max_inflight=max_inflight, status="draft",
-        updated_by=actor_id,
+        id=str(uuid4()), **fields, status="draft", updated_by=actor_id,
     )
     db.add(worker)
+    # The audit event references this Worker before both are committed.
+    await db.flush()
     _event(db, worker.id, None, actor_id, "created")
     await db.commit()
     return _safe_worker(worker)
+
+
+async def worker_record(db: AsyncSession, worker_id: str, *, lock: bool = False) -> ShopRelayWorker:
+    worker = await db.get(ShopRelayWorker, worker_id, with_for_update=lock, populate_existing=lock)
+    if worker is None or worker.archived_at is not None:
+        raise security.SecurityRejected("relay_worker_not_found", 404)
+    return worker
+
+
+async def read_worker(db: AsyncSession, worker_id: str) -> dict:
+    worker = await worker_record(db, worker_id)
+    count = await db.scalar(select(func.count()).select_from(ShopBotRelayRoute).where(
+        ShopBotRelayRoute.worker_id == worker.id,
+    ))
+    return {**_safe_worker(worker), "bot_count": int(count or 0)}
+
+
+async def _discard_keys(db: AsyncSession, worker_id: str, bot_id: str | None = None) -> None:
+    query = update(ShopRelayCredential).where(ShopRelayCredential.worker_id == worker_id)
+    if bot_id is not None:
+        query = query.where(ShopRelayCredential.bot_id == bot_id)
+    await db.execute(query.values(state="revoked", ciphertext=""))
+
+
+async def edit_worker(
+    db: AsyncSession, *, worker_id: str, expected_version: int, actor_id: int,
+    slug: str, name: str, max_rps: int, max_inflight: int, origin: str | None = None,
+) -> dict:
+    worker = await worker_record(db, worker_id, lock=True)
+    if worker.version != expected_version:
+        raise security.SecurityRejected("configuration_changed", 409)
+    fields = _worker_fields(
+        slug, name, worker.origin if origin is None else origin, max_rps, max_inflight,
+        current_origin=worker.origin,
+    )
+    if await db.scalar(select(ShopRelayWorker.id).where(
+        ShopRelayWorker.id != worker_id,
+        (ShopRelayWorker.slug == slug) | (ShopRelayWorker.origin == fields["origin"]),
+    ).limit(1)):
+        raise security.SecurityRejected("relay_worker_exists", 409)
+    origin_changed = worker.origin != fields["origin"]
+    if origin_changed:
+        # A credential provisioned at one origin must never be sent to another.
+        await _discard_keys(db, worker_id)
+        await db.execute(update(ShopBotRelayRoute).where(
+            ShopBotRelayRoute.worker_id == worker_id,
+        ).values(status="staged", version=ShopBotRelayRoute.version + 1, updated_by=actor_id))
+        worker.status = "draft"
+    for field, value in fields.items():
+        setattr(worker, field, value)
+    return await _save_worker_change(db, worker, actor_id, "origin_changed" if origin_changed else "updated")
+
+
+async def remove_worker(db: AsyncSession, *, worker_id: str, expected_version: int, actor_id: int) -> dict:
+    worker = await worker_record(db, worker_id, lock=True)
+    if worker.version != expected_version:
+        raise security.SecurityRejected("configuration_changed", 409)
+    await _discard_keys(db, worker_id)
+    await db.execute(delete(ShopBotRelayRoute).where(ShopBotRelayRoute.worker_id == worker_id))
+    worker.status = "disabled"
+    worker.archived_at = datetime.now(timezone.utc)
+    worker.version += 1
+    worker.updated_by = actor_id
+    _event(db, worker_id, None, actor_id, "removed")
+    await db.commit()
+    return {"ok": True}
 
 
 async def update_worker_state(
@@ -235,11 +327,7 @@ async def update_worker_state(
     """Pause/disable or resume an already verified worker without secret edits."""
     if state not in {"active", "paused", "disabled"}:
         raise security.SecurityRejected("invalid_relay_worker", 422)
-    worker = await db.scalar(select(ShopRelayWorker).where(
-        ShopRelayWorker.id == worker_id,
-    ).with_for_update())
-    if worker is None:
-        raise security.SecurityRejected("relay_worker_not_found", 404)
+    worker = await worker_record(db, worker_id, lock=True)
     if worker.version != expected_version:
         raise security.SecurityRejected("configuration_changed", 409)
     if state == "active":
@@ -252,11 +340,7 @@ async def update_worker_state(
     if worker.status == state:
         raise security.SecurityRejected("bot_state_unchanged", 409)
     worker.status = state
-    worker.version += 1
-    worker.updated_by = actor_id
-    _event(db, worker.id, None, actor_id, "state_changed")
-    await db.commit()
-    return _safe_worker(worker)
+    return await _save_worker_change(db, worker, actor_id, "state_changed")
 
 
 async def assign_route(
@@ -266,14 +350,14 @@ async def assign_route(
     """Attach a Worker to a bot without granting immediate transport access."""
     if type(priority) is not int or not 1 <= priority <= 1000:
         raise security.SecurityRejected("invalid_relay_priority", 422)
-    bot = await db.get(ShopBot, bot_id)
-    worker = await db.get(ShopRelayWorker, worker_id)
+    worker = await worker_record(db, worker_id, lock=True)
+    bot = await db.get(ShopBot, bot_id, with_for_update=True)
     store = await db.get(ShopStore, bot.store_id) if bot else None
     if (
         bot is None or bot.runtime_owner != "registry"
         or bot.platform != "telegram"
         or store is None or store.state != "active"
-        or worker is None or worker.status == "disabled"
+        or (worker.status == "disabled" and expected_version is None)
     ):
         raise security.SecurityRejected("relay_route_not_supported", 409)
     priority_owner = await db.scalar(select(ShopBotRelayRoute.worker_id).where(
@@ -290,21 +374,26 @@ async def assign_route(
     if row is None:
         if expected_version is not None:
             raise security.SecurityRejected("configuration_changed", 409)
+        # A reattached route must reject forms from its previous lifetime.
+        prior_events = await db.scalar(select(func.count()).select_from(ShopRelayEvent).where(
+            ShopRelayEvent.worker_id == worker_id,
+            or_(ShopRelayEvent.bot_id == bot_id, ShopRelayEvent.action == "origin_changed"),
+        ))
         row = ShopBotRelayRoute(
             bot_id=bot_id, worker_id=worker_id, priority=priority,
-            status="staged", updated_by=actor_id,
+            status="staged", version=int(prior_events or 0) + 1, updated_by=actor_id,
         )
         db.add(row)
         action = "assigned"
     else:
         if row.version != expected_version:
             raise security.SecurityRejected("configuration_changed", 409)
-        if row.status == "active":
-            raise security.SecurityRejected("relay_route_must_pause", 409)
         row.priority = priority
         row.version += 1
         row.updated_by = actor_id
         action = "priority_changed"
+    worker.version += 1
+    worker.updated_by = actor_id
     _event(db, worker_id, bot_id, actor_id, action)
     await db.commit()
     return _safe_route(row, worker, None)
@@ -312,9 +401,10 @@ async def assign_route(
 
 async def stage_credential(
     db: AsyncSession, *, bot_id: str, worker_id: str,
-    secret: str, actor_id: int,
+    secret: str, actor_id: int, expected_version: int | None = None,
 ) -> dict:
     """Stage a new per-bot credential while the previous active key still works."""
+    worker = await worker_record(db, worker_id, lock=True)
     route = await db.scalar(select(ShopBotRelayRoute).where(
         ShopBotRelayRoute.bot_id == bot_id,
         ShopBotRelayRoute.worker_id == worker_id,
@@ -327,6 +417,8 @@ async def stage_credential(
         or bot.provider_bot_id is None or bot.verified_at is None
     ):
         raise security.SecurityRejected("relay_route_not_supported", 409)
+    if expected_version is not None and route.version != expected_version:
+        raise security.SecurityRejected("configuration_changed", 409)
     if not isinstance(secret, str) or not _RELAY_KEY.fullmatch(secret):
         raise security.SecurityRejected("invalid_worker_secret", 422)
     key_fingerprint = hmac.new(
@@ -363,6 +455,10 @@ async def stage_credential(
         created_by=actor_id,
     )
     db.add(row)
+    route.version += 1
+    route.updated_by = actor_id
+    worker.version += 1
+    worker.updated_by = actor_id
     _event(db, worker_id, bot_id, actor_id, "credential_staged")
     await db.commit()
     return {
@@ -413,7 +509,7 @@ async def activate_route(
     ))
     store = await db.get(ShopStore, bot.store_id) if bot else None
     if (
-        worker is None or worker.status == "disabled"
+        worker is None or worker.archived_at is not None or worker.status == "disabled"
         or bot is None or bot.runtime_owner != "registry"
         or bot.platform != "telegram"
         or store is None or store.state != "active"
@@ -426,11 +522,11 @@ async def activate_route(
     ):
         raise security.SecurityRejected("relay_activation_not_ready", 409)
     origin = _origin(worker.origin)
+    worker_version = worker.version
     secret = decrypt_secret(credential)
     token = await _verified_bot_token(db, bot)
     expected_provider_id = bot.provider_bot_id
-    # Persist the verified admin MFA/replay receipt before remote I/O.
-    # Rollback here would allow reusing the same one-time proof.
+    # Release the security lock before the outbound probe.
     await db.commit()
     relay = CloudflareWorkerSession(
         worker_url=origin, relay_secret=secret, bot_id=bot_id,
@@ -451,19 +547,20 @@ async def activate_route(
         raise security.SecurityRejected("bot_identity_mismatch", 409)
 
     # Recheck every security-critical record after the network probe.
+    worker = await worker_record(db, worker_id, lock=True)
     route = await db.scalar(select(ShopBotRelayRoute).where(
         ShopBotRelayRoute.bot_id == bot_id,
         ShopBotRelayRoute.worker_id == worker_id,
-    ).with_for_update())
-    worker = await db.get(ShopRelayWorker, worker_id, with_for_update=True)
-    bot = await db.get(ShopBot, bot_id, with_for_update=True)
+    ).with_for_update().execution_options(populate_existing=True))
+    bot = await db.get(ShopBot, bot_id, with_for_update=True, populate_existing=True)
     credential = await db.scalar(select(ShopRelayCredential).where(
         ShopRelayCredential.bot_id == bot_id,
         ShopRelayCredential.worker_id == worker_id,
         ShopRelayCredential.version == credential_version,
-    ).with_for_update())
+    ).with_for_update().execution_options(populate_existing=True))
     if (
         worker is None or worker.status == "disabled"
+        or worker.version != worker_version
         or _origin(worker.origin) != origin
         or route is None or route.version != expected_version
         or bot is None or bot.provider_bot_id != identity.id
@@ -511,6 +608,7 @@ async def pause_route(
     expected_version: int, actor_id: int,
 ) -> dict:
     """Pause only future outbound route selection, not pending receipts."""
+    worker = await worker_record(db, worker_id, lock=True)
     route = await db.scalar(select(ShopBotRelayRoute).where(
         ShopBotRelayRoute.bot_id == bot_id,
         ShopBotRelayRoute.worker_id == worker_id,
@@ -522,9 +620,36 @@ async def pause_route(
     route.status = "paused"
     route.version += 1
     route.updated_by = actor_id
+    worker.version += 1
+    worker.updated_by = actor_id
     _event(db, worker_id, bot_id, actor_id, "route_paused")
     await db.commit()
     return {"ok": True, "version": route.version, "status": route.status}
+
+
+async def remove_route(
+    db: AsyncSession, *, bot_id: str, worker_id: str, expected_version: int, actor_id: int,
+) -> dict:
+    worker = await worker_record(db, worker_id, lock=True)
+    route = await db.get(
+        ShopBotRelayRoute, (bot_id, worker_id), with_for_update=True, populate_existing=True,
+    )
+    if route is None or route.version != expected_version:
+        raise security.SecurityRejected("configuration_changed", 409)
+    await _discard_keys(db, worker_id, bot_id)
+    await db.execute(delete(ShopBotRelayRoute).where(
+        ShopBotRelayRoute.bot_id == bot_id, ShopBotRelayRoute.worker_id == worker_id,
+    ))
+    remaining = await db.scalar(select(ShopBotRelayRoute.bot_id).where(
+        ShopBotRelayRoute.worker_id == worker_id, ShopBotRelayRoute.status == "active",
+    ).limit(1))
+    if worker.status == "active" and remaining is None:
+        worker.status = "draft"
+    worker.version += 1
+    worker.updated_by = actor_id
+    _event(db, worker_id, bot_id, actor_id, "route_removed")
+    await db.commit()
+    return {"ok": True}
 
 
 async def revoke_unused_credential(
@@ -532,6 +657,8 @@ async def revoke_unused_credential(
     version: int, actor_id: int,
 ) -> dict:
     """Revoke only unused/stale keys; Worker-side deprovisioning is manual."""
+    worker = await worker_record(db, worker_id, lock=True)
+    route = await db.get(ShopBotRelayRoute, (bot_id, worker_id), with_for_update=True)
     row = await db.scalar(select(ShopRelayCredential).where(
         ShopRelayCredential.bot_id == bot_id,
         ShopRelayCredential.worker_id == worker_id,
@@ -540,6 +667,11 @@ async def revoke_unused_credential(
     if row is None or row.state not in {"staged", "retiring"}:
         raise security.SecurityRejected("invalid_credential_state", 409)
     row.state = "revoked"
+    if route is not None:
+        route.version += 1
+        route.updated_by = actor_id
+    worker.version += 1
+    worker.updated_by = actor_id
     _event(db, worker_id, bot_id, actor_id, "credential_revoked")
     await db.commit()
     return {"ok": True, "state": "revoked"}

@@ -14,7 +14,7 @@ function errorCode(error: unknown): string {
 }
 
 /** Register a draft bot with no active Webhook, Telegram or Bale receiver. */
-export async function createBot(form: FormData): Promise<void> {
+export async function createBot(form: FormData) {
   const store_id = String(form.get("store_id") ?? "");
   const platform = String(form.get("platform") ?? "");
   const slug = String(form.get("slug") ?? "").trim();
@@ -24,7 +24,7 @@ export async function createBot(form: FormData): Promise<void> {
     !["telegram", "bale"].includes(platform) ||
     (slug && !safe.test(slug)) || !name || name.length > 160
   ) {
-    redirect("/bots?error=validation");
+    redirect("/bots/new?error=validation");
   }
   let result: { ok: boolean; bot: { id: string } };
   try {
@@ -32,7 +32,9 @@ export async function createBot(form: FormData): Promise<void> {
       store_id, platform, name, ...(slug ? { slug } : {}),
     });
   } catch (error) {
-    redirect(`/bots?error=${errorCode(error)}`);
+    const code = errorCode(error);
+    if (code === "reauth") return { reauthenticate: true } as const;
+    redirect(`/bots/new?error=${code}`);
   }
   revalidatePath("/bots");
   redirect(`/bots/${result.bot.id}?saved=created`);

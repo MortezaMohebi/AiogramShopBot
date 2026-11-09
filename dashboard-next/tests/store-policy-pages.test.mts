@@ -55,6 +55,7 @@ function fixture(page: "stores" | "payment-accounts", {
     "@/components/blocks/customer-experience-policy-panel": { CustomerExperiencePolicyPanel: ({ id }: { id: string }) => createElement("span", null, id) },
     "@/components/blocks/store-create-wizard": { StoreCreateWizard: Box },
     "@/components/blocks/store-state-control": { StoreStateControl: Box },
+    "@/components/blocks/password-action-form": { PasswordActionForm: Box },
     "@/lib/bridge": { adminFetch: read, currentStaff: async () => ({ role }) },
     "./actions": { createPaymentAccount: noop, setPaymentAccountState: noop },
     "./commerce-actions": { saveStoreCommercePolicy: noop },

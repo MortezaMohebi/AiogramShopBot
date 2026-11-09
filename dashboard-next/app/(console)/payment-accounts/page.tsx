@@ -1,3 +1,4 @@
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { CreditCard, KeyRound } from "lucide-react";
@@ -25,19 +26,6 @@ const PROVIDERS: {
   { platform: "telegram", rail: "telegram_fiat", label: "پرداخت ریالی کالای فیزیکی در تلگرام", requiresToken: true },
   { platform: "telegram", rail: "telegram_stars", label: "Telegram Stars (XTR)", requiresToken: false },
 ];
-
-function ProofFields() {
-  return <div className="grid gap-3 sm:grid-cols-2">
-    <label className="block space-y-2 text-sm">رمز فعلی مدیر
-      <Input name="current_password" type="password" autoComplete="current-password"
-        maxLength={256} required />
-    </label>
-    <label className="block space-y-2 text-sm">کد شش‌رقمی احراز هویت دومرحله‌ای
-      <Input name="second_factor" inputMode="numeric" pattern="[0-9]{6}"
-        maxLength={6} autoComplete="one-time-code" required />
-    </label>
-  </div>;
-}
 
 /** No Provider Token reaches a client once it has been staged securely. */
 export default async function PaymentAccountsPage({
@@ -83,7 +71,7 @@ export default async function PaymentAccountsPage({
       تغییر حساب ذخیره شد؛ هیچ پرداخت یا فعال‌سازی خودکار باتی انجام نمی‌شود.
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      {query.error === "reauth" ? "رمز فعلی و کد احراز هویت دومرحله‌ای را وارد کنید." :
+      {query.error === "reauth" ? "رمز فعلی را در پنجرهٔ تأیید وارد کنید." :
         query.error === "telegram_fiat_unavailable" ? "پرداخت ریالی تلگرام در این نصب آماده نیست." :
         "حساب پرداخت ذخیره نشد. ارائه‌دهنده، توکن و وضعیت فعلی حساب را بررسی کنید."}
     </p> : null}
@@ -113,7 +101,7 @@ export default async function PaymentAccountsPage({
             <summary className="w-fit cursor-pointer rounded-md px-1 text-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring">
               مدیریت حساب
             </summary>
-            <form action={setPaymentAccountState} className="mt-3 space-y-3 border-t pt-3">
+            <PasswordActionForm action={setPaymentAccountState} className="mt-3 space-y-3 border-t pt-3">
             <input type="hidden" name="account_id" value={account.id} />
             <input type="hidden" name="expected_version" value={account.version} />
             <label className="block space-y-2 text-sm">وضعیت هدف
@@ -123,16 +111,8 @@ export default async function PaymentAccountsPage({
                 <option value="disabled">غیرفعال</option>
               </select>
             </label>
-            <label className="block space-y-2 text-sm">رمز فعلی
-              <Input name="current_password" type="password"
-                autoComplete="current-password" required />
-            </label>
-            <label className="block space-y-2 text-sm">کد احراز هویت دومرحله‌ای
-              <Input name="second_factor" inputMode="numeric" pattern="[0-9]{6}"
-                maxLength={6} autoComplete="one-time-code" required />
-            </label>
             <Button type="submit" variant="outline">تغییر وضعیت</Button>
-            </form>
+            </PasswordActionForm>
           </details>
         </div>)}
         </div>
@@ -152,7 +132,7 @@ export default async function PaymentAccountsPage({
           <summary className="cursor-pointer rounded-md px-1 text-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring">
             {provider.label}
           </summary>
-          <form action={createPaymentAccount} className="mt-3 space-y-4 border-t pt-3">
+          <PasswordActionForm action={createPaymentAccount} className="mt-3 space-y-4 border-t pt-3">
           {provider.rail === "telegram_fiat" ?
             <p className="text-sm text-muted-foreground">
               این روش برای کالای فیزیکی است. درگاه متصل از طریق BotFather باید پرداخت به ریال ایران را پشتیبانی کند.
@@ -168,9 +148,8 @@ export default async function PaymentAccountsPage({
             <Input name="token" type="password" minLength={20}
               maxLength={512} autoComplete="new-password" required dir="ltr" />
           </label> : null}
-          <ProofFields />
           <Button type="submit" variant="outline">ایجاد حساب پیش‌نویس</Button>
-          </form>
+          </PasswordActionForm>
         </details>)}
         </div>
       </CardContent>

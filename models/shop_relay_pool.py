@@ -36,6 +36,7 @@ class ShopRelayWorker(Base):
     max_inflight: Mapped[int] = mapped_column(
         Integer, nullable=False, default=10, server_default="10",
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1",
     )

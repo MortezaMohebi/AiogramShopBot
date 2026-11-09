@@ -27,7 +27,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Par
     <div>
       <PageHeading title="تنظیمات فروشگاه" />
       {params.saved ? <p role="status" className="mb-4 rounded-lg bg-accent p-3 text-sm text-accent-foreground">تنظیمات ذخیره شد.</p> : null}
-      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ذخیره تنظیمات انجام نشد؛ ابتدا MFA و تأیید مجدد هویت، سپس دسترسی و داده‌ها را بررسی کنید.</p> : null}
+      {params.error ? <p role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">ذخیره تنظیمات انجام نشد؛ دسترسی و مقادیر فرم را بررسی کنید.</p> : null}
       <Card className="max-w-4xl">
         <CardHeader><CardTitle>متن‌های تلگرام و بله</CardTitle></CardHeader>
         <CardContent>

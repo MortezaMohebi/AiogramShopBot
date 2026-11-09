@@ -1,9 +1,9 @@
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { StoreContextSnapshot } from "@/lib/store-context";
 import type { StoreCommercePolicy } from "@/lib/store-commerce";
@@ -39,7 +39,7 @@ export default async function StoresPage({
   ));
   const note = query.error === "identity_credit_requires_reconciliation"
     ? "برای فعال‌سازی اعتبار مشترک، ابتدا ماندهٔ تمام حساب‌های قبلی باید با اسناد مالی و رضایت مشتری تطبیق داده شود."
-    : query.error === "reauth" ? "تأیید مجدد رمز و MFA لازم است."
+    : query.error === "reauth" ? "رمز فعلی را در پنجرهٔ تأیید وارد کنید."
     : query.error ? "ثبت سیاست انجام نشد؛ نسخه یا مجوزها را بررسی کنید."
     : "";
 
@@ -76,7 +76,7 @@ export default async function StoresPage({
       تنظیمات منو و خرید فروشگاه ذخیره شد.
     </p> : null}
     {query.ux_error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      تنظیمات خرید ذخیره نشد؛ فروشگاه جاری، مجوزها، شرایط فروش و MFA را بررسی کنید.
+      تنظیمات خرید ذخیره نشد؛ فروشگاه جاری، مجوزها و شرایط فروش را بررسی کنید.
     </p> : null}
     <p className="text-sm leading-7 text-muted-foreground">
       اشتراک سبد خرید تنها برای هویت‌های متصل و تأییدشده عمل می‌کند. در حالت اشتراک،
@@ -94,7 +94,7 @@ export default async function StoresPage({
               <p className="text-xs text-muted-foreground">
                 <bdi>{store.slug}</bdi> · {storeStates[store.state]} · نسخهٔ سیاست {policy.version}
               </p>
-              <form action={saveStoreCommercePolicy} className="space-y-4">
+              <PasswordActionForm action={saveStoreCommercePolicy} className="space-y-4">
                 <input type="hidden" name="store_id" value={store.id} />
                 <input type="hidden" name="expected_version" value={policy.version} />
                 <label className="block space-y-2 text-sm">مالکیت سبد خرید
@@ -112,17 +112,9 @@ export default async function StoresPage({
                   </select>
                 </label>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block space-y-2 text-sm">رمز فعلی مدیر
-                    <Input name="current_password" type="password" required
-                      autoComplete="current-password" />
-                  </label>
-                  <label className="block space-y-2 text-sm">کد MFA
-                    <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
-                      maxLength={6} autoComplete="one-time-code" required />
-                  </label>
                 </div>
                 <Button type="submit" variant="outline">ذخیره تنظیمات اشتراک</Button>
-              </form>
+              </PasswordActionForm>
             </CardContent>
           </Card>;
         })}

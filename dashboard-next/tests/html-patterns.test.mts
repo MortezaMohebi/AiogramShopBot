@@ -12,12 +12,13 @@ function files(directory: string): string[] {
 }
 
 test("every literal HTML pattern compiles with the browser's v flag", () => {
-  let count = 0;
+  const checked = new Set<string>();
   for (const file of [...files("app"), ...files("components")]) {
     for (const match of readFileSync(file, "utf8").matchAll(/\bpattern="([^"]+)"/g)) {
       assert.doesNotThrow(() => new RegExp(`^(?:${match[1]})$`, "v"), file);
-      count++;
+      checked.add(file);
     }
   }
-  assert.ok(count > 10, "The scan must cover real application forms");
+  assert.ok(checked.has(join("app", "(console)", "bots", "new", "page.tsx")));
+  assert.ok(checked.has(join("components", "blocks", "relay-worker-fields.tsx")));
 });

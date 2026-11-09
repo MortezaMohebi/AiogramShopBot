@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { setBotPaymentAccess } from "@/app/(console)/bots/[id]/commerce-actions";
 import { Button } from "@/components/ui/button";
@@ -11,8 +13,8 @@ import type { BotPaymentAccount } from "@/lib/store-commerce";
 
 const stateLabels = { draft: "پیش‌نویس", active: "فعال", disabled: "غیرفعال" };
 
-export function BotPaymentTable({ botId, accounts, proof }: {
-  botId: string; accounts: BotPaymentAccount[]; proof: ReactNode;
+export function BotPaymentTable({ botId, accounts }: {
+  botId: string; accounts: BotPaymentAccount[];
 }) {
   const [editing, setEditing] = useState<string>();
   const account = accounts.find((item) => item.id === editing);
@@ -47,7 +49,7 @@ export function BotPaymentTable({ botId, accounts, proof }: {
         </tr>)}</tbody>
       </table>
     </div> : <p className="text-muted-foreground">هنوز حساب پرداختی برای این ربات مجاز نشده است.</p>}
-    {account && <form key={account.id + String(adding)} action={setBotPaymentAccess} className="space-y-3 rounded-md border p-3">
+    {account && <PasswordActionForm key={account.id + String(adding)} action={setBotPaymentAccess} className="space-y-3 rounded-md border p-3">
       <p className="font-medium">دسترسی حساب <bdi>{account.name}</bdi></p>
       <input type="hidden" name="bot_id" value={botId} />
       <input type="hidden" name="account_id" value={account.id} />
@@ -62,11 +64,10 @@ export function BotPaymentTable({ botId, accounts, proof }: {
         <label className="block">اولویت<Input name="priority" type="number" min={1} max={1000} defaultValue={account.priority} required /></label>
       </div>
       {account.state !== "active" && <p className="text-xs text-muted-foreground">برای اعطای دسترسی، حساب پرداخت باید فعال باشد.</p>}
-      {proof}
       <div className="flex gap-2">
         <Button type="submit" size="sm">ذخیرهٔ دسترسی حساب</Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(undefined)}>انصراف</Button>
       </div>
-    </form>}
+    </PasswordActionForm>}
   </div>;
 }

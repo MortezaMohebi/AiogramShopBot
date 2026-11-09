@@ -25,18 +25,17 @@ export async function saveStoreCommercePolicy(form: FormData): Promise<void> {
   const cart_scope = String(form.get("cart_scope") ?? "");
   const credit_scope = String(form.get("credit_scope") ?? "");
   const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "");
+
   if (!UUID.test(storeId) || !Number.isSafeInteger(version) || version < 0 ||
       !["bot", "customer"].includes(cart_scope) ||
       !["identity", "customer"].includes(credit_scope) ||
-      !current_password || current_password.length > 256 ||
-      !/^[0-9]{6}$/.test(second_factor)) {
+      !current_password || current_password.length > 256) {
     redirect("/stores?error=validation");
   }
   try {
     await adminFetch(`/stores/${storeId}/commerce`, "POST", {
       expected_version: version, cart_scope, credit_scope,
-      current_password, second_factor,
+      current_password,
     });
   } catch (error) { safeFailure(error); }
   revalidatePath("/stores");

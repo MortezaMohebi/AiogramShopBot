@@ -3,67 +3,91 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, adminFetch } from "@/lib/bridge";
+import { relayError, relayId, relayInt, relayPassword, needsRelayProof } from "@/lib/relay-pool";
+import type { DraftReceipt } from "@/components/blocks/draft-form";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SLUG = /^[a-z][a-z0-9-]{2,63}$/;
-
-function positiveInt(value: FormDataEntryValue | null): number {
-  const text = String(value ?? "");
-  return /^[1-9][0-9]*$/.test(text) ? Number(text) : 0;
-}
-
-/** Show only approved error identifiers; never a provider error body. */
-function fail(error: unknown): never {
-  if (!(error instanceof ApiError)) throw error;
-  if (error.status === 401) redirect("/login?expired=1");
-  if (error.code === "reauthentication_required" || error.status === 428) redirect("/relay-workers?error=reauth");
-  const known = new Set([
-    "invalid_relay_worker", "relay_worker_exists", "configuration_changed",
-    "transport_endpoint_not_approved", "relay_worker_not_verified",
-    "relay_worker_not_found", "bot_state_unchanged", "invalid_credentials",
-    "invalid_verification", "relay_pool_disabled",
-  ]);
-  redirect(`/relay-workers?error=${error.code && known.has(error.code) ? error.code : "save"}`);
-}
-
-/** Create an inert Worker only from a deployment-allowlisted HTTPS origin. */
-export async function createRelayWorker(form: FormData): Promise<void> {
+function fields(form: FormData) {
   const slug = String(form.get("slug") ?? "").trim();
   const name = String(form.get("name") ?? "").trim();
-  const origin = String(form.get("origin") ?? "").trim();
-  const max_rps = positiveInt(form.get("max_rps"));
-  const max_inflight = positiveInt(form.get("max_inflight"));
-  if (!SLUG.test(slug) || name.length < 1 || name.length > 160 ||
-    origin.length < 8 || origin.length > 300 ||
-    max_rps < 1 || max_rps > 20 || max_inflight < 1 || max_inflight > 50) {
-    redirect("/relay-workers?error=validation");
-  }
-  try {
-    await adminFetch("/relay-workers", "POST", {
-      slug, name, origin, max_rps, max_inflight,
-    });
-  } catch (error) { fail(error); }
-  revalidatePath("/relay-workers");
-  redirect("/relay-workers?saved=created");
+  const max_rps = relayInt(form.get("max_rps"), 20);
+  const max_inflight = relayInt(form.get("max_inflight"), 50);
+  if (!/^[a-z][a-z0-9-]{2,63}$/.test(slug) || !name || name.length > 160 || !max_rps || !max_inflight) return null;
+  return { slug, name, max_rps, max_inflight };
 }
 
-/** Pause or resume a verified Worker with fresh MFA and optimistic locking. */
-export async function setRelayWorkerState(form: FormData): Promise<void> {
-  const id = String(form.get("worker_id") ?? "");
-  const state = String(form.get("state") ?? "");
-  const expected_version = positiveInt(form.get("expected_version"));
-  const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
-  if (!UUID.test(id) || !["active", "paused", "disabled"].includes(state) ||
-    !expected_version || !current_password || current_password.length > 256 ||
-    !/^[0-9]{6}$/.test(second_factor)) {
-    redirect("/relay-workers?error=validation");
-  }
+export async function createRelayWorker(form: FormData) {
+  const data = fields(form);
+  const origin = String(form.get("origin") ?? "").trim();
+  if (!data || origin.length < 8 || origin.length > 300) redirect("/relay-workers/new?error=validation");
+  let worker: { id: string };
   try {
-    await adminFetch(`/relay-workers/${id}/state`, "POST", {
-      expected_version, state, current_password, second_factor,
-    });
-  } catch (error) { fail(error); }
+    worker = await adminFetch("/relay-workers", "POST", { ...data, origin });
+  } catch (error) {
+    if (needsRelayProof(error)) return { reauthenticate: true } as const;
+    if (error instanceof ApiError && error.status === 401) redirect("/login?expired=1");
+    redirect(`/relay-workers/new?error=${relayError(error)}`);
+  }
   revalidatePath("/relay-workers");
-  redirect("/relay-workers?saved=state");
+  redirect(`/relay-workers/${worker.id}?saved=created`);
+}
+
+export async function saveRelayWorker(form: FormData): Promise<DraftReceipt> {
+  const id = relayId(form.get("worker_id"));
+  const expected_version = relayInt(form.get("expected_version"));
+  const data = fields(form);
+  if (!id || !expected_version || !data) return { ok: false, code: "validation" };
+  try {
+    await adminFetch(`/relay-workers/${id}`, "PATCH", { ...data, expected_version });
+  } catch (error) {
+    if (needsRelayProof(error)) return { ok: false, code: "reauthentication_required" };
+    if (error instanceof ApiError && error.code === "configuration_changed") return { ok: false, code: "conflict" };
+    if (error instanceof ApiError && error.status === 401) return { ok: false, code: "session_expired" };
+    return { ok: false, message: relayError(error, true) };
+  }
+  revalidatePath("/relay-workers");
+  revalidatePath(`/relay-workers/${id}`);
+  return { ok: true, data: null };
+}
+
+async function apply(form: FormData, operation: "state" | "origin" | "remove"): Promise<void> {
+  const id = relayId(form.get("worker_id"));
+  if (!id) redirect("/relay-workers");
+  const path = `/relay-workers/${id}`;
+  const expected_version = relayInt(form.get("expected_version"));
+  const current_password = relayPassword(form.get("current_password"));
+  if (!expected_version || !current_password) redirect(`${path}?error=validation`);
+  const proof = { expected_version, current_password };
+  try {
+    if (operation === "state") {
+      const state = String(form.get("state") ?? "");
+      if (!["active", "paused", "disabled"].includes(state)) redirect(`${path}?error=validation`);
+      await adminFetch(`${path}/state`, "POST", { ...proof, state });
+    } else if (operation === "origin") {
+      const data = fields(form);
+      const origin = String(form.get("origin") ?? "").trim();
+      if (!data || origin.length < 8 || origin.length > 300) redirect(`${path}?error=validation`);
+      await adminFetch(path, "PATCH", { ...proof, ...data, origin });
+    } else {
+      await adminFetch(`${path}/remove`, "POST", proof);
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+    if (error.status === 401 && error.code !== "invalid_credentials") redirect("/login?expired=1");
+    redirect(`${path}?error=${relayError(error)}`);
+  }
+  revalidatePath("/relay-workers");
+  revalidatePath("/bots/[id]", "page");
+  redirect(operation === "remove" ? "/relay-workers?saved=removed" : `${path}?saved=${operation}`);
+}
+
+export async function setRelayWorkerState(form: FormData): Promise<void> {
+  await apply(form, "state");
+}
+
+export async function changeRelayOrigin(form: FormData): Promise<void> {
+  await apply(form, "origin");
+}
+
+export async function removeRelayWorker(form: FormData): Promise<void> {
+  await apply(form, "remove");
 }

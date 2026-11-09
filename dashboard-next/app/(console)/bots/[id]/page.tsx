@@ -2,13 +2,14 @@ import { DraftForm } from "@/components/blocks/draft-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { KeyRound, ShieldAlert, ShieldCheck, Settings2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import type { ReactNode } from "react";
 import { ConsumeBotResult } from "./consume-bot-result";
 import { VerifyBotSubmitButton } from "./verify-bot-submit-button";
-import { ReauthenticateButton } from "@/components/blocks/reauthentication";
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { BotCatalogAccessPanel } from "@/components/blocks/bot-catalog-access-panel";
-import { BotConfigVersionField, BotConfigVersionProvider, BotConfigVersionValue } from "@/components/blocks/bot-config-version";
+import { BotConfigVersionField, BotConfigVersionProvider } from "@/components/blocks/bot-config-version";
 import { BotReceiverPanel } from "@/components/blocks/bot-receiver-panel";
 import { BotChangeHistory } from "@/components/blocks/bot-change-history";
 import { BotCommercePanel } from "@/components/blocks/bot-commerce-panel";
@@ -96,19 +97,20 @@ export default async function BotDetailPage({
     },
   });
   const aclSearch = catalogListParams(aclQuery);
+  const detail = await adminFetch<BotRegistryDetail>(`/bot-registry/${id}`);
+  const telegram = detail.bot.platform === "telegram";
   const [
-    detail, members, acl, aclAudit, receiver, workers, routes,
+    members, acl, aclAudit, receiver, workers, routes,
     commercePolicy, paymentAccounts, customerMenu, checkoutPolicy,
   ] = await Promise.all([
-    adminFetch<BotRegistryDetail>(`/bot-registry/${id}`),
     adminFetch<{ id: number; username: string; is_active: boolean }[]>("/staff"),
     adminFetch<BotCatalogRuleList>(`/bot-catalog/bots/${id}?${aclSearch}`),
     adminFetch<{ items: CatalogAuditRow[] }>(
       `/bot-catalog/bots/${id}/audit?page=1`,
     ),
     adminFetch<BotReceiverSnapshot>(`/bot-registry/${id}/receiver`),
-    adminFetch<RelayWorkersSnapshot>(`/bot-registry/${id}/relay-workers`),
-    adminFetch<BotRelaySnapshot>(`/bot-registry/${id}/relay-routes`),
+    telegram ? adminFetch<RelayWorkersSnapshot>(`/bot-registry/${id}/relay-workers`) : null,
+    telegram ? adminFetch<BotRelaySnapshot>(`/bot-registry/${id}/relay-routes`) : null,
     adminFetch<BotCommercePolicy>(`/bot-registry/${id}/commerce`),
     adminFetch<BotPaymentList>(`/bot-registry/${id}/payment-accounts`),
     adminFetch<CustomerMenuPolicy>(`/bot-registry/${id}/customer-menu`),
@@ -116,19 +118,19 @@ export default async function BotDetailPage({
   ]);
   const { bot, health, events, state_events } = detail;
   const pending = bot.credentials.find(item => item.state === "staged");
-  const active = bot.operations.desired_state === "active";
   const receiverActive = receiver.configured && receiver.state === "active";
   const mayChangeState = receiverActive && health.runtime_ready;
   return <BotConfigVersionProvider key={bot.id} initialVersion={bot.version}>
   <div className="space-y-6">
     <Suspense fallback={null}><ConsumeBotResult /></Suspense>
-    <div className="flex flex-wrap gap-2">
-      <Button asChild variant="outline" size="sm"><Link href="/bots">بازگشت به ربات‌ها</Link></Button>
-      <ReauthenticateButton />
+    <PageHeading title={bot.name} action={<Button asChild variant="outline" size="sm"><Link href="/bots">بازگشت به فهرست</Link></Button>} />
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <Badge tone="neutral">{botPlatformLabel(bot.platform)}</Badge>
+      <Badge tone={receiverActive && bot.operations.desired_state === "active" ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge>
+      {bot.provider_username && <bdi dir="ltr">@{bot.provider_username}</bdi>}
+      <span className="text-muted-foreground">{receiverActive ? "دریافت پیام فعال" : "دریافت پیام آماده نیست"}</span>
+      {bot.platform === "telegram" && <Link href="#bot-relays" className="text-primary underline">مسیرهای Relay</Link>}
     </div>
-    <PageHeading title={bot.name} description={
-      <>{`شناسهٔ داخلی: ${bot.slug} · ${botPlatformLabel(bot.platform)} · نسخهٔ تنظیمات `}<BotConfigVersionValue /></>
-    } />
     {query.saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">
       {query.saved === "verified" ? "هویت ربات با getMe تأیید شد. مرحلهٔ بعد تنظیم و فعال‌سازی دریافت پیام است." :
         query.saved === "staged" ? "Token برای بررسی ثبت شد؛ ربات همچنان غیرفعال است." :
@@ -140,31 +142,8 @@ export default async function BotDetailPage({
     </p> : null}
     {query.error ? <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{errors[query.error] ?? errors.save}</p> : null}
 
-    <div className="grid gap-3 sm:grid-cols-3">
-      <Card><CardContent className="space-y-2 pt-5">
-        <p className="text-xs text-muted-foreground">وضعیت جاری</p>
-        <Badge tone={active && receiverActive ? "success" : "neutral"}>{botRuntimeLabel(bot)}</Badge>
-        <p className="text-xs leading-6 text-muted-foreground">
-          {receiverActive ? "دریافت پیام این ربات فعال است." :
-            "دریافت پیام این ربات فعال نیست و فروش آن متوقف است."}
-        </p>
-      </CardContent></Card>
-      <Card><CardContent className="space-y-2 pt-5">
-        <p className="text-xs text-muted-foreground">شناسهٔ تأییدشده در پیام‌رسان</p>
-        <p dir="ltr" className="break-all font-semibold">{bot.provider_bot_id ?? "هنوز بررسی نشده"}</p>
-        <p dir="ltr" className="text-xs text-muted-foreground">{bot.provider_username ? `@${bot.provider_username}` : "—"}</p>
-        <p className="text-xs text-muted-foreground">{date(bot.verified_at)}</p>
-      </CardContent></Card>
-      <Card><CardContent className="space-y-2 pt-5">
-        <p className="text-xs text-muted-foreground">دریافت پیام</p>
-        <p className="font-semibold">{receiverActive ? `فعال — ${receiver.mode === "polling" ? "Polling" : "Webhook"}`
-          : receiver.configured ? ({ staged: "ثبت اولیه", applying: "در حال اعمال تغییر", active: "فعال", paused: "متوقف", disabled: "غیرفعال", needs_review: "نتیجه نامشخص؛ نیازمند بررسی" } as const)[receiver.state] : "هنوز راه‌اندازی نشده"}</p>
-        <p className="text-xs text-muted-foreground">آخرین Update مشاهده‌شده: {date(health.received_last_at)}</p>
-      </CardContent></Card>
-    </div>
-
     <div className="grid gap-5 xl:grid-cols-2">
-      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings2 className="size-5" /> مشخصات و پیام‌ها</CardTitle></CardHeader>
+      <Card><CardHeader><CardTitle>مشخصات و پیام‌ها</CardTitle></CardHeader>
         <CardContent>
           <DraftForm saveAction={saveBotDetails} className="space-y-4">
             <input type="hidden" name="id" value={bot.id} />
@@ -181,11 +160,11 @@ export default async function BotDetailPage({
                     <option key={item.id} value={item.id}>{item.username}</option>)}
                 </select>
               </label>
-              <label className="block space-y-2 text-sm">محیط اجرایی (برچسب)
+              <label className="block space-y-2 text-sm">محیط
                 <select name="environment" defaultValue={bot.operations.environment}
                   className="h-10 w-full rounded-md border bg-background px-3">
-                  <option value="staging">Staging</option>
-                  <option value="production">Production</option>
+                  <option value="staging">آزمایشی</option>
+                  <option value="production">عملیاتی</option>
                 </select>
               </label>
             </div>
@@ -194,7 +173,7 @@ export default async function BotDetailPage({
                 defaultValue={bot.operations.welcome_message ?? ""}
                 placeholder="خالی = استفاده از متن عمومی فروشگاه" />
             </label>
-            <label className="block space-y-2 text-sm">پیام Maintenance
+            <label className="block space-y-2 text-sm">پیام تعمیرات
               <Textarea name="maintenance_message" rows={3} maxLength={4096}
                 defaultValue={bot.operations.maintenance_message ?? ""}
                 placeholder="خالی = متن پیش‌فرض نگهداری" />
@@ -204,18 +183,14 @@ export default async function BotDetailPage({
                 defaultValue={bot.operations.support_url ?? ""} maxLength={500}
                 placeholder="https://example.com/support" />
             </label>
-            <p className="text-xs leading-6 text-muted-foreground">
-              پیام خوش‌آمد و پشتیبانی پس از فعال‌سازی دریافت پیام این ربات استفاده می‌شوند.
-            </p>
           </DraftForm>
         </CardContent>
       </Card>
 
-      <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-5" /> وضعیت و روشن/خاموش‌کردن</CardTitle></CardHeader>
+      <Card><CardHeader><CardTitle>وضعیت فروش</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {mayChangeState ? <>
-            <p className="text-sm leading-7">این کنترل فقط فروش و پیام‌های عادی ربات منتخب را تغییر می‌دهد. در حالت توقف، Webhook یا getUpdates حذف نمی‌شود تا رسید پرداخت‌های قبلی همچنان پردازش شود.</p>
-            <form action={changeBotState} className="space-y-4">
+            <PasswordActionForm action={changeBotState} when="required" includePassword={false} className="space-y-4">
               <input type="hidden" name="id" value={bot.id} />
               <BotConfigVersionField />
               <label className="block space-y-2 text-sm">وضعیت هدف
@@ -231,40 +206,33 @@ export default async function BotDetailPage({
                 <Textarea name="reason" rows={3} maxLength={500}
                   placeholder="دلیل حداقل هشت نویسه‌ای برای توقف…" />
               </label>
-              <Button type="submit" variant="outline">ذخیره وضعیت فروش</Button>
-            </form>
+              <Button type="submit" variant="outline">اعمال وضعیت</Button>
+            </PasswordActionForm>
             {bot.operations.reason ? <p className="text-xs text-muted-foreground">دلیل ثبت‌شده: {bot.operations.reason}</p> : null}
-          </> : <div className="space-y-4">
-            <p className="flex items-start gap-2 rounded-lg border p-3 text-sm leading-7">
-              <ShieldAlert className="mt-1 size-5 shrink-0 text-amber-600" />
-              دریافت پیام این ربات فعال نیست؛ فروش جدید تا تأیید هویت و اتصال متوقف می‌ماند.
-            </p>
-            <p className="text-xs leading-7 text-muted-foreground">در بخش «دریافت پیام و فعال‌سازی ربات»، روش دریافت را ثبت و سپس آن را فعال کنید.</p>
-          </div>}
+          </> : <p className="text-sm">برای شروع فروش، <Link href="#bot-receiver" className="text-primary underline">دریافت پیام را راه‌اندازی کنید</Link>.</p>}
         </CardContent>
       </Card>
     </div>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="size-5" /> Token و تأیید هویت ربات</CardTitle></CardHeader>
-      <CardContent className="space-y-5">
-        <p className="text-sm leading-7">Token ذخیره‌شده قابل نمایش نیست. تأیید getMe فقط هویت ربات را بررسی می‌کند و آن را فعال نمی‌کند.</p>
+    <BotSettingsDisclosure title="توکن و هویت ربات" open={bot.status === "draft"}>
+      <div className="space-y-4">
         {bot.status === "draft" ? <form action={stageBotCredential} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <input type="hidden" name="id" value={bot.id} />
-          <label className="block space-y-2 text-sm">Token ربات پیش‌نویس
+          <label className="block space-y-2 text-sm">توکن ربات
             <Input type="password" name="token" dir="ltr" minLength={24} maxLength={512}
               autoComplete="new-password" required placeholder="رمز ربات تنها یک بار وارد می‌شود" />
           </label>
-          <Button type="submit">ثبت Token</Button>
-        </form> : <p className="text-sm text-muted-foreground">Token این ربات فعال است و از این فرم قابل تعویض نیست.</p>}
+          <Button type="submit">ثبت توکن</Button>
+        </form> : null}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[660px] text-right text-sm">
             <thead><tr className="border-b text-muted-foreground">
-              <th className="p-3">نسخه</th><th className="p-3">منبع / وضعیت</th>
+              <th className="p-3">نسخه</th><th className="p-3">وضعیت</th>
               <th className="p-3">تأیید با getMe</th><th className="p-3">عملیات</th>
             </tr></thead>
             <tbody>{bot.credentials.map(credential => <tr key={credential.version} className="border-b">
               <td className="p-3">{credential.version}</td>
-              <td className="p-3">ثبت‌شده در پنل · {botCredentialLabel(credential)}</td>
+              <td className="p-3">{botCredentialLabel(credential)}</td>
               <td className="p-3 text-xs">{credential.verified_at ? `تأییدشده: ${date(credential.verified_at)}` : "هنوز تأیید نشده"}</td>
               <td className="flex flex-wrap gap-2 p-3">
                 {credential.state === "staged"
@@ -273,11 +241,11 @@ export default async function BotDetailPage({
                     <input type="hidden" name="version" value={credential.version} />
                     <VerifyBotSubmitButton verified={Boolean(credential.verified_at)} />
                   </form> : null}
-                {credential.state === "staged" ? <form action={revokeBotCredential}>
+                {credential.state === "staged" ? <PasswordActionForm action={revokeBotCredential} when="required" includePassword={false}>
                   <input type="hidden" name="id" value={bot.id} />
                   <input type="hidden" name="version" value={credential.version} />
-                  <Button size="sm" type="submit" variant="outline">لغو Token</Button>
-                </form> : null}
+                  <Button size="sm" type="submit" variant="outline">لغو توکن</Button>
+                </PasswordActionForm> : null}
               </td>
             </tr>)}</tbody>
           </table>
@@ -286,38 +254,23 @@ export default async function BotDetailPage({
         {pending?.verified_at ? <Button asChild size="sm" variant="outline">
           <Link href="#bot-receiver">تنظیم دریافت پیام</Link>
         </Button> : null}
-      </CardContent>
-    </Card>
+      </div>
+    </BotSettingsDisclosure>
 
     <BotReceiverPanel bot={bot} receiver={receiver} pending={pending} />
-    {query.commerce_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      مجوزهای مستقل این ربات ثبت شدند؛ موجودی و پرداخت‌های سابق تغییر نکردند.
-    </p> : null}
-    {query.commerce_error ? <p role="alert"
-      className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      ذخیرهٔ تنظیمات مالی ربات انجام نشد؛ نسخه، مجوزها و MFA را بررسی کنید.
-    </p> : null}
-    <BotCommercePanel bot={bot} policy={commercePolicy}
-      paymentAccounts={paymentAccounts} />
-    {query.ux_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      تنظیمات منو و خرید ربات ذخیره شد.
-    </p> : null}
-    {query.ux_error ? <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      تنظیمات خرید ذخیره نشد؛ دسترسی فروشگاه، نسخهٔ تنظیمات و MFA را بررسی کنید.
-    </p> : null}
-    <CustomerExperiencePolicyPanel
-      scope="bot" id={bot.id} menu={customerMenu} checkout={checkoutPolicy}
-    />
-    {query.relay_saved ? <p role="status" className="rounded-lg border p-3 text-sm">
-      تغییر مسیر Relay ثبت شد.
-    </p> : null}
-    {query.relay_error ? <p role="alert"
-      className="rounded-lg border border-destructive p-3 text-sm text-destructive">
-      عملیات Relay انجام نشد: {query.relay_error === "reauth"
-        ? "هویت خود را در همین صفحه تأیید کنید." : "مسیر، نسخهٔ تنظیمات و دسترسی خود را بررسی کنید."}
-    </p> : null}
-    <BotRelayRoutesPanel bot={bot} workers={workers} routes={routes} />
-
+    {workers && routes && <BotRelayRoutesPanel bot={bot} workers={workers} routes={routes}
+      error={query.relay_error} saved={query.relay_saved} />}
+    <BotSettingsDisclosure title="پرداخت و فروش" open={Boolean(query.commerce_saved || query.commerce_error)}>
+      {query.commerce_saved && <p role="status" className="mb-3 text-sm">تنظیمات پرداخت ربات ذخیره شد.</p>}
+      {query.commerce_error && <p role="alert" className="mb-3 text-sm text-destructive">تنظیمات پرداخت ذخیره نشد. دسترسی و وضعیت فعلی را بررسی کنید.</p>}
+      <BotCommercePanel bot={bot} policy={commercePolicy} paymentAccounts={paymentAccounts} />
+    </BotSettingsDisclosure>
+    <BotSettingsDisclosure title="منو و فرایند خرید" open={Boolean(query.ux_saved || query.ux_error)}>
+      {query.ux_saved && <p role="status" className="mb-3 text-sm">تنظیمات خرید ربات ذخیره شد.</p>}
+      {query.ux_error && <p role="alert" className="mb-3 text-sm text-destructive">تنظیمات خرید ذخیره نشد. دسترسی و نسخهٔ تنظیمات را بررسی کنید.</p>}
+      <CustomerExperiencePolicyPanel scope="bot" id={bot.id} menu={customerMenu} checkout={checkoutPolicy} />
+    </BotSettingsDisclosure>
+    <BotSettingsDisclosure title="دسترسی به محصولات و دسته‌بندی‌ها" open={Boolean(query.acl_saved || query.acl_error || query.acl_q || query.acl_kind || query.acl_effect || query.acl_page)}>
     {query.acl_saved ? <p role="status" className="rounded-lg border bg-muted p-3 text-sm">
       دسترسی ربات به محصولات و دسته‌بندی‌ها ذخیره شد.
     </p> : null}
@@ -332,19 +285,30 @@ export default async function BotDetailPage({
     <Suspense fallback={null}>
       <BotCatalogAccessPanel botId={bot.id} initialData={acl} initialQuery={aclQuery} initialAudit={aclAudit.items} />
     </Suspense>
+    </BotSettingsDisclosure>
 
+    <BotSettingsDisclosure title="سلامت و تاریخچه">
     <div className="grid items-start gap-5 xl:grid-cols-2">
       <Card><CardHeader><CardTitle>سلامت و پردازش پیام‌ها</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <p>وضعیت API پیام‌رسان: <strong>در این نما درخواست زنده زده نشده</strong></p>
+          <p>شناسهٔ ربات در پیام‌رسان: <bdi>{bot.provider_bot_id ?? "تأیید نشده"}</bdi></p>
           <p>آخرین پیام دریافتی: {date(health.received_last_at)}</p>
           <p>درحال پردازش در یک ساعت: {health.processing_last_hour}</p>
           <p>نیازمند بررسی در یک ساعت: {health.needs_review_last_hour}</p>
           <p>آمادگی دریافت پیام: <strong>{health.runtime_ready ? "فعال" : "هنوز متصل نشده"}</strong></p>
-          <p className="text-xs leading-7 text-muted-foreground">تعداد پیام کم به معنای قطع اتصال ربات نیست. برای تأیید هویت زنده از getMe در بخش Token استفاده کنید.</p>
         </CardContent>
       </Card>
       <BotChangeHistory events={events} state_events={state_events} />
     </div>
+    </BotSettingsDisclosure>
   </div></BotConfigVersionProvider>;
+}
+
+function BotSettingsDisclosure({ title, open, children }: { title: string; open?: boolean; children: ReactNode }) {
+  return <details open={open || undefined} className="group rounded-xl border bg-card">
+    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-5 py-3 font-medium [&::-webkit-details-marker]:hidden">
+      {title}<ChevronDown aria-hidden className="size-4 shrink-0 group-open:rotate-180" />
+    </summary>
+    <div className="border-t p-4 sm:p-5">{children}</div>
+  </details>;
 }

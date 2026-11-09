@@ -187,7 +187,7 @@ async def test_account_wizard_proof_checks_password_and_is_action_scoped(enrollm
     profile = security.profile_for(app.db, 7)
     now = security.clock()
     secret = security.begin_mfa(app.db, profile, now=now)
-    recovery = security.confirm_mfa(app.db, profile, security.totp(secret, now.timestamp()), now=now)
+    security.confirm_mfa(app.db, profile, security.totp(secret, now.timestamp()), now=now)
     row = app.db.get(AdminSession, app.session_id)
     row.reauthenticated_at = now - security.REAUTH_LIMIT
     app.db.commit()
@@ -208,9 +208,12 @@ async def test_account_wizard_proof_checks_password_and_is_action_scoped(enrollm
     change = {"enabled": True, "expected_version": 0}
     denied = await app.request("POST", "/services/receivers", payload=change)
     assert denied.status_code == 403 and denied.json()["detail"] == "reauthentication_required"
+    denied = await app.request("POST", "/account/reauthenticate", payload={
+        "current_password": "incorrect",
+    })
+    assert denied.status_code == 401
     confirmed = await app.request("POST", "/account/reauthenticate", payload={
         "current_password": "Synthetic-enrollment-password-123",
-        "second_factor": recovery[0],
     })
     assert confirmed.status_code == 200, confirmed.text
     for key in ("receivers", "workflow-runtime"):

@@ -1,3 +1,4 @@
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import { CustomerMenuOrder } from "@/components/blocks/customer-menu-order";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,20 +18,6 @@ interface Props {
   checkout: CheckoutPolicy;
 }
 
-function Proof() {
-  return <div className="grid gap-3 sm:grid-cols-2">
-    <label className="block space-y-2 text-sm">رمز فعلی مدیر
-      <Input name="current_password" type="password"
-        autoComplete="current-password" required />
-    </label>
-    <label className="block space-y-2 text-sm">کد شش‌رقمی MFA
-      <Input name="second_factor" dir="ltr" inputMode="numeric"
-        pattern="[0-9]{6}" maxLength={6}
-        autoComplete="one-time-code" required />
-    </label>
-  </div>;
-}
-
 /** Per-Store defaults and Bot overrides for the SAME six customer menus. */
 export function CustomerExperiencePolicyPanel({
   scope, id, menu, checkout,
@@ -48,14 +35,13 @@ export function CustomerExperiencePolicyPanel({
         {menu.inherited ? <p className="text-xs text-muted-foreground">
           این ربات از منوی پیش‌فرض فروشگاه استفاده می‌کند.
         </p> : null}
-        <form action={saveCustomerMenu} className="space-y-4">
+        <PasswordActionForm action={saveCustomerMenu} className="space-y-4">
           <input type="hidden" name="scope" value={scope} />
           <input type="hidden" name="target_id" value={id} />
           <input type="hidden" name="expected_version" value={menu.version} />
           <CustomerMenuOrder key={`${id}:${menu.version}`} menu={menu} />
-          <Proof />
           <Button type="submit" variant="outline">ذخیرهٔ منوی مشتری</Button>
-        </form>
+        </PasswordActionForm>
       </CardContent>
     </Card>
 
@@ -67,7 +53,7 @@ export function CustomerExperiencePolicyPanel({
         <p className="text-sm leading-7 text-muted-foreground">
           پرداخت فوری به شرایط فروش ثبت‌شده و روش پرداخت مجاز نیاز دارد. کالاهای دیجیتال تلگرام فقط با Telegram Stars قابل خریدند.
         </p>
-        <form action={saveCheckoutPolicy} className="space-y-4">
+        <PasswordActionForm action={saveCheckoutPolicy} className="space-y-4">
           <input type="hidden" name="scope" value={scope} />
           <input type="hidden" name="target_id" value={id} />
           <input type="hidden" name="expected_version" value={checkout.version} />
@@ -97,9 +83,8 @@ export function CustomerExperiencePolicyPanel({
           </> : <p className="text-xs text-muted-foreground">
             شرایط خرید در تنظیمات فروشگاه ویرایش می‌شود و برای این ربات نیز اعمال می‌شود.
           </p>}
-          <Proof />
           <Button type="submit" variant="outline">ذخیره تنظیمات خرید</Button>
-        </form>
+        </PasswordActionForm>
       </CardContent>
     </Card>
   </div>;

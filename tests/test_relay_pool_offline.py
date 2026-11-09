@@ -14,7 +14,7 @@ import pytest
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.exceptions import TelegramNetworkError
 from cryptography.fernet import Fernet
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
 from models.base import Base
@@ -88,6 +88,11 @@ def db(monkeypatch):
         f"{ORIGIN_A},{ORIGIN_B}",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(engine, tables=[
         ShopStaff.__table__,
         ShopStore.__table__,
@@ -106,6 +111,7 @@ def db(monkeypatch):
             id=DEFAULT_STORE_ID, slug="default",
             name="Offline shop", state="active",
         ))
+        session.flush()
         for bot_id, slug, provider_id in (
             (BOT_A, "telegram-a", 201),
             (BOT_B, "telegram-b", 202),
@@ -131,6 +137,96 @@ async def _worker(db: AsyncDb, slug: str, origin: str) -> str:
     )
     assert result["status"] == "draft"
     return result["id"]
+
+
+def test_worker_creation_keeps_audit_event(db: AsyncDb) -> None:
+    async def scenario() -> None:
+        worker_id = await _worker(db, "audited-worker", ORIGIN_A)
+        audit_event = await db.scalar(select(ShopRelayEvent).where(
+            ShopRelayEvent.worker_id == worker_id,
+        ))
+        assert audit_event is not None
+        assert audit_event.action == "created"
+        assert audit_event.actor_id == 1
+
+    asyncio.run(scenario())
+
+
+def test_worker_removal_rejects_a_form_opened_before_a_route_was_attached(db: AsyncDb) -> None:
+    async def scenario() -> None:
+        worker_id = await _worker(db, "stale-worker", ORIGIN_A)
+        old_version = (await pool.read_worker(db, worker_id))["version"]
+        await pool.assign_route(db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1)
+
+        with pytest.raises(security.SecurityRejected, match="configuration_changed"):
+            await pool.remove_worker(db, worker_id=worker_id, expected_version=old_version, actor_id=1)
+        assert db.session.get(ShopBotRelayRoute, (BOT_A, worker_id)) is not None
+
+    asyncio.run(scenario())
+
+
+def test_route_removal_rejects_a_form_opened_before_a_key_was_staged(db: AsyncDb) -> None:
+    async def scenario() -> None:
+        worker_id = await _worker(db, "stale-route", ORIGIN_A)
+        route = await pool.assign_route(db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1)
+        await pool.stage_credential(db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_A, actor_id=1)
+
+        with pytest.raises(security.SecurityRejected, match="configuration_changed"):
+            await pool.remove_route(
+                db, bot_id=BOT_A, worker_id=worker_id, expected_version=route["version"], actor_id=1,
+            )
+        with pytest.raises(security.SecurityRejected, match="configuration_changed"):
+            await pool.stage_credential(
+                db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_B, actor_id=1,
+                expected_version=route["version"],
+            )
+        assert db.session.scalar(select(ShopRelayCredential)).state == "staged"
+
+    asyncio.run(scenario())
+
+
+def test_remove_and_reconnect_keeps_history_without_reusing_keys(db: AsyncDb) -> None:
+    async def scenario() -> None:
+        worker_id = await _worker(db, "removable-worker", ORIGIN_A)
+        route = await pool.assign_route(db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1)
+        await pool.stage_credential(db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_A, actor_id=1)
+        worker = await db.get(ShopRelayWorker, worker_id)
+        await pool.remove_worker(db, worker_id=worker_id, expected_version=worker.version, actor_id=1)
+        assert (await pool.list_workers(db))["items"] == []
+        assert (await pool.list_bot_routes(db, BOT_A))["items"] == []
+        key = await db.scalar(select(ShopRelayCredential))
+        assert key.state == "revoked" and not key.ciphertext
+        assert await db.scalar(select(ShopRelayEvent.id).where(ShopRelayEvent.action == "removed"))
+
+        restored_id = await _worker(db, "removable-worker", ORIGIN_A)
+        assert restored_id == worker_id
+        reattached = await pool.assign_route(db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1)
+        assert reattached["version"] > route["version"]
+        fresh = await pool.stage_credential(db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_B, actor_id=1)
+        assert fresh["version"] == 2
+        current, = (await pool.list_bot_routes(db, BOT_A))["items"]
+        await pool.remove_route(db, bot_id=BOT_A, worker_id=worker_id,
+                                expected_version=current["version"], actor_id=1)
+        assert (await pool.list_bot_routes(db, BOT_A))["items"] == []
+        assert (await pool.read_worker(db, worker_id))["bot_count"] == 0
+
+    asyncio.run(scenario())
+
+
+def test_address_change_discards_keys_and_requires_a_new_probe(db: AsyncDb) -> None:
+    async def scenario() -> None:
+        worker_id = await _worker(db, "editable-worker", ORIGIN_A)
+        await pool.assign_route(db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1)
+        await pool.stage_credential(db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_A, actor_id=1)
+        worker = await db.get(ShopRelayWorker, worker_id)
+        edited = await pool.edit_worker(db, worker_id=worker_id, expected_version=worker.version, actor_id=1,
+                                        slug=worker.slug, name="Changed name", origin=ORIGIN_B, max_rps=3, max_inflight=4)
+        assert edited["origin"] == ORIGIN_B and edited["status"] == "draft"
+        route, = (await pool.list_bot_routes(db, BOT_A))["items"]
+        assert route["status"] == "staged" and route["credential_version"] is None
+        assert route["credential_history"][0]["state"] == "revoked"
+
+    asyncio.run(scenario())
 
 
 def test_two_bots_share_worker_with_separate_credentials(db: AsyncDb) -> None:
@@ -298,7 +394,7 @@ def test_failed_send_is_never_replayed_on_another_worker() -> None:
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("failure", ["identity", "network", "version"])
+@pytest.mark.parametrize("failure", ["identity", "network", "version", "worker"])
 def test_relay_activation_requires_proof_and_unchanged_configuration(
     db, monkeypatch, failure,
 ):
@@ -324,6 +420,11 @@ def test_relay_activation_requires_proof_and_unchanged_configuration(
                 route = db.session.get(ShopBotRelayRoute, (BOT_A, worker_id))
                 route.version += 1
                 db.session.commit()
+            if failure == "worker":
+                worker = await pool.read_worker(db, worker_id)
+                await pool.update_worker_state(
+                    db, worker_id=worker_id, state="paused", expected_version=worker["version"], actor_id=1,
+                )
             return SimpleNamespace(id=202 if failure == "identity" else 201)
 
         async def close():
@@ -339,15 +440,17 @@ def test_relay_activation_requires_proof_and_unchanged_configuration(
         """Keep route and credential transitions in the real disposable database."""
         nonlocal worker_id
         worker_id = await _worker(db, "proof-route", ORIGIN_A)
-        route = await pool.assign_route(
+        await pool.assign_route(
             db, bot_id=BOT_A, worker_id=worker_id, priority=10, actor_id=1,
         )
         credential = await pool.stage_credential(
             db, bot_id=BOT_A, worker_id=worker_id, secret=SECRET_A, actor_id=1,
         )
+        route, = (await pool.list_bot_routes(db, BOT_A))["items"]
         expected = {
             "identity": "bot_identity_mismatch", "network": "relay_probe_failed",
             "version": "configuration_changed",
+            "worker": "configuration_changed",
         }[failure]
         with pytest.raises(security.SecurityRejected, match=expected):
             await pool.activate_route(

@@ -1,10 +1,10 @@
+import { PasswordActionForm } from "@/components/blocks/password-action-form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StaffStoreTable } from "@/components/blocks/staff-store-table";
 import { PageHeading } from "@/components/blocks/page-heading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { adminFetch, currentStaff } from "@/lib/bridge";
 import type { StaffStorePermissions } from "@/lib/store-context";
 import { saveStaffStoreAccess } from "./actions";
@@ -14,7 +14,7 @@ type Query = Promise<{ saved?: string; error?: string }>;
 
 const messages: Record<string, string> = {
   validation: "حداقل یک فروشگاه، مجوز معتبر و یک فروشگاه پیش‌فرض انتخاب کنید.",
-  reauth: "برای تغییر دسترسی‌ها، رمز و MFA فعلی را دوباره تأیید کنید.",
+  reauth: "برای تغییر دسترسی‌ها، رمز فعلی را تأیید کنید.",
   store_permission_denied: "شما مدیر یکی از فروشگاه‌های درخواستی نیستید.",
   store_access_denied: "دسترسی فروشگاه یا نشست شما تغییر کرده است.",
   invalid_store_grants: "فهرست فروشگاه‌های انتخابی معتبر نیست.",
@@ -62,21 +62,13 @@ export default async function StaffStoresPage({
         {!data.stores.length ? <p className="rounded-lg border p-3 text-sm">
           فروشگاهی برای مدیریت دسترسی در اختیار شما نیست.
         </p> : null}
-        <form action={saveStaffStoreAccess} className="space-y-5">
+        <PasswordActionForm action={saveStaffStoreAccess} className="space-y-5">
           <input type="hidden" name="staff_id" value={memberId} />
           <StaffStoreTable data={data} />
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-2 text-sm">رمز فعلی مدیر
-              <Input name="current_password" type="password" required
-                autoComplete="current-password" />
-            </label>
-            <label className="block space-y-2 text-sm">کد MFA
-              <Input name="second_factor" dir="ltr" inputMode="numeric" pattern="[0-9]{6}"
-                maxLength={6} autoComplete="one-time-code" required />
-            </label>
           </div>
           <Button type="submit" disabled={!data.stores.length}>ذخیره دسترسی فروشگاه‌ها</Button>
-        </form>
+        </PasswordActionForm>
       </CardContent>
     </Card>}
   </div>;

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { saveDraftMutation } from "@/lib/draft-mutation";
 import { redirect } from "next/navigation";
 import { ApiError, adminFetch } from "@/lib/bridge";
+import { needsRelayProof } from "@/lib/relay-pool";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATUSES = new Set(["active", "maintenance", "paused", "disabled"]);
@@ -70,7 +71,7 @@ export async function saveBotDetails(form: FormData) {
 }
 
 /** Immediately restrict bot commerce; retain all pending payment receipts. */
-export async function changeBotState(form: FormData): Promise<void> {
+export async function changeBotState(form: FormData) {
   const id = idFrom(form);
   const expected_version = positiveInt(form.get("expected_version"));
   const state = String(form.get("state") ?? "");
@@ -84,7 +85,10 @@ export async function changeBotState(form: FormData): Promise<void> {
     await adminFetch(`/bot-registry/${id}/state`, "POST", {
       expected_version, state, reason,
     });
-  } catch (error) { failure(error, id); }
+  } catch (error) {
+    if (needsRelayProof(error)) return { reauthenticate: true } as const;
+    failure(error, id);
+  }
   revalidatePath("/bots");
   revalidatePath(`/bots/${id}`);
   redirect(`/bots/${id}?saved=state`);
@@ -176,7 +180,7 @@ export async function activateBotReceiver(form: FormData): Promise<void> {
 }
 
 /** Revoke a proposed token; the active Token stays untouched. */
-export async function revokeBotCredential(form: FormData): Promise<void> {
+export async function revokeBotCredential(form: FormData) {
   const id = idFrom(form);
   const version = positiveInt(form.get("version"));
   if (!version) redirect(`/bots/${id}?error=validation`);
@@ -184,7 +188,10 @@ export async function revokeBotCredential(form: FormData): Promise<void> {
     await adminFetch(`/bot-registry/${id}/credentials/revoke`, "POST", {
       version,
     });
-  } catch (error) { failure(error, id); }
+  } catch (error) {
+    if (needsRelayProof(error)) return { reauthenticate: true } as const;
+    failure(error, id);
+  }
   revalidatePath(`/bots/${id}`);
   redirect(`/bots/${id}?saved=revoked`);
 }

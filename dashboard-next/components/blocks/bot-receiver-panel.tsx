@@ -24,33 +24,28 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
   const ambiguous = receiver.state === "needs_review" || receiver.state === "applying";
   const stagedWebhook = isDraft && receiver.state === "staged" && receiver.mode === "webhook";
 
-  return <Card id="bot-receiver" className="scroll-mt-6">
-    <CardHeader><CardTitle>دریافت پیام و فعال‌سازی ربات</CardTitle></CardHeader>
+  const state = receiver.configured ? ({
+    staged: "آمادهٔ فعال‌سازی", applying: "در حال اتصال", active: "متصل",
+    paused: "متوقف", disabled: "غیرفعال", needs_review: "نیازمند بررسی",
+  } as const)[receiver.state] : "راه‌اندازی نشده";
+  return <Card id="bot-receiver" className="scroll-mt-24">
+    <CardHeader><CardTitle>دریافت پیام</CardTitle></CardHeader>
     <CardContent className="space-y-5 text-sm">
-      {isDraft && receiver.state !== "active" ? <p className="leading-7">
-        برای وب‌هوک، اول مسیر را در همین برنامه بسازید و آزمایش کنید. بعد از انتشار مسیر با HTTPS، دریافت پیام را فعال کنید.
-      </p> : null}
-      <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
-        <p>وضعیت: <strong>{receiver.configured ? ({ staged: "ثبت اولیه", applying: "در حال اعمال تغییر", active: "فعال", paused: "متوقف", disabled: "غیرفعال", needs_review: "نتیجه نامشخص؛ نیازمند بررسی" } as const)[receiver.state] : "راه‌اندازی نشده"}</strong></p>
-        <p>نوع دریافت: <strong>{receiver.mode === "webhook" ? "Webhook" : receiver.mode === "polling" ? "Polling" : "—"}</strong></p>
-        <p>نسخه: <strong>{receiver.version ?? "—"}</strong></p>
-        <p>Offset بعدی: <strong>{receiver.next_update_id ?? "—"}</strong></p>
-        <p>Runtime: <strong>{receiver.runtime_enabled ? "مجاز به اجرا" : "متوقف"}</strong></p>
-        <p>Lease اجرایی: <strong>{receiver.worker_ready ? "در دسترس" : "در دسترس نیست"}</strong></p>
-        {receiver.last_error_code ? <p className="sm:col-span-2">
-          {receiver.last_error_code === "webhook_owned_elsewhere"
-            ? "این توکن هنوز به اتصال قبلی در پیام‌رسان وصل است. آزمون مسیر محلی جداگانه در دسترس است."
-            : <>کد آخرین خطا: <strong>{receiver.last_error_code}</strong></>}
-        </p> : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <strong>{state}</strong>
+        {receiver.mode && <span className="text-muted-foreground">{receiver.mode === "webhook" ? "وب‌هوک" : "دریافت دوره‌ای"}</span>}
       </div>
+      {receiver.last_error_code === "webhook_owned_elsewhere" && <p role="alert">
+        این ربات هنوز به اتصال قبلی در پیام‌رسان وصل است. برای انتقال، ابتدا اتصال قبلی را قطع کنید.
+      </p>}
 
       {canStage ? <form action={stageBotReceiver} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="id" value={bot.id} />
         <label className="block space-y-2">روش دریافت پیام
           <select name="mode" defaultValue={receiver.mode ?? "webhook"}
             className="block h-10 min-w-44 rounded-md border bg-background px-3">
-            <option value="webhook">Webhook (HTTPS)</option>
-            <option value="polling">Polling</option>
+            <option value="webhook">وب‌هوک (HTTPS)</option>
+            <option value="polling">دریافت دوره‌ای</option>
           </select>
         </label>
         <Button type="submit" variant="outline" disabled={!pending?.verified_at}>
@@ -60,13 +55,10 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
 
       {isDraft && !pending?.verified_at ?
         <p className="text-muted-foreground">
-          برای ثبت روش دریافت، ابتدا Token را با getMe تأیید کنید.
+          ابتدا توکن ربات را تأیید کنید.
         </p> : null}
 
       {stagedWebhook ? <form action={checkBotReceiverLocal} className="space-y-3 rounded-lg border p-4">
-        <p className="leading-7">
-          مسیر وب‌هوک در همین برنامه ساخته شده است. برای این آزمون به تونل یا اتصال پیام‌رسان نیازی نیست.
-        </p>
         <input type="hidden" name="id" value={bot.id} />
         <input type="hidden" name="expected_version" value={receiver.version ?? ""} />
         <Button type="submit" variant="outline">آزمون وب‌هوک محلی</Button>
@@ -76,7 +68,7 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
         <p className="leading-7">
           {stagedWebhook
             ? "پس از انتشار مسیر با HTTPS، آن را در پیام‌رسان ثبت کنید. برنامه ابتدا دسترسی محلی و اینترنتی را بررسی می‌کند."
-            : "دریافت پیام با Polling برای همین ربات فعال می‌شود."}
+            : "دریافت دوره‌ای پیام برای همین ربات فعال می‌شود."}
         </p>
         <input type="hidden" name="id" value={bot.id} />
         <input type="hidden" name="expected_version" value={receiver.version ?? ""} />
@@ -96,10 +88,16 @@ export function BotReceiverPanel({ bot, receiver, pending }: Props) {
       {receiver.state === "active" && receiver.mode === "webhook" ?
         <BotWebhookUrl key={`${bot.id}:${receiver.version}`} botId={bot.id} /> : null}
 
-      {receiver.state === "active" ? <p className="leading-7">
-        دریافت پیام فعال است؛ توقف فروش را از کنترل وضعیت ربات انجام دهید.
-        رسید پرداخت‌های قبلی و درخواست‌های بازگشت وجه باید همچنان رسیدگی شوند.
-      </p> : null}
+      {receiver.configured && <details className="text-xs text-muted-foreground">
+        <summary className="w-fit cursor-pointer hover:underline">اطلاعات اتصال برای پشتیبانی</summary>
+        <dl className="mt-2 grid max-w-lg grid-cols-2 gap-2">
+          <dt>نسخه</dt><dd>{receiver.version ?? "—"}</dd>
+          <dt>شناسهٔ پیام بعدی</dt><dd>{receiver.next_update_id ?? "—"}</dd>
+          <dt>سرویس دریافت</dt><dd>{receiver.runtime_enabled ? "روشن" : "متوقف"}</dd>
+          <dt>پردازشگر</dt><dd>{receiver.worker_ready ? "در دسترس" : "در دسترس نیست"}</dd>
+          {receiver.last_error_code && <><dt>آخرین خطا</dt><dd><bdi>{receiver.last_error_code}</bdi></dd></>}
+        </dl>
+      </details>}
     </CardContent>
   </Card>;
 }

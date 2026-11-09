@@ -82,10 +82,10 @@ def permission_for(path: str, method: str) -> str | None:
         return "dashboard.read"
     if resource in {"auth", "account", "capabilities", "overview"}:
         return "account.manage_self" if resource in {"auth", "account"} else "dashboard.read"
-    if resource == "relay-workers" and path.endswith("/state"):
+    if resource == "relay-workers" and (path.endswith(("/state", "/remove")) or method == "PATCH"):
         return "bots.apply"
     if resource == "bot-registry" and "/relay-routes/" in path and path.endswith(
-        ("/activate", "/pause", "/revoke")
+        ("/activate", "/pause", "/revoke", "/remove")
     ):
         return "bots.apply"
     if resource == "stores" and path.endswith(

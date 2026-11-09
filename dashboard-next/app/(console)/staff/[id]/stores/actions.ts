@@ -32,13 +32,12 @@ export async function saveStaffStoreAccess(form: FormData): Promise<void> {
   const ids = form.getAll("store_ids").map(String);
   const defaultStore = String(form.get("default_store_id") ?? "");
   const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "");
+
   if (ids.length < 1 || ids.length > 100 ||
     new Set(ids).size !== ids.length ||
     ids.some((id) => !UUID.test(id)) ||
     !UUID.test(defaultStore) || !ids.includes(defaultStore) ||
-    !current_password || current_password.length > 256 ||
-    !/^[0-9]{6}$/.test(second_factor)) {
+    !current_password || current_password.length > 256) {
     redirect(`/staff/${memberId}/stores?error=validation`);
   }
   const grants = ids.map((id) => ({
@@ -50,7 +49,7 @@ export async function saveStaffStoreAccess(form: FormData): Promise<void> {
   }
   try {
     await adminFetch(`/staff/${memberId}/store-access`, "POST", {
-      grants, default_store_id: defaultStore, current_password, second_factor,
+      grants, default_store_id: defaultStore, current_password,
     });
   } catch (error) { fail(error, memberId); }
   revalidatePath("/staff");

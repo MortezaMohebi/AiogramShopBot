@@ -14,16 +14,15 @@ export async function saveDigitalLicenses(form: FormData): Promise<void> {
   const raw = String(form.get("license_codes") ?? "");
   const codes = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const current_password = String(form.get("current_password") ?? "");
-  const second_factor = String(form.get("second_factor") ?? "").trim();
+
   if (!codes.length || codes.length > 100 ||
       codes.some(line => line.length < 4 || line.length > 128 || /[\x00-\x1f\x7f]/.test(line)) ||
-      !current_password || current_password.length > 256 ||
-      !/^[0-9]{6}$/.test(second_factor)) {
+      !current_password || current_password.length > 256) {
     redirect(`/products/${id}/digital?error=validation`);
   }
   try {
     await adminFetch(`/products/${id}/digital-licenses`, "POST", {
-      codes, current_password, second_factor,
+      codes, current_password,
     });
   } catch (error) {
     if (!(error instanceof ApiError)) throw error;
